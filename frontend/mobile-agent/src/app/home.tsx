@@ -30,13 +30,16 @@ import {
   readUnsentRecords,
   type MobileAgentActor,
 } from '../services/mobile-auth';
-import { colors } from '../theme/colors';
+import { colors, toneColors } from '../theme/colors';
+import { radius, space, touch } from '../theme/tokens';
+import { ConnectionBadge } from '../components/flight-report/connection-badge';
+import { useMinuteClock } from '../hooks/use-minute-clock';
 import { exitApplication } from '../utils/app-exit';
 import { signOutPendingEvidenceNote } from '../utils/pending-evidence';
 import { resetToLogin } from '../utils/session-navigation';
 import { useLayoutClass } from '../utils/layout-class';
 import { OperationDetail } from './flight/[id]';
-import { formatStationDateTime } from '../utils/date-format';
+import { formatStationDate, formatStationDateTime } from '../utils/date-format';
 
 type BlockingState = 'offline' | 'unavailable' | null;
 
@@ -59,6 +62,8 @@ export default function HomeScreen() {
   const expanded = layoutClass === 'expanded';
   const columns = layoutClass === 'medium' ? 2 : 1;
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // One clock for every card: the list renders again once a minute for the countdowns, not on every tick.
+  const now = useMinuteClock();
   const activeId = operations.some(item => item.operation.id === selectedId)
     ? selectedId
     : operations[0]?.operation.id ?? null;
@@ -168,37 +173,49 @@ export default function HomeScreen() {
   const renderOperation = useCallback(
     ({ item }: { item: RampAssignedOperationResponse }) => (
       <View style={columns > 1 ? styles.gridCell : undefined}>
-        <AssignedOperationCard operation={item} onOpen={openOperation} selected={expanded && item.operation.id === activeId} />
+        <AssignedOperationCard now={now} operation={item} onOpen={openOperation}
+          selected={expanded && item.operation.id === activeId} />
       </View>
     ),
-    [activeId, columns, expanded, openOperation],
+    [activeId, columns, expanded, now, openOperation],
   );
 
   const stationCodes = actor?.stationScopes.map(scope => scope.stationCode).join(' · ') ?? 'Sin estación';
   // N11: times in the station's zone, which only the operations carry; without one, AVIAM's calendar.
   const timeZones = useMemo(() => stationTimeZonesByCode(operations), [operations]);
   const agentTimeZone = actor?.stationScopes.map(scope => timeZones.get(scope.stationCode)).find(Boolean);
+  const summary = useMemo(() => queueSummary(operations), [operations]);
+  const today = formatStationDate(new Date(now), agentTimeZone);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
-        <View style={styles.headerCopy}>
-          <Text style={styles.eyebrow}>MANIFIESTO OPERATIVO</Text>
-          <Text numberOfLines={2} style={styles.name}>{actor?.displayName ?? 'Agente de rampa'}</Text>
-          <View style={styles.stationRow}>
-            <Ionicons name="location" size={14} color="#C5D4EB" />
-            <Text style={styles.stationText}>{stationCodes}</Text>
+        <View style={styles.headerTop}>
+          <Image source={require('../../assets/images/elevant-symbol.png')} style={styles.brandMark} />
+          <View style={styles.headerCopy}>
+            <Text style={styles.eyebrow}>{`Rampa ${stationCodes} · ${today}`}</Text>
+            <Text numberOfLines={1} style={styles.name}>{actor?.displayName ?? 'Agente de rampa'}</Text>
           </View>
+          <ConnectionBadge />
+          <Pressable
+            accessibilityHint="Muestra la cuenta y las opciones de sesión"
+            accessibilityLabel="Abrir perfil del agente"
+            accessibilityRole="button"
+            onPress={openProfile}
+            style={({ pressed }) => [styles.avatar, pressed && styles.pressed]}
+          >
+            <Text style={styles.avatarText}>{initialsOf(actor?.displayName)}</Text>
+          </Pressable>
         </View>
-        <Pressable
-          accessibilityHint="Muestra la cuenta y las opciones de sesión"
-          accessibilityLabel="Abrir perfil del agente"
-          accessibilityRole="button"
-          onPress={openProfile}
-          style={({ pressed }) => [styles.avatar, pressed && styles.pressed]}
-        >
-          <Image source={require('../../assets/images/elevant-symbol.png')} style={styles.avatarImage} />
-        </Pressable>
+
+        <View style={styles.quickActions}>
+          <QuickAction icon="chatbubbles-outline" label="Chat con OCC" spoken="Abrir chat con OCC"
+            onPress={() => router.push('/chat')} />
+          <QuickAction icon="notifications-outline" label="Notificaciones" spoken="Abrir notificaciones"
+            onPress={() => router.push('/notifications')} />
+          <QuickAction icon="calendar-outline" label="Mis turnos" spoken="Abrir mis turnos y documentos"
+            onPress={() => router.push('/my-schedule')} />
+        </View>
       </View>
 
       {source === 'cache' && (
@@ -222,18 +239,21 @@ export default function HomeScreen() {
         </View>
       )}
 
-      <View style={styles.quickActions}>
-        <Pressable accessibilityLabel="Abrir chat con OCC" accessibilityRole="button" onPress={() => router.push('/chat')} style={styles.quickAction}><Ionicons name="chatbubbles-outline" size={19} color={colors.navy} /><Text style={styles.quickActionText}>Chat con OCC</Text></Pressable>
-        <Pressable accessibilityLabel="Abrir notificaciones" accessibilityRole="button" onPress={() => router.push('/notifications')} style={styles.quickAction}><Ionicons name="notifications-outline" size={19} color={colors.navy} /><Text style={styles.quickActionText}>Notificaciones</Text></Pressable>
-        <Pressable accessibilityLabel="Abrir mis turnos y documentos" accessibilityRole="button" onPress={() => router.push('/my-schedule')} style={styles.quickAction}><Ionicons name="calendar-outline" size={19} color={colors.navy} /><Text style={styles.quickActionText}>Mis turnos</Text></Pressable>
-      </View>
+      {!loading && blockingState === null && operations.length > 0 && (
+        <View accessibilityRole="summary" style={styles.summary}>
+          <SummaryTile icon="airplane-outline" label="Asignadas" value={summary.total} />
+          <SummaryTile icon="play-circle-outline" label="En atención" value={summary.active} tone="brand" />
+          <SummaryTile icon="time-outline" label="En revisión OCC" value={summary.review} tone="info" />
+          <SummaryTile icon="checkmark-done-outline" label="Aprobadas" value={summary.approved} tone="success" />
+        </View>
+      )}
 
       <MyPositionsCard timeZones={timeZones} />
 
       <View style={styles.sectionHeader}>
         <View style={styles.sectionCopy}>
-          <Text style={styles.sectionTitle}>Operaciones asignadas</Text>
-          <Text style={styles.sectionSubtitle}>Tu cola autorizada por AVIAM</Text>
+          <Text accessibilityRole="header" style={styles.sectionTitle}>Operaciones asignadas</Text>
+          <Text style={styles.sectionSubtitle}>{`Tu cola autorizada por AVIAM · hora local de ${stationCodes}`}</Text>
         </View>
         {!loading && blockingState === null && (
           <View style={styles.countBadge}>
@@ -266,8 +286,10 @@ export default function HomeScreen() {
           contentContainerStyle={[styles.list, columns > 1 && styles.gridList]}
           data={operations}
           extraData={activeId}
+          initialNumToRender={6}
           keyExtractor={operationKey}
           numColumns={columns}
+          removeClippedSubviews
           style={expanded ? styles.splitList : undefined}
           refreshControl={(
             <RefreshControl
@@ -316,12 +338,17 @@ export default function HomeScreen() {
             >
               <Ionicons name="close" size={23} color={colors.navy} />
             </Pressable>
-            <Image source={require('../../assets/images/elevant-symbol.png')} style={styles.profileLogo} />
+            <View style={styles.profileAvatar}>
+              <Text style={styles.profileAvatarText}>{initialsOf(actor?.displayName)}</Text>
+            </View>
             <Text style={styles.profileName}>{actor?.displayName ?? 'Agente de rampa'}</Text>
             <Text style={styles.profileUser}>{actor?.email ?? 'Cuenta de agente'}</Text>
             <View style={styles.profileScope}>
-              <Text style={styles.profileScopeLabel}>ACCESO OPERATIVO</Text>
-              <Text style={styles.profileScopeValue}>AVIAM · {stationCodes}</Text>
+              <Ionicons name="shield-checkmark-outline" size={20} color={colors.navy} />
+              <View style={styles.profileScopeCopy}>
+                <Text style={styles.profileScopeLabel}>Acceso operativo</Text>
+                <Text style={styles.profileScopeValue}>AVIAM · {stationCodes}</Text>
+              </View>
             </View>
             {!!signOutNote && (
               <View accessibilityLiveRegion="polite" style={styles.profileNote}>
@@ -335,6 +362,62 @@ export default function HomeScreen() {
         </View>
       </Modal>
     </SafeAreaView>
+  );
+}
+
+/** «PG» for «Pedro Guzmán»; the agent's monogram in the header and the profile. */
+function initialsOf(name: string | null | undefined) {
+  const words = (name ?? '').trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return 'AR';
+  return words.slice(0, 2).map(word => word[0]!.toUpperCase()).join('');
+}
+
+/** The queue at a glance: how many operations the agent holds and where each one stands. */
+function queueSummary(operations: readonly RampAssignedOperationResponse[]) {
+  let active = 0;
+  let review = 0;
+  let approved = 0;
+  for (const item of operations) {
+    const status = item.operation.status;
+    if (status === 'InProgress' || status === 'Returned') active += 1;
+    else if (status === 'PendingReview' || status === 'InReview') review += 1;
+    else if (status === 'Approved') approved += 1;
+  }
+  return { total: operations.length, active, review, approved };
+}
+
+function QuickAction({ icon, label, spoken, onPress }: {
+  readonly icon: keyof typeof Ionicons.glyphMap;
+  readonly label: string;
+  readonly spoken: string;
+  readonly onPress: () => void;
+}) {
+  return (
+    <Pressable accessibilityLabel={spoken} accessibilityRole="button" onPress={onPress}
+      style={({ pressed }) => [styles.quickAction, pressed && styles.pressed]}>
+      <Ionicons name={icon} size={21} color={colors.white} />
+      <Text numberOfLines={1} style={styles.quickActionText}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function SummaryTile({ icon, label, value, tone = 'neutral' }: {
+  readonly icon: keyof typeof Ionicons.glyphMap;
+  readonly label: string;
+  readonly value: number;
+  readonly tone?: 'neutral' | 'brand' | 'info' | 'success';
+}) {
+  const palette = toneColors[tone];
+  return (
+    <View accessible accessibilityLabel={`${label}: ${value}`} style={styles.summaryTile}>
+      <View style={[styles.summaryIcon, { backgroundColor: palette.bg }]}>
+        <Ionicons name={icon} size={18} color={tone === 'neutral' ? colors.navy : palette.fg} />
+      </View>
+      <View style={styles.summaryCopy}>
+        <Text style={styles.summaryValue}>{value}</Text>
+        <Text numberOfLines={1} style={styles.summaryLabel}>{label}</Text>
+      </View>
+    </View>
   );
 }
 
@@ -356,11 +439,11 @@ function ScreenState({
       {loading ? (
         <ActivityIndicator accessibilityLabel="Cargando operaciones" color={colors.navy} size="large" />
       ) : (
-        <View style={styles.stateIcon}><Ionicons name={icon} size={33} color={colors.navy} /></View>
+        <View style={styles.stateIcon}><Ionicons name={icon} size={34} color={colors.navy} /></View>
       )}
       <Text accessibilityRole="header" style={styles.stateTitle}>{title}</Text>
       <Text style={styles.stateMessage}>{message}</Text>
-      {onRetry && <PrimaryButton title="ACTUALIZAR" icon="refresh" onPress={onRetry} secondary />}
+      {onRetry && <View style={styles.stateAction}><PrimaryButton title="ACTUALIZAR" icon="refresh" onPress={onRetry} secondary /></View>}
     </View>
   );
 }
@@ -386,84 +469,113 @@ function BlockingScreen({
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
-  quickActions: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingTop: 14 },
-  quickAction: { flex: 1, minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  quickActionText: { color: colors.navy, fontWeight: '800', fontSize: 12 },
   header: {
-    minHeight: 158,
     backgroundColor: colors.navy,
-    paddingHorizontal: 22,
-    paddingTop: 25,
-    paddingBottom: 25,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
+    paddingHorizontal: space.xl,
+    paddingTop: space.lg,
+    paddingBottom: space.lg,
+    gap: space.lg,
   },
-  headerCopy: { flex: 1, minWidth: 0, paddingRight: 16 },
-  eyebrow: { color: colors.orangeOnNavy, fontSize: 12, fontWeight: '900', letterSpacing: 1.8 },
-  name: { color: colors.white, fontSize: 24, fontWeight: '900', marginTop: 7 },
-  stationRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8 },
-  stationText: { flex: 1, color: '#C5D4EB', fontSize: 12, fontWeight: '700' },
+  headerTop: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  brandMark: { width: 44, height: 44, borderRadius: radius.sm, backgroundColor: colors.white },
+  headerCopy: { flex: 1, minWidth: 0 },
+  eyebrow: { color: colors.orangeOnNavy, fontSize: 13, fontWeight: '800' },
+  name: { color: colors.white, fontSize: 24, fontWeight: '900', marginTop: 2, letterSpacing: -0.2 },
   avatar: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: colors.white,
-    borderWidth: 3,
+    width: touch.min,
+    height: touch.min,
+    borderRadius: touch.min / 2,
+    backgroundColor: colors.navyRaised,
+    borderWidth: 2,
     borderColor: colors.orange,
-    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarImage: { width: 54, height: 54 },
+  avatarText: { color: colors.white, fontSize: 18, fontWeight: '900' },
   pressed: { opacity: 0.75 },
-  offlineBanner: {
-    marginHorizontal: 16,
-    marginTop: 14,
-    padding: 12,
+  quickActions: { flexDirection: 'row', gap: space.md },
+  quickAction: {
+    flex: 1,
+    minHeight: touch.min,
+    borderRadius: radius.md,
+    backgroundColor: colors.navyRaised,
     borderWidth: 1,
-    borderColor: '#F0C474',
-    borderRadius: 15,
-    backgroundColor: '#FFF8EA',
+    borderColor: colors.navyLine,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 9,
+    justifyContent: 'center',
+    gap: space.sm,
+    paddingHorizontal: space.sm,
+  },
+  quickActionText: { flexShrink: 1, color: colors.white, fontWeight: '800', fontSize: 14 },
+  offlineBanner: {
+    marginHorizontal: space.lg,
+    marginTop: space.md,
+    padding: space.md,
+    borderWidth: 1,
+    borderColor: colors.amberLine,
+    borderRadius: radius.md,
+    backgroundColor: colors.paleAmber,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   bannerCopy: { flex: 1, minWidth: 0 },
-  bannerTitle: { color: colors.ink, fontSize: 12, fontWeight: '900' },
-  bannerText: { color: colors.muted, fontSize: 12, marginTop: 2 },
-  bannerAction: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  bannerTitle: { color: colors.warning, fontSize: 14, fontWeight: '900' },
+  bannerText: { color: colors.inkSoft, fontSize: 13, marginTop: 2 },
+  bannerAction: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
+  summary: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: space.md,
+    paddingHorizontal: space.lg,
+    paddingTop: space.lg,
+  },
+  summaryTile: {
+    flexGrow: 1,
+    flexBasis: 150,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    padding: space.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  summaryIcon: { width: 38, height: 38, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' },
+  summaryCopy: { flex: 1, minWidth: 0 },
+  summaryValue: { color: colors.ink, fontSize: 22, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  summaryLabel: { color: colors.muted, fontSize: 12, fontWeight: '700' },
   sectionHeader: {
-    paddingHorizontal: 18,
-    paddingTop: 22,
-    paddingBottom: 11,
+    paddingHorizontal: space.xl - 4,
+    paddingTop: space.lg,
+    paddingBottom: space.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
+    gap: space.md,
   },
   sectionCopy: { flex: 1, minWidth: 0 },
-  sectionTitle: { color: colors.ink, fontSize: 20, fontWeight: '900' },
-  sectionSubtitle: { color: colors.muted, fontSize: 12, marginTop: 3 },
+  sectionTitle: { color: colors.ink, fontSize: 21, fontWeight: '900' },
+  sectionSubtitle: { color: colors.muted, fontSize: 13, marginTop: 2 },
   countBadge: {
-    minWidth: 38,
-    height: 30,
-    paddingHorizontal: 10,
+    minWidth: 40,
+    height: 32,
+    paddingHorizontal: 11,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 15,
-    backgroundColor: colors.paleBlue,
+    borderRadius: 16,
+    backgroundColor: colors.navy,
   },
-  countText: { color: colors.navy, fontWeight: '900' },
-  list: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 36, gap: 13 },
+  countText: { color: colors.white, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  list: { paddingHorizontal: space.lg, paddingTop: 2, paddingBottom: 40, gap: 14 },
   fill: { flex: 1 },
-  gridList: { width: '100%', maxWidth: 1100, alignSelf: 'center' },
-  gridRow: { gap: 13 },
+  gridList: { width: '100%', maxWidth: 1180, alignSelf: 'center' },
+  gridRow: { gap: 14 },
   gridCell: { flex: 1 },
   split: { flex: 1, flexDirection: 'row' },
-  splitList: { width: 400, flexGrow: 0, borderRightWidth: 1, borderRightColor: colors.border },
+  splitList: { width: 460, flexGrow: 0, borderRightWidth: 1, borderRightColor: colors.border },
   splitDetail: { flex: 1 },
   state: {
     flex: 1,
@@ -474,15 +586,16 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   stateIcon: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.paleBlue,
   },
   stateTitle: { color: colors.ink, fontSize: 20, fontWeight: '900', textAlign: 'center' },
-  stateMessage: { maxWidth: 360, color: colors.muted, lineHeight: 20, textAlign: 'center' },
+  stateMessage: { maxWidth: 380, color: colors.muted, fontSize: 15, lineHeight: 21, textAlign: 'center' },
+  stateAction: { minWidth: 240, marginTop: 6 },
   overlay: {
     flex: 1,
     alignItems: 'center',
@@ -491,43 +604,51 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(8, 28, 58, 0.56)',
+    backgroundColor: 'rgba(5, 29, 71, 0.6)',
   },
   profileCard: {
     width: '100%',
-    maxWidth: 380,
-    padding: 23,
-    borderRadius: 24,
+    maxWidth: 400,
+    padding: space.xl,
+    borderRadius: radius.xl,
     backgroundColor: colors.white,
     alignItems: 'stretch',
-    gap: 11,
+    gap: space.md,
   },
   profileClose: {
     position: 'absolute',
     zIndex: 1,
     right: 12,
     top: 12,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.paleBlue,
   },
-  profileLogo: { width: 78, height: 78, borderRadius: 20, alignSelf: 'center' },
-  profileName: { color: colors.navy, fontSize: 21, fontWeight: '900', textAlign: 'center' },
-  profileUser: { color: colors.muted, fontSize: 12, fontWeight: '700', textAlign: 'center' },
+  profileAvatar: {
+    width: 76, height: 76, borderRadius: 38, alignSelf: 'center', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.navy, borderWidth: 3, borderColor: colors.orange,
+  },
+  profileAvatarText: { color: colors.white, fontSize: 26, fontWeight: '900' },
+  profileName: { color: colors.ink, fontSize: 21, fontWeight: '900', textAlign: 'center' },
+  profileUser: { color: colors.muted, fontSize: 13, fontWeight: '700', textAlign: 'center' },
   profileScope: {
     marginVertical: 4,
     padding: 13,
-    borderRadius: 13,
+    borderRadius: radius.md,
     backgroundColor: colors.paleBlue,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
-  profileScopeLabel: { color: colors.muted, fontSize: 12, fontWeight: '900', letterSpacing: 1.2 },
-  profileScopeValue: { color: colors.navy, fontSize: 13, fontWeight: '800', marginTop: 4 },
+  profileScopeCopy: { flex: 1 },
+  profileScopeLabel: { color: colors.muted, fontSize: 12, fontWeight: '700' },
+  profileScopeValue: { color: colors.navy, fontSize: 14, fontWeight: '800', marginTop: 2 },
   profileNote: {
-    flexDirection: 'row', alignItems: 'center', gap: 8, padding: 11, borderRadius: 12,
+    flexDirection: 'row', alignItems: 'center', gap: 8, padding: 11, borderRadius: radius.sm,
     backgroundColor: colors.paleOrange,
   },
-  profileNoteText: { flex: 1, color: colors.warning, fontSize: 12, fontWeight: '700', lineHeight: 17 },
+  profileNoteText: { flex: 1, color: colors.warning, fontSize: 13, fontWeight: '700', lineHeight: 18 },
 });

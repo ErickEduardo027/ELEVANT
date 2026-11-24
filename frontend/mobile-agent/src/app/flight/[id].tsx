@@ -23,7 +23,10 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Card, PrimaryButton, StatusPill } from '../../components/ui';
+import { Card, Hint, Notice, PrimaryButton, SectionHeader, StatusPill } from '../../components/ui';
+import { OperationHero } from '../../components/operation-hero';
+import { LegTimes } from '../../components/flight-board';
+import { useMinuteClock } from '../../hooks/use-minute-clock';
 import { AttendanceDraftCard } from '../../components/attendance-draft-card';
 import { HandoffRequirementList, HandoffSheet } from '../../components/handoff-requirements';
 import {
@@ -35,14 +38,6 @@ import { OperationTabBar } from '../../components/operation-tab-bar';
 import {
   assignmentPositionLabel,
   assignmentRoleLabel,
-  flightLegTimeLabel,
-  formatOperationDate,
-  formatOperationTime,
-  operationAircraftLabel,
-  operationFlightLabel,
-  operationStandLabel,
-  operationStatusLabel,
-  operationStatusTone,
   serviceChangeSentence,
 } from '../../features/assigned-operations/presentation';
 import { getAssignedOperations } from '../../services/assigned-operations';
@@ -84,6 +79,7 @@ import { subscribeFlightReport } from '../../services/flight-report';
 import type { FlightReportOutboxItem } from '../../synchronization/flight-report-outbox';
 import { projectRampOperation } from '../../synchronization/ramp-command-projection';
 import { colors } from '../../theme/colors';
+import { radius, space, type } from '../../theme/tokens';
 import { resetToLogin } from '../../utils/session-navigation';
 import { formatStationDateTime, stationTimeTitle } from '../../utils/date-format';
 import { ConnectionBadge } from '../../components/flight-report/connection-badge';
@@ -720,6 +716,7 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
 
   // CN-22: the tab shown once the operation started; each operation opens on its summary.
   const [tab, setTab] = useState<OperationTab>('resumen');
+  const now = useMinuteClock();
   useEffect(() => { setTab('resumen'); }, [id]);
   const scrollRef = useRef<ScrollView>(null);
   const scrollYRef = useRef(0);
@@ -796,33 +793,20 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
   });
 
   const cachedBanner = cached && (
-    <View accessibilityLiveRegion="polite" style={styles.cachedBanner}>
-      <Ionicons name="cloud-offline-outline" size={20} color={colors.warning} />
-      <Text style={styles.cachedText}>Vista guardada · desliza hacia abajo para reconectar.</Text>
-    </View>
+    <Notice icon="cloud-offline-outline" message="Desliza hacia abajo para reconectar." title="Vista guardada"
+      tone="warning" />
   );
 
+  // The flight board: everything the tablet knows about the flight and how far the operation is, with the sync state.
   const hero = (
-    <Card style={styles.hero}>
-      <View style={styles.heroTop}>
-        <View style={styles.heroTitle}>
-          <Text style={styles.eyebrow}>OPERACIÓN {turnaround.operationCode}</Text>
-          <Text style={styles.flight}>{operationFlightLabel(operation)}</Text>
-          <Text style={styles.airline}>{turnaround.airline.name}</Text>
-        </View>
-        <StatusPill
-          text={operationStatusLabel(shown.operation.status)}
-          tone={operationStatusTone(shown.operation.status)}
-        />
-      </View>
-
-      <View style={styles.heroMeta}>
-        <Meta icon="calendar-outline" label={formatOperationDate(turnaround.operationDate)} />
-        <Meta icon="location-outline" label={`${turnaround.station.code} · ${turnaround.station.name}`} />
-        <Meta icon="navigate-outline" label={operationStandLabel(operation)} />
-        <Meta icon="airplane-outline" label={operationAircraftLabel(operation)} />
-      </View>
-    </Card>
+    <OperationHero
+      checklist={checklist}
+      connection={<ConnectionBadge />}
+      now={now}
+      operation={shown}
+      requirements={requirements}
+      started={!notStarted}
+    />
   );
 
   const startControl = (
@@ -866,19 +850,24 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
   );
 
   const returnedBlock = (operation.review?.status === 'Returned' || correctionPending) && (
-    <View style={styles.handoffCard}>
-      <Text accessibilityRole="header" style={styles.handoffTitle}>
-        {operation.operation.status === 'Returned' ? 'Devuelta por OCC' : 'Corrección en curso'}
-      </Text>
-      <Text style={styles.startDescription}>
-        Revisión {operation.review?.revisionNumber ?? '—'} · Motivo de devolución:
-      </Text>
-      <Text style={styles.nextPhaseWarning}>
+    <View style={[styles.handoffCard, styles.returnedCard]}>
+      <View style={styles.handoffHeader}>
+        <View style={[styles.handoffIcon, styles.returnedIcon]}>
+          <Ionicons name="arrow-undo-outline" size={22} color={colors.danger} />
+        </View>
+        <View style={styles.handoffCopy}>
+          <Text accessibilityRole="header" style={styles.handoffTitle}>
+            {operation.operation.status === 'Returned' ? 'Devuelta por OCC' : 'Corrección en curso'}
+          </Text>
+          <Text style={styles.startDescription}>
+            Revisión {operation.review?.revisionNumber ?? '—'} · Motivo de devolución:
+          </Text>
+        </View>
+      </View>
+      <Text style={styles.returnReason}>
         {operation.review?.returnReason ?? 'Actualiza el detalle para consultar el motivo.'}
       </Text>
-      <Text style={styles.startDescription}>
-        El checklist y los servicios enviados anteriormente se conservan como historial.
-      </Text>
+      <Hint>El checklist y los servicios enviados se conservan como historial.</Hint>
       {(operation.operation.status === 'Returned' || correctionPending) && (
         <PrimaryButton
           disabled={cached || correcting ||
@@ -900,7 +889,8 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
   const movement = (
     <>
       {/* S6 (D-S6): whose clock the times use, «Hora local de PUJ», never the zone's IANA id. */}
-      <SectionTitle title="Movimiento aéreo" subtitle={stationTimeTitle(turnaround.station.code)} />
+      <SectionHeader icon="swap-horizontal-outline" title="Movimiento aéreo"
+        subtitle={stationTimeTitle(turnaround.station.code)} />
       <View style={styles.legs}>
         {turnaround.arrival && (
           <FlightLegCard kind="Llegada" leg={turnaround.arrival} timeZone={timeZone} />
@@ -924,7 +914,8 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
   const correctionMode = executing && operation.review?.status === 'Returned';
   const services = (
     <>
-      <SectionTitle
+      <SectionHeader
+        icon="construct-outline"
         title="Servicios contratados"
         subtitle={`${shown.services.length} ${shown.services.length === 1 ? 'línea' : 'líneas'} de servicio`}
       />
@@ -974,13 +965,12 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
         <Ionicons name="alert-circle-outline" size={26} color={colors.navy} />
       </View>
       <View style={styles.nextPhaseCopy}>
-        <Text style={styles.nextPhaseTitle}>Incidencias</Text>
-        <Text style={styles.nextPhaseText}>
-          Registra eventos operativos, de seguridad, equipo o documentación. El reporte se conserva localmente si pierdes la conexión.
-        </Text>
+        <Text accessibilityRole="header" style={styles.nextPhaseTitle}>Incidencias</Text>
+        <Hint>Seguridad, equipo, documentación u operación. Sin señal se guarda en la tablet.</Hint>
         <PrimaryButton
           icon="alert-circle-outline"
           onPress={openIncidents}
+          secondary
           title="ABRIR INCIDENCIAS"
         />
       </View>
@@ -993,23 +983,25 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
         <Ionicons name="shield-checkmark-outline" size={26} color={colors.navy} />
       </View>
       <View style={styles.nextPhaseCopy}>
-        <Text style={styles.nextPhaseTitle}>Checklist operativo</Text>
-        {/* N1: where the checklist stands, once the operation started; nothing while the tablet cannot tell. */}
-        {!notStarted && <ChecklistStandingPill standing={checklist} />}
-        <Text style={styles.nextPhaseText}>
+        <View style={styles.nextPhaseHead}>
+          <Text accessibilityRole="header" style={styles.nextPhaseTitle}>Checklist operativo</Text>
+          {/* N1: where the checklist stands, once the operation started; nothing while the tablet cannot tell. */}
+          {!notStarted && <ChecklistStandingPill standing={checklist} />}
+        </View>
+        <Hint>
           {executionClosed
             ? 'La ejecución está cerrada: el checklist se consulta tal como se envió.'
-            : 'Completa las secciones vigentes para esta operación. El envío del checklist no finaliza ni remite la operación a OCC.'}
-        </Text>
+            : 'Enviar el checklist no entrega la operación a OCC.'}
+        </Hint>
         {notStarted && (
-          <Text style={styles.nextPhaseWarning}>
+          <Hint icon="lock-closed-outline" tone="warning">
             Inicia la operación antes de completar el checklist.
-          </Text>
+          </Hint>
         )}
         {cached && executing && (
-          <Text style={styles.nextPhaseWarning}>
-            Sin señal se abre la última copia del checklist guardada en el dispositivo; el envío sale al reconectar.
-          </Text>
+          <Hint icon="cloud-offline-outline" tone="warning">
+            Sin señal se abre la última copia guardada; el envío sale al reconectar.
+          </Hint>
         )}
         {/* N1: after the hand-off the sent checklist still opens, read-only; only an operation not started keeps
             it off. */}
@@ -1044,7 +1036,7 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
 
   const assignmentSection = (
     <>
-      <SectionTitle title="Asignación" />
+      <SectionHeader icon="person-outline" title="Asignación" />
       <Card style={styles.assignmentCard}>
         {assignmentRole ? <Meta icon="briefcase-outline" label={assignmentRole} dark /> : null}
         {/* N9: the position by its name only; its code («RAMP-AGENT») is for OCC. CN-25: in Spanish when the
@@ -1073,7 +1065,6 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
     ? [
         { key: 'cached', node: cachedBanner },
         { key: 'hero', node: hero },
-        { key: 'connection', node: <ConnectionBadge /> },
         { key: 'tabs', node: tabBar },
         { key: 'start', node: startControl, tab: 'resumen' },
         { key: 'attendance', node: attendance, tab: 'resumen' },
@@ -1091,7 +1082,6 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
         { key: 'cached', node: cachedBanner },
         { key: 'hero', node: hero },
         { key: 'start', node: startControl },
-        { key: 'connection', node: <ConnectionBadge /> },
         { key: 'tabs', node: tabBar },
         { key: 'flight', node: flightCards },
         { key: 'documents', node: documentsPanel },
@@ -1169,46 +1159,56 @@ function OperationStartControl({
 }) {
   const isAssigned = operation.status === 'Assigned';
   const isInProgress = operation.status === 'InProgress';
+  const closed = CLOSED_TITLES[operation.status];
+  const tone = isInProgress ? 'active' : isAssigned ? 'ready' : closed ? 'closed' : 'idle';
 
   return (
     <View
       accessibilityLiveRegion="polite"
-      style={[
-        styles.startControl,
-        isInProgress && styles.startControlActive,
-      ]}
+      style={[styles.startControl, START_LOOKS[tone].box]}
     >
-      <View style={styles.startRail} />
-      <View style={styles.startBody}>
-        <View style={styles.startHeading}>
-          <View
-            style={[
-              styles.startIcon,
-              isInProgress && styles.startIconActive,
-            ]}
-          >
-            <Ionicons
-              name={isInProgress ? 'play' : 'flag-outline'}
-              size={22}
-              color={isInProgress ? colors.success : colors.orange}
+      <View style={styles.startHeading}>
+        <View style={[styles.startIcon, { backgroundColor: START_LOOKS[tone].iconBg }]}>
+          <Ionicons
+            name={isInProgress ? 'play' : isAssigned ? 'flag' : closed ? 'checkmark-done' : 'pause'}
+            size={22}
+            color={START_LOOKS[tone].icon}
+          />
+        </View>
+        <View style={styles.startCopy}>
+          <Text accessibilityRole="header" style={styles.startTitle}>
+            {isInProgress
+              ? 'Operación en atención'
+              : isAssigned
+                ? 'Lista para iniciar'
+                : closed ?? 'Inicio no disponible'}
+          </Text>
+          {isAssigned && !refusal && (
+            <Text style={styles.startDescription}>Confirma que estás en posición antes de iniciar.</Text>
+          )}
+          {!isAssigned && !isInProgress && !closed && (
+            <Text style={styles.startDescription}>El estado actual no permite registrar un nuevo inicio.</Text>
+          )}
+        </View>
+        {isAssigned && (
+          <View style={styles.startAction}>
+            <PrimaryButton
+              disabled={starting}
+              icon="play"
+              onPress={onStart}
+              title={starting ? 'INICIANDO…' : 'INICIAR OPERACIÓN'}
+              variant="accent"
             />
           </View>
-          <View style={styles.startCopy}>
-            <Text style={styles.startEyebrow}>CONTROL DE OPERACIÓN</Text>
-            <Text accessibilityRole="header" style={styles.startTitle}>
-              {isInProgress
-                ? 'Operación en atención'
-                : isAssigned
-                  ? 'Lista para iniciar'
-                  : 'Inicio no disponible'}
-            </Text>
-          </View>
-        </View>
+        )}
+      </View>
 
-        {isInProgress ? (
-          <View style={styles.startedAtRow}>
-            <Ionicons name="checkmark-circle" size={19} color={colors.success} />
-            <Text style={styles.startedAtText}>
+      {(isInProgress || closed) && (
+        <View style={styles.startedAtRow}>
+          <View style={styles.startedAtItem}>
+            <Ionicons name={onDevice ? 'phone-portrait-outline' : 'time-outline'} size={17}
+              color={onDevice ? colors.warning : colors.success} />
+            <Text style={[styles.startedAtText, onDevice && { color: colors.warning }]}>
               {onDevice
                 ? `Inicio guardado en el dispositivo ${operation.actualStartAt
                   ? formatStationDateTime(operation.actualStartAt, timeZone) : ''} · se envía a ELEVANT en cuanto haya señal`
@@ -1217,57 +1217,53 @@ function OperationStartControl({
                   : 'Inicio confirmado por ELEVANT'}
             </Text>
           </View>
-        ) : isAssigned ? (
-          <>
-            <Text style={styles.startDescription}>
-              Confirma que estás en posición y listo para atender esta operación.
-            </Text>
-            {refusal && (
-              <View style={styles.startOfflineHint}>
-                <Ionicons name="alert-circle-outline" size={18} color={colors.danger} />
-                <Text style={styles.startOfflineText}>
-                  ELEVANT rechazó el inicio guardado en el dispositivo: {refusal} Si corresponde, vuelve a iniciar.
-                </Text>
-              </View>
-            )}
-            <PrimaryButton
-              disabled={starting}
-              icon="play"
-              onPress={onStart}
-              title={starting ? 'INICIANDO…' : 'INICIAR OPERACIÓN'}
-            />
-          </>
-        ) : (
-          <Text style={styles.startDescription}>
-            El estado actual no permite registrar un nuevo inicio.
-          </Text>
-        )}
-
-        {notice && (
-          <View
-            accessibilityLiveRegion={notice.tone === 'error' ? 'assertive' : 'polite'}
-            style={[
-              styles.startNotice,
-              notice.tone === 'success' && styles.startNoticeSuccess,
-              notice.tone === 'warning' && styles.startNoticeWarning,
-              notice.tone === 'error' && styles.startNoticeError,
-            ]}
-          >
-            <Ionicons
-              name={notice.tone === 'success' ? 'checkmark-circle-outline' : 'alert-circle-outline'}
-              size={20}
-              color={notice.tone === 'success' ? colors.success : notice.tone === 'warning' ? colors.warning : colors.danger}
-            />
-            <View style={styles.startNoticeCopy}>
-              <Text style={styles.startNoticeTitle}>{notice.title}</Text>
-              <Text style={styles.startNoticeText}>{notice.message}</Text>
+          {operation.actualEndAt ? (
+            <View style={styles.startedAtItem}>
+              <Ionicons name="stop-circle-outline" size={17} color={colors.inkSoft} />
+              <Text style={[styles.startedAtText, { color: colors.inkSoft }]}>
+                {`Fin registrado ${formatStationDateTime(operation.actualEndAt, timeZone)}`}
+              </Text>
             </View>
-          </View>
-        )}
-      </View>
+          ) : null}
+        </View>
+      )}
+
+      {isAssigned && refusal && (
+        <Notice tone="danger" title="ELEVANT rechazó el inicio guardado en el dispositivo"
+          message={`${refusal} Si corresponde, vuelve a iniciar.`} />
+      )}
+
+      {notice && (
+        <Notice
+          message={notice.message}
+          title={notice.title}
+          tone={notice.tone === 'success' ? 'success' : notice.tone === 'warning' ? 'warning' : 'danger'}
+        />
+      )}
     </View>
   );
 }
+
+/** The hand-off card's title once the operation left the agent's hands. */
+const DELIVERED_TITLES: Readonly<Record<string, string>> = {
+  PendingReview: 'Pendiente de revisión OCC',
+  InReview: 'En revisión de OCC',
+  Approved: 'Aprobada por OCC',
+};
+
+/** What the start's card says once the execution closed for the agent. */
+const CLOSED_TITLES: Readonly<Record<string, string>> = {
+  PendingReview: 'Entregada a OCC',
+  InReview: 'En revisión de OCC',
+  Approved: 'Aprobada por OCC',
+};
+
+const START_LOOKS = {
+  ready: { box: { borderColor: colors.orangeLine }, iconBg: colors.paleOrange, icon: colors.orange },
+  active: { box: { borderColor: colors.greenLine }, iconBg: colors.paleGreen, icon: colors.success },
+  closed: { box: { borderColor: colors.border }, iconBg: colors.paleGreen, icon: colors.success },
+  idle: { box: { borderColor: colors.border }, iconBg: colors.surfaceSunken, icon: colors.muted },
+} as const;
 
 function OperationSubmissionControl({
   blocked,
@@ -1302,11 +1298,12 @@ function OperationSubmissionControl({
   readonly submitting: boolean;
 }) {
   const [confirming, setConfirming] = useState(false);
-  const delivered = operation.status === 'PendingReview' && !pending;
+  // Handed off: waiting for OCC, in its review or approved; the card says where it stands instead of asking again.
+  const delivered = ['PendingReview', 'InReview', 'Approved'].includes(operation.status) && !pending;
   const awaitingHandoff = operation.status === 'InProgress' && !pending;
   const canSubmit = !blocked && !submitting && (
     pending !== null || (operation.status === 'InProgress' && handoffHoldsFor(requirements).length === 0));
-  const title = delivered ? 'Pendiente de revisión OCC' : correctionRevision
+  const title = delivered ? DELIVERED_TITLES[operation.status] ?? 'Pendiente de revisión OCC' : correctionRevision
     ? `Reenviar corrección ${correctionRevision} a OCC` : 'Entregar operación a OCC';
   // N1: the tablet's own sheet confirms a new hand-off; REINTENTAR ENTREGA resends the reserved one without it.
   const submit = () => {
@@ -1340,7 +1337,7 @@ function OperationSubmissionControl({
   return (
     <View style={[styles.handoffCard, delivered && styles.handoffDelivered]}>
       <View style={styles.handoffHeader}>
-        <View style={styles.handoffIcon}>
+        <View style={[styles.handoffIcon, delivered && styles.handoffIconDelivered]}>
           <Ionicons
             name={delivered ? 'checkmark-done-outline' : 'send-outline'}
             size={22}
@@ -1348,15 +1345,17 @@ function OperationSubmissionControl({
           />
         </View>
         <View style={styles.handoffCopy}>
-          <Text style={styles.startEyebrow}>CIERRE DE EJECUCIÓN</Text>
+          <Text style={styles.handoffKicker}>Cierre de ejecución</Text>
           <Text accessibilityRole="header" style={styles.handoffTitle}>{title}</Text>
         </View>
       </View>
-      <Text style={styles.startDescription}>
+      <Hint>
         {delivered
-          ? 'La ejecución quedó cerrada. OCC revisará el checklist, los servicios y las incidencias registradas.'
-          : 'Antes de entregar, envía el checklist, termina todos los servicios, firma la Orden de Servicio y espera a que todo lo que registraste llegue a ELEVANT.'}
-      </Text>
+          ? operation.status === 'Approved'
+            ? 'OCC aprobó la ejecución: checklist, servicios e incidencias quedaron registrados.'
+            : 'La ejecución quedó cerrada. OCC revisará el checklist, los servicios y las incidencias.'
+          : 'Para entregar: checklist enviado, servicios terminados, Orden de Servicio firmada y todo sincronizado.'}
+      </Hint>
       {operation.status === 'InProgress' && !pending && (
         <View style={styles.handoffNoteGroup}>
           <Text style={styles.handoffLabel}>Nota para OCC · opcional</Text>
@@ -1376,16 +1375,16 @@ function OperationSubmissionControl({
         </View>
       )}
       {pending && (
-        <Text style={styles.nextPhaseWarning}>
+        <Hint icon="lock-closed-outline" tone="warning">
           Hay un envío reservado con nota fija. Reconecta y reintenta; no se creará una segunda entrega.
-        </Text>
+        </Hint>
       )}
       {/* N1: what the hand-off needs, each with its state, instead of asking the agent to confirm it. */}
       {awaitingHandoff && <HandoffRequirementList actionFor={actionFor} requirements={requirements} />}
       {blocked && !delivered && (
-        <Text style={styles.nextPhaseWarning}>
+        <Hint icon="cloud-offline-outline" tone="warning">
           Para entregar, actualiza el detalle con señal y espera a que terminen los cambios en curso.
-        </Text>
+        </Hint>
       )}
       {(operation.status === 'InProgress' || pending) && (
         <PrimaryButton
@@ -1393,6 +1392,7 @@ function OperationSubmissionControl({
           icon={pending ? 'refresh-outline' : 'send-outline'}
           onPress={submit}
           title={submitting ? 'ENVIANDO…' : pending ? 'REINTENTAR ENTREGA' : 'ENTREGAR A OCC'}
+          variant="accent"
         />
       )}
       {confirming && awaitingHandoff && (
@@ -1408,25 +1408,11 @@ function OperationSubmissionControl({
         />
       )}
       {notice && (
-        <View
-          accessibilityLiveRegion={notice.tone === 'error' ? 'assertive' : 'polite'}
-          style={[
-            styles.startNotice,
-            notice.tone === 'success' && styles.startNoticeSuccess,
-            notice.tone === 'warning' && styles.startNoticeWarning,
-            notice.tone === 'error' && styles.startNoticeError,
-          ]}
-        >
-          <Ionicons
-            name={notice.tone === 'success' ? 'checkmark-circle-outline' : 'alert-circle-outline'}
-            size={20}
-            color={notice.tone === 'success' ? colors.success : notice.tone === 'warning' ? colors.warning : colors.danger}
-          />
-          <View style={styles.startNoticeCopy}>
-            <Text style={styles.startNoticeTitle}>{notice.title}</Text>
-            <Text style={styles.startNoticeText}>{notice.message}</Text>
-          </View>
-        </View>
+        <Notice
+          message={notice.message}
+          title={notice.title}
+          tone={notice.tone === 'success' ? 'success' : notice.tone === 'warning' ? 'warning' : 'danger'}
+        />
       )}
     </View>
   );
@@ -1668,21 +1654,13 @@ function DetailStateScreen({ onRetry, state }: { readonly onRetry: () => void; r
   return (
     <View accessibilityLiveRegion="assertive" style={styles.stateScreen}>
       <View style={styles.stateIcon}>
-        <Ionicons name="warning-outline" size={34} color={colors.warning} />
+        <Ionicons name={state === 'offline' ? 'cloud-offline-outline' : state === 'not-found' ? 'airplane-outline'
+          : 'warning-outline'} size={34} color={colors.warning} />
       </View>
       <Text accessibilityRole="header" style={styles.stateTitle}>{copy[0]}</Text>
       <Text style={styles.stateMessage}>{copy[1]}</Text>
       <PrimaryButton title="REINTENTAR" icon="refresh" onPress={onRetry} secondary />
       <PrimaryButton title="VOLVER A OPERACIONES" icon="arrow-back" onPress={() => router.replace('/home')} secondary />
-    </View>
-  );
-}
-
-function SectionTitle({ subtitle, title }: { readonly subtitle?: string; readonly title: string }) {
-  return (
-    <View style={styles.sectionTitleRow}>
-      <Text accessibilityRole="header" style={styles.sectionTitle}>{title}</Text>
-      {subtitle && <Text style={styles.sectionSubtitle}>{subtitle}</Text>}
     </View>
   );
 }
@@ -1696,28 +1674,17 @@ function FlightLegCard({
   readonly leg: RampFlightLegResponse;
   readonly timeZone: string;
 }) {
-  const currentTime = flightLegTimeLabel(leg);
   return (
     <Card style={styles.legCard}>
-      <View style={styles.legHeader}>
-        <View style={styles.legKind}>
-          <Ionicons name={kind === 'Llegada' ? 'log-in-outline' : 'log-out-outline'} size={18} color={colors.navy} />
-          <Text style={styles.legKindText}>{kind.toUpperCase()}</Text>
-        </View>
-        <Text style={styles.legFlight}>{leg.flightNumber}</Text>
-      </View>
       <View style={styles.routeRow}>
         <Airport code={leg.origin.iataCode} name={leg.origin.name} />
         <View style={styles.routeLine}>
-          <View style={styles.routeDot} />
           <Ionicons name="airplane" size={18} color={colors.orange} />
-          <View style={styles.routeDot} />
         </View>
         <Airport align="right" code={leg.destination.iataCode} name={leg.destination.name} />
       </View>
       <View style={styles.legTime}>
-        <Text style={styles.timeLabel}>{currentTime.label}</Text>
-        <Text style={styles.timeValue}>{formatOperationTime(currentTime.value, timeZone)}</Text>
+        <LegTimes kind={kind === 'Llegada' ? 'arrival' : 'departure'} leg={leg} timeZone={timeZone} />
       </View>
     </Card>
   );
@@ -1743,202 +1710,146 @@ function Meta({
 }) {
   return (
     <View style={styles.metaRow}>
-      <Ionicons name={icon} size={17} color={dark ? colors.navy : '#C5D4EB'} />
+      <Ionicons name={icon} size={17} color={dark ? colors.navy : colors.onNavyMuted} />
       <Text style={[styles.metaText, dark && styles.metaTextDark]}>{label}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { width: '100%', maxWidth: 960, alignSelf: 'center', padding: 16, paddingBottom: 38 },
+  container: { width: '100%', maxWidth: 1100, alignSelf: 'center', padding: space.lg, paddingBottom: 38 },
   // CN-22: each section spaces itself, so an empty or hidden one takes no room.
-  section: { gap: 12 },
-  sectionSpaced: { marginTop: 12 },
+  section: { gap: space.md },
+  sectionSpaced: { marginTop: space.lg },
   sectionHidden: { display: 'none' },
-  cachedBanner: {
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#F0C474',
-    borderRadius: 14,
-    backgroundColor: '#FFF8EA',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
-  },
-  cachedText: { flex: 1, color: colors.warning, fontSize: 12, fontWeight: '700' },
-  hero: { padding: 19, backgroundColor: colors.navy, borderColor: colors.navy },
-  heroTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  heroTitle: { flex: 1, minWidth: 0 },
-  eyebrow: { color: colors.orangeOnNavy, fontSize: 12, fontWeight: '900', letterSpacing: 1.3 },
-  flight: { color: colors.white, fontSize: 26, fontWeight: '900', marginTop: 5 },
-  airline: { color: '#C5D4EB', fontSize: 12, marginTop: 3 },
-  heroMeta: { borderTopWidth: 1, borderTopColor: '#34558A', marginTop: 17, paddingTop: 14, gap: 9 },
   startControl: {
-    borderWidth: 1,
-    borderColor: '#FFD0B7',
-    borderRadius: 18,
+    padding: space.lg,
+    gap: space.md,
+    borderWidth: 1.5,
+    borderRadius: radius.lg,
     backgroundColor: colors.white,
-    flexDirection: 'row',
-    overflow: 'hidden',
-    shadowColor: '#081C3A',
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
   },
-  startControlActive: { borderColor: '#B9DFC9', backgroundColor: '#F8FCFA' },
-  startRail: { width: 6, backgroundColor: colors.orange },
-  startBody: { flex: 1, minWidth: 0, padding: 16, gap: 12 },
-  startHeading: { flexDirection: 'row', alignItems: 'center', gap: 11 },
-  startIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.paleOrange,
-  },
-  startIconActive: { backgroundColor: '#E9F7EF' },
-  startCopy: { flex: 1, minWidth: 0 },
-  startEyebrow: { color: colors.muted, fontSize: 10, fontWeight: '900', letterSpacing: 1.25 },
-  startTitle: { color: colors.ink, fontSize: 19, fontWeight: '900', marginTop: 2 },
-  startDescription: { color: colors.muted, fontSize: 13, lineHeight: 19 },
-  startOfflineHint: {
-    padding: 10,
-    borderRadius: 12,
-    backgroundColor: '#FFF8EA',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  startOfflineText: { flex: 1, color: colors.warning, fontSize: 12, fontWeight: '700' },
+  startHeading: { flexDirection: 'row', alignItems: 'center', gap: space.md, flexWrap: 'wrap' },
+  startIcon: { width: 48, height: 48, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  startCopy: { flex: 1, minWidth: 180 },
+  startTitle: { ...type.title, color: colors.ink },
+  startDescription: { color: colors.muted, fontSize: 13, lineHeight: 18, marginTop: 2 },
+  startAction: { minWidth: 240, flexGrow: 1, maxWidth: 360 },
   startedAtRow: {
-    paddingTop: 11,
+    paddingTop: space.md,
     borderTopWidth: 1,
-    borderTopColor: '#D7EBDF',
+    borderTopColor: colors.divider,
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    flexWrap: 'wrap',
+    columnGap: space.xl,
+    rowGap: space.sm,
   },
-  startedAtText: { flex: 1, color: colors.success, fontSize: 13, fontWeight: '800' },
-  startNotice: {
-    padding: 11,
-    borderRadius: 12,
-    borderWidth: 1,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 9,
-  },
-  startNoticeSuccess: { borderColor: '#B9DFC9', backgroundColor: '#E9F7EF' },
-  startNoticeWarning: { borderColor: '#F0C474', backgroundColor: '#FFF8EA' },
-  startNoticeError: { borderColor: '#F1BBBB', backgroundColor: '#FDECEC' },
-  startNoticeCopy: { flex: 1, minWidth: 0 },
-  startNoticeTitle: { color: colors.ink, fontSize: 12, fontWeight: '900' },
-  startNoticeText: { color: colors.muted, fontSize: 12, lineHeight: 17, marginTop: 2 },
+  startedAtItem: { flexDirection: 'row', alignItems: 'center', gap: space.sm, flexShrink: 1 },
+  startedAtText: { flexShrink: 1, color: colors.success, fontSize: 14, fontWeight: '800', fontVariant: ['tabular-nums'] },
   handoffCard: {
-    marginTop: 8,
-    padding: 16,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#FFD0B7',
+    padding: space.lg,
+    borderRadius: radius.lg,
+    borderWidth: 1.5,
+    borderColor: colors.orangeLine,
     backgroundColor: colors.white,
-    gap: 12,
+    gap: space.md,
   },
-  handoffDelivered: { borderColor: '#B9DFC9', backgroundColor: '#F8FCFA' },
-  handoffHeader: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  handoffDelivered: { borderColor: colors.greenLine },
+  returnedCard: { borderColor: colors.redLine },
+  handoffHeader: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   handoffIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 48,
+    height: 48,
+    borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.paleOrange,
   },
+  handoffIconDelivered: { backgroundColor: colors.paleGreen },
+  returnedIcon: { backgroundColor: colors.paleRed },
   handoffCopy: { flex: 1, minWidth: 0 },
-  handoffTitle: { color: colors.ink, fontSize: 18, fontWeight: '900', marginTop: 2 },
+  handoffKicker: { color: colors.muted, fontSize: 12, fontWeight: '700' },
+  handoffTitle: { ...type.title, color: colors.ink, marginTop: 1 },
+  returnReason: {
+    color: colors.ink,
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 21,
+    padding: space.md,
+    borderRadius: radius.sm,
+    backgroundColor: colors.paleRed,
+  },
   handoffNoteGroup: { gap: 6 },
   handoffLabel: { color: colors.navy, fontSize: 13, fontWeight: '800' },
   handoffNoteInput: {
     minHeight: 96,
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    paddingHorizontal: 12,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.sm,
+    paddingHorizontal: space.md,
     paddingVertical: 11,
     color: colors.ink,
     backgroundColor: colors.white,
-    fontSize: 14,
+    fontSize: 15,
     lineHeight: 21,
   },
-  handoffCounter: { alignSelf: 'flex-end', color: colors.muted, fontSize: 11 },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  metaText: { flex: 1, color: colors.white, fontSize: 12, fontWeight: '700' },
+  handoffCounter: { alignSelf: 'flex-end', color: colors.muted, fontSize: 11, fontVariant: ['tabular-nums'] },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  metaText: { flex: 1, color: colors.white, fontSize: 14, fontWeight: '700' },
   metaTextDark: { color: colors.ink },
-  sectionTitleRow: { marginTop: 7 },
-  sectionTitle: { color: colors.ink, fontSize: 18, fontWeight: '900' },
-  sectionSubtitle: { color: colors.muted, fontSize: 12, marginTop: 2 },
-  legs: { gap: 10 },
-  legCard: { gap: 15 },
-  legHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  legKind: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  legKindText: { color: colors.navy, fontSize: 12, fontWeight: '900', letterSpacing: 1.2 },
-  legFlight: { color: colors.ink, fontSize: 17, fontWeight: '900' },
-  routeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  legs: { gap: space.md },
+  legCard: { gap: 14 },
+  routeRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   // N11: a long name («Punta Cana Development») takes up to two lines beside the route, not a fixed 76 dp column.
   airport: { flexShrink: 1, minWidth: 76, maxWidth: '40%' },
   airportRight: { alignItems: 'flex-end' },
-  airportCode: { color: colors.navy, fontSize: 20, fontWeight: '900' },
+  airportCode: { color: colors.navy, fontSize: 24, fontWeight: '900', letterSpacing: 0.5 },
   airportName: { color: colors.muted, fontSize: 12, lineHeight: 16, marginTop: 2 },
   textRight: { textAlign: 'right' },
   routeLine: {
     flex: 1,
     height: 23,
-    paddingBottom: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: '#CBD6E6',
-    flexDirection: 'row',
+    marginBottom: 8,
+    borderBottomWidth: 1.5,
+    borderStyle: 'dashed',
+    borderBottomColor: colors.borderStrong,
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
   },
-  routeDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: '#9EACC0' },
-  legTime: { paddingTop: 11, borderTopWidth: 1, borderTopColor: '#E7ECF3', flexDirection: 'row', justifyContent: 'space-between' },
-  timeLabel: { color: colors.muted, fontSize: 12, fontWeight: '800' },
-  timeValue: { color: colors.navy, fontSize: 16, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  pendingCard: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  legTime: { paddingTop: space.md, borderTopWidth: 1, borderTopColor: colors.divider, flexDirection: 'row' },
+  pendingCard: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   pendingCopy: { flex: 1 },
   pendingTitle: { color: colors.ink, fontWeight: '900' },
-  pendingText: { color: colors.muted, fontSize: 12, lineHeight: 17, marginTop: 3 },
-  servicesList: { gap: 10 },
-  servicesCard: { paddingVertical: 6 },
-  serviceRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 },
-  serviceSeparator: { borderBottomWidth: 1, borderBottomColor: colors.border },
-  serviceNumber: { width: 29, height: 29, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.paleBlue },
-  serviceNumberText: { color: colors.navy, fontSize: 12, fontWeight: '900' },
-  serviceCopy: { flex: 1, minWidth: 0 },
-  serviceName: { color: colors.ink, fontSize: 13, fontWeight: '900' },
-  serviceCode: { color: colors.muted, fontSize: 12, fontWeight: '800', marginTop: 2 },
-  serviceQuantity: { color: colors.navy, fontSize: 12, fontWeight: '700', marginTop: 4 },
-  noServices: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 },
-  noServicesText: { flex: 1, color: colors.muted, fontSize: 12 },
-  assignmentCard: { gap: 10 },
+  pendingText: { color: colors.muted, fontSize: 13, lineHeight: 18, marginTop: 3 },
+  servicesList: { gap: space.md },
+  noServices: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 14 },
+  noServicesText: { flex: 1, color: colors.muted, fontSize: 13 },
+  assignmentCard: { gap: space.md },
   nextPhase: {
-    marginTop: 6,
-    padding: 15,
+    padding: space.lg,
     borderWidth: 1,
-    borderColor: '#C8D7EC',
-    borderRadius: 17,
-    backgroundColor: '#EDF4FC',
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    backgroundColor: colors.white,
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 12,
+    gap: space.md,
   },
-  nextPhaseIcon: { width: 45, height: 45, borderRadius: 23, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.white },
+  nextPhaseIcon: {
+    width: 48, height: 48, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.paleBlue,
+  },
   nextPhaseCopy: { flex: 1, gap: 10 },
-  nextPhaseTitle: { color: colors.navy, fontWeight: '900' },
-  nextPhaseText: { color: colors.muted, fontSize: 13, lineHeight: 19 },
-  nextPhaseWarning: { color: colors.warning, fontSize: 12, fontWeight: '700', lineHeight: 17 },
-  stateScreen: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30, gap: 13, backgroundColor: colors.background },
-  stateIcon: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFF8EA' },
-  stateTitle: { color: colors.ink, fontSize: 20, fontWeight: '900', textAlign: 'center' },
-  stateMessage: { maxWidth: 360, color: colors.muted, lineHeight: 20, textAlign: 'center' },
+  nextPhaseHead: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: space.sm },
+  nextPhaseTitle: { ...type.title, color: colors.ink },
+  nextPhaseWarning: { color: colors.warning, fontSize: 13, fontWeight: '700', lineHeight: 18 },
+  stateScreen: {
+    flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30, gap: 14, backgroundColor: colors.background,
+  },
+  stateIcon: {
+    width: 76, height: 76, borderRadius: 38, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.paleAmber,
+  },
+  stateTitle: { ...type.title, color: colors.ink, textAlign: 'center' },
+  stateMessage: { maxWidth: 380, color: colors.muted, fontSize: 15, lineHeight: 21, textAlign: 'center' },
 });

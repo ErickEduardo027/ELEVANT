@@ -11,7 +11,7 @@ import {
 } from '../../services/flight-report';
 import { flushPendingRampIncidents } from '../../services/ramp-incidents';
 import { clockSkewWarning, loadServerClock, subscribeServerClock } from '../../synchronization/server-clock';
-import { colors } from '../../theme/colors';
+import { colors, toneColors } from '../../theme/colors';
 import { radius, space, touch } from '../../theme/tokens';
 
 /** While something waits on the device, the queue is tried again this often even if no event arrives (3-I). */
@@ -70,16 +70,17 @@ export function ConnectionBadge() {
   const clockWarning = clockSkewWarning(clockOffset);
   const tone = blocked > 0 ? 'blocked' : !online ? 'offline' : pending > 0 || syncing ? 'syncing' : 'online';
   const look = {
-    online: { bg: '#E6F4EC', fg: colors.success, icon: 'cloud-done-outline' as const, text: 'En línea' },
-    syncing: { bg: colors.paleBlue, fg: colors.navy, icon: 'sync' as const, text: `Enviando ${pending}` },
-    offline: { bg: colors.paleOrange, fg: colors.warning, icon: 'cloud-offline-outline' as const,
+    online: { ...toneColors.success, icon: 'cloud-done-outline' as const, text: 'En línea' },
+    syncing: { ...toneColors.info, icon: 'sync' as const, text: `Enviando ${pending}` },
+    offline: { ...toneColors.warning, icon: 'cloud-offline-outline' as const,
       text: pending ? `Sin señal · ${pending} en el dispositivo` : 'Sin señal' },
-    blocked: { bg: '#FBEAEA', fg: colors.danger, icon: 'alert-circle' as const, text: `${blocked} por revisar` },
+    blocked: { ...toneColors.danger, icon: 'alert-circle' as const, text: `${blocked} por revisar` },
   }[tone];
   return (
     <>
       <Pressable accessibilityRole="button" accessibilityLabel={`${look.text}. Abrir sincronización`}
-        onPress={() => router.push('/sync')} style={[styles.badge, { backgroundColor: look.bg }]}>
+        onPress={() => router.push('/sync')} style={({ pressed }) => [styles.badge, { backgroundColor: look.bg, borderColor: look.line },
+          pressed && styles.pressed]}>
         <Ionicons name={look.icon} size={18} color={look.fg} />
         <Text style={[styles.text, { color: look.fg }]}>{look.text}</Text>
       </Pressable>
@@ -95,7 +96,8 @@ export function ConnectionBadge() {
 
 const styles = StyleSheet.create({
   badge: { minHeight: touch.min - 12, flexDirection: 'row', alignItems: 'center', gap: space.sm, alignSelf: 'flex-start',
-    borderRadius: radius.pill, paddingHorizontal: space.md },
+    borderRadius: radius.pill, borderWidth: 1, paddingHorizontal: space.md + 2 },
+  pressed: { opacity: 0.8 },
   text: { fontSize: 13, fontWeight: '800' },
   clock: { flexDirection: 'row', alignItems: 'center', gap: space.sm, padding: space.md, borderRadius: radius.md,
     backgroundColor: colors.paleOrange },

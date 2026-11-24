@@ -9,9 +9,9 @@ import {
 import { colors } from '../theme/colors';
 
 const HINT_COLORS: Readonly<Record<OperationTabTone, Readonly<{ fg: string; bg: string }>>> = {
-  done: { fg: colors.success, bg: '#E6F4EC' },
+  done: { fg: colors.success, bg: colors.paleGreen },
   pending: { fg: colors.navy, bg: colors.paleBlue },
-  warning: { fg: colors.warning, bg: colors.paleOrange },
+  warning: { fg: colors.warning, bg: colors.paleAmber },
 };
 
 /**
@@ -42,7 +42,7 @@ export const OperationTabBar = memo(function OperationTabBar({ selected, progres
             >
               <Text numberOfLines={1} style={[styles.label, active && styles.labelActive]}>{tab.label}</Text>
               {item.hint && tone ? (
-                <Text numberOfLines={1} style={[styles.hint, { color: tone.fg, backgroundColor: tone.bg }]}>
+                <Text numberOfLines={1} style={[styles.hint, { color: tone.fg, backgroundColor: active ? colors.white : tone.bg }]}>
                   {item.hint}
                 </Text>
               ) : null}
@@ -56,12 +56,12 @@ export const OperationTabBar = memo(function OperationTabBar({ selected, progres
 
 const styles = StyleSheet.create({
   // The background covers what scrolls under the fixed bar.
-  wrapper: { backgroundColor: colors.background, paddingVertical: 6 },
+  wrapper: { backgroundColor: colors.background, paddingVertical: 8 },
   bar: {
     flexDirection: 'row',
-    padding: 4,
+    padding: 5,
     gap: 4,
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.white,
@@ -72,16 +72,17 @@ const styles = StyleSheet.create({
     minHeight: 56,
     paddingHorizontal: 4,
     paddingVertical: 6,
-    borderRadius: 12,
+    borderRadius: 13,
     borderBottomWidth: 3,
     borderBottomColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 3,
   },
-  tabActive: { backgroundColor: colors.paleBlue, borderBottomColor: colors.navy },
-  label: { color: colors.muted, fontSize: 13, fontWeight: '800' },
-  labelActive: { color: colors.navy, fontWeight: '900' },
+  // The selected tab is filled navy and underlined orange: a shape besides the colour.
+  tabActive: { backgroundColor: colors.navy, borderBottomColor: colors.orange },
+  label: { color: colors.inkSoft, fontSize: 14, fontWeight: '800' },
+  labelActive: { color: colors.white, fontWeight: '900' },
   hint: {
     overflow: 'hidden',
     paddingHorizontal: 7,
