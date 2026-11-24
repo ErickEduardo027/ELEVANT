@@ -37,6 +37,8 @@ Un vacío documentado no es una funcionalidad disponible ni una orden de impleme
 | Production | ¿Qué plan separado permitirá crear el ambiente? | [Ambientes](../../docs/deployment/environments.md) |
 | Historia | ¿Qué ocurrió antes del primer commit? | [Orígenes y límites de evidencia](../01-historia/origenes-y-limites-de-evidencia.md) |
 
+Las corridas de [caja negra de noviembre 2026](caja-negra-2026-11.md) registran los hallazgos `CN-NN` del ensayo de auditoría y su estado.
+
 La [matriz de pendientes](pendientes-transversales.md) separa dependencia, evidencia necesaria y criterio de cierre. La [reconciliación documental](../11-referencia/reconciliacion-docs.md) registra contradicciones detectadas en `docs/` sin reinterpretarlas como trabajo de producto aprobado.
 
 ## Regla de promoción
