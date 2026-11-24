@@ -10,18 +10,20 @@ import {
   loadOperationalNotifications, setOperationalNotificationRead,
 } from '../../../services/operationalCommunicationService';
 import { NOTIFICATIONS_REFRESH_EVENT } from '../../notifications/useNotificationBadge';
-import { LIVE_FRESH_MS } from '../live/occCadence';
+import { LIVE_FRESH_MS, OCC_HINT_COALESCE_MS } from '../live/occCadence';
 import { liveSourceReports, reduceLive, startLive } from '../live/occLive';
 import { createSourceHealthStore, summarizeSources } from '../live/sourceHealth';
 import { useOccResource } from '../live/useOccResource';
-import { OccShellChannelContext, OccShellContext, OccShellToastContext } from './occShellContext';
+import {
+  OccShellChannelContext, OccShellContext, OccShellNoticesContext, OccShellToastContext,
+} from './occShellContext';
 import { occShellMessages } from './occShellMessages';
 import {
   arrivalToasts, EMPTY_TOAST_QUEUE, nextToastExpiry, noticeToastId, reduceToastQueue,
 } from './occToastQueue';
 
 export {
-  useOccShell, useOptionalOccShell, useOccShellChannel, useOptionalOccShellChannel,
+  useOccShell, useOptionalOccShell, useOccShellChannel, useOptionalOccShellChannel, useOptionalOccShellNotices,
 } from './occShellContext';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -92,6 +94,8 @@ function OccLiveLayer({ createObserver, observe, children }) {
     dispatch({ type: 'restart', now: Date.now() });
     const observer = createObserver(deliver, {
       onStatus: status => dispatch({ type: 'status', status, now: Date.now() }),
+      // The hints of both hubs and of a demo flight's burst share a cursor read (occCadence.js).
+      hintCoalesceMs: OCC_HINT_COALESCE_MS,
     });
     void Promise.resolve(observer.start()).catch(() => {});
     return () => { void Promise.resolve(observer.stop()).catch(() => {}); };
@@ -223,7 +227,9 @@ function OccNoticesLayer({ live, children }) {
 
   return (
     <OccShellContext.Provider value={value}>
-      <OccShellToastContext.Provider value={toastValue}>{children}</OccShellToastContext.Provider>
+      <OccShellNoticesContext.Provider value={noticesValue}>
+        <OccShellToastContext.Provider value={toastValue}>{children}</OccShellToastContext.Provider>
+      </OccShellNoticesContext.Provider>
     </OccShellContext.Provider>
   );
 }

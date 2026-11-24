@@ -130,16 +130,12 @@ function applyMutation(flight, field) {
 
 export function subscribeToFlightUpdates(onUpdate, stationCode = 'PUJ',
   { onSnapshot, onError } = {}) {
+  // Outside the tests the screen has no feed of its own: it re-reads the planning snapshot when the shell announces
+  // `occ_planning` and on its safety poll (FlightMonitoringRoute.jsx, useOccScreenRefresh), never on a timer here.
   if (process.env.NODE_ENV !== 'test') {
-    const intervalId = setInterval(() => {
-      getFlightMonitoringSnapshot(stationCode)
-        .then(snapshot => {
-          if (onSnapshot) onSnapshot(snapshot);
-          else snapshot.flights.forEach(onUpdate);
-        })
-        .catch(error => onError?.(error));
-    }, 30000);
-    return () => clearInterval(intervalId);
+    void onSnapshot;
+    void onError;
+    return () => {};
   }
   const dateISO = getOperationDate();
   const simulatedFlights = FLIGHT_TEMPLATES.map(template => buildFlight(template, dateISO));

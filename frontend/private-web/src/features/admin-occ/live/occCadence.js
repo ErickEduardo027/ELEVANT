@@ -21,3 +21,11 @@ export const RECONNECT_GRACE_MS = 30_000;
 
 /** Failing reconciles for longer than this mean «Sin conexión». */
 export const OFFLINE_AFTER_MS = 60_000;
+
+/**
+ * The shell's observer reads the account-change cursor at once for a hint after a quiet window, and at most once more
+ * in this window for the hints that follow (services/accountChangeObserver.js: `hintCoalesceMs`). The two hubs and a
+ * batch of the server's dispatcher then cost one cursor read, and a demo flight that changes every 5 s at most one
+ * every this long, with every re-read it announces.
+ */
+export const OCC_HINT_COALESCE_MS = 10_000;

@@ -37,7 +37,7 @@ function healthOf({ status, refreshFailed }) {
  */
 function createResourceEngine(key) {
   let config = { load: null, isEmpty: null, pollMs: OCC_SAFETY_POLL_MS, coalesceMs: OCC_COALESCE_MS,
-    timeoutMs: OCC_READ_TIMEOUT_MS };
+    timeoutMs: OCC_READ_TIMEOUT_MS, reportRefreshing: false };
   let state = { status: 'loading', data: null, scopeKey: null, refreshing: false, refreshFailed: false, fetchedAt: null };
   let current = null;
   const listeners = new Set();
@@ -110,7 +110,10 @@ function createResourceEngine(key) {
     cycle.pollDue = false;
     clearPoll(cycle);
     cycle.scheduler.started();
-    emit(keepsData(cycle) ? { ...state, refreshing: true } : closed(cycle, 'loading'));
+    // A refresh that keeps the data changes nothing on screen: unless the caller shows it (`reportRefreshing`), it emits
+    // nothing, so each read renders its readers once (its answer), not twice.
+    if (!keepsData(cycle)) emit(closed(cycle, 'loading'));
+    else if (config.reportRefreshing) emit({ ...state, refreshing: true });
     new Promise(resolve => { resolve(config.load({ signal: controller.signal })); })
       .then(data => finish(() => succeed(cycle, data)), error => finish(() => fail(cycle, error)));
   }
@@ -201,10 +204,13 @@ function createResourceEngine(key) {
  * - A failed refresh keeps the data (`refreshFailed`); a new `scopeKey` drops it; a read is abandoned after
  *   `timeoutMs` (`timeout`); unmounting aborts the read in flight.
  * - With `sourceId` it reports the read to the shell's source list. `enabled: false` reads nothing (`idle`).
+ * - `refreshing` is true while a refresh that keeps the data runs only with `reportRefreshing: true`; otherwise it stays
+ *   false and such a refresh does not render the readers until it answers (one render per read, not two).
  * `key` names the read in its errors.
  */
 export function useOccResource({ key, load, permission, resources = NO_RESOURCES, scopeKey = '', enabled = true,
-  pollMs = OCC_SAFETY_POLL_MS, coalesceMs = OCC_COALESCE_MS, timeoutMs = OCC_READ_TIMEOUT_MS, isEmpty, sourceId }) {
+  pollMs = OCC_SAFETY_POLL_MS, coalesceMs = OCC_COALESCE_MS, timeoutMs = OCC_READ_TIMEOUT_MS, isEmpty, sourceId,
+  reportRefreshing = false }) {
   const channel = useOccShellChannel();
   const { access } = useDepartmentAccess();
   const granted = Boolean(access) && (!permission || access.can(permission));
@@ -214,7 +220,7 @@ export function useOccResource({ key, load, permission, resources = NO_RESOURCES
   const resourcesKey = [...new Set(resources)].sort().join('\n');
 
   // The latest read options; this effect runs first, so a start below always reads with them.
-  useEffect(() => { engine.configure({ load, isEmpty, pollMs, coalesceMs, timeoutMs }); });
+  useEffect(() => { engine.configure({ load, isEmpty, pollMs, coalesceMs, timeoutMs, reportRefreshing }); });
 
   useEffect(() => {
     if (!active) return undefined;

@@ -15,6 +15,12 @@ export const OccShellContext = createContext(null);
 export const OccShellChannelContext = createContext(null);
 
 /**
+ * The notices alone, `useOccShell().notices`: the screens that read only them (the console's alerts, the sidebar's
+ * badge) take them from here and do not re-render when the live link or the sources' health move.
+ */
+export const OccShellNoticesContext = createContext(null);
+
+/**
  * Shown on screen through OccShellOverlays: `{ toasts, dismissToast(id), dismissAllToasts() }`, the visible toasts of
  * shell/occToastQueue.js, each `{ id, priority, message, code, action: { label, path } }`.
  */
@@ -29,6 +35,11 @@ export function useOccShell() {
 /** The shell's value when the OCC frame is mounted; null in isolated screens and tests. */
 export function useOptionalOccShell() {
   return useContext(OccShellContext);
+}
+
+/** The shell's notices (`useOccShell().notices`) when the OCC frame is mounted; null in isolated screens and tests. */
+export function useOptionalOccShellNotices() {
+  return useContext(OccShellNoticesContext);
 }
 
 export function useOccShellChannel() {

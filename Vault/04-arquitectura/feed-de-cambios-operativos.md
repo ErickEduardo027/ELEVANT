@@ -408,6 +408,54 @@ escuchan en el canal, cuyas relecturas siguen en el presupuesto
 ([ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md), nota del 14 de
 noviembre de 2026 sobre U6).
 
+## Pistas agrupadas y pantallas con lecturas propias (CN-18/19)
+
+Posterior al commit verificado de esta nota: describe el código de la rama
+`perf/noc-renders-peticiones` (hallazgos CN-18 y CN-19), que esa verificación
+no cubre. Las pistas siguen sin llevar datos y nada se lee fuera del cursor.
+
+En un vuelo demo en el VPS, Monitoreo de vuelos pidió 79 peticiones por
+minuto, Panorama 52, Planificación 49 y Mapa de posiciones 44, sobre un
+presupuesto de 40. Dos causas: cada pista leía el cursor al instante (y cada
+pantalla con observador propio lo leía otra vez), y esas pantallas sumaban un
+sondeo de 25 segundos, una relectura al recuperar el foco y, en Monitoreo y
+Mapa de posiciones, otro temporizador de 30 segundos en su servicio.
+
+- **Pistas agrupadas.** El observador del marco
+  ([`accountChangeObserver.js`](../../frontend/private-web/src/services/accountChangeObserver.js),
+  `hintCoalesceMs`) lee el cursor enseguida para la primera pista tras una
+  ventana tranquila, y como mucho una vez más cada 10 segundos para las que
+  siguen ([`occCadence.js`](../../frontend/private-web/src/features/admin-occ/live/occCadence.js):
+  `OCC_HINT_COALESCE_MS`). Una lectura que empieza por otra razón (el sondeo de
+  25 segundos, el foco, una reconexión) también cuenta para esa ventana. Los
+  dos hubs y un lote del despachador cuestan una sola lectura del cursor; una
+  pista de una ráfaga puede llegar hasta 10 segundos más tarde. Fuera del OCC
+  el observador no agrupa (valor 0).
+- **Sin observadores de pantalla.** Monitoreo de vuelos, Mapa de posiciones y
+  Planificación ya no abren observador, sondeo de 25 segundos ni relectura al
+  recuperar el foco: escuchan `occ_planning` en el canal del marco con
+  [`useOccScreenRefresh`](../../frontend/private-web/src/features/admin-occ/live/useOccScreenRefresh.js),
+  que agrupa como `useOccResource` (una relectura cada 3 segundos como mucho,
+  unida a la lectura en curso, en espera con la pestaña oculta) y añade el
+  sondeo de seguridad de 60 segundos. Los servicios de Monitoreo y de Mapa de
+  posiciones ya no tienen su temporizador de 30 segundos. El borrador de
+  asistencia de Planificación, Usuarios (gobierno del departamento y perfiles
+  de rampa) y la pestaña de servicios de Notificaciones escuchan el canal del
+  marco dentro del OCC y solo abren su propio observador fuera de él.
+- **Minuto demo más denso.** El
+  [plan de peticiones](../../frontend/private-web/src/features/admin-occ/live/occRequestPlan.js)
+  repite ahora un `occ_planning` cada 5 segundos (el ritmo del trabajador de
+  vuelos demo), cinco toques de tablet, dos avisos y una revisión: veinte
+  pistas. Con el código anterior ese minuto da a Panorama unas 52 peticiones,
+  como lo medido. La
+  [prueba de presupuesto](../../frontend/private-web/src/features/admin-occ/live/occRequestBudget.test.js)
+  exige 40 por minuto, en reposo y en ese minuto, en cada pantalla del OCC; en
+  el modelo, Panorama queda en 31, Monitoreo y Mapa de posiciones en 34 (con el
+  mapa) y Planificación en 30.
+
+Esto es un modelo con relojes falsos; no demuestra cifras ni latencias en el
+VPS.
+
 ## Posiciones de Punta Cana (OCC a nivel NOC, PR A2)
 
 Posterior al commit verificado de esta nota: esta sección describe el código de

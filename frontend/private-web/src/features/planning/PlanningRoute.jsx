@@ -3,38 +3,29 @@ import PlanningPage from './PlanningPage';
 import { usePlanningData } from './usePlanningData';
 import { useAdminOccPreview } from '../admin-occ/AdminOccPreviewContext';
 import { useOccStation } from '../admin-occ/useOccStation';
-import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
+import { useOccScreenRefresh } from '../admin-occ/live/useOccScreenRefresh';
+
+// The planning follows `occ_planning` on the shell's single observer (useOccScreenRefresh: coalesced, joined with a read
+// in flight, paused while the tab is hidden, with its 60 s safety poll); it opens no observer of its own. Each re-read
+// also re-reads what the page reads on `dataRevision` (the readiness marks, the open drawer, the map's stands).
+const PLANNING_RESOURCES = Object.freeze(['occ_planning']);
 
 export default function PlanningRoute() {
   const { stationScopes } = useOccStation();
   const [stationId, setStationId] = useState(() => stationScopes[0]?.stationId ?? '');
   const [requestedDate, setRequestedDate] = useState('');
   const [resolvedScope, setResolvedScope] = useState({ stationId: '', date: '' });
-  const [retryToken, setRetryToken] = useState(0);
-  useEffect(() => {
-    const refresh = () => setRetryToken(token => token + 1);
-    const observer = createPrivateWebAccountChangeObserver(resources => {
-      if (resources.includes('occ_planning')) refresh();
-    });
-    void observer.start().catch(() => {});
-    window.addEventListener('focus', refresh);
-    window.addEventListener('online', refresh);
-    const poll = window.setInterval(() => {
-      if (document.visibilityState === 'visible') refresh();
-    }, 25_000);
-    return () => {
-      window.clearInterval(poll);
-      window.removeEventListener('focus', refresh);
-      window.removeEventListener('online', refresh);
-      void observer.stop();
-    };
-  }, []);
+  const { token: retryToken, refresh, busy } = useOccScreenRefresh({ resources: PLANNING_RESOURCES,
+    enabled: stationScopes.length > 0 });
   const planning = usePlanningData({
     stationId: stationId || undefined,
     date: requestedDate || undefined,
     refreshToken: retryToken,
     enabled: stationScopes.length > 0,
   });
+  const reading = planning.status === 'loading' || planning.refreshing === true;
+  // After every render: whether the read the last token started is still running (the in-flight join).
+  useEffect(() => { busy(reading); });
   const { forceState } = useAdminOccPreview();
   const responseDate = planning.data?.station?.id === stationId ? planning.data.date : '';
   const resolvedDate = resolvedScope.stationId === stationId ? resolvedScope.date : '';
@@ -62,7 +53,7 @@ export default function PlanningRoute() {
       status={planning.status}
       data={planning.data}
       error={planning.error}
-      onRetry={() => setRetryToken(token => token + 1)}
+      onRetry={refresh}
       stationScopes={stationScopes}
       selectedStationId={stationId}
       selectedDate={effectiveDate}
