@@ -2186,9 +2186,23 @@ lecturas de M5: la API no cambia.
   [`frameLoop.js`](../../frontend/private-web/src/features/maps/core/frameLoop.js)
   pide cuadros solo mientras algo se mueve, dibuja a la hora del servidor, se
   detiene con la pestaña oculta y, con movimiento reducido, mueve los aviones
-  una vez por segundo. Escribe el tráfico en cada cuadro con menos de 30
-  aviones a la vista y, con más, de 2 a 30 veces por segundo. React no
-  renderiza por cuadro.
+  una vez por segundo. Desde CN-18 (24 de noviembre de 2026) nunca escribe el
+  tráfico en cada cuadro: lo escribe cuando el avión más rápido a la vista
+  avanzó dos píxeles, de 2 a 15 veces por segundo, y solo muestrea y anima lo que
+  está a la vista o cerca de ella. React no renderiza por cuadro.
+- **Fluidez (CN-18).** Los aviones ya no se «teletransportan»: el reloj de
+  render no salta cuando el reloj del servidor corrige su desfase (se acerca a
+  un 5 % del tiempo que pasa), un cuadro tardío avanza 250 ms como máximo y
+  recupera el resto en un segundo, y cada lectura se mezcla desde donde se ve
+  el avión al recibirla, no desde la hora en que el servidor la contestó. Un
+  avión que vira sigue el arco de su giro entre señales, el rumbo dibujado gira
+  como un avión real, un vuelo estimado cuyo plan cambia se desliza en 10 a 20 s
+  y un avión que pasa de otro tráfico a vuelo de AVIAM sigue con su traza. Los
+  rótulos del mapa ya no tienen fundido. Las decisiones y la medición están en
+  la actualización del 24 de noviembre de 2026 de
+  [ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md); el laboratorio la
+  repite con `perf-approach-feed` y `perf-airfield-feed`
+  (`tests/visual/lab/map-lab.fluency.spec.mjs`).
 - **Qué se mueve y de dónde sale.**
   [`motionStore.js`](../../frontend/private-web/src/features/maps/traffic/motionStore.js)
   une cada lectura con la cinemática pura de `kinematics/`. Un avión en vivo

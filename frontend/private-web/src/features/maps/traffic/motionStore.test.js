@@ -261,8 +261,8 @@ describe('motion store (design F4, contracts 2.3)', () => {
       expect(fading.statusKey).toBe('cancelledByProvider');
       expect(fading.onGround).toBe(false);
     });
-    // Fading from the cancel instant: before the read as the server's clock says; after it, from where it was drawn.
-    expect(demoEstimate(store, at(2)).opacity).toBeCloseTo(0.75, 6);
+    // Fading from where it was drawn when the read came (CN-18: before that instant it is drawn as it was).
+    expect(demoEstimate(store, at(2)).opacity).toBeCloseTo(1, 6);
     const afterRead = demoEstimate(store, at(4)).opacity;
     expect(afterRead).toBeGreaterThan(0.5);
     expect(afterRead).toBeLessThan(1);
@@ -727,5 +727,104 @@ describe('motion store (design F4, contracts 2.3)', () => {
     const parked = demoEstimate(store, at(600));
     expect(haversineM(point(parked), standOf('A1').center)).toBeLessThan(0.5);
     expect(parked).toMatchObject({ statusKey: null, gsMs: 0 });
+  });
+});
+
+describe('smooth motion of the reads (CN-18)', () => {
+  const overflight = () => createAirPicture().aircraft.find(item => item.hex === HEX.overflight);
+  const ID = `h:${HEX.overflight}`;
+  // The overflight answered at `serverS`, its fix `fixS` after noon `distanceM` on from where the fixtures have it.
+  function pictureAt(serverS, fixS, { distanceM = 0, speedKt = 460 } = {}) {
+    const base = overflight();
+    const [longitude, latitude] = destinationPoint([base.longitude, base.latitude], base.trackDegrees, distanceM);
+    return toPictureModel(createAirPicture({ serverTime: trafficInstant(serverS), aircraft: [{ ...base, longitude, latitude,
+      groundSpeedKnots: speedKt, positionAt: trafficInstant(fixS) }] }));
+  }
+
+  it('a read that reaches the map 3 s late blends from where the aircraft is drawn: no jump over 2 px', () => {
+    let renderNow = at(0);
+    const store = createMotionStore({ clock: { now: () => renderNow } });
+    const flights = flightsOf(createMapFlights());
+    store.ingest({ picture: pictureAt(0, -6), flights });
+    // The next fix says it is faster than its first: 470 kt, ahead of where 460 kt carry it.
+    const second = pictureAt(10, 4, { distanceM: ktToMs(470) * 10, speedKt: 470 });
+    const mpp16 = 2.25;
+    let previous = store.sampleOne(ID, renderNow);
+    let worst = 0;
+    for (renderNow = at(0) + 16; renderNow <= at(25); renderNow += 16) {
+      // Answered at 10 s, ingested at 13 s.
+      if (renderNow >= at(13) && store.dataAt() !== at(10)) store.ingest({ picture: second, flights });
+      const drawn = store.sampleOne(ID, renderNow);
+      const expected = (drawn.gsMs ?? 0) * 0.016;
+      worst = Math.max(worst, Math.abs(haversineM(point(previous), point(drawn)) - expected));
+      previous = drawn;
+    }
+    expect(worst / mpp16).toBeLessThan(2);
+  });
+
+  it('with no render clock a read is handed over at the instant the server answered', () => {
+    const store = createMotionStore();
+    store.ingest({ picture: pictureAt(0, -6), flights: flightsOf(createMapFlights()) });
+    const drawn = store.sampleOne(ID, at(0));
+    expect(drawn.lon).toBeCloseTo(destinationPoint([overflight().longitude, overflight().latitude],
+      overflight().trackDegrees, ktToMs(460) * 6)[0], 6);
+  });
+
+  it('turns the heading a frame draws no faster than an aircraft does, and only in sample', () => {
+    let renderNow = at(0);
+    const store = createMotionStore({ clock: { now: () => renderNow } });
+    const flights = flightsOf(createMapFlights());
+    store.ingest({ picture: pictureAt(0, -1), flights });
+    const item = { id: ID, kind: 'other' };
+    const first = store.sample([item], renderNow)[0];
+    // A fix 40° to the right, a second later: the blend turns it, the frames at 3°/s at most.
+    const base = overflight();
+    renderNow = at(1);
+    store.ingest({ picture: toPictureModel(createAirPicture({ serverTime: trafficInstant(1), aircraft: [{ ...base,
+      trackDegrees: base.trackDegrees + 40, positionAt: trafficInstant(0.5) }] })), flights });
+    let last = first.trackDeg;
+    for (renderNow = at(1) + 100; renderNow <= at(4); renderNow += 100) {
+      const drawn = store.sample([item], renderNow)[0];
+      const turn = Math.abs(((drawn.trackDeg - last + 540) % 360) - 180);
+      expect(turn).toBeLessThanOrEqual(0.3 + 1e-6);
+      last = drawn.trackDeg;
+    }
+  });
+
+  it('a fix the ELEVANT flight claims goes on as other traffic had it, without starting over', () => {
+    let renderNow = at(0);
+    const store = createMotionStore({ clock: { now: () => renderNow } });
+    const base = overflight();
+    const flights = flightsOf(createMapFlights());
+    store.ingest({ picture: pictureAt(0, -6), flights });
+    renderNow = at(5);
+    const otherTrack = store.sampleOne(ID, renderNow);
+    // The provider matched it to ZZ161 now: the same aircraft, its fix claimed by the flight.
+    const claimedPicture = toPictureModel(createAirPicture({ serverTime: trafficInstant(5), aircraft: [{
+      ...base, positionAt: trafficInstant(-6), matchedFlightKey: KEY.arrival, matchedBy: 'Registration' }] }));
+    store.ingest({ picture: claimedPicture, flights });
+    const claimed = store.sampleOne(`f:${KEY.arrival}`, renderNow);
+    expect(claimed).not.toBeNull();
+    expect(haversineM(point(claimed), point(otherTrack))).toBeLessThan(1);
+    expect(claimed.opacity).toBe(1);
+  });
+
+  it('with defer, a rebuild from an aged fix waits for it instead of running inside the sample', () => {
+    const queued = [];
+    const { build, calls } = spied();
+    const store = createMotionStore({ build, defer: callback => queued.push(callback) });
+    const read = { picture: LIVE, flights: flightsOf(createMapFlights()) };
+    store.ingest(read);
+    const item = situationOf(store, read).byId.get(`f:${KEY.arrival}`);
+    // Past its coast the frame draws it carried on, and the rebuild waits.
+    expect(store.sampleOne(item.id, at(70), item)).not.toBeNull();
+    expect(calls.arrival.filter(kind => kind === 'fix')).toEqual([]);
+    expect(queued).toHaveLength(1);
+    store.sampleOne(item.id, at(71), item);
+    expect(queued).toHaveLength(1);
+    queued.shift()();
+    expect(calls.arrival.filter(kind => kind === 'fix')).toEqual(['fix']);
+    expect(store.sampleOne(item.id, at(72), item)).toMatchObject({ mode: 'estimate', quality: 'estimated' });
+    expect(queued).toHaveLength(0);
   });
 });

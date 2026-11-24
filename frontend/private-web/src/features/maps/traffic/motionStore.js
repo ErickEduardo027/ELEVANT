@@ -10,6 +10,7 @@ import {
 } from '../kinematics/estimator';
 import { TRACK_CONFIG, createTrack, needsReplan, reduceTrack, renderTrack, trackConfigFor } from '../kinematics/handoff';
 import { perfFor } from '../kinematics/perfProfiles';
+import { displayHeading } from '../kinematics/smoothing';
 import { apronHoldFor } from '../kinematics/taxiRoute';
 import { NM, ftToM } from '../kinematics/units';
 import { claimFixes, fixIdentity } from './situationModel';
@@ -38,10 +39,20 @@ import { claimFixes, fixIdentity } from './situationModel';
 //   any, for FINAL_VOTE.keepMs after they were seen, then (from PR M8) the METAR wind, then the layout's preferred
 //   runway (airport/runwayInUse.js).
 // - A trajectory is built when its inputs change (planInputsKey), never per frame: a demo flight's takes about 15 ms.
+// - CN-18: a read hands its fixes and plans over at the render clock's time when it is ingested, not at the instant the
+//   server answered it, so a read that arrives late (a slow network, a busy main thread) still blends over its whole
+//   time instead of having part of it gone before the first frame draws it. Other traffic's track goes on as the
+//   ELEVANT flight's when a fix of it is claimed by the flight (`h:<hex>` → `f:<flightKey>`), so it does not start over.
+//   The map's frames (`sample`) turn the drawn heading no faster than a real aircraft (kinematics/smoothing.js:
+//   displayHeading) and count as moving only what `relevant` says the map shows.
 // - Per sample, a track whose fix aged past its coast is rebuilt once from that fix (handoff.js: needsReplan) at the
-//   instant the coast ended, so every screen blends the same way. A fix stopped on the ground starts nothing
+//   instant the coast ended, so every screen blends the same way; with `defer` (useMapSituation: when the browser is
+//   idle) the rebuild runs after the frame, which draws the coast carried on meanwhile. A fix stopped on the ground starts nothing
 //   (estimator.js, Decision F-1): an aircraft parked at its stand, or a departure nothing recorded leaving, waits where
 //   the fix has it, and a departure with its PUSHBACK leaves its stand then.
+
+/** Between two frames further apart than this the drawn heading starts again from the track (displayHeading). */
+const HEADING_GAP_MS = 5_000;
 
 /** How long the store keeps a track nobody draws any more, from the last read that named it. */
 export const FORGET_AFTER_MS = 10 * 60_000;
@@ -168,13 +179,17 @@ function trajectoryInstants(trajectory) {
 /**
  * The motion of one map.
  * - `layout` (MDPC by default), `clock` (the render clock: core/frameLoop.js createRenderClock; the frame loop draws at
- *   its time), `perf` (perfFor) and `build` (the trajectory builders, for the tests).
+ *   its time, and a read is handed over at its `now()` when ingested), `perf` (perfFor), `build` (the trajectory
+ *   builders, for the tests) and `defer` (a function that runs a callback later: a rebuild from an aged fix waits for
+ *   it instead of running inside a frame; none by default).
  * - `ingest({ picture, flights })`: the models of situationModel.js (toPictureModel, toFlightsModel), after every read;
  *   the same two again change nothing.
  * - `estimatesAt(tMs)`: the positions of the ELEVANT flights it estimates, for buildSituation's `estimates`. A demo
  *   flight a newer read no longer lists, while it fades out (leavingDemo), comes with its last row as `flight`: the
  *   situation draws it from that row, cancelled when it left before its touchdown.
- * - `sample(aircraft, tMs)`: the aircraft of a situation where they are drawn at `tMs`: each one the store knows takes
+ * - `sample(aircraft, tMs, { relevant })`: the aircraft of a situation where they are drawn at `tMs`, for the map's
+ *   frames (their heading turns smoothly from frame to frame; `relevant(sampled)` says which count for isAnimating, all
+ *   by default): each one the store knows takes
  *   its track's render (position, height, speed, heading, phase, mode, ageS, statusKey, opacity, timeScale and, where a
  *   plan places it, quality 'estimated'), `null` when its track draws nothing then; one it does not know is as given.
  *   `sampleOne(id, tMs, aircraft)` does it for one.
@@ -195,11 +210,14 @@ function trajectoryInstants(trajectory) {
  */
 export function createMotionStore({
   layout = MDPC_LAYOUT, clock = null, perf = perfFor,
-  build = { fitDemoTrajectory, buildArrivalTrajectory, buildDepartureTrajectory },
+  build = { fitDemoTrajectory, buildArrivalTrajectory, buildDepartureTrajectory }, defer = null,
 } = {}) {
   const listeners = new Set();
   const tracks = new Map();
   const seenAt = new Map();
+  // The heading each aircraft was drawn with by the last frame (`{ deg, tMs, epoch }`), and the rebuilds waiting.
+  const headings = new Map();
+  const pendingReplans = new Set();
   // The trajectories built for the route of a flight the store does not draw, by its key: `{ key, trajectory }`.
   let routePlans = new Map();
   let plans = new Map();
@@ -402,16 +420,19 @@ export function createMotionStore({
     if (!finite(dataAt)) dataAt = null;
     const owners = claimFixes({ picture, flights });
     const current = new Set();
+    // The instant the read is handed over at (CN-18): the render clock's now, else the server's answer.
+    const clockNow = clock?.now?.();
+    const receivedAt = finite(clockNow) ? clockNow : null;
 
-    // Every fix of the picture on its aircraft's track, received at the instant the server answered. Also when only the
-    // flights changed: a picture read before the flights left the fix of an ELEVANT flight on other traffic's track,
-    // and the flight takes it now; a track that has the fix already keeps it as it is (handoff.js: onFix).
+    // Every fix of the picture on its aircraft's track, received now. Also when only the flights changed: a picture
+    // read before the flights left the fix of an ELEVANT flight on other traffic's track, and the flight takes it now
+    // (with the track other traffic had, when the flight's own draws nothing); a track that has the fix already keeps
+    // it as it is (handoff.js: onFix).
     for (const fix of owners.fixes) {
       const { id, flight } = fixIdentity(fix, owners);
       current.add(id);
-      tracks.set(id, reduceTrack(trackOf(id, flight ? 'aviam' : 'other'), {
-        type: 'fix', fix, atMs: finite(picture?.serverTime) ? picture.serverTime : fix.positionAt,
-      }, config));
+      const fixAt = receivedAt ?? (finite(picture?.serverTime) ? picture.serverTime : fix.positionAt);
+      tracks.set(id, reduceTrack(claimedTrack(id, flight, fix, fixAt), { type: 'fix', fix, atMs: fixAt }, config));
     }
 
     // The runway in use for real flights (FINAL_VOTE): the arrivals on final of the newest picture that had any, while
@@ -424,6 +445,7 @@ export function createMotionStore({
     const recent = finalVote !== null && dataAt !== null && dataAt - finalVote.seenAt <= FINAL_VOTE.keepMs;
     runway = runwayInUse({ recentLiveArrivals: recent ? finalVote.arrivals : [], wind: null, layout });
     const atMs = finite(flights?.serverTime) ? flights.serverTime : (dataAt ?? 0);
+    const planAt = receivedAt ?? atMs;
     const next = new Map();
     units = unitsOf(flights, owners.claimed);
     for (const unit of units) {
@@ -436,7 +458,7 @@ export function createMotionStore({
         unit.plan = { key: unit.key, trajectory: realTrajectory(unit.row, unit.ctx) };
       }
       next.set(unit.id, unit.plan);
-      if (unit.plan !== previous) dispatchPlan(unit, atMs);
+      if (unit.plan !== previous) dispatchPlan(unit, planAt);
       for (const key of keysOf(unit)) current.add(`f:${key}`);
     }
     // A demo visit that left the reads of its station fades out where it is before it is forgotten (leavingDemo).
@@ -448,7 +470,7 @@ export function createMotionStore({
         if (leaving === null) continue;
         units.push(leaving);
         next.set(leaving.id, leaving.plan);
-        if (leaving.plan !== unit.plan) dispatchPlan(leaving, atMs);
+        if (leaving.plan !== unit.plan) dispatchPlan(leaving, planAt);
         for (const key of keysOf(leaving)) current.add(`f:${key}`);
       }
     }
@@ -506,15 +528,44 @@ export function createMotionStore({
     return next;
   }
 
-  function sampleItem(item, tMs) {
+  // The track a fix goes on: its own, or, when an ELEVANT flight without a fix of its own claims the fix of other
+  // traffic that is drawn at `atMs`, the one other traffic had (its fix, blend and trail part) with the flight's plan,
+  // so the aircraft goes on where it was drawn instead of snapping from the flight's estimate.
+  function claimedTrack(id, flight, fix, atMs) {
+    const own = trackOf(id, flight ? 'aviam' : 'other');
+    if (!flight || typeof fix?.hex !== 'string' || own.lastFix !== null) return own;
+    const other = tracks.get(`h:${fix.hex}`);
+    if (!other || other.lastFix === null || renderTrack(other, atMs, config) === null) return own;
+    return Object.freeze({ ...other, id, kind: 'aviam', plan: own.plan });
+  }
+
+  // A rebuild from an aged fix (replanFromFix) after the frame that found it due, when `defer` runs it.
+  function replanLater(id, item, tMs) {
+    if (pendingReplans.has(id)) return;
+    pendingReplans.add(id);
+    defer(() => {
+      pendingReplans.delete(id);
+      const track = tracks.get(id);
+      if (track && needsReplan(track, tMs, config)) replanFromFix(id, track, item);
+    });
+  }
+
+  function sampleItem(item, tMs, smooth = false) {
     if (item == null) return null;
     let track = tracks.get(item.id);
     if (!track) return item;
-    if (needsReplan(track, tMs, config)) track = replanFromFix(item.id, track, item);
+    if (needsReplan(track, tMs, config)) {
+      if (typeof defer === 'function') replanLater(item.id, item, tMs);
+      else track = replanFromFix(item.id, track, item);
+    }
     track = reduceTrack(track, { type: 'tick', tMs }, config);
     tracks.set(item.id, track);
     const render = renderTrack(track, tMs, config);
-    if (render === null) return null;
+    if (render === null) {
+      if (smooth) headings.delete(item.id);
+      return null;
+    }
+    const trackDeg = smooth ? smoothedHeading(item.id, render, tMs) : render.trackDeg;
     return {
       sampled: Object.freeze({
         ...item,
@@ -522,7 +573,7 @@ export function createMotionStore({
         lat: render.lat,
         altM: render.altM,
         gsMs: render.gsMs,
-        trackDeg: render.trackDeg,
+        trackDeg,
         vrateMs: render.vrateMs,
         onGround: render.onGround,
         phase: render.phase ?? item.phase ?? null,
@@ -550,14 +601,29 @@ export function createMotionStore({
     return item.isDemo === true ? 'demo' : runway.source;
   }
 
-  function sample(aircraft, tMs) {
+  // The heading a frame draws (displayHeading): turned from the last frame's no faster than a real aircraft, except
+  // where a plan places it (the tangent of its path), after a snap or after a gap between frames.
+  function smoothedHeading(id, render, tMs) {
+    const previous = headings.get(id) ?? null;
+    const usable = previous !== null && previous.epoch === render.trailEpoch && tMs >= previous.tMs
+      && tMs - previous.tMs <= HEADING_GAP_MS;
+    const deg = displayHeading({
+      prevDeg: usable ? previous.deg : null, trackDeg: render.trackDeg, gsMs: render.gsMs, onGround: render.onGround,
+      dtS: usable ? (tMs - previous.tMs) / 1000 : 0, estimated: render.quality === 'estimated',
+    });
+    if (finite(deg)) headings.set(id, { deg, tMs, epoch: render.trailEpoch });
+    else headings.delete(id);
+    return finite(deg) ? deg : render.trackDeg;
+  }
+
+  function sample(aircraft, tMs, { relevant = null } = {}) {
     const list = Array.isArray(aircraft) ? aircraft : [];
     let moving = false;
     const result = list.map(item => {
-      const out = sampleItem(item, tMs);
+      const out = sampleItem(item, tMs, true);
       if (out === null) return null;
       if (out === item) return item;
-      moving = moving || out.moving;
+      if (out.moving && !moving && (typeof relevant !== 'function' || relevant(out.sampled))) moving = true;
       return out.sampled;
     });
     lastSample = { tMs, moving, ids: new Set(list.map(item => item?.id)) };

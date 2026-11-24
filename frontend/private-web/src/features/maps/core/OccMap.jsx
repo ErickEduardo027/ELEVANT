@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState,
+  forwardRef, memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState,
   useSyncExternalStore,
 } from 'react';
 import * as maplibre from 'maplibre-gl';
@@ -191,6 +191,10 @@ const METRES_PER_FOOT = 0.3048;
 // airfield threshold, and from it every frame in which the aircraft moved at least half a pixel on screen.
 const ROUTE_FRAME_MS = 1_000;
 const ROUTE_MOVE_PX = 0.5;
+// The moving traffic (CN-18): what lies within this share of the area in sight around it is sampled and written on
+// every write (it may enter the view); the rest only when the camera moved, a read came, or once in FULL_SAMPLE_MS.
+const TRAFFIC_MARGIN = 0.5;
+const FULL_SAMPLE_MS = 1_000;
 
 // Follow mode (PR M6, design A6, contracts 2.1 `follow=1`). A framing of two points keeps this much room inside the
 // insets; the notice «Dejaste de seguir…» shows this long; while the camera moves every frame what is on screen is read
@@ -244,21 +248,35 @@ function reducedMotionQuery() {
 }
 
 /**
- * How long until the next write of the moving traffic (core/frameLoop.js, design H): every frame with fewer than 30
- * aircraft drawn in the area in sight, otherwise at half the fastest one's pixels per second on screen, 2 to 30 Hz.
+ * How long until the next write of the moving traffic (core/frameLoop.js, CN-18): the time the fastest aircraft drawn
+ * in the area in sight takes to move a pixel on screen, 2 to 15 writes a second.
  */
 function writeIntervalFor(engine, aircraft, padding) {
   const bounds = engine.getVisibleBounds(padding);
   const zoom = engine.getCamera()?.zoom;
-  if (bounds === null || !Number.isFinite(zoom)) return 0;
-  let inView = 0;
+  if (bounds === null || !Number.isFinite(zoom)) return updateIntervalMs();
   let fastest = 0;
   for (const item of aircraft) {
     if (!isDrawn(item) || !isInBounds([item.lon, item.lat], bounds)) continue;
-    inView += 1;
     if (Number.isFinite(item.gsMs) && item.gsMs > 0) fastest = Math.max(fastest, item.gsMs / metresPerPixel(zoom, item.lat));
   }
-  return updateIntervalMs({ inView, fastestPxPerSecond: fastest });
+  return updateIntervalMs({ fastestPxPerSecond: fastest });
+}
+
+// The area in sight widened by `share` of its size on every side (TRAFFIC_MARGIN), or null.
+function widenBounds(bounds, share) {
+  if (!Array.isArray(bounds)) return null;
+  const [[west, south], [east, north]] = bounds;
+  const dx = (east - west) * share;
+  const dy = (north - south) * share;
+  return [[west - dx, south - dy], [east + dx, north + dy]];
+}
+
+// What says where the camera is, to know when it moved since the last write.
+function cameraKey(camera) {
+  if (!camera) return '';
+  const [lng, lat] = Array.isArray(camera.center) ? camera.center : [camera.center?.lng, camera.center?.lat];
+  return `${lng}|${lat}|${camera.zoom}|${camera.bearing}|${camera.pitch}`;
 }
 
 // Where the tooltip of the airfield sits: at the pixel it points at, on the side of the visible area's middle that has
@@ -813,6 +831,45 @@ const OccMapView = forwardRef(function OccMapView({
     return controller.plan({ aircraft: drawn, parked, zoom, minZoom, selectedId });
   }, [store]);
 
+  // The aircraft of a write where they are drawn at `t` (CN-18): those in or around the area in sight
+  // (TRAFFIC_MARGIN, where the last write drew them) are sampled again; the others keep where the last write drew them,
+  // until the camera moves, a read brings new aircraft or FULL_SAMPLE_MS passed, when every one is sampled and only
+  // those that came near the area in sight move. Only those around the area in sight count as moving.
+  const sampleTraffic = useCallback((motion, aircraft, t, engine, inset) => {
+    const applied = appliedRef.current;
+    const zone = widenBounds(engine.getVisibleBounds(inset), TRAFFIC_MARGIN);
+    const relevant = item => zone === null || isInBounds([item.lon, item.lat], zone);
+    const viewKey = cameraKey(engine.getCamera());
+    const last = applied.sampledById;
+    const full = last === null || aircraft !== applied.sampledFrom || viewKey !== applied.trafficViewKey
+      || !Number.isFinite(applied.fullSampleAt) || t < applied.fullSampleAt || t - applied.fullSampleAt >= FULL_SAMPLE_MS;
+    let result;
+    if (full) {
+      result = motion.sample(aircraft, t, { relevant });
+      applied.fullSampleAt = t;
+      // What stays away from the area in sight keeps where it was written: moving it there changes nothing anyone
+      // sees and would only make MapLibre lay out and draw the traffic again.
+      if (last !== null) {
+        result = result.map((item, index) => {
+          const before = last.get(aircraft[index]?.id);
+          return item && before && !relevant(item) && !relevant(before) ? before : item;
+        });
+      }
+    } else {
+      const due = aircraft.filter(item => {
+        const before = last.get(item?.id);
+        return before === undefined || relevant(before);
+      });
+      const fresh = new Map(motion.sample(due, t, { relevant }).map((item, index) => [due[index]?.id, item]));
+      result = aircraft.map(item => (fresh.has(item?.id) ? fresh.get(item.id) : last.get(item?.id) ?? null));
+    }
+    applied.sampledById = new Map(aircraft.map((item, index) => [item?.id, result[index] ?? undefined])
+      .filter(([, item]) => item !== undefined && item !== null));
+    applied.sampledFrom = aircraft;
+    applied.trafficViewKey = viewKey;
+    return result;
+  }, []);
+
   // The traffic's features from the newest props: one updateData with what changed since the last write. With motion
   // (PR M6) the aircraft are those of the situation where they are drawn at `tMs` (the frame's instant, else the render
   // clock's now), and the write says how long until the next one is due.
@@ -828,9 +885,11 @@ const OccMapView = forwardRef(function OccMapView({
     let drawn = aircraft;
     if (motion) {
       const t = Number.isFinite(tMs) ? tMs : applied.loop.now();
-      drawn = motion.sample(aircraft, t).filter(Boolean);
+      drawn = sampleTraffic(motion, aircraft, t, engine, inset).filter(Boolean);
       applied.trafficWrittenAt = t;
       applied.trafficIntervalMs = writeIntervalFor(engine, drawn, inset);
+      // Only what moves in or around the area in sight keeps the frames going (CN-18).
+      applied.trafficMoving = motion.isAnimating?.(t) === true;
     }
     applied.sampledAircraft = motion ? drawn : null;
     // The chosen aircraft where this write draws it (PR M6): its route and follow mode go with it.
@@ -849,7 +908,7 @@ const OccMapView = forwardRef(function OccMapView({
     if (isEmptyDiff(diff)) return;
     applied.trafficById = featuresById(data);
     engine.updateData(TRAFFIC_SOURCE, diff).catch(error => console.error('The OCC map could not update its traffic.', error));
-  }, [store, plan3d]);
+  }, [store, plan3d, sampleTraffic]);
 
   // A camera or a fit that takes the zoom across the polygons threshold shows or hides the stands and the aircraft on
   // them (PR M6): the parked aircraft's symbols go or come back with them, in one write.
@@ -1421,7 +1480,8 @@ const OccMapView = forwardRef(function OccMapView({
     const reduced = motionClock ? reducedMotionQuery() : null;
     const loop = motionClock ? createFrameLoop({ clock: motionClock, reducedMotion: reduced?.matches === true }) : null;
     Object.assign(appliedRef.current, { loop, sampledAircraft: null, trafficWrittenAt: null, trafficIntervalMs: 0,
-      trafficOnScreenAt: null });
+      trafficOnScreenAt: null, trafficMoving: false, sampledById: null, sampledFrom: null, trafficViewKey: '',
+      fullSampleAt: null });
     // The chosen aircraft as the last write drew it, its route as the frames last wrote it, and follow mode (PR M6).
     Object.assign(appliedRef.current, { chosen: null, routeFrame: null, follow: { ...FOLLOW_OFF }, followMoving: false,
       followFrameAt: null, followOnScreenAt: null });
@@ -1432,7 +1492,11 @@ const OccMapView = forwardRef(function OccMapView({
     // and the legend reads it at most once a second.
     const onFrame = tMs => {
       const applied = appliedRef.current;
-      if (Number.isFinite(applied.trafficWrittenAt) && tMs - applied.trafficWrittenAt < applied.trafficIntervalMs) return;
+      if (Number.isFinite(applied.trafficWrittenAt) && tMs - applied.trafficWrittenAt < applied.trafficIntervalMs) {
+        // A newly chosen aircraft gets its route at once, where the last write drew it.
+        if (applied.chosen && applied.routeFrame?.id !== applied.chosen.id) writeFrameRoute(tMs);
+        return;
+      }
       writeTraffic(tMs);
       writeFrameRoute(tMs);
       if (Number.isFinite(applied.trafficOnScreenAt) && tMs - applied.trafficOnScreenAt < MOVING_ON_SCREEN_MS) return;
@@ -1441,8 +1505,10 @@ const OccMapView = forwardRef(function OccMapView({
       updateTrafficOnScreen(current?.getVisibleBounds(latest.current.padding) ?? null, current?.getCamera()?.zoom,
         store.get().thresholds);
     };
+    // The traffic keeps the frames going while something moves around the area in sight at its last write (CN-18): a
+    // frame between two writes asks nothing of the motion store.
     const stopFrames = loop?.subscribe(onFrame, {
-      isAnimating: tMs => latest.current?.traffic?.motion?.isAnimating?.(tMs) === true,
+      isAnimating: () => Boolean(latest.current?.traffic?.motion) && appliedRef.current.trafficMoving === true,
     });
     // Follow mode after the traffic in every frame, so the camera frames the aircraft where that frame drew it.
     const stopFollowFrames = loop?.subscribe(followFrame, { isAnimating: followAnimating });
@@ -2176,10 +2242,11 @@ const OccMapView = forwardRef(function OccMapView({
  * never swapped (contracts 2.4: no setStyle): a theme change re-creates the map, keyed by the theme, and the new one
  * opens on the camera the old one had when it was torn down; the selection lives in the URL and stays.
  */
-const OccMap = forwardRef(function OccMap(props, ref) {
+// Memoised (CN-18): a page that renders again with the same props does not render the map again.
+const OccMap = memo(forwardRef(function OccMap(props, ref) {
   const theme = useOptionalTheme()?.theme === 'light' ? 'light' : 'dark';
   const resumeCameraRef = useRef(null);
   return <OccMapView key={theme} ref={ref} {...props} theme={theme} resumeCameraRef={resumeCameraRef} />;
-});
+}));
 
 export default OccMap;

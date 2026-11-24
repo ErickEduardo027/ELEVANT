@@ -133,13 +133,14 @@ function LabScene({ scene, basemap, frozenAt, governed = false }) {
   // its motion store, one for the scene's whole life, as useMapSituation keeps one.
   // A feed scene (CN-18) reads on a server clock whose offset moves at every read, as the app's does.
   const feed = frozenAt === null ? scene.traffic?.feed ?? null : null;
-  const offsetRef = useRef(0);
+  // The server offset of a feed scene, a plain holder the clock reads (not React state: it changes no render).
+  const [feedOffset] = useState(() => ({ ms: 0 }));
   const [renderClock] = useState(() => {
     if (frozenAt !== null) return createRenderClock({ frozenAt });
     const sceneAt = parseInstant(scene.traffic?.at ?? null) ?? 0;
     const openedAt = Date.now();
     if (feed) {
-      return createRenderClock({ clock: { now: () => sceneAt + (Date.now() - openedAt) + offsetRef.current,
+      return createRenderClock({ clock: { now: () => sceneAt + (Date.now() - openedAt) + feedOffset.ms,
         localNow: () => Date.now() } });
     }
     return createRenderClock({ clock: { now: () => sceneAt + (Date.now() - openedAt) } });
@@ -157,7 +158,7 @@ function LabScene({ scene, basemap, frozenAt, governed = false }) {
       const timer = setTimeout(() => {
         timers.delete(timer);
         reads += 1;
-        offsetRef.current = feed.offsetsMs[reads % feed.offsetsMs.length];
+        feedOffset.ms = feed.offsetsMs[reads % feed.offsetsMs.length];
         setFeedAt(readAt);
       }, feed.lateMs);
       timers.add(timer);
@@ -167,7 +168,7 @@ function LabScene({ scene, basemap, frozenAt, governed = false }) {
       clearInterval(interval);
       timers.forEach(clearTimeout);
     };
-  }, [feed, renderClock]);
+  }, [feed, feedOffset, renderClock]);
   const scenario = useMemo(() => (feedAt === null || !scene.traffic ? scene.traffic
     : feedScenarioAt(scene.traffic, feedAt)), [feedAt, scene.traffic]);
   // The traffic of a traffic scene (PR M5, lab/trafficScenes.js), built at the frozen clock for the URL's selection:
