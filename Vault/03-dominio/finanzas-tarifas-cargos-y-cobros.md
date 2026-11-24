@@ -244,6 +244,17 @@ fase 4 (`8b61f567`) cambió tres cosas de «Por facturar»:
   los mismos filtros conserva las filas, y si falla las marca como no
   actualizadas.
 
+*Posterior al commit verificado de esta nota (revisión de coherencia CN-07 y
+CN-15, noviembre de 2026):* «Emitir factura» abre primero una confirmación con
+la aerolínea, el número de operaciones y el neto y el total estimados; solo
+«Confirmar emisión» envía la emisión, con la misma clave y las mismas
+versiones de siempre. Si la aerolínea del filtro deja de tener pendientes en el
+período (sale de la faceta de aerolíneas, por ejemplo tras facturar sus
+últimas operaciones), el filtro vuelve a «Todas» y lo dice; una lista vacía
+distingue «nada coincide con los filtros» de «todo está facturado». El aviso
+de la factura emitida muestra solo el e-NCF, sin el número interno `NF-…`
+([pantalla](../../frontend/private-web/src/features/finance/invoicing/ToInvoicePage.jsx)).
+
 ### Emisión
 
 - `POST finance/invoices/from-operations` (`IssueInvoiceFromOperations`, permiso `finance.invoicing.issue`) emite una factura para una operación o para varias de la misma aerolínea y moneda.

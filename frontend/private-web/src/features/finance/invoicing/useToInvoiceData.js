@@ -111,6 +111,9 @@ export function useToInvoiceData(initialStationId) {
   const [picking, setPicking] = useState(false);
   const [issue, setIssue] = useState({ status: 'idle' });
   const [closure, setClosure] = useState({ status: 'idle' });
+  // CN-15: the airline the filter showed when it ran out of pending operations (its option leaves the filter).
+  const [airlineGone, setAirlineGone] = useState(null);
+  const airlineNames = useRef(new Map());
   const issueKeys = useRef(createCommandKeyHolder());
   const closeKeys = useRef(createCommandKeyHolder());
   const generation = useRef(0);
@@ -156,6 +159,15 @@ export function useToInvoiceData(initialStationId) {
     getFinancePendingOperations({ ...filters, limit: PAGE_SIZE }, { signal: controller.signal })
       .then(page => {
         if (controller.signal.aborted || current !== generation.current) return;
+        // CN-15: the list carries every airline with pending operations in the period, whatever the airline filter.
+        // When the filtered airline is no longer among them (its last operations were invoiced), the filter returns
+        // to «Todas» and says why, instead of an empty list of an airline that is no longer offered.
+        if (filters.airlineId && !page.airlines.some(item => item.airlineId === filters.airlineId)) {
+          setAirlineGone(airlineNames.current.get(filters.airlineId) ?? 'La aerolínea elegida');
+          setAirline('all');
+          setSelectedIds([]);
+        }
+        for (const item of page.airlines) airlineNames.current.set(item.airlineId, item.airlineName);
         shownFilters.current = key;
         setData({ operations: page.operations.map(toRow), nextCursor: page.nextCursor ?? null,
           totalPending: page.totalPending, airlines: page.airlines, limits: page.limits });
@@ -270,6 +282,7 @@ export function useToInvoiceData(initialStationId) {
     setTo(next.to);
     setSelectedIds([]);
     setNotice(null);
+    setAirlineGone(null);
   }
 
   async function loadMore() {
@@ -339,11 +352,12 @@ export function useToInvoiceData(initialStationId) {
   return {
     status, stale, operations: filtered, totalLoaded: operations.length, totalPending: data.totalPending,
     hasMore: Boolean(data.nextCursor), more, loadMore, limits, airlines: data.airlines,
-    scopes, stationId, setStationId: value => { setStationId(value); setSelectedIds([]); setNotice(null); },
+    scopes, stationId, setStationId: value => { setStationId(value); setSelectedIds([]); setNotice(null); setAirlineGone(null); },
     from, setFrom: value => changeFilters({ from: value, to }), to, setTo: value => changeFilters({ from, to: value }),
     setWeek: offset => changeFilters(sundayWeek(today, offset)), setMonth: offset => changeFilters(calendarMonth(today, offset)),
     clearPeriod: () => changeFilters({ from: '', to: '' }),
-    airline, setAirline: value => { setAirline(value); setSelectedIds([]); setNotice(null); }, query, setQuery,
+    airline, setAirline: value => { setAirline(value); setSelectedIds([]); setNotice(null); setAirlineGone(null); }, query, setQuery,
+    airlineGone, filtersApplied: airline !== 'all' || Boolean(from) || Boolean(to),
     selectedIds, canSelect, whyNot, toggle, selectAirline, picking, notice,
     clearSelection: () => { setSelectedIds([]); setNotice(null); }, summary,
     issue, issueInvoice, dismissIssue: () => setIssue({ status: 'idle' }),

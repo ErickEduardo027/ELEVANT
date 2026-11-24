@@ -47,6 +47,12 @@ function renderPage(permissions = ['finance.invoicing.read', 'finance.invoicing.
   </DepartmentAccessProvider>);
 }
 
+/** CN-15: «Emitir factura» asks first; the confirmation issues. */
+function confirmIssue() {
+  fireEvent.click(screen.getByRole('button', { name: 'Emitir factura' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: 'Emitir factura' })).getByRole('button', { name: 'Confirmar emisión' }));
+}
+
 beforeEach(() => {
   vi.mocked(readSession).mockReturnValue({ accountId: 'finance', stationScopes: [{ stationId: STATION_ID, stationCode: 'PUJ' }] });
   observer.factory.mockReset();
@@ -108,9 +114,9 @@ describe('ToInvoicePage', () => {
     expect(summary).toHaveTextContent('4 de 500 líneas');
     expect(screen.getByText(/ITBIS 18 %/)).toHaveTextContent('45.00');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Emitir factura' }));
+    confirmIssue();
     expect(await screen.findByRole('alert')).toHaveTextContent('Puede reintentar');
-    fireEvent.click(screen.getByRole('button', { name: 'Emitir factura' }));
+    confirmIssue();
     expect(await screen.findByText('e-NCF E310000000001')).toBeInTheDocument();
     const [first, second] = vi.mocked(issueInvoiceFromOperations).mock.calls.map(([request]) => request);
     expect(first).toEqual({ stationId: STATION_ID, operationIds: ['op-1', 'op-2'], requestId: expect.any(String),
@@ -133,7 +139,7 @@ describe('ToInvoicePage', () => {
         deliveries: [{ ...queued, status: 'Failed', reason: 'smtp_rejected' }] });
     renderPage(undefined, { emailPollMs: 10 });
     fireEvent.click(await screen.findByLabelText('Seleccionar DEV-TAT-0001'));
-    fireEvent.click(screen.getByRole('button', { name: 'Emitir factura' }));
+    confirmIssue();
     const status = await screen.findByLabelText('Correo de la factura');
     expect(status).toHaveTextContent('Correo en cola para 1 destinatario(s)');
     await waitFor(() => expect(screen.getByLabelText('Correo de la factura'))
@@ -145,7 +151,7 @@ describe('ToInvoicePage', () => {
       { status: 409, code: 'version_conflict', title: 'The operations changed.' }));
     renderPage();
     fireEvent.click(await screen.findByLabelText('Seleccionar DEV-TAT-0001'));
-    fireEvent.click(screen.getByRole('button', { name: 'Emitir factura' }));
+    confirmIssue();
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Alguna operación cambió desde que cargó la lista');
     expect(alert).not.toHaveTextContent('The operations changed');
@@ -264,7 +270,7 @@ describe('ToInvoicePage', () => {
       .mockResolvedValueOnce({ closureId: 'c-1', operationIds: ['op-1'], replayed: false });
     renderPage();
     fireEvent.click(await screen.findByLabelText('Seleccionar DEV-TAT-0001'));
-    fireEvent.click(screen.getByRole('button', { name: 'Emitir factura' }));
+    confirmIssue();
     expect(await screen.findByRole('alert')).toHaveTextContent('no se emite una factura de 0');
     fireEvent.click(screen.getByRole('button', { name: 'Cerrar sin cargo' }));
     const dialog = screen.getByRole('dialog', { name: 'Cerrar sin cargo' });
@@ -279,6 +285,48 @@ describe('ToInvoicePage', () => {
     expect(firstCommand).toEqual({ stationId: STATION_ID, reason: 'Servicios sin tarifa',
       operations: [{ operationId: 'op-1', version: 'v-op-1' }] });
     expect([secondCommand, secondKey]).toEqual([firstCommand, firstKey]);
+  });
+
+  it('confirms airline, operations and estimated net before issuing, and cancelling issues nothing (CN-15)', async () => {
+    vi.mocked(issueInvoiceFromOperations).mockResolvedValue({ invoiceId: 'inv-1', number: 'NF-1',
+      fiscalNumber: 'E310000000001', total: 295, currencyCode: 'USD', replayed: false });
+    renderPage();
+    fireEvent.click(await screen.findByLabelText('Seleccionar DEV-TAT-0001'));
+    fireEvent.click(screen.getByLabelText('Seleccionar DEV-TAT-0002'));
+    fireEvent.click(screen.getByRole('button', { name: 'Emitir factura' }));
+    const dialog = screen.getByRole('dialog', { name: 'Emitir factura' });
+    const facts = within(dialog).getByLabelText('Factura por emitir');
+    expect(facts).toHaveTextContent('Demo Airlines');
+    expect(facts).toHaveTextContent('Operaciones2');
+    expect(facts).toHaveTextContent('250.00');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
+    expect(screen.queryByRole('dialog', { name: 'Emitir factura' })).not.toBeInTheDocument();
+    expect(issueInvoiceFromOperations).not.toHaveBeenCalled();
+    confirmIssue();
+    expect(await screen.findByText('e-NCF E310000000001')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Emitir factura' })).not.toBeInTheDocument();
+    // CN-07: the e-NCF is the human code; the internal number is not repeated.
+    expect(screen.getByRole('region', { name: 'Factura emitida' })).not.toHaveTextContent('NF-1');
+  });
+
+  it('returns the airline filter to «Todas» when its last operations were invoiced (CN-15)', async () => {
+    renderPage();
+    fireEvent.change(await screen.findByLabelText('Filtrar por aerolínea'), { target: { value: OTHER } });
+    vi.mocked(getFinancePendingOperations).mockImplementation(async request => (request.airlineId === OTHER
+      ? page([], { airlines: [{ airlineId: DEMO, airlineName: 'Demo Airlines', pendingCount: 3 }] }) : page(OPERATIONS.slice(0, 2))));
+    window.dispatchEvent(new Event('focus'));
+    expect(await screen.findByText(/Other Airline no tiene más operaciones por facturar/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Filtrar por aerolínea')).toHaveValue('all');
+    expect(await screen.findByLabelText('Seleccionar DEV-TAT-0001')).toBeInTheDocument();
+  });
+
+  it('tells a filter that matches nothing apart from everything invoiced (CN-15)', async () => {
+    vi.mocked(getFinancePendingOperations).mockResolvedValue(page([], { airlines: [] }));
+    renderPage();
+    expect(await screen.findByText('No hay operaciones aprobadas pendientes de facturar.')).toBeInTheDocument();
+    vi.mocked(getFinancePendingOperations).mockResolvedValue(page([]));
+    fireEvent.change(screen.getByLabelText('Operaciones desde'), { target: { value: '2026-08-01' } });
+    expect(await screen.findByText(/Ninguna operación pendiente coincide con los filtros elegidos/)).toBeInTheDocument();
   });
 
   it('hides issuing without the issue permission and shows the empty state', async () => {

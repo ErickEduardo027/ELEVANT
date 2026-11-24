@@ -55,7 +55,7 @@ export const coverageMessages = {
     coverages: {
       title: 'Coberturas del día',
       empty: 'Aún no hay agentes asignados en esta terminal.',
-      about: 'Qué agente cubre cada posición durante su turno. Los vuelos que bloquean en esas posiciones le llegan solos.',
+      about: 'Qué agente cubre cada posición durante su turno. Si un vuelo ya asignado cambia a una de estas posiciones, pasa a este agente. La primera asignación la hace OCC en Planificación.',
       columns: {
         agent: 'Agente',
         stands: 'Posiciones',
@@ -96,6 +96,8 @@ export const coverageMessages = {
       mentorWithoutPermit: ' · carnet vencido',
       vehicle: 'Vehículo asignado',
       vehiclePlaceholder: 'Ej. VH-07',
+      vehicleHint: 'Con más de {stands} posiciones el agente se desplaza entre ellas: necesita licencia de conducir y un vehículo asignado.',
+      limitReached: 'Llegaste al máximo de {max} posiciones por agente. Quita una para elegir otra.',
       reinforcement: 'Refuerzo (segundo agente en posiciones ya cubiertas, p. ej. sábados de 12:00 a 17:00)',
       submit: 'Asignar posiciones',
       saving: 'Guardando…',
@@ -206,7 +208,7 @@ export const coverageMessages = {
     coverages: {
       title: 'Coverage of the day',
       empty: 'No agents are assigned in this terminal yet.',
-      about: 'Which agent covers each stand during their shift. Flights that block on those stands reach them on their own.',
+      about: 'Which agent covers each stand during their shift. If an already assigned flight changes to one of these stands, it moves to this agent. OCC makes the first assignment in Planning.',
       columns: {
         agent: 'Agent',
         stands: 'Stands',
@@ -245,6 +247,8 @@ export const coverageMessages = {
       mentorWithoutPermit: ' · expired permit',
       vehicle: 'Assigned vehicle',
       vehiclePlaceholder: 'E.g. VH-07',
+      vehicleHint: 'With more than {stands} stands the agent moves between them: a driver licence and an assigned vehicle are required.',
+      limitReached: 'You reached the maximum of {max} stands per agent. Remove one to choose another.',
       reinforcement: 'Reinforcement (a second agent on stands already covered, e.g. Saturdays from 12:00 to 17:00)',
       submit: 'Assign stands',
       saving: 'Saving…',

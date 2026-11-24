@@ -37,3 +37,18 @@ export const airlineCodeLabel = code => (typeof code === 'string' ? code.trim() 
  * @param {string} many
  */
 export const countLabel = (count, one, many) => `${count} ${count === 1 ? one : many}`;
+
+/**
+ * CN-13: a published version in the agreements list. Finance's approval fixes the prices, not the contract: a version
+ * of a contract that never activated (status «Draft», no `signedOn`) still waits for the signatures and the airline's
+ * operating permit, so it never reads «Aprobada» alone. The list has no signatures of its own; the detail names them.
+ *
+ * @param {{ status: string }} version
+ * @param {{ status?: string, signedOn?: string | null }} [contract]
+ */
+export function publishedVersionLabel(version, contract) {
+  if (version.status === 'Superseded') return 'Reemplazada';
+  if (version.status === 'Approved' && contract?.status === 'Draft' && !contract?.signedOn)
+    return 'Precios aprobados · pendiente de firmas y permiso';
+  return 'Aprobada';
+}
