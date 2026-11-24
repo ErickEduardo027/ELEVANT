@@ -15,7 +15,8 @@ namespace Elevant.Infrastructure.Persistence.Seed.History;
 /// (<see cref="AutomaticSurchargeApplier.PlanAsync"/>) and freezes the evidence
 /// (<see cref="OperationSubmissionEvidence.CaptureAsync"/>); OCC approves it (with the evidence and charges
 /// <c>CloseApprovedAsync</c> keeps, resolving the open incidents and completing the turnaround) or returns it with a
-/// reason. Only inserts: no audit, outbox, notification or document row. Stand assignments are always closed and the
+/// reason. Only inserts: no audit, outbox, notification or document row (the signed Service Order comes later, from
+/// <see cref="ServiceOrderSignatureHistory"/>). Stand assignments are always closed and the
 /// base agent DEV-RA-001 is never used.
 /// </summary>
 internal static class OperationsHistory
