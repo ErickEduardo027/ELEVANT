@@ -1,7 +1,7 @@
 import { FLIGHT_REPORT_MILESTONES, FLIGHT_REPORT_PHASES, type FlightReportPhase } from '@elevant/api-client';
 
 /** The flight report's last milestone (ADR-0031): the aircraft leaves the stand. */
-export const PUSHBACK_MILESTONE = 'PUSHBACK';
+export { PUSHBACK_MILESTONE } from './pushback-recorded';
 const BLOCK_ON_MILESTONE = 'BLOCK_ON';
 
 /** The phases between the block-on and the push-back, in the order of the flight. */
@@ -81,3 +81,4 @@ export function pushbackEffect(standCode: string | null | undefined) {
       'posición.'
     : `Registrarlo ${closes}.`;
 }
+

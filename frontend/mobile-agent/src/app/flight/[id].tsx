@@ -8,13 +8,16 @@ import type {
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { subscribeMobileChanges } from '../../services/mobile-change-feed';
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import {
   ActivityIndicator,
   Alert,
   RefreshControl,
   ScrollView,
+  type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   StyleSheet,
   Text,
   TextInput,
@@ -28,7 +31,9 @@ import {
   type ServiceExecutionNotice,
 } from '../../components/ramp-service-execution-card';
 import { RampOperationChargesCard, type ChargesExecutionClosed } from '../../components/ramp-operation-charges-card';
+import { OperationTabBar } from '../../components/operation-tab-bar';
 import {
+  assignmentPositionLabel,
   assignmentRoleLabel,
   flightLegTimeLabel,
   formatOperationDate,
@@ -66,6 +71,8 @@ import {
   type HandoffChecklistRead,
   type HandoffRequirement,
 } from '../../features/assigned-operations/handoff';
+import { operationTabProgress, type OperationTab } from '../../features/assigned-operations/operation-tabs';
+import { isPushbackRecorded } from '../../features/assigned-operations/pushback-recorded';
 import { getRampOperationChecklist } from '../../services/ramp-operation-checklist';
 import { countUnsentRampIncidents } from '../../services/ramp-incidents';
 import {
@@ -127,6 +134,9 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
   const [queueRevision, setQueueRevision] = useState(0);
   // 3-N06: the last forms read for this operation, so the hand-off waits for the signed Service Order.
   const [documents, setDocuments] = useState<OperationDocumentsResponse | undefined>(undefined);
+  // CN-24: the milestones of ELEVANT's last answer the device kept, so the forms know whether the push-back is recorded.
+  const [confirmedMilestones, setConfirmedMilestones] = useState<readonly Readonly<{ code: string }>[] | undefined>(
+    undefined);
   const [pendingSubmission, setPendingSubmission] = useState<RampOperationPendingSubmission | null>(null);
   const [submissionNote, setSubmissionNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -299,6 +309,9 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
     setQueueItems(snapshot.items);
     setQueueRevision(id ? snapshot.revisions[id.toLowerCase()] ?? snapshot.revisions[id] ?? 0 : 0);
     setDocuments(id ? snapshot.documents?.[id] ?? snapshot.documents?.[id.toLowerCase()] : undefined);
+    setConfirmedMilestones(id
+      ? (snapshot.confirmed?.[id] ?? snapshot.confirmed?.[id.toLowerCase()])?.milestones
+      : undefined);
   }), [id]);
   const seenRevisionRef = useRef(queueRevision);
   useEffect(() => {
@@ -687,7 +700,46 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
     (transitionRequest: TransitionRampOperationServiceRequest) => void transitionServiceRef.current(service, transitionRequest),
   ] as const)), [operation?.services]);
 
-  if (state !== 'ready' || !operation) {
+  // 3-I: ELEVANT's view (network or saved copy) with what still waits in the device's queue applied on top: a start or
+  // a service transition saved without signal already shows, marked «En el dispositivo». Memoized, so typing the note
+  // for OCC does not render the memoized service cards again.
+  const projection = useMemo(
+    () => (operation ? projectRampOperation(operation, queueItems) : null),
+    [operation, queueItems],
+  );
+  const serviceQueues = useMemo(() => new Map((projection?.view.services ?? []).map(service => [
+    service.id,
+    projection?.servicesRefused.has(service.id)
+      ? { tone: 'blocked' as const, message: projection.servicesRefused.get(service.id)?.lastError }
+      : projection?.servicesOnDevice.has(service.id) ? { tone: 'device' as const } : undefined,
+  ] as const)), [projection]);
+  const existingServiceIds = useMemo(
+    () => (operation?.services ?? []).map(service => service.serviceDefinitionId),
+    [operation?.services],
+  );
+
+  // CN-22: the tab shown once the operation started; each operation opens on its summary.
+  const [tab, setTab] = useState<OperationTab>('resumen');
+  useEffect(() => { setTab('resumen'); }, [id]);
+  const scrollRef = useRef<ScrollView>(null);
+  const scrollYRef = useRef(0);
+  const tabsTopRef = useRef(0);
+  const selectTab = useCallback((next: OperationTab) => {
+    setTab(next);
+    // The new tab starts at its top, right under the fixed bar, instead of where the last one was scrolled to.
+    if (scrollYRef.current > tabsTopRef.current) {
+      scrollRef.current?.scrollTo({ y: tabsTopRef.current, animated: false });
+    }
+  }, []);
+  const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    scrollYRef.current = event.nativeEvent.contentOffset.y;
+  }, []);
+  const onBeforeTabsLayout = useCallback((event: LayoutChangeEvent) => {
+    const { y, height } = event.nativeEvent.layout;
+    tabsTopRef.current = y + height;
+  }, []);
+
+  if (state !== 'ready' || !operation || !projection) {
     return <DetailStateScreen onRetry={() => void load()} state={state} />;
   }
 
@@ -695,9 +747,6 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
   const timeZone = turnaround.station.ianaTimeZone;
   // N9 (D-N9): «Agente principal»; a role this version does not know is left out, never shown as its code.
   const assignmentRole = assignmentRoleLabel(assignment.assignmentRole);
-  // 3-I: ELEVANT's view (network or saved copy) with what still waits in the device's queue applied on top: a start or
-  // a service transition saved without signal already shows, marked «En el dispositivo».
-  const projection = projectRampOperation(operation, queueItems);
   const shown = projection.view;
   // Every operation carries an execution checklist (ADR-0031): the bridge one or the Flight Report.
   const hasOperationalChecklist = true;
@@ -707,6 +756,13 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
   // or returned and waiting for the correction to open.
   const executionClosed: ChargesExecutionClosed | undefined = shown.operation.status === 'Returned'
     ? 'returned' : !executing && !notStarted ? 'closed' : undefined;
+  // CN-24: whether the push-back is recorded, confirmed or waiting on the device; the forms warn until it is.
+  const pushbackRecorded = isPushbackRecorded({
+    milestones: shown.milestones,
+    confirmed: confirmedMilestones,
+    items: queueItems,
+    operationId: operation.operation.id,
+  });
   // N1: where the checklist stands, and everything a new hand-off needs (3-N06): the services as the agent left them,
   // the checklist, the incident reports still on the device, the flight data on the Service Order (S1, a warning only),
   // the signed Service Order and the queue.
@@ -723,122 +779,126 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
     // The push-back's rule (N2): a signature of the Order waiting in the queue counts as signed.
     orderSigned: serviceOrderHasSignature(documents, queueItems, operation.operation.id),
     waitingRecords: projection.pending + projection.blocked,
+    pushbackRecorded,
   });
   const openChecklist = () => router.push({ pathname: '/checklist/[id]', params: { id: operation.operation.id } });
   const openIncidents = () => router.push({ pathname: '/incident/[id]', params: { id: operation.operation.id } });
 
-  return (
-    <ScrollView
-      contentContainerStyle={[styles.container, { paddingBottom: 38 + insets.bottom }]}
-      refreshControl={(
-        <RefreshControl
-          accessibilityLabel="Actualizar detalle de la operación"
-          colors={[colors.navy]}
-          onRefresh={() => {
-            void load(true);
-            void readChecklist();
-          }}
-          refreshing={refreshing}
-          tintColor={colors.navy}
+  // CN-22: before the start the screen is the one it always was; once the operation started, its sections go in tabs
+  // under its card. Every section stays mounted and the hidden ones are only not displayed, so switching tabs never
+  // loses what the agent typed or drew (a draft, a signature, a note) and the flow is the same.
+  const tabbed = shown.operation.status !== 'Assigned';
+  const progress = operationTabProgress({
+    requirements,
+    services: shown.services,
+    returned: operation.review?.status === 'Returned' || correctionPending,
+    closed: !executing && !notStarted && shown.operation.status !== 'Returned',
+  });
+
+  const cachedBanner = cached && (
+    <View accessibilityLiveRegion="polite" style={styles.cachedBanner}>
+      <Ionicons name="cloud-offline-outline" size={20} color={colors.warning} />
+      <Text style={styles.cachedText}>Vista guardada · desliza hacia abajo para reconectar.</Text>
+    </View>
+  );
+
+  const hero = (
+    <Card style={styles.hero}>
+      <View style={styles.heroTop}>
+        <View style={styles.heroTitle}>
+          <Text style={styles.eyebrow}>OPERACIÓN {turnaround.operationCode}</Text>
+          <Text style={styles.flight}>{operationFlightLabel(operation)}</Text>
+          <Text style={styles.airline}>{turnaround.airline.name}</Text>
+        </View>
+        <StatusPill
+          text={operationStatusLabel(shown.operation.status)}
+          tone={operationStatusTone(shown.operation.status)}
+        />
+      </View>
+
+      <View style={styles.heroMeta}>
+        <Meta icon="calendar-outline" label={formatOperationDate(turnaround.operationDate)} />
+        <Meta icon="location-outline" label={`${turnaround.station.code} · ${turnaround.station.name}`} />
+        <Meta icon="navigate-outline" label={operationStandLabel(operation)} />
+        <Meta icon="airplane-outline" label={operationAircraftLabel(operation)} />
+      </View>
+    </Card>
+  );
+
+  const startControl = (
+    <OperationStartControl
+      notice={startNotice}
+      onDevice={projection.startOnDevice}
+      onStart={() => void startOperation()}
+      operation={shown.operation}
+      refusal={projection.startRefused?.lastError}
+      starting={starting}
+      timeZone={timeZone}
+    />
+  );
+
+  const flightCards = shown.operation.status !== 'Assigned' && (
+    <>
+      <FlightReportPanel operation={shown} timeZone={timeZone} editable={executing} />
+      <DeviationAction operationId={operation.operation.id} editable={executing} />
+      <FlightDataCard key={operation.operation.id} operation={shown} editable={executing} />
+      <WalkaroundCard operationId={operation.operation.id} editable={executing} />
+      <CharterCard operationId={operation.operation.id} editable={executing}
+        existingServiceIds={existingServiceIds} />
+    </>
+  );
+
+  const documentsPanel = shown.operation.status !== 'Assigned' && (
+    <DocumentsPanel operationId={operation.operation.id} editable={executing || shown.operation.status === 'PendingReview' ||
+      shown.operation.status === 'Returned'} executionOpen={executing} pushbackRecorded={pushbackRecorded} />
+  );
+
+  const attendance = operation.operation.id && assignment.id && (
+    <AttendanceDraftCard
+      key={`${operation.operation.id}:${assignment.id}`}
+      operationId={operation.operation.id}
+      assignmentId={assignment.id}
+      active={focused}
+      stationCode={turnaround.station.code}
+      timeZone={timeZone}
+      operationDate={turnaround.operationDate}
+    />
+  );
+
+  const returnedBlock = (operation.review?.status === 'Returned' || correctionPending) && (
+    <View style={styles.handoffCard}>
+      <Text accessibilityRole="header" style={styles.handoffTitle}>
+        {operation.operation.status === 'Returned' ? 'Devuelta por OCC' : 'Corrección en curso'}
+      </Text>
+      <Text style={styles.startDescription}>
+        Revisión {operation.review?.revisionNumber ?? '—'} · Motivo de devolución:
+      </Text>
+      <Text style={styles.nextPhaseWarning}>
+        {operation.review?.returnReason ?? 'Actualiza el detalle para consultar el motivo.'}
+      </Text>
+      <Text style={styles.startDescription}>
+        El checklist y los servicios enviados anteriormente se conservan como historial.
+      </Text>
+      {(operation.operation.status === 'Returned' || correctionPending) && (
+        <PrimaryButton
+          disabled={cached || correcting ||
+            (!correctionPending && !operation.review?.returnReason)}
+          icon={correctionPending ? 'refresh-outline' : 'create-outline'}
+          onPress={confirmCorrection}
+          title={correcting ? 'ABRIENDO…' : correctionPending
+            ? 'REINTENTAR CORRECCIÓN' : 'ABRIR CORRECCIÓN'}
         />
       )}
-    >
-      {cached && (
-        <View accessibilityLiveRegion="polite" style={styles.cachedBanner}>
-          <Ionicons name="cloud-offline-outline" size={20} color={colors.warning} />
-          <Text style={styles.cachedText}>Vista guardada · desliza hacia abajo para reconectar.</Text>
-        </View>
+      {correctionNotice && (
+        <Text accessibilityLiveRegion="polite" style={styles.nextPhaseWarning}>
+          {correctionNotice.title}. {correctionNotice.message}
+        </Text>
       )}
+    </View>
+  );
 
-      <Card style={styles.hero}>
-        <View style={styles.heroTop}>
-          <View style={styles.heroTitle}>
-            <Text style={styles.eyebrow}>OPERACIÓN {turnaround.operationCode}</Text>
-            <Text style={styles.flight}>{operationFlightLabel(operation)}</Text>
-            <Text style={styles.airline}>{turnaround.airline.name}</Text>
-          </View>
-          <StatusPill
-            text={operationStatusLabel(shown.operation.status)}
-            tone={operationStatusTone(shown.operation.status)}
-          />
-        </View>
-
-        <View style={styles.heroMeta}>
-          <Meta icon="calendar-outline" label={formatOperationDate(turnaround.operationDate)} />
-          <Meta icon="location-outline" label={`${turnaround.station.code} · ${turnaround.station.name}`} />
-          <Meta icon="navigate-outline" label={operationStandLabel(operation)} />
-          <Meta icon="airplane-outline" label={operationAircraftLabel(operation)} />
-        </View>
-      </Card>
-
-      <OperationStartControl
-        notice={startNotice}
-        onDevice={projection.startOnDevice}
-        onStart={() => void startOperation()}
-        operation={shown.operation}
-        refusal={projection.startRefused?.lastError}
-        starting={starting}
-        timeZone={timeZone}
-      />
-
-      <ConnectionBadge />
-      {shown.operation.status !== 'Assigned' && (
-        <>
-          <FlightReportPanel operation={shown} timeZone={timeZone} editable={executing} />
-          <DeviationAction operationId={operation.operation.id} editable={executing} />
-          <FlightDataCard key={operation.operation.id} operation={shown} editable={executing} />
-          <WalkaroundCard operationId={operation.operation.id} editable={executing} />
-          <CharterCard operationId={operation.operation.id} editable={executing}
-            existingServiceIds={operation.services.map(service => service.serviceDefinitionId)} />
-          <DocumentsPanel operationId={operation.operation.id} editable={executing || shown.operation.status === 'PendingReview' ||
-            shown.operation.status === 'Returned'} executionOpen={executing} />
-        </>
-      )}
-
-      {operation.operation.id && assignment.id && (
-        <AttendanceDraftCard
-          key={`${operation.operation.id}:${assignment.id}`}
-          operationId={operation.operation.id}
-          assignmentId={assignment.id}
-          active={focused}
-          stationCode={turnaround.station.code}
-          timeZone={timeZone}
-          operationDate={turnaround.operationDate}
-        />
-      )}
-
-      {(operation.review?.status === 'Returned' || correctionPending) && (
-        <View style={styles.handoffCard}>
-          <Text accessibilityRole="header" style={styles.handoffTitle}>
-            {operation.operation.status === 'Returned' ? 'Devuelta por OCC' : 'Corrección en curso'}
-          </Text>
-          <Text style={styles.startDescription}>
-            Revisión {operation.review?.revisionNumber ?? '—'} · Motivo de devolución:
-          </Text>
-          <Text style={styles.nextPhaseWarning}>
-            {operation.review?.returnReason ?? 'Actualiza el detalle para consultar el motivo.'}
-          </Text>
-          <Text style={styles.startDescription}>
-            El checklist y los servicios enviados anteriormente se conservan como historial.
-          </Text>
-          {(operation.operation.status === 'Returned' || correctionPending) && (
-            <PrimaryButton
-              disabled={cached || correcting ||
-                (!correctionPending && !operation.review?.returnReason)}
-              icon={correctionPending ? 'refresh-outline' : 'create-outline'}
-              onPress={confirmCorrection}
-              title={correcting ? 'ABRIENDO…' : correctionPending
-                ? 'REINTENTAR CORRECCIÓN' : 'ABRIR CORRECCIÓN'}
-            />
-          )}
-          {correctionNotice && (
-            <Text accessibilityLiveRegion="polite" style={styles.nextPhaseWarning}>
-              {correctionNotice.title}. {correctionNotice.message}
-            </Text>
-          )}
-        </View>
-      )}
-
+  const movement = (
+    <>
       {/* S6 (D-S6): whose clock the times use, «Hora local de PUJ», never the zone's IANA id. */}
       <SectionTitle title="Movimiento aéreo" subtitle={stationTimeTitle(turnaround.station.code)} />
       <View style={styles.legs}>
@@ -858,7 +918,12 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
           </Card>
         )}
       </View>
+    </>
+  );
 
+  const correctionMode = executing && operation.review?.status === 'Returned';
+  const services = (
+    <>
       <SectionTitle
         title="Servicios contratados"
         subtitle={`${shown.services.length} ${shown.services.length === 1 ? 'línea' : 'líneas'} de servicio`}
@@ -871,7 +936,7 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
               (busyServiceId === null || busyServiceId === service.id)
             }
             busy={busyServiceId === service.id}
-            correctionMode={executing && operation.review?.status === 'Returned'}
+            correctionMode={correctionMode}
             disabledReason={
               !executing
                 ? 'Inicia la operación antes de ejecutar sus servicios.'
@@ -882,9 +947,7 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
             key={service.id}
             notice={serviceNotices[service.id]}
             onTransition={serviceTransitionHandlers.get(service.id)!}
-            queue={projection.servicesRefused.has(service.id)
-              ? { tone: 'blocked', message: projection.servicesRefused.get(service.id)?.lastError }
-              : projection.servicesOnDevice.has(service.id) ? { tone: 'device' } : undefined}
+            queue={serviceQueues.get(service.id)}
             service={service}
           />
         )) : (
@@ -902,88 +965,93 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
           services={shown.services}
         />
       )}
+    </>
+  );
 
-      {executing && (
-        <View style={styles.nextPhase}>
-          <View style={styles.nextPhaseIcon}>
-            <Ionicons name="alert-circle-outline" size={26} color={colors.navy} />
-          </View>
-          <View style={styles.nextPhaseCopy}>
-            <Text style={styles.nextPhaseTitle}>Incidencias</Text>
-            <Text style={styles.nextPhaseText}>
-              Registra eventos operativos, de seguridad, equipo o documentación. El reporte se conserva localmente si pierdes la conexión.
-            </Text>
-            <PrimaryButton
-              icon="alert-circle-outline"
-              onPress={openIncidents}
-              title="ABRIR INCIDENCIAS"
-            />
-          </View>
-        </View>
-      )}
-
-      {hasOperationalChecklist && (
-        <View style={styles.nextPhase}>
-          <View style={styles.nextPhaseIcon}>
-            <Ionicons name="shield-checkmark-outline" size={26} color={colors.navy} />
-          </View>
-          <View style={styles.nextPhaseCopy}>
-            <Text style={styles.nextPhaseTitle}>Checklist operativo</Text>
-            {/* N1: where the checklist stands, once the operation started; nothing while the tablet cannot tell. */}
-            {!notStarted && <ChecklistStandingPill standing={checklist} />}
-            <Text style={styles.nextPhaseText}>
-              {executionClosed
-                ? 'La ejecución está cerrada: el checklist se consulta tal como se envió.'
-                : 'Completa las secciones vigentes para esta operación. El envío del checklist no finaliza ni remite la operación a OCC.'}
-            </Text>
-            {notStarted && (
-              <Text style={styles.nextPhaseWarning}>
-                Inicia la operación antes de completar el checklist.
-              </Text>
-            )}
-            {cached && executing && (
-              <Text style={styles.nextPhaseWarning}>
-                Sin señal se abre la última copia del checklist guardada en el dispositivo; el envío sale al reconectar.
-              </Text>
-            )}
-            {/* N1: after the hand-off the sent checklist still opens, read-only; only an operation not started keeps
-                it off. */}
-            <PrimaryButton
-              disabled={notStarted || busyServiceId !== null}
-              icon={executionClosed ? 'eye-outline' : 'clipboard-outline'}
-              onPress={openChecklist}
-              title={executionClosed ? 'VER CHECKLIST' : 'ABRIR CHECKLIST'}
-            />
-          </View>
-        </View>
-      )}
-
-      {(hasOperationalChecklist || pendingSubmission || operation.operation.status === 'PendingReview') && (
-        <OperationSubmissionControl
-          blocked={cached || busyServiceId !== null || submissionReconciliationRequired}
-          note={submissionNote}
-          notice={submissionNotice}
-          onChangeNote={setSubmissionNote}
-          onOpenChecklist={openChecklist}
-          onOpenIncidents={openIncidents}
-          onSubmit={() => void handoffOperation()}
-          operation={operation.operation}
-          correctionRevision={operation.review?.status === 'Returned'
-            ? operation.review.revisionNumber + 1 : null}
-          pending={pendingSubmission}
-          requirements={requirements}
-          serviceBusy={busyServiceId !== null}
-          submitting={submitting}
+  const incidents = executing && (
+    <View style={styles.nextPhase}>
+      <View style={styles.nextPhaseIcon}>
+        <Ionicons name="alert-circle-outline" size={26} color={colors.navy} />
+      </View>
+      <View style={styles.nextPhaseCopy}>
+        <Text style={styles.nextPhaseTitle}>Incidencias</Text>
+        <Text style={styles.nextPhaseText}>
+          Registra eventos operativos, de seguridad, equipo o documentación. El reporte se conserva localmente si pierdes la conexión.
+        </Text>
+        <PrimaryButton
+          icon="alert-circle-outline"
+          onPress={openIncidents}
+          title="ABRIR INCIDENCIAS"
         />
-      )}
+      </View>
+    </View>
+  );
 
+  const checklistCard = hasOperationalChecklist && (
+    <View style={styles.nextPhase}>
+      <View style={styles.nextPhaseIcon}>
+        <Ionicons name="shield-checkmark-outline" size={26} color={colors.navy} />
+      </View>
+      <View style={styles.nextPhaseCopy}>
+        <Text style={styles.nextPhaseTitle}>Checklist operativo</Text>
+        {/* N1: where the checklist stands, once the operation started; nothing while the tablet cannot tell. */}
+        {!notStarted && <ChecklistStandingPill standing={checklist} />}
+        <Text style={styles.nextPhaseText}>
+          {executionClosed
+            ? 'La ejecución está cerrada: el checklist se consulta tal como se envió.'
+            : 'Completa las secciones vigentes para esta operación. El envío del checklist no finaliza ni remite la operación a OCC.'}
+        </Text>
+        {notStarted && (
+          <Text style={styles.nextPhaseWarning}>
+            Inicia la operación antes de completar el checklist.
+          </Text>
+        )}
+        {cached && executing && (
+          <Text style={styles.nextPhaseWarning}>
+            Sin señal se abre la última copia del checklist guardada en el dispositivo; el envío sale al reconectar.
+          </Text>
+        )}
+        {/* N1: after the hand-off the sent checklist still opens, read-only; only an operation not started keeps
+            it off. */}
+        <PrimaryButton
+          disabled={notStarted || busyServiceId !== null}
+          icon={executionClosed ? 'eye-outline' : 'clipboard-outline'}
+          onPress={openChecklist}
+          title={executionClosed ? 'VER CHECKLIST' : 'ABRIR CHECKLIST'}
+        />
+      </View>
+    </View>
+  );
+
+  const submission = (hasOperationalChecklist || pendingSubmission || operation.operation.status === 'PendingReview') && (
+    <OperationSubmissionControl
+      blocked={cached || busyServiceId !== null || submissionReconciliationRequired}
+      note={submissionNote}
+      notice={submissionNotice}
+      onChangeNote={setSubmissionNote}
+      onOpenChecklist={openChecklist}
+      onOpenIncidents={openIncidents}
+      onSubmit={() => void handoffOperation()}
+      operation={operation.operation}
+      correctionRevision={operation.review?.status === 'Returned'
+        ? operation.review.revisionNumber + 1 : null}
+      pending={pendingSubmission}
+      requirements={requirements}
+      serviceBusy={busyServiceId !== null}
+      submitting={submitting}
+    />
+  );
+
+  const assignmentSection = (
+    <>
       <SectionTitle title="Asignación" />
       <Card style={styles.assignmentCard}>
         {assignmentRole ? <Meta icon="briefcase-outline" label={assignmentRole} dark /> : null}
-        {/* N9: the position by its name only; its code («RAMP-AGENT») is for OCC. */}
+        {/* N9: the position by its name only; its code («RAMP-AGENT») is for OCC. CN-25: in Spanish when the
+            catalog still names it in English. */}
         <Meta
           icon="ribbon-outline"
-          label={assignment.position ? assignment.position.name : 'Posición operativa no especificada'}
+          label={assignmentPositionLabel(assignment.position) ?? 'Posición operativa no especificada'}
           dark
         />
         <Meta
@@ -992,10 +1060,93 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
           dark
         />
       </Card>
+    </>
+  );
 
+  // The tab bar's slot is always there, so the sections keep their place in the tree when the operation starts and
+  // nothing the agent typed before the start is lost; before the start it is empty.
+  const tabBar = tabbed
+    ? <OperationTabBar onSelect={selectTab} progress={progress} selected={tab} />
+    : <View />;
+
+  const sections: readonly ScreenSection[] = tabbed
+    ? [
+        { key: 'cached', node: cachedBanner },
+        { key: 'hero', node: hero },
+        { key: 'connection', node: <ConnectionBadge /> },
+        { key: 'tabs', node: tabBar },
+        { key: 'start', node: startControl, tab: 'resumen' },
+        { key: 'attendance', node: attendance, tab: 'resumen' },
+        { key: 'returned', node: returnedBlock, tab: 'resumen' },
+        { key: 'assignment', node: assignmentSection, tab: 'resumen' },
+        { key: 'movement', node: movement, tab: 'vuelo' },
+        { key: 'flight', node: flightCards, tab: 'vuelo' },
+        { key: 'services', node: services, tab: 'servicios' },
+        { key: 'documents', node: documentsPanel, tab: 'documentos' },
+        { key: 'incidents', node: incidents, tab: 'cierre' },
+        { key: 'checklist', node: checklistCard, tab: 'cierre' },
+        { key: 'submission', node: submission, tab: 'cierre' },
+      ]
+    : [
+        { key: 'cached', node: cachedBanner },
+        { key: 'hero', node: hero },
+        { key: 'start', node: startControl },
+        { key: 'connection', node: <ConnectionBadge /> },
+        { key: 'tabs', node: tabBar },
+        { key: 'flight', node: flightCards },
+        { key: 'documents', node: documentsPanel },
+        { key: 'attendance', node: attendance },
+        { key: 'returned', node: returnedBlock },
+        { key: 'movement', node: movement },
+        { key: 'services', node: services },
+        { key: 'incidents', node: incidents },
+        { key: 'checklist', node: checklistCard },
+        { key: 'submission', node: submission },
+        { key: 'assignment', node: assignmentSection },
+      ];
+  const present = sections.filter(section => Boolean(section.node));
+  const tabsIndex = present.findIndex(section => section.key === 'tabs');
+
+  return (
+    <ScrollView
+      contentContainerStyle={[styles.container, { paddingBottom: 38 + insets.bottom }]}
+      onScroll={onScroll}
+      ref={scrollRef}
+      refreshControl={(
+        <RefreshControl
+          accessibilityLabel="Actualizar detalle de la operación"
+          colors={[colors.navy]}
+          onRefresh={() => {
+            void load(true);
+            void readChecklist();
+          }}
+          refreshing={refreshing}
+          tintColor={colors.navy}
+        />
+      )}
+      scrollEventThrottle={64}
+      stickyHeaderIndices={[tabsIndex]}
+    >
+      {present.map((section, index) => (
+        <View
+          key={section.key}
+          onLayout={index === tabsIndex - 1 ? onBeforeTabsLayout : undefined}
+          style={[
+            styles.section,
+            // The bar's own padding spaces it; the empty slot before the start takes no room.
+            index > 0 && section.key !== 'tabs' && styles.sectionSpaced,
+            section.tab && section.tab !== tab && styles.sectionHidden,
+          ]}
+        >
+          {section.node}
+        </View>
+      ))}
     </ScrollView>
   );
 }
+
+/** CN-22: one section of the operation's screen; `tab` is where it goes once the operation started. */
+type ScreenSection = Readonly<{ key: string; node: ReactNode; tab?: OperationTab }>;
 
 function OperationStartControl({
   notice,
@@ -1599,7 +1750,11 @@ function Meta({
 }
 
 const styles = StyleSheet.create({
-  container: { width: '100%', maxWidth: 960, alignSelf: 'center', padding: 16, paddingBottom: 38, gap: 12 },
+  container: { width: '100%', maxWidth: 960, alignSelf: 'center', padding: 16, paddingBottom: 38 },
+  // CN-22: each section spaces itself, so an empty or hidden one takes no room.
+  section: { gap: 12 },
+  sectionSpaced: { marginTop: 12 },
+  sectionHidden: { display: 'none' },
   cachedBanner: {
     padding: 12,
     borderWidth: 1,

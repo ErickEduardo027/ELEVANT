@@ -219,9 +219,43 @@ funciones están en la
 - La asignación del detalle dice «Agente principal» en lugar de `primary`. No
   muestra un rol que la tablet no conoce.
 - La posición operativa se nombra solo por su nombre: «Ramp agent» en lugar de
-  «RAMP-AGENT · Ramp agent». El nombre sembrado en Development sigue en inglés.
+  «RAMP-AGENT · Ramp agent». El nombre sembrado en Development sigue en inglés;
+  desde el hallazgo CN-25 la tablet lo traduce por su código, `RAMP-AGENT` →
+  «Agente de rampa», y una posición que no conoce conserva el nombre del
+  servidor.
 - La APK instalada conserva la ruta y la asignación anteriores hasta que se
   instale la nueva.
+
+**Detalle de operación en pestañas.** Posterior al commit verificado de esta
+nota (hallazgos CN-21 a CN-25 de la corrida del 24 de noviembre), el detalle de
+una operación iniciada deja de ser un solo desplazamiento largo. Bajo la
+tarjeta del vuelo queda fija una barra con cinco pestañas
+([barra](../../frontend/mobile-agent/src/components/operation-tab-bar.tsx),
+[progreso](../../frontend/mobile-agent/src/features/assigned-operations/operation-tabs.ts)):
+
+- **Resumen**: control de inicio, asistencia, devolución de OCC y asignación.
+- **Vuelo**: movimiento aéreo, hitos, desvío, datos del vuelo, walk-around y
+  charter.
+- **Servicios**: servicios contratados y cargos aplicados.
+- **Documentos**: formularios y firmas (Orden de Servicio).
+- **Cierre**: incidencias, checklist, requisitos de entrega y ENTREGAR A OCC.
+
+Cada pestaña muestra su avance con los mismos requisitos que lista el cierre
+(«Servicios 3/5», «Documentos Firmar», «Cierre ✓»). Todas las secciones siguen
+montadas y la pestaña oculta solo no se dibuja, así que cambiar de pestaña no
+pierde borradores, notas ni firmas. Antes del inicio el detalle es el de
+siempre. El flujo, las reglas y las llamadas al servidor no cambian.
+
+- Los stands se muestran como en el mapa de OCC, «A1» y no «A01», con la regla
+  compartida de [códigos de stand](../../frontend/mobile-agent/src/utils/stand-codes.ts)
+  (ADR-0041), cuyas pruebas leen los mismos vectores que el API.
+- Al tocar COMPLETADO (o NO REALIZADO, EXCEPCIÓN), CONFIRMAR aparece en el
+  lugar del botón tocado, antes de la cantidad y la nota; siguen los tres pasos.
+- Mientras el push-back no esté registrado, la Orden de Servicio y su requisito
+  en el cierre avisan «Registra el push-back antes de firmar: al registrarlo
+  cambia la hora de salida y habrá que firmar de nuevo.». Es solo un aviso: la
+  firma no se bloquea.
+- La APK instalada conserva el detalle anterior hasta que se instale la nueva.
 
 **Códigos internos en segundo plano y una sola numeración.** Posterior al
 commit verificado de esta nota (hallazgo N12 de la corrida del VPS del 16 de
