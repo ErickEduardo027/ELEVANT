@@ -35,6 +35,12 @@ internal static class ServiceOrderSignatures
 
     private sealed record VersionRow(long Id, string ContentSha256, long? CorrectsVersionId);
 
+    /// <remarks>
+    /// CN-27: the current content stands on a stored version when it attests the same operational facts
+    /// (<see cref="SignedDocumentVersions"/>), so renaming the station, the airline or a service keeps the signature;
+    /// <see cref="Evaluation.Content"/> and <see cref="Evaluation.ContentSha256"/> are then that version's stored
+    /// content and hash (what was signed), and the assembled content only when no version matches.
+    /// </remarks>
     public static async Task<Evaluation> EvaluateAsync(ElevantDbContext context, long operationId,
         TimeProvider? timeProvider, CancellationToken cancellationToken)
     {
@@ -43,29 +49,36 @@ internal static class ServiceOrderSignatures
         var content = assembled?.Documents.SingleOrDefault(item => item.Kind == OperationDocumentKind.ServiceOrder);
         if (content is null) return new Evaluation(ServiceOrderStates.NeverSigned, null, null, null, null);
         var sha = OperationDocumentRules.Sha256Of(OperationDocumentRules.CanonicalJson(content));
-        var versions = await context.Set<OperationDocumentVersion>().AsNoTracking()
-            .Where(item => item.GroundOperationId == operationId && item.Kind == OperationDocumentKind.ServiceOrder)
-            .Select(item => new VersionRow(item.Id, item.ContentSha256, item.CorrectsVersionId))
-            .ToArrayAsync(cancellationToken);
+        var stored = await SignedDocumentVersions.ReadAsync(context, operationId, OperationDocumentKind.ServiceOrder,
+            cancellationToken);
+        var versions = stored.Select(item => new VersionRow(item.Id, item.ContentSha256, item.CorrectsVersionId)).ToArray();
         var ids = versions.Select(item => item.Id).ToArray();
-        var signed = (await context.Set<OperationDocumentSignature>().AsNoTracking()
+        var roles = (await context.Set<OperationDocumentSignature>().AsNoTracking()
                 .Where(item => ids.Contains(item.OperationDocumentVersionId))
                 .Select(item => new { item.OperationDocumentVersionId, item.Role })
                 .ToArrayAsync(cancellationToken))
             .GroupBy(item => item.OperationDocumentVersionId)
-            .Where(group => OperationDocumentRules.RolesFor(OperationDocumentKind.ServiceOrder)
-                .All(role => group.Any(item => item.Role == role)))
-            .Select(group => group.Key).ToHashSet();
-        var current = versions.SingleOrDefault(item => item.ContentSha256 == sha);
-        if (current is not null)
-        {
-            if (signed.Contains(current.Id))
-                return new Evaluation(ServiceOrderStates.FullySigned, content, sha, current.Id, current.Id);
-            if (SignedAncestor(current, versions, signed) is long ancestor)
-                return new Evaluation(ServiceOrderStates.Corrected, content, sha, current.Id, ancestor);
-        }
-        return new Evaluation(signed.Count > 0 ? ServiceOrderStates.Stale : ServiceOrderStates.NeverSigned, content, sha,
-            current?.Id, null);
+            .ToDictionary(group => group.Key, group => (IReadOnlyCollection<OperationSignatureRole>)group
+                .Select(item => item.Role).Distinct().ToArray());
+        var signed = roles
+            .Where(pair => OperationDocumentRules.RolesFor(OperationDocumentKind.ServiceOrder)
+                .All(role => pair.Value.Contains(role)))
+            .Select(pair => pair.Key).ToHashSet();
+        var sameFacts = SignedDocumentVersions.SameFacts(content, sha, stored);
+        if (sameFacts.FirstOrDefault(item => signed.Contains(item.Id)) is { } fullySigned)
+            return StoredEvaluation(ServiceOrderStates.FullySigned, fullySigned, fullySigned.Id);
+        foreach (var candidate in sameFacts)
+            if (SignedAncestor(versions.Single(item => item.Id == candidate.Id), versions, signed) is long ancestor)
+                return StoredEvaluation(ServiceOrderStates.Corrected, candidate, ancestor);
+        var state = signed.Count > 0 ? ServiceOrderStates.Stale : ServiceOrderStates.NeverSigned;
+        return SignedDocumentVersions.Presented(sameFacts, OperationDocumentKind.ServiceOrder,
+                id => roles.GetValueOrDefault(id) ?? []) is { } presented
+            ? StoredEvaluation(state, presented, null)
+            : new Evaluation(state, content, sha, null, null);
+
+        static Evaluation StoredEvaluation(string state, SignedDocumentVersions.Stored version, long? signedVersionId) =>
+            new(state, OperationDocumentRules.Parse(version.ContentJson), version.ContentSha256, version.Id,
+                signedVersionId);
     }
 
     /// <summary>

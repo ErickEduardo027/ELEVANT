@@ -52,11 +52,18 @@ internal sealed class EfOperationDocumentStore(ElevantDbContext context, TimePro
                 var content = assembled?.Documents.SingleOrDefault(item => item.Kind == request.Kind);
                 if (content is null) return false;
                 var canonical = OperationDocumentRules.CanonicalJson(content);
-                var sha = OperationDocumentRules.Sha256Of(canonical);
+                var fresh = OperationDocumentRules.Sha256Of(canonical);
+                // CN-27: the content the reader sees is the stored version with the same operational facts, when there
+                // is one (a renamed station or service keeps it), so its signatures stay on that version.
+                var stored = await SignedDocumentVersions.ReadAsync(context, operation.Id, request.Kind, ct);
+                var roles = await SignedRolesAsync(stored.Select(item => item.Id).ToArray(), ct);
+                var presented = SignedDocumentVersions.Presented(SignedDocumentVersions.SameFacts(content, fresh, stored),
+                    request.Kind, id => roles.GetValueOrDefault(id) ?? []);
+                var sha = presented?.ContentSha256 ?? fresh;
                 // What the signer saw must be what is stored: a changed form is re-read and signed again.
                 if (!string.Equals(sha, request.DocumentSha256, StringComparison.Ordinal)) return false;
-                var version = await context.Set<OperationDocumentVersion>().SingleOrDefaultAsync(item =>
-                    item.GroundOperationId == operation.Id && item.Kind == request.Kind && item.ContentSha256 == sha, ct);
+                var version = presented is null ? null
+                    : await context.Set<OperationDocumentVersion>().SingleAsync(item => item.Id == presented.Id, ct);
                 if (version is null)
                 {
                     version = new OperationDocumentVersion
@@ -68,8 +75,7 @@ internal sealed class EfOperationDocumentStore(ElevantDbContext context, TimePro
                     context.Add(version);
                     await context.SaveChangesAsync(ct);
                 }
-                else if (await context.Set<OperationDocumentSignature>().AnyAsync(item =>
-                             item.OperationDocumentVersionId == version.Id && item.Role == request.Role, ct))
+                else if (roles.GetValueOrDefault(version.Id)?.Contains(request.Role) == true)
                     return false;
                 var strokes = OperationDocumentRules.StrokesJson(request.Strokes);
                 context.Add(new OperationDocumentSignature
@@ -299,29 +305,44 @@ internal sealed class EfOperationDocumentStore(ElevantDbContext context, TimePro
         return id is long value ? (value, operationId) : null;
     }
 
-    /// <summary>Current content of every form, with the signatures that still match it.</summary>
+    /// <summary>
+    /// Current content of every form, with the signatures that still match it. CN-27: when a stored version attests
+    /// the same operational facts (only descriptive labels such as the station or service name changed since), the
+    /// form is that version as stored, what was signed, with its signatures.
+    /// </summary>
     private async Task<OperationDocumentsView> ViewAsync(long operationId, Guid operationPublicId,
         CancellationToken cancellationToken)
     {
         var assembled = await new OperationDocumentAssembler(context, timeProvider).AssembleAsync(operationId, cancellationToken)
                         ?? throw new InvalidOperationException("The operation disappeared while reading its forms.");
-        var versions = await context.Set<OperationDocumentVersion>().AsNoTracking()
-            .Where(item => item.GroundOperationId == operationId)
-            .Select(item => new { item.Id, item.Kind, item.ContentSha256 }).ToArrayAsync(cancellationToken);
+        var versions = await SignedDocumentVersions.ReadAsync(context, operationId, null, cancellationToken);
         var signatures = await SignaturesAsync(versions.Select(item => item.Id).ToArray(), cancellationToken);
         var documents = assembled.Documents.Select(content =>
         {
-            var sha = OperationDocumentRules.Sha256Of(OperationDocumentRules.CanonicalJson(content));
-            var current = versions.SingleOrDefault(item => item.Kind == content.Kind && item.ContentSha256 == sha);
+            var fresh = OperationDocumentRules.Sha256Of(OperationDocumentRules.CanonicalJson(content));
+            var current = SignedDocumentVersions.Presented(SignedDocumentVersions.SameFacts(content, fresh, versions),
+                content.Kind, id => (signatures.GetValueOrDefault(id) ?? []).Select(item => item.Role).ToArray());
             var valid = current is null ? [] : signatures.GetValueOrDefault(current.Id) ?? [];
-            var stale = versions.Where(item => item.Kind == content.Kind && item.ContentSha256 != sha)
+            var stale = versions.Where(item => item.Kind == content.Kind && item.Id != current?.Id)
                 .SelectMany(item => signatures.GetValueOrDefault(item.Id) ?? [])
                 .Select(item => item.Role).Where(role => valid.All(signature => signature.Role != role))
                 .Distinct().OrderBy(role => role).ToArray();
-            return new OperationDocumentData(content, sha, OperationDocumentRules.RolesFor(content.Kind), valid, stale);
+            var shown = current is null ? content : OperationDocumentRules.Parse(current.ContentJson);
+            return new OperationDocumentData(shown, current?.ContentSha256 ?? fresh,
+                OperationDocumentRules.RolesFor(content.Kind), valid, stale);
         }).ToArray();
         return new OperationDocumentsView(operationPublicId, documents, assembled.DamageMarks);
     }
+
+    private async Task<Dictionary<long, IReadOnlyCollection<OperationSignatureRole>>> SignedRolesAsync(long[] versionIds,
+        CancellationToken cancellationToken) =>
+        versionIds.Length == 0 ? []
+            : (await context.Set<OperationDocumentSignature>().AsNoTracking()
+                .Where(item => versionIds.Contains(item.OperationDocumentVersionId))
+                .Select(item => new { item.OperationDocumentVersionId, item.Role }).ToArrayAsync(cancellationToken))
+            .GroupBy(item => item.OperationDocumentVersionId)
+            .ToDictionary(group => group.Key,
+                group => (IReadOnlyCollection<OperationSignatureRole>)group.Select(item => item.Role).Distinct().ToArray());
 
     private async Task<Dictionary<long, OperationDocumentSignatureData[]>> SignaturesAsync(long[] versionIds,
         CancellationToken cancellationToken)
