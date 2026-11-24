@@ -300,7 +300,13 @@ export function FlightReportPanel({ operation, timeZone, editable }: { operation
         <Ionicons name="time-outline" size={22} color={colors.navy} />
         <Text style={styles.panelTitle}>Hitos del vuelo</Text>
       </View>
-      {!editable && <Text style={styles.hint}>Inicia la operación para registrar los tiempos.</Text>}
+      {!editable && (
+        <Text style={styles.hint}>
+          {operation.operation.status === 'Assigned' || operation.operation.status === 'Planned'
+            ? 'Inicia la operación para registrar los tiempos.'
+            : 'Ejecución cerrada: los tiempos se consultan tal como se registraron.'}
+        </Text>
+      )}
       <PhaseBar phase={phase} onChange={setPhase} done={done} />
       <View style={styles.grid}>
         {phaseMilestones.map(item => (

@@ -39,7 +39,7 @@ export default function RootLayout() {
   return <View style={{ flex: 1 }} accessible={false} onTouchStart={recordMobilePresenceActivity}>
     <StatusBar style="dark" />
     <View style={{ flex: 1 }}>
-      <Stack screenOptions={{ headerStyle: { backgroundColor: colors.white }, headerTintColor: colors.navy, headerTitleStyle: { fontWeight: '800' }, contentStyle: { backgroundColor: colors.background } }}>
+      <Stack screenOptions={{ headerStyle: { backgroundColor: colors.white }, headerTintColor: colors.navy, headerTitleStyle: { fontWeight: '900', fontSize: 19, color: colors.ink }, headerShadowVisible: false, contentStyle: { backgroundColor: colors.background, borderTopWidth: 1, borderTopColor: colors.border } }}>
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="home" options={{ headerShown: false }} />
         <Stack.Screen name="flight/[id]" options={{ title: 'Manifiesto operativo' }} />

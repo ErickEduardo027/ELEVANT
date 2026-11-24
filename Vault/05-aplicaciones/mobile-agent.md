@@ -29,6 +29,10 @@ sources:
   - frontend/mobile-agent/src/components/documents/signature-pad.tsx
   - frontend/mobile-agent/src/storage/walkaround-photos.ts
   - frontend/mobile-agent/tests/operation-documents.test.js
+  - frontend/mobile-agent/src/theme/colors.ts
+  - frontend/mobile-agent/src/theme/tokens.ts
+  - frontend/mobile-agent/src/components/ui.tsx
+  - frontend/mobile-agent/src/components/assigned-operation-card.tsx
 tags:
   - aplicaciones
   - mobile-agent
@@ -311,6 +315,59 @@ equipo
   navegador y la revisión de Gestión Humana muestra UTC. Alinearlos queda para
   otra entrega.
 - La APK instalada sigue en la zona del equipo hasta que se instale la nueva.
+
+## Sistema de diseño y tablero del vuelo
+
+La tablet usa un sistema de diseño propio, solo de presentación: no cambia
+pasos, reglas, comandos ni contratos.
+
+- **Tokens** ([colores](../../frontend/mobile-agent/src/theme/colors.ts),
+  [tokens](../../frontend/mobile-agent/src/theme/tokens.ts)): navy y naranja
+  de AVIAM sobre un gris de plataforma; cada estado tiene texto, tinte y borde
+  (`toneColors`: neutral, info, éxito, aviso, peligro, marca) y siempre va con
+  icono o palabra. Escala tipográfica de 11 a 30 dp con cifras tabulares para
+  horas, radios por jerarquía y elevación: en Android las tarjetas de lista no
+  llevan sombra (solo contorno); el héroe sí.
+- **Componentes base** ([ui](../../frontend/mobile-agent/src/components/ui.tsx)):
+  botón de 56 dp con variantes `primary`, `accent` (iniciar, entregar),
+  `secondary`, `danger` y `ghost`; `StatusPill` con punto o icono;
+  `SectionHeader`, `Hint` (ayuda breve en lugar de párrafos), `Notice`,
+  `ProgressBar`, `Tag` y `Fact`.
+- **Tablero del vuelo**
+  ([lógica](../../frontend/mobile-agent/src/features/assigned-operations/flight-status.ts),
+  [piezas](../../frontend/mobile-agent/src/components/flight-board.tsx)):
+  insignia de la aerolínea con su código IATA (el contrato no trae logo), ruta
+  origen → estación → destino, STA/ETA/ATA y STD/ETD/ATD con el retraso en
+  minutos (ámbar por debajo de 15 min, rojo desde 15), fase derivada
+  (Programado, En ruta si la llegada tiene ETA publicada, Aterrizado, En
+  posición con cualquier hito del Reporte de Vuelo, Embarcando, Puertas
+  cerradas, Push-back, Salió, Cancelado), tiempo en tierra y cuenta regresiva
+  al próximo movimiento con la hora de ELEVANT redondeada al minuto.
+- **Tarjeta de la lista**
+  ([tarjeta](../../frontend/mobile-agent/src/components/assigned-operation-card.tsx)):
+  añade aerolínea, tiempos de cada tramo con retraso, fase, cuenta regresiva,
+  aeronave (tipo ICAO, modelo y matrícula), tiempo en tierra, progreso de
+  servicios e hitos una vez iniciada y los servicios como etiquetas. La lista
+  comparte un solo reloj por minuto; las tarjetas siguen memoizadas.
+- **Héroe del manifiesto**
+  ([héroe](../../frontend/mobile-agent/src/components/operation-hero.tsx)):
+  además de lo anterior muestra stand y terminal, pasajeros que llegan y salen,
+  MTOW, estado del checklist, de la Orden de Servicio y el rol del agente. El
+  indicador de conexión vive en el héroe y en la cabecera del inicio, no como
+  píldora suelta.
+- **Inicio**: cabecera compacta con estación, fecha, conexión y monograma del
+  agente; accesos a chat, notificaciones y turnos; resumen de la cola
+  (asignadas, en atención, en revisión, aprobadas).
+- **Asistencia observada**: cada hora se fija con «Ahora» (hora de ELEVANT) y
+  se ajusta con −5/−1/+1/+5 min; el campo de texto queda para otro día. El
+  valor enviado es el mismo texto de reloj de la estación de antes.
+
+Datos que la tablet no recibe y por eso no muestra: logo de la aerolínea,
+puerta o gate, categoría de tamaño o estela de la aeronave, aprendiz o mentor
+de la asignación (solo aparece el compañero en «Mis posiciones de hoy»),
+horas de salida del origen o de llegada al destino (para una fase «en ruta»
+exacta) y, en la lista, el estado del checklist y de las firmas (solo el
+manifiesto los lee).
 
 ## Fase 2: tablets compartidas
 

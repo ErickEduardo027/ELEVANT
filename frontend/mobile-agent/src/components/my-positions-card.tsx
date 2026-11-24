@@ -62,14 +62,14 @@ export function MyPositionsCard({ timeZones }: { readonly timeZones?: ReadonlyMa
 }
 
 const styles = StyleSheet.create({
-  card: { marginHorizontal: 16, marginBottom: 12, padding: 14, borderRadius: 16, backgroundColor: colors.white,
-    borderWidth: 1, borderColor: colors.border, gap: 8 },
+  card: { marginHorizontal: 16, marginTop: 12, padding: 16, borderRadius: 18, backgroundColor: colors.white,
+    borderWidth: 1, borderColor: colors.border, gap: 10 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  title: { fontSize: 16, fontWeight: '800', color: colors.navy },
-  muted: { color: colors.muted, fontSize: 13 },
-  row: { gap: 6 },
-  stands: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  stand: { minWidth: 56, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: colors.navy,
-    color: colors.white, fontSize: 16, fontWeight: '900', textAlign: 'center', overflow: 'hidden' },
-  detail: { color: colors.ink, fontSize: 13 },
+  title: { fontSize: 17, fontWeight: '900', color: colors.ink },
+  muted: { color: colors.muted, fontSize: 14 },
+  row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12 },
+  stands: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  stand: { minWidth: 60, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 12, backgroundColor: colors.navy,
+    color: colors.white, fontSize: 18, fontWeight: '900', textAlign: 'center', overflow: 'hidden' },
+  detail: { flexShrink: 1, color: colors.inkSoft, fontSize: 14, fontWeight: '600' },
 });

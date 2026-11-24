@@ -4,7 +4,8 @@ import type {
   SaveAttendanceDraftRequest,
 } from '@elevant/api-client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { AppState, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import {
   clearPendingAttendanceDraft,
   readPendingAttendanceDraft,
@@ -75,6 +76,59 @@ function occTime(instant: string | null, timeZone: string | null, operationDate:
   const day = stationWallClock(instant, timeZone).slice(0, 10);
   return operationDate && day === operationDate
     ? formatStationTime(instant, timeZone) : formatStationDateTime(instant, timeZone);
+}
+
+const STEPS = [-5, -1, 1, 5] as const;
+
+/**
+ * One observed time: the station's wall clock as ELEVANT receives it («2026-11-24 10:05»), set with «Ahora» (ELEVANT's
+ * time, 3-N18) and adjusted with the minute steps, or typed in the field when it has to be another day. The value is
+ * the same text the field always held, so what is saved does not change.
+ */
+function TimeField({ caption, disabled, label, nowLabel, onChange, timeZone, value }: {
+  caption: string;
+  disabled: boolean;
+  label: string;
+  nowLabel: string;
+  onChange: (value: string) => void;
+  timeZone: string | null;
+  value: string;
+}) {
+  const instant = stationWallClockToInstant(value, timeZone);
+  const valid = typeof instant === 'string';
+  const step = (minutes: number) => {
+    if (!valid) return;
+    onChange(stationWallClock(new Date(Date.parse(instant) + minutes * 60_000), timeZone));
+  };
+  return (
+    <View style={styles.timeField}>
+      <Text style={styles.caption}>{caption}</Text>
+      <View style={styles.timeRow}>
+        <TextInput accessibilityLabel={label} editable={!disabled} onChangeText={onChange}
+          placeholder="Toca «Ahora»" placeholderTextColor={colors.muted}
+          style={[styles.input, styles.timeInput]} value={value} />
+        <Pressable accessibilityLabel={nowLabel} accessibilityRole="button"
+          accessibilityState={{ disabled }} disabled={disabled}
+          onPress={() => onChange(stationWallClock(serverNow(), timeZone))}
+          style={({ pressed }) => [styles.nowButton, disabled && styles.disabled, pressed && styles.pressed]}>
+          <Ionicons name="flash" size={18} color={colors.white} />
+          <Text style={styles.nowText}>Ahora</Text>
+        </Pressable>
+      </View>
+      <View style={styles.steps}>
+        {STEPS.map(minutes => (
+          <Pressable key={minutes}
+            accessibilityLabel={`${minutes > 0 ? 'Sumar' : 'Restar'} ${Math.abs(minutes)} ${Math.abs(minutes) === 1
+              ? 'minuto' : 'minutos'} a ${label.toLowerCase()}`}
+            accessibilityRole="button" accessibilityState={{ disabled: disabled || !valid }}
+            disabled={disabled || !valid} onPress={() => step(minutes)}
+            style={({ pressed }) => [styles.step, (disabled || !valid) && styles.disabled, pressed && styles.pressed]}>
+            <Text style={styles.stepText}>{`${minutes > 0 ? '+' : '−'}${Math.abs(minutes)} min`}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
 }
 
 export function AttendanceDraftCard({
@@ -334,16 +388,23 @@ export function AttendanceDraftCard({
 
   // N8 (D-N8): every text takes the app's type and colour tokens; the revision counters stay.
   return <Card style={styles.card}>
-    <Text accessibilityRole="header" style={styles.title}>Asistencia observada</Text>
-    <Text style={styles.hint}>
-      {`Registro de observación manual; no es un fichaje biométrico. Las horas están en ${stationClock}.`}
-    </Text>
+    <View style={styles.titleRow}>
+      <View style={styles.titleIcon}><Ionicons name="time-outline" size={20} color={colors.navy} /></View>
+      <View style={styles.titleCopy}>
+        <Text accessibilityRole="header" style={styles.title}>Asistencia observada</Text>
+        <Text style={styles.hint}>
+          {`Registro de observación manual; no es un fichaje biométrico. Las horas están en ${stationClock}.`}
+        </Text>
+      </View>
+      <View style={styles.titleAction}>
+        <PrimaryButton compact icon="refresh" title="Actualizar observaciones" onPress={() => void reload()} variant="ghost" />
+      </View>
+    </View>
     {status === 'loading' &&
       <Text accessibilityLiveRegion="polite" style={styles.hint}>Cargando observaciones…</Text>}
     {status === 'error' &&
       <Text accessibilityLiveRegion="polite" style={styles.hint}>Observaciones no disponibles.</Text>}
     {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
-    <PrimaryButton title="Actualizar observaciones" onPress={() => void reload()} secondary />
     {snapshot && <View style={styles.lanes}>
       <View style={styles.lane}>
         <Text style={styles.laneTitle}>Aporte de OCC</Text>
@@ -379,18 +440,26 @@ export function AttendanceDraftCard({
           <Text style={styles.body}>Tu intento: {form.note || 'Sin nota'}</Text>
         </View>}
         {pending && !conflict && <Text style={styles.pending}>Pendiente de confirmar</Text>}
-        <Text style={styles.caption}>{`Inicio observado · ${stationClock}`}</Text>
-        <TextInput accessibilityLabel="Inicio observado" editable={!busy && !pending && !conflict}
-          onChangeText={value => change('start', value)} placeholder="AAAA-MM-DD HH:mm"
-          style={styles.input} value={form.start} />
-        <PrimaryButton title="Registrar inicio ahora" disabled={busy || !!pending || conflict}
-          onPress={() => change('start', stationWallClock(serverNow(), timeZone))} secondary />
-        <Text style={styles.caption}>{`Fin observado · ${stationClock}`}</Text>
-        <TextInput accessibilityLabel="Fin observado" editable={!busy && !pending && !conflict}
-          onChangeText={value => change('end', value)} placeholder="AAAA-MM-DD HH:mm"
-          style={styles.input} value={form.end} />
-        <PrimaryButton title="Registrar fin ahora" disabled={busy || !!pending || conflict}
-          onPress={() => change('end', stationWallClock(serverNow(), timeZone))} secondary />
+        <View style={styles.timeFields}>
+          <TimeField
+            caption={`Inicio observado · ${stationClock}`}
+            disabled={busy || !!pending || conflict}
+            label="Inicio observado"
+            nowLabel="Registrar inicio ahora"
+            onChange={value => change('start', value)}
+            timeZone={timeZone}
+            value={form.start}
+          />
+          <TimeField
+            caption={`Fin observado · ${stationClock}`}
+            disabled={busy || !!pending || conflict}
+            label="Fin observado"
+            nowLabel="Registrar fin ahora"
+            onChange={value => change('end', value)}
+            timeZone={timeZone}
+            value={form.end}
+          />
+        </View>
         <Text style={styles.caption}>Nota del agente</Text>
         <TextInput accessibilityLabel="Nota del agente" editable={!busy && !pending && !conflict}
           maxLength={2_000} multiline onChangeText={value => change('note', value)}
@@ -411,11 +480,36 @@ export function AttendanceDraftCard({
 
 const styles = StyleSheet.create({
   card: { gap: space.md },
-  title: { ...type.title, color: colors.navy },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, flexWrap: 'wrap' },
+  titleIcon: {
+    width: 40, height: 40, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.paleBlue,
+  },
+  titleCopy: { flex: 1, minWidth: 200 },
+  titleAction: { minWidth: 220 },
+  title: { ...type.title, color: colors.ink },
+  timeFields: { flexDirection: 'row', flexWrap: 'wrap', gap: space.md },
+  timeField: { flexGrow: 1, flexBasis: 280, gap: space.sm },
+  timeRow: { flexDirection: 'row', gap: space.sm },
+  timeInput: { flex: 1, fontVariant: ['tabular-nums'] },
+  nowButton: {
+    minHeight: touch.min, minWidth: 96, paddingHorizontal: space.md, borderRadius: radius.sm,
+    backgroundColor: colors.navy, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+  },
+  nowText: { ...type.label, color: colors.white },
+  steps: { flexDirection: 'row', gap: space.sm },
+  step: {
+    flex: 1, minHeight: 48, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.borderStrong,
+    backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center',
+  },
+  stepText: { ...type.label, color: colors.navy, fontVariant: ['tabular-nums'] },
+  disabled: { opacity: 0.42 },
+  pressed: { opacity: 0.75 },
   hint: { ...type.body, color: colors.muted },
   notice: { ...type.body, color: colors.navy },
   lanes: { gap: 14 },
-  lane: { gap: 9, padding: 14, borderRadius: radius.md, backgroundColor: colors.background },
+  lane: { gap: 10, padding: 14, borderRadius: radius.md, backgroundColor: colors.surfaceSunken, borderWidth: 1,
+    borderColor: colors.divider },
   laneTitle: { ...type.label, color: colors.navy },
   hours: { ...type.label, color: colors.ink, fontVariant: ['tabular-nums'] },
   body: { ...type.body, color: colors.ink },

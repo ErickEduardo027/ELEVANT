@@ -38,6 +38,8 @@ jest.mock('../src/services/mobile-auth', () => ({
 jest.mock('../src/utils/app-exit', () => ({ exitApplication: jest.fn() }));
 jest.mock('../src/utils/session-navigation', () => ({ resetToLogin: jest.fn() }));
 jest.mock('../src/app/flight/[id]', () => ({ OperationDetail: () => null }));
+// The header's sync state has its own test (connection-badge.test.js).
+jest.mock('../src/components/flight-report/connection-badge', () => ({ ConnectionBadge: () => null }));
 
 const HomeScreen = require('../src/app/home').default;
 

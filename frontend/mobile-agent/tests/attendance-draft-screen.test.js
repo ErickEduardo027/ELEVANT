@@ -11,6 +11,8 @@ jest.mock('expo-router', () => ({
   useFocusEffect: callback => require('react').useEffect(callback, [callback]),
 }));
 jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
+// The operation's hero reads the Flight Report's catalog to count the milestones.
+jest.mock('@elevant/api-client', () => ({ FLIGHT_REPORT_MILESTONES: [] }));
 // 3-I: the screen projects the device's queue; here it is empty.
 jest.mock('@react-native-async-storage/async-storage', () => ({
   getItem: jest.fn(async () => null), setItem: jest.fn(async () => {}), removeItem: jest.fn(async () => {}),

@@ -9,6 +9,16 @@ const renderer = require('react-test-renderer');
 const { StyleSheet } = require('react-native');
 
 jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
+// The Flight Report's catalog, reduced to one milestone of each phase.
+jest.mock('@elevant/api-client', () => ({
+  FLIGHT_REPORT_MILESTONES: [
+    { code: 'BLOCK_ON', phase: 'arrival', label: 'Bloqueo' },
+    { code: 'LOAD_SHEET', phase: 'on_stand', label: 'Hoja de carga' },
+    { code: 'BOARDING', phase: 'departure', label: 'Abordaje' },
+    { code: 'PAX_DOOR_CLOSED', phase: 'departure', label: 'Cierre puerta pax' },
+    { code: 'PUSHBACK', phase: 'pushback', label: 'Push-back' },
+  ],
+}));
 
 const { AssignedOperationCard } = require('../src/components/assigned-operation-card');
 
@@ -20,16 +30,18 @@ const airports = {
   MIA: { iataCode: 'MIA', name: 'Miami' },
 };
 
-function leg(flightNumber, origin, destination) {
+function leg(flightNumber, origin, destination, times = {}) {
   return { flightNumber, origin: airports[origin], destination: airports[destination],
-    scheduledAt: '2026-11-16T23:30:00.000Z', estimatedAt: null, actualAt: null };
+    scheduledAt: '2026-11-16T23:30:00.000Z', estimatedAt: null, actualAt: null, ...times };
 }
 
 function operation({ plannedStartAt = '2026-11-16T23:46:00.000Z', actualStartAt = null,
-  arrival = leg('EV101', 'BWI', 'PUJ'), departure = null, services = [] } = {}) {
+  arrival = leg('EV101', 'BWI', 'PUJ'), departure = null, services = [], status = 'Assigned', milestones,
+  aircraft = null } = {}) {
   return {
-    operation: { id: OPERATION_ID, status: 'Assigned', plannedStartAt, plannedEndAt: null, actualStartAt,
+    operation: { id: OPERATION_ID, status, plannedStartAt, plannedEndAt: null, actualStartAt,
       actualEndAt: null },
+    milestones,
     assignment: { id: '70000000-0000-4000-8000-000000000002', assignmentRole: 'primary', position: null,
       assignedAt: '2026-11-16T12:00:00.000Z' },
     services,
@@ -37,16 +49,17 @@ function operation({ plannedStartAt = '2026-11-16T23:46:00.000Z', actualStartAt 
     turnaround: {
       operationCode: 'EV-001', operationDate: '2026-11-16',
       station: { code: 'PUJ', name: 'Punta Cana', ianaTimeZone: 'America/Santo_Domingo' },
-      airline: { name: 'ELEVANT Demo Airlines' },
-      arrival, departure, stand: null, aircraft: null,
+      airline: { name: 'ELEVANT Demo Airlines', iataCode: 'EV', icaoCode: 'EVD' },
+      arrival, departure, stand: null, aircraft,
     },
   };
 }
 
-async function render(props = {}) {
+async function render(props = {}, now) {
   let tree;
   await renderer.act(async () => {
-    tree = renderer.create(React.createElement(AssignedOperationCard, { operation: operation(props), onOpen: jest.fn() }));
+    tree = renderer.create(React.createElement(AssignedOperationCard,
+      { operation: operation(props), onOpen: jest.fn(), now }));
   });
   return tree;
 }
@@ -151,6 +164,61 @@ describe('the services in the singular and the plural (N13)', () => {
   ])('a card with %j service lines is read as «%s», as it shows', async (lines, words) => {
     const tree = await render({ services: lines.map(service) });
     expect(spoken(tree)).toMatch(new RegExp(`, ${words}$`));
+    await renderer.act(async () => tree.unmount());
+  });
+});
+
+describe('the flight as the ramp reads it', () => {
+  const allText = tree => JSON.stringify(tree.toJSON());
+
+  test('each leg shows its scheduled, estimated and actual times with the delay in minutes', async () => {
+    const tree = await render({
+      arrival: leg('EV101', 'BWI', 'PUJ', { estimatedAt: '2026-11-16T23:38:00.000Z', actualAt: '2026-11-16T23:47:00.000Z' }),
+      departure: leg('EV102', 'PUJ', 'BWI', { scheduledAt: '2026-11-17T01:00:00.000Z', estimatedAt: '2026-11-17T01:05:00.000Z' }),
+    });
+    expect(texts(tree, /^STA 19:30$/)).toHaveLength(1);
+    expect(texts(tree, /^ETA 19:38$/)).toHaveLength(1);
+    expect(texts(tree, /^ATA 19:47$/)).toHaveLength(1);
+    expect(texts(tree, /^\+17 min$/)).toHaveLength(1);
+    expect(texts(tree, /^STD 21:00$/)).toHaveLength(1);
+    expect(texts(tree, /^ETD 21:05$/)).toHaveLength(1);
+    expect(texts(tree, /^\+5 min$/)).toHaveLength(1);
+    // The aircraft is on the ground from the actual arrival to the estimated departure.
+    expect(allText(tree)).toContain('En tierra 1 h 18 min');
+    expect(spoken(tree)).toContain('Llegada EV101, programada 19:30, estimada 19:38, real 19:47, 17 minutos de retraso');
+    await renderer.act(async () => tree.unmount());
+  });
+
+  test('the phase comes from the milestones and the countdown from ELEVANT’s minute', async () => {
+    let tree = await render({ departure: leg('EV102', 'PUJ', 'BWI', { scheduledAt: '2026-11-17T01:00:00.000Z' }),
+      milestones: [{ code: 'BLOCK_ON', actualAt: '2026-11-16T23:40:00.000Z' }] },
+    Date.parse('2026-11-17T00:35:00.000Z'));
+    expect(texts(tree, /^En posición$/)).toHaveLength(1);
+    expect(texts(tree, /^Sale en 25 min$/)).toHaveLength(1);
+    expect(spoken(tree)).toContain('fase En posición');
+    await renderer.act(async () => tree.unmount());
+
+    tree = await render({ arrival: leg('EV101', 'BWI', 'PUJ', { estimatedAt: '2026-11-16T23:50:00.000Z' }) },
+      Date.parse('2026-11-16T23:20:00.000Z'));
+    expect(texts(tree, /^En ruta$/)).toHaveLength(1);
+    expect(texts(tree, /^Llega en 30 min$/)).toHaveLength(1);
+    await renderer.act(async () => tree.unmount());
+  });
+
+  test('the airline badge, the aircraft and, once started, the progress of services and milestones', async () => {
+    const service = (n, status) => ({ id: `s${n}`, lineNumber: n, serviceDefinitionId: `d${n}`, code: 'X',
+      name: `Servicio ${n}`, contractedQuantity: 1, executedQuantity: 0, billingUnit: 'unit', status });
+    const tree = await render({
+      status: 'InProgress',
+      aircraft: { icaoCode: 'B738', manufacturer: 'Boeing', model: '737-800', registration: 'HI1055' },
+      services: [service(1, 'Completed'), service(2, 'InProgress'), service(3, 'Planned'), service(4, 'Planned')],
+      milestones: [{ code: 'BLOCK_ON', actualAt: '2026-11-16T23:40:00.000Z' }],
+    });
+    expect(texts(tree, /^EV$/)).toHaveLength(1);
+    expect(allText(tree)).toContain('B738 · Boeing 737-800 · HI1055');
+    expect(allText(tree)).toContain('4 servicios · 1/4');
+    expect(allText(tree)).toContain('Hitos 1/5');
+    expect(texts(tree, /^\+1$/)).toHaveLength(1);
     await renderer.act(async () => tree.unmount());
   });
 });
