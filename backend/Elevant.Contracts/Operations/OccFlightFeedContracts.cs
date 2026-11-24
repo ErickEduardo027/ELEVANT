@@ -22,6 +22,12 @@ public sealed record OccFlightProposalResponse(Guid ProposalId, string Direction
     string? AircraftRegistration, string? AircraftModel, string? Terminal, string? Gate, string Status,
     Guid? TurnaroundId, Guid? SuggestedDepartureId, DateTimeOffset LastSeenAt, string Version,
     Guid? SuggestedAircraftTypeId,
+    // CN-28: where the suggested type and stand come from and the registration the live aircraft broadcasts; absent
+    // when there is none, so a client deployed before them keeps validating.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SuggestedAircraftTypeSource = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SuggestedRegistration = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? SuggestedStandId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SuggestedStandSource = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? IsDemo = null);
 
 public sealed record OccFlightFeedResponse(Guid StationId, string StationCode, DateOnly Date, OccFlightFeedBudgetResponse Budget,
