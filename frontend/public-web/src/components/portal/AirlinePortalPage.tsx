@@ -343,8 +343,7 @@ function AirlineRequestsPage({ airlineName }: { airlineName: string }) {
     <header className={styles.requestHeading}>
       <div><span className={styles.kicker}>Canal de servicio · {airlineName}</span>
         <h1>Solicitudes con estado visible.</h1>
-        <p>Consulte las solicitudes operativas registradas para su aerolínea. La creación y cancelación todavía no están habilitadas.</p></div>
-      <button type="button" disabled title="La creación de solicitudes aún no está disponible">Nueva solicitud</button>
+        <p>Consulte las solicitudes operativas registradas para su aerolínea. Para solicitar servicios nuevos o cambios de contrato, contacte a su ejecutivo de AVIAM; las solicitudes aparecerán aquí.</p></div>
     </header>
     <div className={styles.metrics} aria-label="Estado de las solicitudes cargadas">
       <div><span>Solicitudes cargadas</span><strong>{requests.length}</strong></div>
@@ -369,7 +368,6 @@ function AirlineRequestsPage({ airlineName }: { airlineName: string }) {
         <div><dt>Estación</dt><dd>{request.stationCode}</dd></div>
         <div><dt>Estado</dt><dd>{REQUEST_STATUS_LABELS[request.status ?? ""] ?? request.status}</dd></div>
       </dl>
-      <button className={styles.disabledAction} type="button" disabled>Cancelar solicitud</button>
     </section>)}
     {!loading && !error && requests.length === 0 && <p className={styles.empty}>No hay solicitudes operativas registradas para esta aerolínea.</p>}
     {pages.at(-1)?.hasMore && <button className={styles.loadMore} type="button" disabled={loading}

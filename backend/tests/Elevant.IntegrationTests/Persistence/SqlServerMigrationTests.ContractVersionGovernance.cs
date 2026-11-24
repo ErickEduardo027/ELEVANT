@@ -288,8 +288,8 @@ public sealed partial class SqlServerMigrationTests
         }));
         await context.SaveChangesAsync(ct);
 
-        // A renewal from 1 August adds cargo handling, which OCC lists between baggage and the bridge: the bridge
-        // moves to a position its old line no longer matches.
+        // A renewal from 1 August adds cargo handling («Carga y descarga»), which OCC lists before baggage («Manejo de
+        // equipaje») and the bridge: both move to positions their old lines no longer match.
         var renewal = await lifecycle.ApplyAsync(ContractsAdministrator, SeededContractVersion, new ContractLifecycleInput(
             "Renew", "Renovación con carga y descarga", "Active", new DateOnly(2026, 8, 1), new DateOnly(2027, 7, 31)),
             Guid.NewGuid(), ct);
@@ -317,8 +317,7 @@ public sealed partial class SqlServerMigrationTests
         context.ChangeTracker.Clear();
 
         // 2-C: the flight moves to the renewal and its planned lines are the signed rates in the order OCC materializes
-        // them. Baggage keeps its line at the signed price; the bridge line goes with its event, and the two positions
-        // after baggage are new lines with theirs.
+        // them. Both old lines go with their events, and the three positions are new lines with theirs.
         var next = await context.ContractVersions.AsNoTracking().SingleAsync(item => item.PublicId == draftId, ct);
         Assert.Equal(next.Id, (await context.Turnarounds.AsNoTracking().SingleAsync(item => item.Id == flight.Id, ct))
             .ContractVersionId);
@@ -329,23 +328,23 @@ public sealed partial class SqlServerMigrationTests
                                  orderby definition.Name, definition.Code, definition.PublicId
                                  select new { rate.Id, rate.ServiceDefinitionId, rate.UnitPrice, rate.MinimumQuantity,
                                      definition.Code }).ToArrayAsync(ct);
-        Assert.Equal(["BAGGAGE", "RAMP-CARGO", "PASSENGER-BRIDGE"], signedRates.Select(rate => rate.Code));
+        // By service name: «Carga y descarga», «Manejo de equipaje», «Operación de pasarela de abordaje».
+        Assert.Equal(["RAMP-CARGO", "BAGGAGE", "PASSENGER-BRIDGE"], signedRates.Select(rate => rate.Code));
         var replanned = await LinesAsync();
         Assert.Equal(signedRates.Select((rate, index) => (index + 1, rate.ServiceDefinitionId, (long?)rate.Id,
                 (decimal?)rate.UnitPrice, rate.MinimumQuantity, (string?)"USD", ServiceExecutionStatus.Planned, 0m)),
             replanned.Select(line => (line.LineNumber, line.ServiceDefinitionId, line.ContractServiceRateId,
                 line.UnitPriceSnapshot, line.ContractedQuantity, line.CurrencyCodeSnapshot, line.CurrentStatus,
                 line.ExecutedQuantity)));
-        Assert.Equal(planned[0].Id, replanned[0].Id);
-        Assert.DoesNotContain(replanned, line => line.Id == planned[1].Id);
-        var lineIds = replanned.Select(line => line.Id).Append(planned[1].Id).ToArray();
+        Assert.DoesNotContain(replanned, line => planned.Any(old => old.Id == line.Id));
+        var lineIds = replanned.Select(line => line.Id).Concat(planned.Select(line => line.Id)).ToArray();
         Assert.Equal(replanned.Select(line => line.Id).Order(), (await context.Set<OperationServiceStatusEvent>()
             .AsNoTracking().Where(item => lineIds.Contains(item.OperationServiceId)).Select(item => item.OperationServiceId)
             .ToArrayAsync(ct)).Order());
         var replan = await context.AuditEntries.AsNoTracking().SingleAsync(item =>
             item.Action == "occ.operation.services_replanned" && item.EntityPublicId == operation.PublicId, ct);
-        Assert.Contains("\"withdrawn\":[\"PASSENGER-BRIDGE\"]", replan.MetadataJson);
-        Assert.Contains("\"added\":[\"RAMP-CARGO\",\"PASSENGER-BRIDGE\"]", replan.MetadataJson);
+        Assert.Contains("\"withdrawn\":[\"BAGGAGE\",\"PASSENGER-BRIDGE\"]", replan.MetadataJson);
+        Assert.Contains("\"added\":[\"RAMP-CARGO\",\"BAGGAGE\",\"PASSENGER-BRIDGE\"]", replan.MetadataJson);
 
         // OCC still plans the flight: the renewal covers its date and the lines are exactly the ones it materializes.
         await using var occScope = provider.CreateAsyncScope();
@@ -358,7 +357,7 @@ public sealed partial class SqlServerMigrationTests
             new OccAssignmentWriteRequest(OperationsAdministrator, [PujStation], flightId, SeededRampAgentProfile, token,
                 Guid.NewGuid(), "renewal-replanned-flight"), ct);
         Assert.True(assigned.IsSuccess, assigned.Failure?.ToString());
-        Assert.Equal(["BAGGAGE", "RAMP-CARGO", "PASSENGER-BRIDGE"], assigned.Assignment!.Services.Select(item => item.Code));
+        Assert.Equal(["RAMP-CARGO", "BAGGAGE", "PASSENGER-BRIDGE"], assigned.Assignment!.Services.Select(item => item.Code));
         Assert.Equal(replanned.Select(line => line.PublicId), assigned.Assignment.Services.Select(item => item.Id));
     }
 

@@ -298,7 +298,11 @@ it("shows tenant-scoped operational requests without demo fixtures", async () =>
   expect(screen.getByText("DEV-TAT-0002")).toBeInTheDocument();
   expect(getRequests).toHaveBeenCalledWith(1);
   expect(screen.queryByText(/datos sintéticos/i)).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Nueva solicitud" })).toBeDisabled();
+  // CN-08: no dead «Nueva solicitud» or «Cancelar solicitud» control; the page names the real channel instead.
+  expect(screen.queryByRole("button", { name: "Nueva solicitud" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Cancelar solicitud" })).not.toBeInTheDocument();
+  expect(screen.getByText(/contacte a su ejecutivo de AVIAM; las solicitudes aparecerán aquí\./)).toBeInTheDocument();
+  expect(screen.queryByText(/todavía no están habilitadas/)).not.toBeInTheDocument();
 });
 
 it("shows an honest empty state when the airline has no operational requests", async () => {
@@ -480,8 +484,8 @@ it("explains a card rejected before the gateway and lists every attempt", async 
 it("addresses the airline as usted in requests, documents and reports (N19)", async () => {
   getTreasuryStatement.mockImplementation(statementWith([ecfInvoice()]));
   const page = render(<AirlinePortalPage view="requests" />);
-  expect(screen.getByText("Consulte las solicitudes operativas registradas para su aerolínea. La creación y cancelación "
-    + "todavía no están habilitadas.")).toBeInTheDocument();
+  expect(screen.getByText("Consulte las solicitudes operativas registradas para su aerolínea. Para solicitar servicios "
+    + "nuevos o cambios de contrato, contacte a su ejecutivo de AVIAM; las solicitudes aparecerán aquí.")).toBeInTheDocument();
 
   page.rerender(<AirlinePortalPage view="documents" />);
   expect(screen.getByText("Facturas emitidas para su aerolínea en PDF.")).toBeInTheDocument();

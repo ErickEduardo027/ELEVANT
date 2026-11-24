@@ -2471,8 +2471,15 @@ public sealed partial class SqlServerMigrationTests
         Assert.True(provisioned.IsSuccess, provisioned.Failure?.ToString());
         Assert.Empty((await provisioning.ListPendingAsync(superAdminId, cancellationToken))!);
         // 1-N14: Contratos hears that the portal account exists, on the airline's draft.
-        Assert.True(await context.DepartmentNotifications.AsNoTracking().AnyAsync(item =>
-            item.Kind == "portal_account_ready" && item.SourceId == version.PublicId, cancellationToken));
+        var portalReady = await context.DepartmentNotifications.AsNoTracking().Where(item =>
+            item.Kind == "portal_account_ready" && item.SourceId == version.PublicId)
+            .Select(item => item.Subject).ToArrayAsync(cancellationToken);
+        Assert.NotEmpty(portalReady);
+        // CN-07: the subject names the draft as a person reads it («Borrador 1cc18541»), never its raw DRAFT- code.
+        Assert.StartsWith("DRAFT-", contract.ContractCode, StringComparison.Ordinal);
+        Assert.All(portalReady, subject => Assert.StartsWith(
+            $"{ContractValidity.DisplayCode(contract.ContractCode)} · ", subject, StringComparison.Ordinal));
+        Assert.All(portalReady, subject => Assert.DoesNotContain("DRAFT-", subject!, StringComparison.Ordinal));
         Assert.True((await context.Users.AsNoTracking().SingleAsync(item =>
             item.PublicId == provisioned.AccountId, cancellationToken)).MustChangePassword);
         Assert.Equal(ProvisioningFailure.Conflict,

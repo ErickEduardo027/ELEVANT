@@ -182,7 +182,12 @@ Ahora:
   frase es «el borrador 1cc18541…». Un código definitivo («CTR-2026-0007») no
   cambia ([etiquetas](../../frontend/private-web/src/features/contracts/requests/requestLabels.js)).
   Una solicitud decidida dice «Se creó un contrato en borrador», sin el prefijo
-  del UUID del contrato; la bandeja no recibe su código.
+  del UUID del contrato; la bandeja no recibe su código. *Posterior al commit
+  verificado (CN-07):* el asunto de los avisos internos de un contrato (cambio
+  de ciclo de vida, cuenta del portal lista, renovación bloqueada, aprobación o
+  devolución de Finanzas) nombra el borrador con `ContractValidity.DisplayCode`
+  («Borrador 1cc18541 · Aerolínea»), nunca con su `DRAFT-…` completo; los avisos
+  ya guardados conservan su asunto.
 - **Quién verificó la aerolínea.** Si Superadministración verificó la ficha a
   mano, la identidad se titula «Identidad verificada a mano por
   Superadministración». Si no, se titula solo «Identidad verificada», sin

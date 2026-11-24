@@ -1,3 +1,4 @@
+using Elevant.Application.Commercial;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
@@ -82,7 +83,7 @@ internal static class ContractDraftAudience
             .FirstOrDefaultAsync(cancellationToken);
         if (draft is null) return;
         await DepartmentNotificationWriter.NotifyAsync(context, Department.Contracts, "contracts.drafts.read",
-            "portal_account_ready", draft.PublicId, $"{draft.ContractCode} · {draft.Airline}", now, cancellationToken);
+            "portal_account_ready", draft.PublicId, $"{ContractValidity.DisplayCode(draft.ContractCode)} · {draft.Airline}", now, cancellationToken);
         await NotifyContractsAsync(context, DraftsResource, draft.PublicId, now, cancellationToken);
     }
 }

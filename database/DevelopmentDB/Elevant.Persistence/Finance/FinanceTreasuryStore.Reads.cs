@@ -15,10 +15,23 @@ internal sealed partial class FinanceTreasuryStore
         var stations = await context.Stations.AsNoTracking().Where(s => ids.Contains(s.PublicId) && s.IsActive)
             .OrderBy(s => s.Code).Select(s => new FinanceTreasuryStationOptionData(s.PublicId, s.Code)).ToArrayAsync(cancellationToken);
         if (stations.Length == 0) return new([], []);
-        var airlines = await (from a in context.Airlines.AsNoTracking() join o in context.Organizations.AsNoTracking() on a.OrganizationId equals o.Id
+        var rows = await (from a in context.Airlines.AsNoTracking() join o in context.Organizations.AsNoTracking() on a.OrganizationId equals o.Id
             where a.IsActive && o.Status == OrganizationStatus.Active && o.Type == OrganizationType.AirlineCustomer orderby a.Name
-            select new FinanceTreasuryAirlineOptionData(a.PublicId, a.Name)).ToArrayAsync(cancellationToken);
-        return new(airlines, stations);
+            select new { a.PublicId, a.Name, a.IataCode, a.IcaoCode }).ToArrayAsync(cancellationToken);
+        return new(AirlineOptions(rows.Select(r => (r.PublicId, r.Name, r.IataCode, r.IcaoCode))), stations);
+    }
+    /// <summary>
+    /// CN-02: two active airlines that share a name read apart in the filter by their code («AMERICAN AIRLINES (AA)»);
+    /// a name nobody else carries reads as it is.
+    /// </summary>
+    internal static FinanceTreasuryAirlineOptionData[] AirlineOptions(
+        IEnumerable<(Guid Id, string Name, string? IataCode, string IcaoCode)> airlines)
+    {
+        var rows = airlines.ToArray();
+        var shared = rows.GroupBy(r => r.Name.Trim(), StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1)
+            .Select(g => g.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return rows.Select(r => new FinanceTreasuryAirlineOptionData(r.Id, shared.Contains(r.Name.Trim())
+            ? $"{r.Name.Trim()} ({(string.IsNullOrWhiteSpace(r.IataCode) ? r.IcaoCode : r.IataCode)})" : r.Name)).ToArray();
     }
     public async Task<FinanceTreasuryReceiptPageData?> ListAsync(Guid actorId, Guid? stationId, Guid? airlineId,
         int page, int limit, CancellationToken cancellationToken = default)
