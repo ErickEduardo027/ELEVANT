@@ -48,6 +48,9 @@ public sealed class ReadsbAirTrafficProvider : IAirTrafficProvider, IDisposable
 
     public AirTrafficAttribution? Attribution => Profile.Attribution;
 
+    /// <summary>CN-31: only a network without a daily limit is read every few seconds for the airfield.</summary>
+    public bool AllowsFrequentReads => DailyLimit is null;
+
     internal ReadsbProfile Profile { get; }
 
     /// <summary>Whether reads carry a key: only with one configured, and only for a network that takes it.</summary>

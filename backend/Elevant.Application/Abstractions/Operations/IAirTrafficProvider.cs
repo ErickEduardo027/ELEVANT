@@ -21,6 +21,12 @@ public interface IAirTrafficProvider
     /// its outcome, never as an exception; only the caller's own cancellation is thrown.
     /// </summary>
     Task<AirTrafficReadResult> ReadAsync(AirTrafficArea area, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// CN-31: whether the network that answers now may also be read every few seconds for the airfield: true only for a
+    /// network without a daily limit (adsb.fi, at most one request a second). False by default.
+    /// </summary>
+    bool AllowsFrequentReads => false;
 }
 
 /// <summary>The circle a read asks for: its centre in decimal degrees and its radius in nautical miles.</summary>

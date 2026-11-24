@@ -188,6 +188,20 @@ public sealed class FlightAircraftMatcherTests
         Assert.Equal(new FlightMatch("p:3", "Callsign"), Only(matches));
     }
 
+    [Theory]
+    [InlineData("CM893", "CMP893")]
+    [InlineData("CM0893", "CMP893")]
+    [InlineData("CMP893", "CMP893")]
+    [InlineData("CM893", "CM893")]
+    [InlineData("893", "CMP893")]
+    public void MatchesTheIcaoCallsignOfAnIataFlightNumber(string number, string callsign)
+    {
+        // CN-31: an operation CM893 of an airline CMP / CM is the aircraft that broadcasts CMP893, with or without the
+        // leading zeros on either side.
+        MapFlightMatchKey[] flights = [new("p:1", "Arrival", number, "CMP", "CM", null, Now, false, false)];
+        Assert.Equal(new FlightMatch("p:1", "Callsign"), Only(Match([Plane("0c0001", callsign: callsign)], flights)));
+    }
+
     private static IReadOnlyDictionary<string, FlightMatch> Match(IReadOnlyList<AirTrafficAircraft> aircraft,
         IReadOnlyList<MapFlightMatchKey> flights) => FlightAircraftMatcher.Match(aircraft, flights, Now);
 

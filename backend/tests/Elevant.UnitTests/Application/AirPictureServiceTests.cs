@@ -722,6 +722,147 @@ public sealed class AirPictureServiceTests
 
     private static DateTimeOffset At(int seconds) => Start.AddSeconds(seconds);
 
+
+    // CN-31: the airfield read. A worker pass is PollOnceAsync and then the wait it answers.
+    private static async Task RunFor(AirPictureService service, ManualClock clock, TimeSpan span)
+    {
+        var end = clock.GetUtcNow() + span;
+        while (clock.GetUtcNow() < end)
+        {
+            var wait = await service.PollOnceAsync(Ct);
+            Assert.True(wait > TimeSpan.Zero, "a pass always waits");
+            clock.Advance(wait);
+        }
+    }
+
+    [Fact]
+    public async Task TheAirfieldIsReadEveryThreeSecondsWhileWatchedAndNeverMoreThanOnceASecond()
+    {
+        var clock = new ManualClock(Start);
+        var network = new ScriptedNetwork(First, clock) { AllowsFrequentReads = true, Aircraft = [Plane("0c0001", Start)] };
+        var service = new AirPictureService(network, Settings(idleAfterSeconds: 120), clock);
+        service.NoteDemand();
+
+        await RunFor(service, clock, TimeSpan.FromSeconds(60));
+        var wide = network.Log.Where(read => read.RadiusNm == 250).ToArray();
+        var airfield = network.Log.Where(read => read.RadiusNm == AirTrafficSettings.DefaultAirfieldRadiusNm).ToArray();
+        Assert.Equal(network.Log.Count, wide.Length + airfield.Length);
+        // The whole circle every 10 s as before, the airfield every 3 s between them: 0.4 requests a second.
+        Assert.Equal(6, wide.Length);
+        Assert.Equal(18, airfield.Length);
+        Assert.True(network.Log.Count / 60.0 <= 0.45);
+        for (var index = 1; index < network.Log.Count; index++)
+            Assert.True(network.Log[index].At - network.Log[index - 1].At >= AirPictureService.MinimumRequestSpacing);
+        Assert.Equal(new AirTrafficArea(18.5674, -68.3634, 5), new AirTrafficSettings(true, "PUJ", 18.5674, -68.3634, 250,
+            TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(900), TimeSpan.FromMinutes(180)).AirfieldArea);
+
+        // Nobody watches any more: the airfield is not read again (the worker then sleeps until a screen reads the map).
+        clock.Advance(TimeSpan.FromSeconds(120));
+        Assert.False(service.HasDemand);
+        var before = network.Log.Count(read => read.RadiusNm == 5);
+        await RunFor(service, clock, TimeSpan.FromSeconds(30));
+        Assert.Equal(before, network.Log.Count(read => read.RadiusNm == 5));
+    }
+
+    [Fact]
+    public async Task AnAirfieldReadMergesTheFreshestPositionsIntoThePicture()
+    {
+        var clock = new ManualClock(Start);
+        var network = new ScriptedNetwork(First, clock)
+        {
+            AllowsFrequentReads = true,
+            Aircraft = [Plane("0c0001", Start, latitude: 18.50), Plane("0c0002", Start, latitude: 18.40)],
+        };
+        var service = new AirPictureService(network, Settings(), clock);
+        service.NoteDemand();
+        Assert.Equal(TimeSpan.FromSeconds(3), await service.PollOnceAsync(Ct));
+
+        // Three seconds later: 0c0001 moved, 0c0003 appeared, and an older position of 0c0002 changes nothing.
+        clock.Advance(TimeSpan.FromSeconds(3));
+        network.AirfieldAircraft =
+        [
+            Plane("0c0001", clock.GetUtcNow(), latitude: 18.56),
+            Plane("0c0002", Start - TimeSpan.FromSeconds(5), latitude: 18.30),
+            Plane("0c0003", clock.GetUtcNow(), latitude: 18.57),
+        ];
+        await service.PollOnceAsync(Ct);
+        Assert.Equal(5, network.LastArea!.RadiusNm);
+
+        var picture = service.Read(shortTrails: true);
+        Assert.Equal(AirPictureStatus.Live, picture.Status);
+        // The instant of the picture stays the whole circle's.
+        Assert.Equal(Start, picture.ObservedAt);
+        var byHex = picture.Aircraft.ToDictionary(item => item.Aircraft.Hex);
+        Assert.Equal(["0c0001", "0c0002", "0c0003"], picture.Aircraft.Select(item => item.Aircraft.Hex));
+        Assert.Equal((18.56, Start + TimeSpan.FromSeconds(3)), (byHex["0c0001"].Aircraft.Latitude, byHex["0c0001"].Aircraft.PositionAt));
+        Assert.Equal((18.40, Start), (byHex["0c0002"].Aircraft.Latitude, byHex["0c0002"].Aircraft.PositionAt));
+        Assert.Equal(18.57, byHex["0c0003"].Aircraft.Latitude);
+        // The trails record the airfield read as any read.
+        Assert.Equal(2, byHex["0c0001"].Trail.Count);
+        Assert.Equal(2, service.Track("0c0001")!.Points.Count);
+    }
+
+    [Fact]
+    public async Task ARefusalOfTheAirfieldReadSlowsBothReads()
+    {
+        var clock = new ManualClock(Start);
+        var network = new ScriptedNetwork(First, clock)
+        {
+            AllowsFrequentReads = true, Aircraft = [Plane("0c0001", Start)], AirfieldOutcome = AirTrafficOutcome.RateLimited,
+            RetryAfter = TimeSpan.FromSeconds(120),
+        };
+        var service = new AirPictureService(network, Settings(), clock);
+        service.NoteDemand();
+        await service.PollOnceAsync(Ct);
+        clock.Advance(TimeSpan.FromSeconds(3));
+        var wait = await service.PollOnceAsync(Ct);
+        Assert.Equal(5, network.LastArea!.RadiusNm);
+        Assert.Equal(TimeSpan.FromSeconds(120), wait);
+
+        // Nothing goes out before the 429's two minutes end: neither the whole circle nor the airfield.
+        var reads = network.Reads;
+        await RunFor(service, clock, TimeSpan.FromSeconds(119));
+        Assert.Equal(reads, network.Reads);
+        clock.SetTime(Start + TimeSpan.FromSeconds(123));
+        await service.PollOnceAsync(Ct);
+        Assert.Equal((reads + 1, 250), (network.Reads, network.LastArea!.RadiusNm));
+    }
+
+    [Fact]
+    public async Task AFailedReadOfTheWholeCircleStopsTheAirfieldReadsUntilItSucceeds()
+    {
+        var clock = new ManualClock(Start);
+        var network = new ScriptedNetwork(First, clock) { AllowsFrequentReads = true, Aircraft = [Plane("0c0001", Start)] };
+        var service = new AirPictureService(network, Settings(), clock);
+        service.NoteDemand();
+        await service.PollOnceAsync(Ct);
+        clock.SetTime(Start + TimeSpan.FromSeconds(10));
+        network.Outcome = AirTrafficOutcome.Failed;
+        Assert.Equal(TimeSpan.FromSeconds(15), await service.PollOnceAsync(Ct));
+        var airfieldReads = network.Log.Count(read => read.RadiusNm == 5);
+        await RunFor(service, clock, TimeSpan.FromSeconds(14));
+        Assert.Equal(airfieldReads, network.Log.Count(read => read.RadiusNm == 5));
+
+        network.Outcome = AirTrafficOutcome.Succeeded;
+        await RunFor(service, clock, TimeSpan.FromSeconds(10));
+        Assert.True(network.Log.Count(read => read.RadiusNm == 5) > airfieldReads);
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public async Task TheAirfieldIsNotReadWhenSwitchedOffOrAgainstANetworkWithADailyLimit(bool switchedOn, bool allows)
+    {
+        var clock = new ManualClock(Start);
+        var network = new ScriptedNetwork(First, clock) { AllowsFrequentReads = allows, Aircraft = [Plane("0c0001", Start)] };
+        var service = new AirPictureService(network, Settings() with { AirfieldReadsEnabled = switchedOn }, clock);
+        service.NoteDemand();
+        Assert.Equal(TimeSpan.FromSeconds(10), await service.PollOnceAsync(Ct));
+        await RunFor(service, clock, TimeSpan.FromSeconds(60));
+        Assert.All(network.Log, read => Assert.Equal(250, read.RadiusNm));
+        Assert.Equal(6, network.Log.Count);
+    }
+
     private static AirTrafficSettings Settings(int intervalSeconds = 10, int idleAfterSeconds = 900, int trailMinutes = 180,
         bool enabled = true) =>
         new(enabled, "PUJ", 18.5674, -68.3634, 250, TimeSpan.FromSeconds(intervalSeconds),
@@ -772,15 +913,29 @@ public sealed class AirPictureServiceTests
 
         public AirTrafficAttribution? Attribution => attribution;
 
+        /// <summary>CN-31: whether the stub allows the airfield reads (adsb.fi does, adsb.lol does not).</summary>
+        public bool AllowsFrequentReads { get; set; }
+
+        /// <summary>CN-31: what an airfield read (a circle of 25 NM or less) brings, and how it ends.</summary>
+        public IReadOnlyList<AirTrafficAircraft> AirfieldAircraft { get; set; } = [];
+
+        public AirTrafficOutcome AirfieldOutcome { get; set; } = AirTrafficOutcome.Succeeded;
+
+        /// <summary>Every read: when it was asked and the radius it asked for.</summary>
+        public List<(DateTimeOffset At, int RadiusNm)> Log { get; } = [];
+
         public async Task<AirTrafficReadResult> ReadAsync(AirTrafficArea area, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _reads);
             LastReadAt = clock.GetUtcNow();
             LastArea = area;
+            lock (Log) Log.Add((clock.GetUtcNow(), area.RadiusNm));
             if (Gate is { } gate) await gate.Task.WaitAsync(cancellationToken);
-            return Outcome == AirTrafficOutcome.Succeeded
-                ? new AirTrafficReadResult(Outcome, attribution, clock.GetUtcNow(), [.. Aircraft], null)
-                : AirTrafficReadResult.Failure(Outcome, attribution, RetryAfter);
+            var airfield = area.RadiusNm <= AirTrafficSettings.MaxAirfieldRadiusNm;
+            var outcome = airfield ? AirfieldOutcome : Outcome;
+            return outcome == AirTrafficOutcome.Succeeded
+                ? new AirTrafficReadResult(outcome, attribution, clock.GetUtcNow(), [.. airfield ? AirfieldAircraft : Aircraft], null)
+                : AirTrafficReadResult.Failure(outcome, attribution, RetryAfter);
         }
     }
 

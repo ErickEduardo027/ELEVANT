@@ -40,4 +40,32 @@ public sealed record AirTrafficSettings(bool Enabled, string StationCode, double
 
     /// <summary>The circle every read asks for.</summary>
     public AirTrafficArea Area => new(CenterLatitude, CenterLongitude, RadiusNm);
+
+    /// <summary>The radius of the airfield read by default, in nautical miles (CN-31).</summary>
+    public const int DefaultAirfieldRadiusNm = 5;
+
+    /// <summary>The widest airfield read: beyond it the read is no longer the airfield's.</summary>
+    public const int MaxAirfieldRadiusNm = 25;
+
+    /// <summary>How often the airfield is read by default (CN-31).</summary>
+    public static TimeSpan DefaultAirfieldInterval => TimeSpan.FromSeconds(3);
+
+    /// <summary>The airfield is never read more often than this, whatever the configuration says.</summary>
+    public static TimeSpan MinimumAirfieldInterval => TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// CN-31: whether, between two reads of the whole circle, a small circle around the airfield is read more often, so
+    /// the aircraft landing, taxiing and parking carry fresher positions. On by default; it only runs while a screen
+    /// watches the map and only against a network without a daily limit (adsb.fi), never adsb.lol's 450 a day.
+    /// </summary>
+    public bool AirfieldReadsEnabled { get; init; } = true;
+
+    /// <summary>The radius of the airfield read, in nautical miles (1 to <see cref="MaxAirfieldRadiusNm"/>).</summary>
+    public int AirfieldRadiusNm { get; init; } = DefaultAirfieldRadiusNm;
+
+    /// <summary>The time between two airfield reads; never below <see cref="MinimumAirfieldInterval"/>.</summary>
+    public TimeSpan AirfieldInterval { get; init; } = DefaultAirfieldInterval;
+
+    /// <summary>The small circle the airfield read asks for: the same centre, <see cref="AirfieldRadiusNm"/>.</summary>
+    public AirTrafficArea AirfieldArea => new(CenterLatitude, CenterLongitude, AirfieldRadiusNm);
 }

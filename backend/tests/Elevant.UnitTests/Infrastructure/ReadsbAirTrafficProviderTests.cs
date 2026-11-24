@@ -21,6 +21,24 @@ public sealed class ReadsbAirTrafficProviderTests
     private static readonly DateTimeOffset Now = new(2026, 11, 13, 15, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    public void OnlyANetworkWithoutADailyLimitAllowsTheAirfieldReads()
+    {
+        // CN-31: adsb.fi (one request a second, no daily limit) is read every few seconds for the airfield; adsb.lol
+        // (450 or 900 a day) never is, with or without a key, and neither is the failover while it is the active one.
+        var handler = new StubHandler(_ => Json("{}"));
+        using var adsbFi = Provider(handler, ReadsbProfile.AdsbFi);
+        using var adsbLol = Provider(new StubHandler(_ => Json("{}")), ReadsbProfile.AdsbLol, key: "synthetic-key");
+        IAirTrafficProvider fi = adsbFi;
+        IAirTrafficProvider lol = adsbLol;
+        Assert.True(fi.AllowsFrequentReads);
+        Assert.False(lol.AllowsFrequentReads);
+        IAirTrafficProvider first = new FailoverAirTrafficProvider([adsbLol, adsbFi], new ManualClock(Start));
+        Assert.False(first.AllowsFrequentReads);
+        IAirTrafficProvider none = new UnconfiguredAirTrafficProvider();
+        Assert.False(none.AllowsFrequentReads);
+    }
+
+    [Fact]
     public async Task ParsesTheAdsbFiProfile()
     {
         var handler = new StubHandler(_ => Json(Fixture("readsb-adsbfi-point.synthetic.json")));
