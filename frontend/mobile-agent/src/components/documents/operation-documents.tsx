@@ -32,6 +32,7 @@ import { PrimaryButton } from '../ui';
 import { SignaturePad, type Strokes } from './signature-pad';
 import { billingUnitAbbreviation } from '../../utils/billing-units';
 import { missingFlightData, orderFlightDataWarning } from '../../utils/flight-data';
+import { PUSHBACK_BEFORE_SIGNING } from '../../features/assigned-operations/pushback-recorded';
 import { isValidSignerIdentification, normalizeSignerIdentification } from '../../utils/signer-identification';
 
 const TITLES: Record<OperationDocumentKind, string> = {
@@ -104,8 +105,13 @@ function flightDataWarningFor(document: OperationDocumentResponse,
  * already captured. Each shows who still has to sign; a signature is saved on the device and sent
  * with signal, and a form that changed after signing asks only for its own signatures again.
  */
-export function DocumentsPanel({ operationId, editable, executionOpen }: {
+export function DocumentsPanel({ operationId, editable, executionOpen, pushbackRecorded }: {
   operationId: string;
+  /**
+   * CN-24: the push-back is recorded. False warns next to the Service Order's FIRMAR that signing first means signing
+   * again; it never holds the signature. Left out, nothing is said.
+   */
+  pushbackRecorded?: boolean;
   /** The forms can be signed: while in progress, pending OCC's review or returned for correction. */
   editable: boolean;
   /** The operation is in progress, its hand-off to OCC still ahead (N3). */
@@ -156,6 +162,7 @@ export function DocumentsPanel({ operationId, editable, executionOpen }: {
       {documents?.documents.map(document => (
         <DocumentRow key={document.kind} document={document} queued={queued} editable={editable}
           executionOpen={executionOpen} flightDataWarning={flightDataWarningFor(document, flightData)}
+          pushbackPending={pushbackRecorded === false}
           onSign={role => setSigning({ document, role })} />
       ))}
       {signing && (
@@ -173,10 +180,12 @@ export function DocumentsPanel({ operationId, editable, executionOpen }: {
   );
 }
 
-function DocumentRow({ document, queued, editable, executionOpen, flightDataWarning, onSign }: {
+function DocumentRow({ document, queued, editable, executionOpen, flightDataWarning, pushbackPending = false, onSign }: {
   document: OperationDocumentResponse; queued: readonly FlightReportOutboxItem[]; editable: boolean; executionOpen: boolean;
   /** S1: what the Service Order lacks of the flight data; it warns and never holds the signature. */
   flightDataWarning: string | null;
+  /** CN-24: the push-back is not recorded yet; the Service Order warns while it still offers FIRMAR. */
+  pushbackPending?: boolean;
   onSign: (role: OperationSignatureRole) => void;
 }) {
   const kind = document.kind as OperationDocumentKind;
@@ -191,6 +200,9 @@ function DocumentRow({ document, queued, editable, executionOpen, flightDataWarn
   // button, and says so while the execution is open and one of its signatures is still to give.
   const optional = isOptionalForHandoff(kind);
   const notNeeded = optional && editable && executionOpen && signers.some(item => !item.signature && !item.pending);
+  // CN-24: only a warning, next to the FIRMAR it is about; the signature works as before.
+  const signBeforePushback = kind === 'ServiceOrder' && pushbackPending && editable &&
+    signers.some(item => !item.signature && !item.pending);
   return (
     <View style={[styles.document, document.isFullySigned && styles.documentDone]}>
       <View style={styles.documentHeader}>
@@ -203,6 +215,7 @@ function DocumentRow({ document, queued, editable, executionOpen, flightDataWarn
         {document.isFullySigned && <Text style={styles.doneChip}>Firmado</Text>}
       </View>
       {flightDataWarning && <FlightDataWarning text={flightDataWarning} />}
+      {signBeforePushback && <FlightDataWarning text={PUSHBACK_BEFORE_SIGNING} />}
       {notNeeded && (
         <View style={styles.notNeeded}>
           <Ionicons name="information-circle-outline" size={20} color={colors.muted} />

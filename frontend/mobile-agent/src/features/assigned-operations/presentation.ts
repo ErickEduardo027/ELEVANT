@@ -1,5 +1,6 @@
 import type { RampAssignedOperationResponse } from '@elevant/api-client';
 import { formatStationDate, formatStationTime } from '../../utils/date-format';
+import { standDisplayCode } from '../../utils/stand-codes';
 
 export type OperationStatusTone = 'blue' | 'green' | 'orange' | 'red';
 
@@ -157,10 +158,27 @@ export function assignmentRoleLabel(role: string): string | null {
   return Object.prototype.hasOwnProperty.call(assignmentRoleLabels, key) ? assignmentRoleLabels[key] : null;
 }
 
+/** CN-21: the stand as OCC's map shows it («A1», never «A01»), after its terminal when it has one. */
 export function operationStandLabel(operation: RampAssignedOperationResponse) {
   const { stand } = operation.turnaround;
   if (!stand) return 'Stand por confirmar';
-  return stand.terminal ? `${stand.terminal.code} · ${stand.code}` : stand.code;
+  const code = standDisplayCode(stand.code);
+  return stand.terminal ? `${stand.terminal.code} · ${code}` : code;
+}
+
+/**
+ * CN-25: the operational positions the catalog still names in English, in Spanish by their code. The code is the
+ * stable key («RAMP-AGENT»); a position this version does not know keeps the name ELEVANT sends.
+ */
+const positionNames: Record<string, string> = {
+  'RAMP-AGENT': 'Agente de rampa',
+};
+
+/** The assignment's operational position as the agent reads it; null without a position. */
+export function assignmentPositionLabel(position: Readonly<{ code: string; name: string }> | null | undefined) {
+  if (!position) return null;
+  const key = position.code.trim().toUpperCase();
+  return Object.prototype.hasOwnProperty.call(positionNames, key) ? positionNames[key] : position.name;
 }
 
 export function operationAircraftLabel(operation: RampAssignedOperationResponse) {

@@ -251,3 +251,29 @@ describe('notices that do not get in the way, in the agent’s words (N13, D-N13
     await renderer.act(async () => tree.unmount());
   });
 });
+
+describe('the confirmation in sight (CN-23)', () => {
+  test('CONFIRMAR takes the place of the result buttons, before the fields, and the three steps stay', async () => {
+    const { tree, onTransition } = await render();
+    // Step 1: the result buttons; no confirmation yet.
+    expect(button(tree, 'CONFIRMAR COMPLETADO')).toBeUndefined();
+    await chooseCompleted(tree);
+    // Step 2: the confirmation sits right under the selected result, before the quantity and the note.
+    const all = tree.root.findAll(node => (node.props.title === 'CONFIRMAR COMPLETADO' &&
+      typeof node.props.onPress === 'function') || (node.type === 'TextInput'));
+    expect(all[0].props.title).toBe('CONFIRMAR COMPLETADO');
+    expect(all.filter(node => node.type === 'TextInput')).toHaveLength(2);
+    expect(onTransition).not.toHaveBeenCalled();
+    // Step 3: confirming sends the result, as before.
+    await confirm(tree);
+    expect(onTransition).toHaveBeenCalledWith({ targetStatus: 'Completed', executedQuantity: 1 });
+  });
+
+  test('a required note missing is said next to its field when CONFIRMAR is tapped first', async () => {
+    const { tree, onTransition } = await render();
+    await renderer.act(async () => { pressable(tree, 'Servicio no realizado').props.onPress(); });
+    await confirm(tree, 'CONFIRMAR NO REALIZADO');
+    expect(onTransition).not.toHaveBeenCalled();
+    expect(lines(tree)).toContain('La nota es obligatoria para este resultado.');
+  });
+});

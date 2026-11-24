@@ -794,3 +794,44 @@ describe('tú to the agent, neutral to the signer and counts in words (N13, D-N1
     expect(sheetTexts(tree).join(' ')).not.toContain('(s)');
   });
 });
+
+describe('the push-back before the Service Order is signed (CN-24)', () => {
+  const WARNING = 'Registra el push-back antes de firmar: al registrarlo cambia la hora de salida y habrá que firmar ' +
+    'de nuevo.';
+  const panelTexts = tree => tree.root.findAll(node => node.type === 'Text').map(textOf);
+  async function renderWith(pushbackRecorded, documents = [serviceOrder(), flightReport()]) {
+    mockSnapshot = { items: [], syncing: false, confirmed: {}, revisions: {}, charters: {},
+      documents: { [OPERATION_ID]: { operationId: OPERATION_ID, documents, damageMarks: [] } } };
+    let tree;
+    await renderer.act(async () => {
+      tree = renderer.create(React.createElement(DocumentsPanel,
+        { operationId: OPERATION_ID, editable: true, executionOpen: true, pushbackRecorded }));
+    });
+    return tree;
+  }
+  const signButtons = tree => tree.root.findAll(node => node.props.accessibilityRole === 'button' &&
+    typeof node.props.onPress === 'function' && String(node.props.accessibilityLabel).startsWith('Firmar: '));
+
+  test('warns once, on the Service Order, and FIRMAR still opens the sheet', async () => {
+    const tree = await renderWith(false);
+    expect(panelTexts(tree).filter(text => text === WARNING)).toHaveLength(1);
+    const [airline] = signButtons(tree);
+    expect(airline.props.disabled).toBe(false);
+    await press(airline);
+    expect(modal(tree)).toBeDefined();
+    await renderer.act(async () => tree.unmount());
+  });
+
+  test('says nothing once the push-back is recorded, when the Order is signed, or when the screen does not tell',
+    async () => {
+      for (const tree of [
+        await renderWith(true),
+        await renderWith(false, [serviceOrder({ isFullySigned: true, signatures: [
+          { role: 'AirlineRepresentative', signerName: 'Ana' }, { role: 'AviamAgent', signerName: 'Riley' }] })]),
+        await renderWith(undefined),
+      ]) {
+        expect(panelTexts(tree)).not.toContain(WARNING);
+        await renderer.act(async () => tree.unmount());
+      }
+    });
+});

@@ -302,17 +302,19 @@ describe('a readable assignment (N9, D-N9)', () => {
     return lines(card);
   }
 
-  test('the role reads «Agente principal» and the position only by its name', async () => {
+  // CN-25: a position the catalog still names in English («Ramp agent») reads in Spanish, by its code.
+  test('the role reads «Agente principal» and the position only by its name, in Spanish', async () => {
     mockGetAssigned.mockResolvedValue({ source: 'network', operations: [assigned({ assignmentRole: 'primary',
       position: { id: '74000000-0000-4000-8000-000000000001', code: 'RAMP-AGENT', name: 'Ramp agent' } })] });
     const tree = await render();
     const lines = assignmentLines(tree);
-    expect(lines).toEqual(['Agente principal', 'Ramp agent', expect.stringMatching(ASSIGNED_AT)]);
+    expect(lines).toEqual(['Agente principal', 'Agente de rampa', expect.stringMatching(ASSIGNED_AT)]);
     // The 12-hour check, scoped to the card: «Asignada …» is on a 24-hour clock.
     expect(lines.join(' ')).not.toMatch(/[ap]\.\s?m\./);
     const text = screenText(tree);
     expect(text).not.toMatch(/\bprimary\b/i);
     expect(text).not.toContain('RAMP-AGENT');
+    expect(text).not.toContain('Ramp agent');
     await renderer.act(async () => tree.unmount());
   });
 

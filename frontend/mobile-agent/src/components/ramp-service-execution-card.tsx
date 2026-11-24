@@ -301,6 +301,16 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
                 )}
               </View>
 
+              {/* CN-23: the confirmation takes the place of the result's buttons, where the agent just tapped: it never
+                  ends up below the fields, out of sight. The quantity and the note follow; a missing one is said
+                  next to its field. */}
+              <PrimaryButton
+                disabled={!actionable || busy}
+                icon="checkmark-circle-outline"
+                onPress={submitTerminal}
+                title={busy ? 'REGISTRANDO…' : frozen ? 'REINTENTAR ENVÍO' : `CONFIRMAR ${targetShortLabel(target)}`}
+              />
+
               <View style={styles.fieldGroup}>
                 <Text style={styles.fieldLabel}>{quantityLabel}</Text>
                 <TextInput
@@ -365,12 +375,6 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
                 </View>
               )}
 
-              <PrimaryButton
-                disabled={!actionable || busy}
-                icon="checkmark-circle-outline"
-                onPress={submitTerminal}
-                title={busy ? 'REGISTRANDO…' : frozen ? 'REINTENTAR ENVÍO' : `CONFIRMAR ${targetShortLabel(target)}`}
-              />
             </View>
           )}
         </View>

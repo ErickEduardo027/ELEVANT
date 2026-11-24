@@ -7,6 +7,7 @@ import { subscribeMobileChanges } from '../services/mobile-change-feed';
 import { getOwnCoverage } from '../services/ramp-coverage';
 import { colors } from '../theme/colors';
 import { formatStationTime } from '../utils/date-format';
+import { standDisplayCode } from '../utils/stand-codes';
 
 /**
  * «Mis posiciones de hoy» (ADR-0030): the stands OCC handed this agent, with the window, the
@@ -46,7 +47,8 @@ export function MyPositionsCard({ timeZones }: { readonly timeZones?: ReadonlyMa
           : coverages?.map(item => (
             <View key={item.id} style={styles.row}>
               <View style={styles.stands}>
-                {item.stands.map(code => <Text key={code} style={styles.stand}>{code}</Text>)}
+                {/* CN-21: each stand as OCC's map shows it («A1», never «A01»). */}
+                {item.stands.map(code => <Text key={code} style={styles.stand}>{standDisplayCode(code)}</Text>)}
               </View>
               <Text style={styles.detail}>
                 Terminal {item.terminalCode} · {time(item.startsAt, item.stationCode)}–{time(item.endsAt, item.stationCode)}

@@ -1,6 +1,7 @@
 import type { OperationDocumentKind } from '@elevant/api-client';
 import type { FlightReportOutboxItem } from '../../synchronization/flight-report-outbox';
 import { missingFlightData, orderFlightDataWarning, type FlightDataNumbers } from '../../utils/flight-data';
+import { PUSHBACK_BEFORE_SIGNING } from './pushback-recorded';
 
 /**
  * The tablet's own reasons not to hand an operation off to OCC yet (3-N06, N1), as Problem Details style codes so the
@@ -154,6 +155,11 @@ export type HandoffRequirementsInput = Readonly<{
   orderSigned?: boolean;
   /** What of the operation is still in the device's queue, waiting or refused. */
   waitingRecords: number;
+  /**
+   * CN-24: the push-back is recorded (`isPushbackRecorded`). False adds a warning to an Order still to sign: signing
+   * before it means signing again. Left out, nothing is said.
+   */
+  pushbackRecorded?: boolean;
 }>;
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
@@ -209,11 +215,14 @@ export function handoffRequirements(input: HandoffRequirementsInput): HandoffReq
       : met('flightData', flightDataLabel);
 
   const orderLabel = 'Orden de Servicio firmada';
+  // CN-24: a warning only; it never holds the signature nor the hand-off.
+  const beforeSigning = input.pushbackRecorded === false ? ` ${PUSHBACK_BEFORE_SIGNING}` : '';
   const serviceOrder: HandoffRequirement = !input.documents
-    ? unknown('serviceOrder', orderLabel, 'La tablet aún no leyó los formularios; la comprueba al entregar.')
+    ? unknown('serviceOrder', orderLabel,
+      `La tablet aún no leyó los formularios; la comprueba al entregar.${beforeSigning}`)
     : isServiceOrderSigned(input.documents)
       ? met('serviceOrder', orderLabel)
-      : missing('serviceOrder', orderLabel, 'Falta firmar la Orden de Servicio (aerolínea y AVIAM).',
+      : missing('serviceOrder', orderLabel, `Falta firmar la Orden de Servicio (aerolínea y AVIAM).${beforeSigning}`,
         HANDOFF_SERVICE_ORDER_UNSIGNED);
 
   const waiting = input.waitingRecords;
