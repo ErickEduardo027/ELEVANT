@@ -347,12 +347,13 @@ function WideEntry({ swatch, name, hint }) {
  * folds it, so a stand a screen brings to the centre (a row of its list) is not left under the open legend. In the
  * map's control rail (CN-32) it is the last control, and its panel flies out to the left of the rail, capped at the
  * height of the column and scrolling past it (occ-map.css: .occ-map-flyout); the layers menu opens in the same place,
- * so opening one closes the other.
+ * so opening one closes the other. While the map follows an aircraft (follow mode) an open legend steps aside, so it
+ * never covers what the camera tracks, and comes back when following ends; its button opens it meanwhile.
  */
 export default function MapLegend({ stands, bounds = null, defaultOpen = true, foldKey = null, className = '' }) {
   const {
     standsOnScreen, chipsOnScreen, standMarksOnScreen, flightsOnScreen, airfieldOnScreen, trafficOnScreen, layers,
-    activeView, referencesOnScreen, layersMenuOpen = false, setLayersMenuOpen,
+    activeView, referencesOnScreen, layersMenuOpen = false, setLayersMenuOpen, follow,
   } = useOccMap();
   const { t, language } = useTranslation(mapMessages);
   const [open, setOpen] = useState(defaultOpen);
@@ -368,6 +369,16 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, f
     setHeardLayersOpen(layersMenuOpen);
     if (layersMenuOpen && open) setOpen(false);
   }
+  // Follow mode (CN-32): the open legend steps aside while the map follows an aircraft and comes back when it stops
+  // (adjusted while rendering, no effect). `shown` is what the button and the panel say.
+  const following = follow?.following === true;
+  const [heardFollowing, setHeardFollowing] = useState(following);
+  const [asideForFollow, setAsideForFollow] = useState(following);
+  if (following !== heardFollowing) {
+    setHeardFollowing(following);
+    setAsideForFollow(following);
+  }
+  const shownOpen = open && !asideForFollow;
   const panelId = useId();
   const { flights, states, chips, signals, tags, marks, airfield } = useMemo(() => (stands === undefined
     ? legendEntries({
@@ -389,14 +400,19 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, f
   const shown = listsOthers || framesMap;
   if (!shown) return null;
   const toggle = () => {
-    if (!open) setLayersMenuOpen?.(false);
-    setOpen(!open);
+    if (shownOpen) {
+      setOpen(false);
+      return;
+    }
+    setLayersMenuOpen?.(false);
+    setAsideForFollow(false);
+    setOpen(true);
   };
 
   return (
     // No position of its own: the panel is placed against the rail (occ-map.css), as the layers menu's.
     <div data-testid="map-legend" className={className || undefined}>
-      <div id={panelId} hidden={!open} className={`${RAIL_FLYOUT} w-max max-w-xs overflow-y-auto`}>
+      <div id={panelId} hidden={!shownOpen} className={`${RAIL_FLYOUT} w-max max-w-xs overflow-y-auto`}>
         <ul aria-label={t('legend.title')} className="grid grid-cols-2 gap-y-1.5 text-sm text-occ-text">
           {traffic.map(entry => (
             <li key={entry.key} data-legend-traffic={entry.key}
@@ -473,11 +489,11 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, f
       </div>
       <button
         type="button"
-        aria-expanded={open}
+        aria-expanded={shownOpen}
         aria-controls={panelId}
-        title={open ? t('legend.hide') : t('legend.show')}
+        title={shownOpen ? t('legend.hide') : t('legend.show')}
         onClick={toggle}
-        className={railToolClass(open)}
+        className={railToolClass(shownOpen)}
       >
         <span aria-hidden="true" className={RAIL_KEY}>
           <svg viewBox="0 0 10 10" focusable="false" className="h-2.5 w-2.5">

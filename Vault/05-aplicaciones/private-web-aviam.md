@@ -2665,7 +2665,8 @@ API, lo que leen las pantallas ni su cadencia.
   izquierda del riel, una a la vez. Abajo a la izquierda va la escala de
   altitud sobre el crédito de los datos de aeronaves; abajo a la derecha, la
   escala náutica; arriba al centro, solo un aviso cuando algo falla. La
-  leyenda de Monitoreo abre plegada.
+  leyenda de Monitoreo abre plegada, y mientras el mapa sigue un avión la
+  leyenda abierta se aparta y vuelve al dejar de seguir.
 - **Panorama acoplado**
   ([disposición](../../frontend/private-web/src/features/dashboard/noc/ConsoleOverlay.jsx)).
   Los paneles van pegados a los bordes del mapa, sin huecos: «Tablero» y, debajo,

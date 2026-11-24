@@ -718,6 +718,31 @@ describe('MapLegend', () => {
     expect(screen.getByTestId('map-legend').className).not.toMatch(/relative/);
   });
 
+  it('steps aside while the map follows an aircraft and comes back when it stops (CN-32)', () => {
+    const base = { ...OCC_MAP_IDLE, standMarksOnScreen: ['sameAgent'], follow: { following: false } };
+    const view = value => <OccMapContext.Provider value={value}><MapLegend /></OccMapContext.Provider>;
+    const { rerender } = render(view(base));
+    const toggle = screen.getByRole('button', { name: 'Leyenda' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    // Follow mode starts: the open legend leaves the map to the camera.
+    rerender(view({ ...base, follow: { following: true } }));
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('list', { name: 'Leyenda' })).not.toBeInTheDocument();
+    // Its button still opens it meanwhile, and folds it again.
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    // Folded by the person, it stays folded when following ends; open when following started, it comes back.
+    rerender(view({ ...base, follow: { following: false } }));
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggle);
+    rerender(view({ ...base, follow: { following: true } }));
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    rerender(view({ ...base, follow: { following: false } }));
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  });
+
   it('shares its place with the layers menu: opening one folds the other (CN-32)', () => {
     const value = { ...OCC_MAP_IDLE, standMarksOnScreen: ['sameAgent'], layersMenuOpen: false, setLayersMenuOpen: vi.fn() };
     const { rerender } = render(<OccMapContext.Provider value={value}><MapLegend /></OccMapContext.Provider>);

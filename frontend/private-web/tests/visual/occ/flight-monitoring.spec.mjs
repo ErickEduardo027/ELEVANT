@@ -83,7 +83,9 @@ test.describe('Monitoreo de vuelos as a work map', () => {
 
       // The demo flight, chosen on the board: the URL names its leg, the strip is pressed, the inspector opens beside
       // the map and the map shows the same flight.
-      const demo = stripOf(page, 'ZZ9001');
+      // By its test id and not through the board's region: below 1536 px the board folds away while the inspector is
+      // open (CN-32), and a hidden region has no role to find it by.
+      const demo = page.locator('[data-testid="flight-list-item"]').filter({ hasText: 'ZZ9001' });
       await expectStripCellsApart(demo);
       await demo.click();
       await expect.poll(() => flightIdInUrl(page)).toBe(arrivalLegOf(9001));
