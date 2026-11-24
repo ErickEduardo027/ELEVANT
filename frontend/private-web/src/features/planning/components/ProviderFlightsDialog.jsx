@@ -13,7 +13,7 @@ import {
 import { getManualTurnaroundOptions } from '../../../services/planningService';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { isConflict } from '../../../services/problemMessages';
-import { normalizeStandCode, sortByStandCode, standDisplayCode } from '../../../services/standCodes';
+import { sortByStandCode, standDisplayCode } from '../../../services/standCodes';
 
 const buttonClass = 'min-h-9 rounded-lg border border-accent-600/40 px-3 text-xs font-semibold text-accent-600 disabled:cursor-not-allowed disabled:opacity-50';
 const primaryClass = 'min-h-9 rounded-lg bg-accent-600 px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50';
@@ -90,6 +90,22 @@ function standLabel(stand) {
   return `${standDisplayCode(stand.code)} · Terminal ${stand.terminal?.code ?? '—'}`;
 }
 
+/**
+ * Where the preselected type comes from (CN-28): «en vuelo · B738 · HP-1849CMP» when the live aircraft of the flight
+ * broadcasts it, «historial» when the provider's model is generic and the airline flies that type most at the station,
+ * «sugerido» when the provider's model names it.
+ */
+function typeSourceText(arrival, type) {
+  if (arrival.suggestedAircraftTypeSource === 'Live')
+    return ['en vuelo', type?.icaoCode, arrival.suggestedRegistration].filter(Boolean).join(' · ');
+  return arrival.suggestedAircraftTypeSource === 'History' ? 'historial' : 'sugerido';
+}
+
+/** Where the preselected stand comes from (CN-28): the airport's gate, or a free stand of the terminal. */
+function standSourceText(source) {
+  return source === 'Gate' ? 'puerta del aeropuerto' : 'sugerida';
+}
+
 /** A demo flight the superadministrator triggered (ADR-0041) is always labelled as such. */
 function DemoMark({ item }) {
   return item.isDemo === true ? <>{' '}<DemoTag /></> : null;
@@ -102,8 +118,11 @@ function DemoMark({ item }) {
  * provider; only «Actualizar ahora» may, within the server's limits.
  *
  * `revision` changes when OCC's planning changed (`occ_planning`, ADR-0041): the list is read again without going back
- * to «cargando» and what OCC chose for each arrival stays, so a demo flight that landed meanwhile costs no conflict. A
- * demo arrival comes with the stand of its gate already chosen.
+ * to «cargando» and what OCC chose for each arrival stays, so a demo flight that landed meanwhile costs no conflict.
+ *
+ * CN-28: the server preselects the type (live aircraft, provider's model or history) and the stand (the airport's gate,
+ * real or demo, or a free stand of the terminal) of each arrival; each field names its source while it shows the
+ * suggestion, and OCC can always change both. Nothing is imported until OCC imports.
  */
 export default function ProviderFlightsDialog({ stationId, date, timeZone, onClose, onImported, revision = 0 }) {
   const [view, setView] = useState('Contracted');
@@ -165,18 +184,15 @@ export default function ProviderFlightsDialog({ stationId, date, timeZone, onClo
   const arrivals = proposals.filter(item => item.direction === 'Arrival');
   // Stands in natural order (services/standCodes.js): A1, A2, A10, AN1, B20.
   const stands = useMemo(() => sortByStandCode(catalog.stands), [catalog.stands]);
-  /** The stand a demo arrival's gate names (ADR-0041), compared as the API compares stand codes; '' without one. */
-  const gateStandId = arrival => {
-    if (arrival.isDemo !== true || !arrival.gate) return '';
-    const gate = normalizeStandCode(arrival.gate);
-    return stands.find(stand => normalizeStandCode(stand.code) === gate)?.id ?? '';
-  };
+  /** The stand the server suggests for the arrival (CN-28) when it is one of the catalog's; '' without one. */
+  const suggestedStandId = arrival => (stands.some(stand => stand.id === arrival.suggestedStandId)
+    ? arrival.suggestedStandId : '');
   // Only what OCC changed is kept, by proposal: a re-read never undoes it, and the rest follows the suggestions.
   const choiceOf = arrival => ({
     departureId: choices[arrival.proposalId]?.departureId ?? arrival.suggestedDepartureId ?? '',
     aircraftTypeId: choices[arrival.proposalId]?.aircraftTypeId ??
       (catalog.aircraftTypes?.some(type => type.id === arrival.suggestedAircraftTypeId) ? arrival.suggestedAircraftTypeId : ''),
-    standId: choices[arrival.proposalId]?.standId ?? gateStandId(arrival),
+    standId: choices[arrival.proposalId]?.standId ?? suggestedStandId(arrival),
   });
   const choose = (arrival, field, value) => setChoices(all => ({
     ...all, [arrival.proposalId]: { ...all[arrival.proposalId], [field]: value },
@@ -292,8 +308,10 @@ export default function ProviderFlightsDialog({ stationId, date, timeZone, onClo
                   const choice = choiceOf(arrival);
                   const imported = arrival.status === 'Confirmed';
                   const suggested = Boolean(arrival.suggestedAircraftTypeId) && choice.aircraftTypeId === arrival.suggestedAircraftTypeId;
-                  const gateStand = gateStandId(arrival);
-                  const standSuggested = Boolean(gateStand) && choice.standId === gateStand;
+                  const suggestedStand = suggestedStandId(arrival);
+                  const standSuggested = Boolean(suggestedStand) && choice.standId === suggestedStand;
+                  const suggestedType = suggested
+                    ? catalog.aircraftTypes?.find(type => type.id === arrival.suggestedAircraftTypeId) : null;
                   return <li key={arrival.proposalId} className="rounded-xl border border-black/5 p-3 dark:border-white/10">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p><strong>{arrival.flightNumber}</strong><DemoMark item={arrival} /> · {arrival.airlineName} · desde {arrival.counterpartIata ?? '¿?'}
@@ -318,12 +336,12 @@ export default function ProviderFlightsDialog({ stationId, date, timeZone, onClo
                             .filter(item => item.airlineId === arrival.airlineId)
                             .map(item => ({ value: item.proposalId, label: departureLabel(item, timeZone) }))]} /></label>
                       {catalog.status === 'success' && <>
-                        <label className="text-xs">Tipo de avión{suggested ? ' (sugerido)' : ''}
+                        <label className="text-xs">Tipo de avión{suggested ? ` (${typeSourceText(arrival, suggestedType)})` : ''}
                           <TitledSelect className={selectClass} value={choice.aircraftTypeId}
                             onChange={event => choose(arrival, 'aircraftTypeId', event.target.value)}
                             options={[{ value: '', label: 'Sin tipo de avión' },
                               ...catalog.aircraftTypes.map(type => ({ value: type.id, label: typeLabel(type) }))]} /></label>
-                        <label className="text-xs">Posición{standSuggested ? ' (sugerida)' : ''}
+                        <label className="text-xs">Posición{standSuggested ? ` (${standSourceText(arrival.suggestedStandSource)})` : ''}
                           <TitledSelect className={selectClass} value={choice.standId}
                             onChange={event => choose(arrival, 'standId', event.target.value)}
                             options={[{ value: '', label: 'Sin posición (asignar después)' },

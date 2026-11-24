@@ -17,7 +17,8 @@ public sealed record OccFlightProposalData(Guid ProposalId, string Direction, st
     DateTimeOffset ScheduledAt, DateTimeOffset? RevisedAt, DateTimeOffset? RunwayAt, string ProviderStatus,
     string? AircraftRegistration, string? AircraftModel, string? Terminal, string? Gate, string Status,
     Guid? TurnaroundId, Guid? SuggestedDepartureId, DateTimeOffset LastSeenAt, string Version,
-    Guid? SuggestedAircraftTypeId, bool? IsDemo = null);
+    Guid? SuggestedAircraftTypeId, bool? IsDemo = null, string? SuggestedAircraftTypeSource = null,
+    string? SuggestedRegistration = null, Guid? SuggestedStandId = null, string? SuggestedStandSource = null);
 
 public sealed record OccFlightFeedData(Guid StationId, string StationCode, DateOnly Date, OccFlightFeedBudgetData Budget,
     DateTimeOffset? LastReadAt, DateTimeOffset? NextManualRefreshAt, bool CanImport,

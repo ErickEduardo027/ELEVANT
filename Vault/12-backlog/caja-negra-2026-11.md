@@ -71,7 +71,7 @@ asignación en OCC → operación completa en la tablet → revisión OCC → e-
 | CN-25 | Texto en inglés en la asignación de la tablet | «Agente de rampa» | En PR |
 | CN-26 | La historia sintética no firma la Orden de Servicio | Bloque adicional del seeder que inserta las firmas | En PR |
 | CN-27 | Renombrar una estación invalida las firmas de documentos ya firmados | La firma solo caduca si cambian los hechos operativos, no las etiquetas de datos maestros | Aprobado; en curso |
-| CN-28 | La importación no carga el tipo de avión ni la posición de vuelos reales | Tipo desde el tráfico en vivo o el historial; posición desde la puerta del aeropuerto o sugerida por terminal y tamaño | Propuesto |
+| CN-28 | La importación no carga el tipo de avión ni la posición de vuelos reales | Tipo desde el tráfico en vivo o el historial; posición desde la puerta del aeropuerto o sugerida por terminal y tamaño | En PR |
 
 ### Medición del NOC (base, antes de CN-18/19)
 

@@ -15,6 +15,11 @@ internal sealed class OccupiedStandRow
     public string StandCode { get; init; } = string.Empty;
     public long TurnaroundId { get; init; }
     public AircraftSizeCategory? AircraftSize { get; init; }
+
+    /// <summary>The planned window of the flight that holds the stand; null when it has none.</summary>
+    public DateTimeOffset? PlannedStartAt { get; init; }
+
+    public DateTimeOffset? PlannedEndAt { get; init; }
 }
 
 /// <summary>
@@ -99,6 +104,7 @@ internal static class StandAvailability
                {
                    StandId = parked.Id, StandCode = parked.Code, TurnaroundId = assignment.TurnaroundId,
                    AircraftSize = type == null ? null : type.SizeCategory,
+                   PlannedStartAt = operation.PlannedStartAt, PlannedEndAt = operation.PlannedEndAt,
                };
     }
 
@@ -140,6 +146,36 @@ internal static class StandAvailability
             cancellationToken);
         return stands.ToDictionary(stand => stand.Id, stand => (IReadOnlyList<string>)
             Reasons(new StandPlacement(stand.Id, stand.Code, stand.MaxAircraftSize, aircraftSize), occupied, rules));
+    }
+
+    /// <summary>
+    /// What <see cref="ProposalStandSuggester"/> needs for the flights of [<paramref name="startsAt"/>,
+    /// <paramref name="endsAt"/>) (CN-28): the active stands of the station's active terminals with their terminal's code,
+    /// the stands other flights hold in that span with each holder's planned window (<see cref="Occupying"/>), and the
+    /// active combined-stand rules. Three reads, whatever the number of flights.
+    /// </summary>
+    public static async Task<(StandOption[] Stands, HeldStand[] Held, StandRule[] Rules)> SuggestionInputsAsync(
+        ElevantDbContext context, long stationId, DateTimeOffset startsAt, DateTimeOffset endsAt,
+        CancellationToken cancellationToken)
+    {
+        var stands = await (from item in context.Stands.AsNoTracking()
+                            join terminal in context.Terminals.AsNoTracking() on item.TerminalId equals (long?)terminal.Id
+                            where item.StationId == stationId && item.IsActive && terminal.IsActive
+                            select new { item.Id, item.PublicId, item.Code, TerminalCode = terminal.Code, item.MaxAircraftSize })
+            .ToArrayAsync(cancellationToken);
+        if (stands.Length == 0) return ([], [], []);
+        var held = await Occupying(context, stationId, startsAt, endsAt, null)
+            .Select(item => new { item.StandId, item.StandCode, item.AircraftSize, item.PlannedStartAt, item.PlannedEndAt })
+            .ToArrayAsync(cancellationToken);
+        var rules = await context.Set<StandConstraint>().AsNoTracking()
+            .Where(item => item.StationId == stationId && item.IsActive)
+            .Select(item => new { item.StandId, item.AffectedStandId, item.Kind }).ToArrayAsync(cancellationToken);
+        return (
+            stands.Select(item => new StandOption(item.Id, item.PublicId, item.Code, item.TerminalCode, item.MaxAircraftSize))
+                .ToArray(),
+            held.Select(item => new HeldStand(item.StandId, item.StandCode, item.AircraftSize, item.PlannedStartAt,
+                item.PlannedEndAt)).ToArray(),
+            rules.Select(item => new StandRule(item.StandId, item.AffectedStandId, item.Kind)).ToArray());
     }
 
     /// <summary>The stands held in the window and the station's active combined-stand rules.</summary>

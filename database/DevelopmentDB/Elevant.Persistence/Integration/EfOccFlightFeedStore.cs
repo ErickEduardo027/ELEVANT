@@ -8,6 +8,7 @@ using Elevant.Application.Identity;
 using Elevant.Application.Integration;
 using Elevant.Application.Integration.DemoFlights;
 using Elevant.Application.Operations;
+using Elevant.Application.Operations.AirPicture;
 using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Entities.Integration;
@@ -31,7 +32,7 @@ namespace Elevant.Persistence.Integration;
 /// </summary>
 internal sealed class EfOccFlightFeedStore(
     ElevantDbContext context, IActorContextResolver actors, IAirportFlightFeed feed, FlightFeedBudget budget,
-    TimeProvider timeProvider) : IOccFlightFeedStore
+    TimeProvider timeProvider, AirPictureService? picture = null) : IOccFlightFeedStore
 {
     private const string ReadPermission = "operations.planning.read";
     private const string CreatePermission = "operations.planning.create";
@@ -77,7 +78,8 @@ internal sealed class EfOccFlightFeedStore(
                           select new
                           {
                               Proposal = proposal, AirlinePublicId = airline.PublicId, AirlineName = airline.Name,
-                              airline.IataCode, TurnaroundPublicId = turnaround == null ? (Guid?)null : turnaround.PublicId,
+                              airline.IataCode, AirlineIcaoCode = airline.IcaoCode,
+                              TurnaroundPublicId = turnaround == null ? (Guid?)null : turnaround.PublicId,
                           }).ToArrayAsync(cancellationToken);
         var listed = rows.Select(row => row.Proposal).ToArray();
         var suggestions = SuggestDepartures(listed);
@@ -87,6 +89,35 @@ internal sealed class EfOccFlightFeedStore(
         // ADR-0041: the worker never writes a demo pair nobody imported, so what OCC read stays importable; the
         // status and the runway time of those legs come from the demo clock at this instant.
         var demo = await DemoFlightGroups.ShownAsync(context, listed, now, cancellationToken);
+
+        // CN-28: the type and the stand OCC finds preselected for the open proposals, each with its source.
+        var open = view != OccFlightFeedView.Dismissed;
+        var live = open
+            ? LiveAircraft(station.Code, rows.Where(row => row.Proposal.Status == ExternalFlightProposalStatus.Proposed)
+                .Select(row => new MapFlightMatchKey(row.Proposal.PublicId.ToString(), row.Proposal.Direction.ToString(),
+                    row.Proposal.FlightNumber, row.AirlineIcaoCode, row.IataCode, row.Proposal.AircraftRegistration,
+                    row.Proposal.RunwayAt ?? row.Proposal.RevisedAt ?? row.Proposal.ScheduledAt, row.Proposal.RunwayAt is not null,
+                    row.Proposal.Provider == DemoFlightProvider.Name)).ToArray(), now)
+            : new Dictionary<string, AirTrafficAircraft>();
+        var needHistory = open
+            ? rows.Where(row => row.Proposal.Status == ExternalFlightProposalStatus.Proposed &&
+                                AircraftModelMatcher.Suggest(row.Proposal.AircraftModel, types) is null &&
+                                AircraftModelMatcher.Family(row.Proposal.AircraftModel, types).Count > 0)
+                .Select(row => row.Proposal.AirlineId).Distinct().ToArray()
+            : [];
+        var history = await TypeHistoryAsync(station.Id, date, needHistory, cancellationToken);
+        var typeSuggestions = rows.ToDictionary(row => row.Proposal.Id, row =>
+        {
+            var aircraft = live.GetValueOrDefault(row.Proposal.PublicId.ToString());
+            return (Aircraft: aircraft, Registration: LiveRegistration(aircraft),
+                Type: AircraftTypeSuggester.Suggest(aircraft?.TypeIcaoCode, row.Proposal.AircraftModel, types,
+                    history.GetValueOrDefault(row.Proposal.AirlineId)));
+        });
+        var standSuggestions = open && actor!.HasPermission(CreatePermission)
+            ? await SuggestStandsAsync(station.Id, listed, suggestions,
+                id => typeSuggestions[id].Type is { } type ? types.FirstOrDefault(item => item.Id == type.TypeId)?.Size : null,
+                cancellationToken)
+            : new Dictionary<string, StandSuggestion>();
         var (dayStart, monthStart) = EfFlightFeedSyncStore.UsagePeriods(now);
         // The flight feed's own reads: the on-demand reference reads have their own caps (ADR-0028).
         var usage = context.Set<ProviderUsageEntry>().AsNoTracking()
@@ -120,8 +151,11 @@ internal sealed class EfOccFlightFeedStore(
                     row.Proposal.AircraftModel, row.Proposal.Terminal, row.Proposal.Gate, row.Proposal.Status.ToString(),
                     row.TurnaroundPublicId,
                     suggestions.TryGetValue(row.Proposal.Id, out var suggested) ? suggested : null, row.Proposal.LastSeenAt,
-                    Version(row.Proposal.RowVersion), AircraftModelMatcher.Suggest(row.Proposal.AircraftModel, types),
-                    DemoFlightGroups.Mark(row.Proposal.Provider));
+                    Version(row.Proposal.RowVersion), typeSuggestions[row.Proposal.Id].Type?.TypeId,
+                    DemoFlightGroups.Mark(row.Proposal.Provider), typeSuggestions[row.Proposal.Id].Type?.Source,
+                    typeSuggestions[row.Proposal.Id].Registration,
+                    standSuggestions.GetValueOrDefault(row.Proposal.PublicId.ToString())?.StandId,
+                    standSuggestions.GetValueOrDefault(row.Proposal.PublicId.ToString())?.Source);
             }).ToArray());
     }
 
@@ -590,8 +624,80 @@ internal sealed class EfOccFlightFeedStore(
 
     private async Task<AircraftTypeCandidate[]> AircraftTypeCandidatesAsync(CancellationToken cancellationToken) =>
         await context.AircraftTypes.AsNoTracking().Where(type => type.IsActive)
-            .Select(type => new AircraftTypeCandidate(type.PublicId, type.IcaoCode, type.Manufacturer, type.Model))
+            .Select(type => new AircraftTypeCandidate(type.PublicId, type.IcaoCode, type.Manufacturer, type.Model,
+                type.SizeCategory))
             .ToArrayAsync(cancellationToken);
+
+    /// <summary>
+    /// CN-28: by flight key, the live aircraft of the air picture that is each proposed flight. It only reads the picture
+    /// the map keeps in memory (ADR-0042): it never asks the network nor counts as the map's demand, so without a live or
+    /// recent picture (nobody watching the map, or the network off) nothing is suggested from it.
+    /// </summary>
+    private IReadOnlyDictionary<string, AirTrafficAircraft> LiveAircraft(string stationCode,
+        IReadOnlyList<MapFlightMatchKey> flights, DateTimeOffset now)
+    {
+        // The picture is the traffic around one station only (ADR-0042): another station's flights are never in it.
+        if (picture is null || flights.Count == 0 ||
+            !string.Equals(picture.StationCode.Trim(), stationCode.Trim(), StringComparison.OrdinalIgnoreCase))
+            return new Dictionary<string, AirTrafficAircraft>();
+        var snapshot = picture.Read(shortTrails: false);
+        if (snapshot.Status is not (AirPictureStatus.Live or AirPictureStatus.Stale) || snapshot.Aircraft.Count == 0)
+            return new Dictionary<string, AirTrafficAircraft>();
+        return FlightAircraftMatcher.AircraftByFlight(snapshot.Aircraft.Select(item => item.Aircraft).ToArray(), flights, now);
+    }
+
+    /// <summary>The registration a live aircraft broadcasts, in capitals and at most 16 characters; null without one.</summary>
+    private static string? LiveRegistration(AirTrafficAircraft? aircraft) =>
+        aircraft?.Registration?.Trim().ToUpperInvariant() is { Length: > 0 and <= 16 } registration ? registration : null;
+
+    /// <summary>
+    /// CN-28: the flights each airline operated at the station by aircraft type in the last
+    /// <see cref="AircraftTypeSuggester.HistoryDays"/> days before the date, cancelled flights apart.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<long, IReadOnlyDictionary<Guid, int>>> TypeHistoryAsync(long stationId,
+        DateOnly date, long[] airlineIds, CancellationToken cancellationToken)
+    {
+        if (airlineIds.Length == 0) return new Dictionary<long, IReadOnlyDictionary<Guid, int>>();
+        var since = date.AddDays(-AircraftTypeSuggester.HistoryDays);
+        var rows = await (from turnaround in context.Turnarounds.AsNoTracking()
+                          join type in context.AircraftTypes.AsNoTracking() on turnaround.AircraftTypeId equals (long?)type.Id
+                          where turnaround.StationId == stationId && airlineIds.Contains(turnaround.AirlineId) &&
+                                turnaround.OperationDate >= since && turnaround.OperationDate < date &&
+                                turnaround.CurrentStatus != TurnaroundStatus.Cancelled
+                          group turnaround by new { turnaround.AirlineId, type.PublicId } into flights
+                          select new { flights.Key.AirlineId, flights.Key.PublicId, Flights = flights.Count() })
+            .ToArrayAsync(cancellationToken);
+        return rows.GroupBy(row => row.AirlineId).ToDictionary(group => group.Key,
+            group => (IReadOnlyDictionary<Guid, int>)group.ToDictionary(row => row.PublicId, row => row.Flights));
+    }
+
+    /// <summary>
+    /// CN-28: the stand each open arrival finds preselected (<see cref="ProposalStandSuggester"/>), for its window from
+    /// its arrival to the departure suggested with it (an hour when none is), with the stands other flights hold and the
+    /// combined-stand rules of the station read once.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<string, StandSuggestion>> SuggestStandsAsync(long stationId,
+        IReadOnlyList<ExternalFlightProposal> listed, IReadOnlyDictionary<long, Guid> departures,
+        Func<long, AircraftSizeCategory?> sizeOf, CancellationToken cancellationToken)
+    {
+        var byPublicId = listed.ToDictionary(item => item.PublicId);
+        var requests = listed.Where(item => item.Direction == FlightDirection.Arrival &&
+                                            item.Status == ExternalFlightProposalStatus.Proposed)
+            .Select(arrival =>
+            {
+                var start = arrival.RevisedAt ?? arrival.ScheduledAt;
+                var end = departures.TryGetValue(arrival.Id, out var departureId) &&
+                          byPublicId.TryGetValue(departureId, out var departure)
+                    ? departure.RevisedAt ?? departure.ScheduledAt
+                    : start.AddHours(1);
+                return new StandRequest(arrival.PublicId.ToString(), arrival.Gate, arrival.Terminal, sizeOf(arrival.Id), start,
+                    end > start ? end : start.AddHours(1));
+            }).ToArray();
+        if (requests.Length == 0) return new Dictionary<string, StandSuggestion>();
+        var (stands, held, rules) = await StandAvailability.SuggestionInputsAsync(context, stationId,
+            requests.Min(item => item.StartsAt), requests.Max(item => item.EndsAt), cancellationToken);
+        return ProposalStandSuggester.Suggest(stands, held, rules, requests);
+    }
 
     /// <summary>
     /// The turnaround a replayed import answered. It was linked (3-N07) when it is not the one this arrival created:

@@ -76,6 +76,9 @@ public sealed class AirPictureService
     /// </summary>
     public bool IsEnabled { get; }
 
+    /// <summary>The station whose live traffic the picture shows (<c>AirTraffic:StationCode</c>).</summary>
+    public string StationCode => _settings.StationCode;
+
     /// <summary>Whether a screen read the map or a track less than <see cref="AirTrafficSettings.IdleAfter"/> ago.</summary>
     public bool HasDemand
     {

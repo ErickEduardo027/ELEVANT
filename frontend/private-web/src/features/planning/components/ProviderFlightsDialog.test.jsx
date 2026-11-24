@@ -278,6 +278,44 @@ it('names each aircraft type by its code first and every chosen option whole (N3
   expect(type).toHaveAttribute('title', 'Sin tipo de avión');
 });
 
+it('names the source of each suggested type and stand while it is chosen (CN-28)', async () => {
+  const b20 = { id: 's-b20', code: 'B20', terminal: { id: 'tb', code: 'B', name: 'Terminal B' } };
+  const b21 = { id: 's-b21', code: 'B21', terminal: { id: 'tb', code: 'B', name: 'Terminal B' } };
+  getManualTurnaroundOptions.mockResolvedValue({ ...options, stands: [...options.stands, b20, b21] });
+  loadOccFlightFeed.mockResolvedValue(feed([
+    leg('live', 'Arrival', 'ZZ893', { aircraftModel: 'Boeing 737', gate: '20', suggestedDepartureId: 'd1',
+      suggestedAircraftTypeId: 't-b738', suggestedAircraftTypeSource: 'Live', suggestedRegistration: 'ZZ-1849',
+      suggestedStandId: 's-b20', suggestedStandSource: 'Gate' }),
+    leg('history', 'Arrival', 'ZZ895', { aircraftModel: 'Boeing 737', suggestedDepartureId: 'd2',
+      suggestedAircraftTypeId: 't-b738', suggestedAircraftTypeSource: 'History', suggestedStandId: 's-b21',
+      suggestedStandSource: 'Free' }),
+    leg('model', 'Arrival', 'ZZ897', { suggestedDepartureId: 'd3', suggestedAircraftTypeId: 't-a320',
+      suggestedAircraftTypeSource: 'ProviderModel', suggestedStandId: 's-unknown', suggestedStandSource: 'Free' }),
+    leg('d1', 'Departure', 'ZZ894'), leg('d2', 'Departure', 'ZZ896'), leg('d3', 'Departure', 'ZZ898')]));
+  importOccFlightProposals.mockResolvedValue({ turnaroundId: 't1', operationCode: 'EXT-1', replayed: false });
+  render(<ProviderFlightsDialog stationId={stationId} date="2026-11-24" onClose={() => {}} />);
+
+  const [live, history, model] = within(await screen.findByRole('list', { name: 'Llegadas propuestas' })).getAllByRole('listitem');
+  // What flies: the live aircraft's type and registration.
+  expect(await within(live).findByLabelText('Tipo de avión (en vuelo · B738 · ZZ-1849)')).toHaveValue('t-b738');
+  expect(within(live).getByLabelText('Posición (puerta del aeropuerto)')).toHaveValue('s-b20');
+  expect(within(history).getByLabelText('Tipo de avión (historial)')).toHaveValue('t-b738');
+  expect(within(history).getByLabelText('Posición (sugerida)')).toHaveValue('s-b21');
+  expect(within(model).getByLabelText('Tipo de avión (sugerido)')).toHaveValue('t-a320');
+  // A stand the catalog does not have is never preselected.
+  expect(within(model).getByLabelText('Posición')).toHaveValue('');
+
+  // Changed by OCC, the field no longer names a source, and the import sends what OCC chose.
+  fireEvent.change(within(live).getByLabelText('Posición (puerta del aeropuerto)'), { target: { value: 's-a01' } });
+  fireEvent.change(within(live).getByLabelText('Tipo de avión (en vuelo · B738 · ZZ-1849)'), { target: { value: 't-a320' } });
+  expect(within(live).getByLabelText('Posición')).toHaveValue('s-a01');
+  expect(within(live).getByLabelText('Tipo de avión')).toHaveValue('t-a320');
+  fireEvent.click(within(history).getByRole('button', { name: 'Importar escala' }));
+  await screen.findByText('Escala importada (EXT-1).');
+  expect(importOccFlightProposals).toHaveBeenCalledWith(expect.objectContaining({ arrivalProposalId: 'history',
+    aircraftTypeId: 't-b738', standId: 's-b21' }), expect.any(String));
+});
+
 describe('demo flights (ADR-0041)', () => {
   const terminalA = { id: 'ta', code: 'A', name: 'Terminal A' };
   const stand = (id, code, terminal = terminalA) => ({ id, code, terminal });
@@ -286,15 +324,17 @@ describe('demo flights (ADR-0041)', () => {
       stand('s-b20', 'B20', { id: 'tb', code: 'B', name: 'Terminal B' }), stand('s-a01', 'A01')] };
   const demoArrival = (extra = {}) => leg('arr', 'Arrival', 'ZZ9001', { isDemo: true, gate: 'A5', terminal: 'A',
     providerStatus: 'Approaching', aircraftRegistration: 'HIDM01', suggestedDepartureId: 'dep', suggestedAircraftTypeId: 't-a320',
-    ...extra });
+    // CN-28: the server names the stand of the gate, for a demo flight as for a real one.
+    suggestedStandId: 's-a05', suggestedStandSource: 'Gate', ...extra });
   const demoDeparture = (extra = {}) => leg('dep', 'Departure', 'ZZ9002', { isDemo: true, gate: 'A5', terminal: 'A',
     aircraftRegistration: 'HIDM01', ...extra });
   const optionTexts = list => within(list).getAllByRole('option').map(option => option.textContent);
 
-  it('marks a demo proposal «Demo» and preselects the stand of its gate', async () => {
+  it('marks a demo proposal «Demo» and preselects the stand of its gate, as for a real flight', async () => {
     getManualTurnaroundOptions.mockResolvedValue(demoCatalog);
     loadOccFlightFeed.mockResolvedValue(feed([demoArrival(),
-      leg('real', 'Arrival', 'ZZ161', { gate: 'A2', suggestedDepartureId: 'rdep' }), demoDeparture(),
+      leg('real', 'Arrival', 'ZZ161', { gate: '2', terminal: 'A', suggestedDepartureId: 'rdep', suggestedStandId: 's-a02',
+        suggestedStandSource: 'Gate' }), demoDeparture(),
       leg('rdep', 'Departure', 'ZZ162'), leg('lone', 'Departure', 'ZZ9004', { isDemo: true })]));
     render(<ProviderFlightsDialog stationId={stationId} date="2026-11-12" onClose={() => {}} />);
 
@@ -304,12 +344,12 @@ describe('demo flights (ADR-0041)', () => {
     expect(within(real).queryByText('Demo')).not.toBeInTheDocument();
     expect(within(screen.getByRole('list', { name: 'Salidas sin llegada' })).getByText('Demo')).toBeInTheDocument();
     // «A5» is the stand A05 of the station (ADR-0041): one rule compares the codes.
-    expect(await within(demo).findByLabelText('Posición (sugerida)')).toHaveValue('s-a05');
-    // A real flight's gate suggests nothing: OCC chooses.
-    expect(within(real).getByLabelText('Posición')).toHaveValue('');
+    expect(await within(demo).findByLabelText('Posición (puerta del aeropuerto)')).toHaveValue('s-a05');
+    // A real flight's gate «2» of terminal A is A02 too (CN-28).
+    expect(within(real).getByLabelText('Posición (puerta del aeropuerto)')).toHaveValue('s-a02');
 
     // «Sin posición» chosen by hand is kept.
-    fireEvent.change(within(demo).getByLabelText('Posición (sugerida)'), { target: { value: '' } });
+    fireEvent.change(within(demo).getByLabelText('Posición (puerta del aeropuerto)'), { target: { value: '' } });
     expect(within(demo).getByLabelText('Posición')).toHaveValue('');
     fireEvent.change(within(demo).getByLabelText('Tipo de avión (sugerido)'), { target: { value: 't-b738' } });
     expect(within(demo).getByLabelText('Posición')).toHaveValue('');
@@ -335,7 +375,7 @@ describe('demo flights (ADR-0041)', () => {
     render(<ProviderFlightsDialog stationId={stationId} date="2026-11-12" onClose={() => {}} />);
 
     const [demo, real] = within(await screen.findByRole('list', { name: 'Llegadas propuestas' })).getAllByRole('listitem');
-    const select = await within(demo).findByLabelText('Posición (sugerida)');
+    const select = await within(demo).findByLabelText('Posición (puerta del aeropuerto)');
     expect(demo).toHaveTextContent('En aproximación · HIDM01 · Airbus A320 · Terminal A · Puerta A5');
     expect(select).toHaveValue('s-a05');
     expect(select).toHaveDisplayValue('A5 · Terminal A');
@@ -349,10 +389,10 @@ describe('demo flights (ADR-0041)', () => {
     loadOccFlightFeed.mockResolvedValueOnce(feed([demoArrival(), demoDeparture(), leg('other', 'Departure', 'ZZ9006')]));
     const view = render(<ProviderFlightsDialog stationId={stationId} date="2026-11-12" onClose={() => {}} revision={0} />);
     const arrivals = await screen.findByRole('list', { name: 'Llegadas propuestas' });
-    await within(arrivals).findByLabelText('Posición (sugerida)');
+    await within(arrivals).findByLabelText('Posición (puerta del aeropuerto)');
     fireEvent.change(within(arrivals).getByLabelText('Sale como'), { target: { value: 'other' } });
     fireEvent.change(within(arrivals).getByLabelText('Tipo de avión (sugerido)'), { target: { value: 't-b738' } });
-    fireEvent.change(within(arrivals).getByLabelText('Posición (sugerida)'), { target: { value: 's-b20' } });
+    fireEvent.change(within(arrivals).getByLabelText('Posición (puerta del aeropuerto)'), { target: { value: 's-b20' } });
 
     // The worker or OCC changed the planning: the list is read again while the old one stays on screen.
     let answer;
@@ -393,7 +433,7 @@ describe('demo flights (ADR-0041)', () => {
     const onImported = vi.fn();
     const view = render(<ProviderFlightsDialog stationId={stationId} date="2026-11-12" onClose={() => {}} onImported={onImported}
       revision={4} />);
-    await within(await screen.findByRole('list', { name: 'Llegadas propuestas' })).findByLabelText('Posición (sugerida)');
+    await within(await screen.findByRole('list', { name: 'Llegadas propuestas' })).findByLabelText('Posición (puerta del aeropuerto)');
 
     // The aircraft landed meanwhile: the planning changed and the dialog read the new versions before the import.
     view.rerender(<ProviderFlightsDialog stationId={stationId} date="2026-11-12" onClose={() => {}} onImported={onImported}

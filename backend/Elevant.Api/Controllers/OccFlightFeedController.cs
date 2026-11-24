@@ -56,6 +56,7 @@ public sealed class OccFlightFeedController(IOccFlightFeedStore store, FlightFee
                 item.CounterpartKnown, item.ScheduledAt, item.RevisedAt, item.RunwayAt, item.ProviderStatus,
                 item.AircraftRegistration, item.AircraftModel, item.Terminal, item.Gate, item.Status, item.TurnaroundId,
                 item.SuggestedDepartureId, item.LastSeenAt, item.Version, item.SuggestedAircraftTypeId,
+                item.SuggestedAircraftTypeSource, item.SuggestedRegistration, item.SuggestedStandId, item.SuggestedStandSource,
                 // ADR-0041: true or absent, never false, so a client deployed before the mark keeps validating.
                 item.IsDemo == true ? true : null)).ToArray()));
     }

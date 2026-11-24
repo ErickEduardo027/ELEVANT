@@ -4719,6 +4719,14 @@ export interface OccFlightProposalResponse {
   /** @nullable */
   suggestedAircraftTypeId?: string | null;
   /** @nullable */
+  suggestedAircraftTypeSource?: string | null;
+  /** @nullable */
+  suggestedRegistration?: string | null;
+  /** @nullable */
+  suggestedStandId?: string | null;
+  /** @nullable */
+  suggestedStandSource?: string | null;
+  /** @nullable */
   isDemo?: boolean | null;
 }
 

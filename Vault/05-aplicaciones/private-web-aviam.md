@@ -687,6 +687,47 @@ avión, la posición y la restauración: ver
 vuelo que ya está planificado lo vincula a esa escala en lugar de duplicarla:
 ver [La operación (fase 3)](#la-operación-fase-3).
 
+*Hallazgo CN-28 (caja negra, 24 de noviembre de 2026; en PR, no desplegado):*
+un vuelo real llegaba con «Sin tipo de avión» y «Sin posición» aunque el
+proveedor decía «Boeing 737», terminal B. Ahora el servidor preselecciona, para
+cada propuesta abierta, el tipo y la posición, y el diálogo dice de dónde salen
+mientras el campo muestra la sugerencia. OCC siempre puede cambiar ambos y nada
+se importa solo.
+
+- Tipo de avión, en este orden:
+  1. «en vuelo · B738 · matrícula»: el avión del tráfico en vivo que es ese
+     vuelo (indicativo OACI de la aerolínea y número, por ejemplo `CMP893` para
+     `CM893`, o la matrícula) emite un designador OACI que es exactamente el de
+     un tipo activo. Se lee la imagen aérea que el mapa ya guarda en memoria en
+     el servidor: no se llama a la red ni cuenta como demanda del mapa. Sin una
+     imagen viva o reciente (nadie mirando el mapa) no sugiere nada. La
+     matrícula solo se muestra: la importación no la recibe.
+  2. «sugerido»: el texto del proveedor nombra un tipo, como antes.
+  3. «historial»: el texto es genérico («Boeing 737», «Airbus A320 family») y,
+     entre los tipos de esa familia, la aerolínea operó uno en al menos el 60 %
+     de sus vuelos en la estación en los últimos 90 días (mínimo 3 vuelos, sin
+     contar los cancelados). Si no, nada.
+- Posición:
+  1. «puerta del aeropuerto»: la puerta anunciada es una posición de la
+     estación por su código normalizado (ADR-0041), para vuelos reales y demo.
+     Un número solo con la letra de la terminal se prueba primero con la letra
+     («20» en la terminal B es B20) y después solo. Únicamente si está libre.
+  2. «sugerida»: si no, una posición de la terminal anunciada (o de cualquiera,
+     sin terminal) libre en la ventana del vuelo (de la llegada a la salida
+     sugerida, o una hora), permitida por las reglas de posiciones combinadas y
+     compatible con el tamaño del tipo sugerido. Primero la que tiene el mismo
+     tamaño máximo que el avión y luego el orden natural; dos llegadas que se
+     solapan nunca reciben la misma. La cobertura por agentes elegibles no se
+     tiene en cuenta.
+
+No hay llamadas nuevas a AeroDataBox. La respuesta suma campos opcionales que
+solo aparecen con valor: `suggestedAircraftTypeSource` (`Live`,
+`ProviderModel`, `History`), `suggestedRegistration`, `suggestedStandId` y
+`suggestedStandSource` (`Gate`, `Free`). Fuentes:
+[sugerencia de tipo](../../backend/Elevant.Application/Operations/AircraftModelMatcher.cs),
+[sugerencia de posición](../../backend/Elevant.Application/Operations/ProposalStandSuggester.cs) y
+[lectura del feed](../../database/DevelopmentDB/Elevant.Persistence/Integration/EfOccFlightFeedStore.cs).
+
 *Posterior al commit verificado (hallazgo N28, 19 de noviembre de 2026):* el
 diálogo escribe sus horas en 24 horas y en la zona de la estación, como la
 consola del OCC: «10:05 → 19:53 · aterrizó 19:58», nunca «7:53 p. m.»
@@ -892,7 +933,7 @@ Posterior al commit verificado de esta nota: esta sección describe el código d
 | Pantalla | Comportamiento |
 | --- | --- |
 | Superadministración → Configuración | El panel «Vuelo demo», encima de «Correo del sistema», dice si el entorno lo permite. «Disparar vuelo demo» pide estación, aerolínea con contrato vigente hoy, origen, destino («El mismo aeropuerto» por defecto), tipo de avión, «Sin posición» o una posición libre, «Llega a la posición en (minutos)» (de 2 a 30, con atajos de 3, 5, 8 y 15) y «Tiempo en tierra (minutos)» (de 20 a 240, 60 por defecto). «Vuelos demo de hoy» muestra cada vuelo con su fase («En aproximación», «Aterrizó, rueda a la posición», «En posición», «Saliendo», «Despegó», «Terminado» o «Cancelado») y su cuenta regresiva, calculadas en el navegador con el reloj del servidor; si OCC ya lo importó, con qué código y en qué posición, y «Cancelar vuelo» antes de tocar pista o «Terminar demo» después, con su confirmación y su `Idempotency-Key`. Se relee cada 5 segundos mientras un avión se mueve y cada 20 si no, nunca con la pestaña oculta. Las opciones del formulario cambian con la hora (el aviso `crosses_local_midnight`, las aerolíneas con contrato vigente hoy y las posiciones libres): se releen con la lista cuando tienen 5 minutos, y al volver a la pestaña o a su ventana (al recuperar el foco) el panel relee las opciones y la lista enseguida. Cada código se explica en español; apagado, el panel dice que los vuelos demo solo funcionan en el entorno de desarrollo. *Posterior al commit verificado (hallazgo N30, 19 de noviembre de 2026):* un vuelo importado cuya operación sigue asignada, en curso o devuelta más de una hora después de que su avión dejó la posición lleva el punto de aviso y dice «Operación en curso, abierta tras la salida», como el pendiente del Panorama ([estado](../../frontend/private-web/src/features/governance/demoFlightStatus.js)). |
-| OCC → Planificación → «Importar vuelos» | Los tramos de un vuelo demo llevan la etiqueta «Demo». El diálogo relee con `occ_planning` sin perder lo elegido; la posición cuyo código normalizado coincide con la puerta de la llegada demo viene preseleccionada («Posición (sugerida)»: `A01` es `A1`), y las posiciones van en orden natural (A1, A2, A10). Un vuelo demo no necesita «Actualizar ahora». |
+| OCC → Planificación → «Importar vuelos» | Los tramos de un vuelo demo llevan la etiqueta «Demo». El diálogo relee con `occ_planning` sin perder lo elegido; la posición cuyo código normalizado coincide con la puerta de la llegada demo viene preseleccionada («Posición (puerta del aeropuerto)» desde CN-28, también para vuelos reales: `A01` es `A1`), y las posiciones van en orden natural (A1, A2, A10). Un vuelo demo no necesita «Actualizar ahora». |
 | OCC → Planificación, Mapa de posiciones y Panorama | La tarjeta del vuelo, el cajón de la posición y la fila del tablero muestran «Demo» cuando la API marca la escala con `isDemo`: la palabra sobre rayas a 45°, sin color ([etiqueta](../../frontend/private-web/src/features/occ-ui/DemoTag.jsx)). |
 
 En ese corte no existían la tarjeta «Posiciones de Punta Cana» ni la posición

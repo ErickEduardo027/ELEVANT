@@ -3756,6 +3756,8 @@ function isOccReadyContracts(value: unknown, stationId: string, date: string): v
 }
 
 const FLIGHT_PROPOSAL_STATUSES = new Set<string>(["Proposed", "Confirmed", "Dismissed"]);
+const AIRCRAFT_TYPE_SUGGESTION_SOURCES = new Set<string>(["Live", "ProviderModel", "History"]);
+const STAND_SUGGESTION_SOURCES = new Set<string>(["Gate", "Free"]);
 const FLIGHT_FEED_REFRESH_STATUSES = new Set<string>(["Refreshed", "Reused", "Throttled", "BudgetExhausted", "Paused",
   "NotConfigured", "NoContracts", "Busy", "Failed"]);
 
@@ -3767,7 +3769,8 @@ function isOccFlightProposal(value: unknown): boolean {
   return isRecord(value) && hasOnlyKeys(value, ["proposalId", "direction", "flightNumber", "airlineId", "airlineName",
     "airlineIataCode", "counterpartIata", "counterpartName", "counterpartKnown", "scheduledAt", "revisedAt", "runwayAt",
     "providerStatus", "aircraftRegistration", "aircraftModel", "terminal", "gate", "status", "turnaroundId",
-    "suggestedDepartureId", "lastSeenAt", "version", "suggestedAircraftTypeId", "isDemo"]) && isDemoMark(value.isDemo) &&
+    "suggestedDepartureId", "lastSeenAt", "version", "suggestedAircraftTypeId", "isDemo", "suggestedAircraftTypeSource",
+    "suggestedRegistration", "suggestedStandId", "suggestedStandSource"]) && isDemoMark(value.isDemo) &&
     isUuid(value.proposalId) && (value.direction === "Arrival" || value.direction === "Departure") &&
     isNonEmptyString(value.flightNumber) && isUuid(value.airlineId) && isNonEmptyString(value.airlineName) &&
     isOptionalNullable(value.airlineIataCode, isNonEmptyString) && isOptionalNullable(value.counterpartIata, isNonEmptyString) &&
@@ -3781,7 +3784,15 @@ function isOccFlightProposal(value: unknown): boolean {
     isDateTimeOffset(value.lastSeenAt) &&
     // The version of an import or a restore and the type the provider's model suggests (2-B, 2-N36).
     isNonEmptyString(value.version) && value.version.length <= 64 &&
-    isOptionalNullable(value.suggestedAircraftTypeId, isUuid);
+    isOptionalNullable(value.suggestedAircraftTypeId, isUuid) &&
+    // CN-28: where the suggested type and stand come from, and the registration the live aircraft broadcasts.
+    isOptionalNullable(value.suggestedAircraftTypeSource, (source: unknown) =>
+      typeof source === "string" && AIRCRAFT_TYPE_SUGGESTION_SOURCES.has(source)) &&
+    isOptionalNullable(value.suggestedRegistration, (registration: unknown) =>
+      isNonEmptyString(registration) && registration.length <= 16) &&
+    isOptionalNullable(value.suggestedStandId, isUuid) &&
+    isOptionalNullable(value.suggestedStandSource, (source: unknown) =>
+      typeof source === "string" && STAND_SUGGESTION_SOURCES.has(source));
 }
 
 function isOccFlightFeed(value: unknown, stationId: string, date: string,
