@@ -292,7 +292,7 @@ Fuentes de implementación: [vista](../../frontend/private-web/src/features/dash
 
 En aquel rediseño, la consola usaba una superficie NOC única: plataforma PUJ amplia, dos mapas auxiliares ampliables (la meteorología de MDPC y la región de República Dominicana) y una franja operacional. El mapa principal integraba pistas, rodajes y plataforma de OpenStreetMap; las siluetas vectoriales indicaban **asignación planificada** y no confirmaban ocupación física. El modo nocturno inclinaba la cámara, y los edificios se extruían solo si la tesela aportaba altura. Manrope se aplicaba explícitamente al dashboard e IBM Plex Mono a horas y cifras. El mapa de la región, con cartografía OpenStreetMap/OpenFreeMap y referencia PUJ, dibujaba una marca por ICAO24 con posición OpenSky disponible; seleccionarla abría la ficha de telemetría, separada de los vuelos y stands de planificación, sin inferir aterrizaje, destino ni ocupación por callsign o proximidad. Su validación (27/27 pruebas enfocadas, test:delivery 22/22, lint, typecheck y build; navegador 375–1440 px) no acredita una conexión OpenSky real.
 
-Monitoreo OCC usa el alcance PUJ de la sesión e ignora un enlace a otra estación. La lectura inicial y el refresco de 30 segundos consultan esa misma estación; el refresco reemplaza la lista completa y una falla retira los vuelos antiguos hasta recuperación o reintento. Las horas provienen de planificación; no se presentan coordenadas de aeronaves no verificadas. Solo PUJ tiene coordenadas cartográficas revisadas, por lo que otra estación no muestra un mapa de PUJ. Esto no acredita datos aeronáuticos en vivo ni promoción remota. Fuentes: [servicio de monitoreo](../../frontend/private-web/src/services/flightMonitoringService.js) y [ruta](../../frontend/private-web/src/features/flight-monitoring/FlightMonitoringRoute.jsx).
+Monitoreo OCC usa el alcance PUJ de la sesión e ignora un enlace a otra estación. La lectura inicial y el refresco de 30 segundos consultan esa misma estación (desde CN-18/19, el refresco sigue a `occ_planning` en el canal del marco, con un sondeo de seguridad de 60 segundos; ver [Peticiones y renders del OCC](#peticiones-y-renders-del-occ-cn-1819)); el refresco reemplaza la lista completa y una falla retira los vuelos antiguos hasta recuperación o reintento. Las horas provienen de planificación; no se presentan coordenadas de aeronaves no verificadas. Solo PUJ tiene coordenadas cartográficas revisadas, por lo que otra estación no muestra un mapa de PUJ. Esto no acredita datos aeronáuticos en vivo ni promoción remota. Fuentes: [servicio de monitoreo](../../frontend/private-web/src/services/flightMonitoringService.js) y [ruta](../../frontend/private-web/src/features/flight-monitoring/FlightMonitoringRoute.jsx).
 
 En esta rama, las vistas de PUJ usan MapLibre. *Posterior al commit verificado:*
 desde el PR M2 ya no existen las variantes de Google Maps ni su cargador, y los
@@ -330,7 +330,7 @@ recuperar foco/conexión y cada 25 segundos con la pestaña visible; los sondeos
 de snapshot existentes continúan. La señal no sustituye la lectura REST ni
 acredita latencia o promoción remota.
 
-El Mapa de posiciones también usa el alcance PUJ. Representa geometría local revisada y superpone únicamente asignaciones planificadas, sin inferir disponibilidad física. En otra estación muestra una lista de posiciones asignadas desde planificación, sin reutilizar coordenadas de PUJ; si no hay asignaciones, el vacío es explícito. Refresca el snapshot entero cada 30 segundos, oculta resultados previos ante fallos y conserva la estación al abrir un vuelo en Monitoreo. Faltan coordenadas y ocupación física verificadas de otras estaciones, así como prueba remota. Fuentes: [adaptador de posiciones](../../frontend/private-web/src/services/positionsMapService.js), [ruta](../../frontend/private-web/src/features/positions-map/PositionsMapRoute.jsx) y [vista](../../frontend/private-web/src/features/positions-map/PositionsMapPage.jsx). *Posterior al commit verificado (PR M6):* dentro del marco del OCC, el mapa dibuja también el tráfico, y sus posiciones leen los vuelos del mapa y dónde está cada avión, en vivo o estimado: ver [Cinemática y vuelo demo en el mapa (PR M6)](#cinemática-y-vuelo-demo-en-el-mapa-pr-m6).
+El Mapa de posiciones también usa el alcance PUJ. Representa geometría local revisada y superpone únicamente asignaciones planificadas, sin inferir disponibilidad física. En otra estación muestra una lista de posiciones asignadas desde planificación, sin reutilizar coordenadas de PUJ; si no hay asignaciones, el vacío es explícito. Refresca el snapshot entero cada 30 segundos (desde CN-18/19, con `occ_planning` en el canal del marco y un sondeo de seguridad de 60 segundos), oculta resultados previos ante fallos y conserva la estación al abrir un vuelo en Monitoreo. Faltan coordenadas y ocupación física verificadas de otras estaciones, así como prueba remota. Fuentes: [adaptador de posiciones](../../frontend/private-web/src/services/positionsMapService.js), [ruta](../../frontend/private-web/src/features/positions-map/PositionsMapRoute.jsx) y [vista](../../frontend/private-web/src/features/positions-map/PositionsMapPage.jsx). *Posterior al commit verificado (PR M6):* dentro del marco del OCC, el mapa dibuja también el tráfico, y sus posiciones leen los vuelos del mapa y dónde está cada avión, en vivo o estimado: ver [Cinemática y vuelo demo en el mapa (PR M6)](#cinemática-y-vuelo-demo-en-el-mapa-pr-m6).
 
 En la rama de integración de Development, planificación incorpora el alta manual de una escala OCC. La pantalla obtiene de la API las aerolíneas con contrato vigente, aeropuertos y posiciones activas para una estación autorizada; envía llegada, salida, fecha, posición y un UUID de intención estable para un reintento ambiguo. La API vuelve a comprobar alcance, contrato, ruta y disponibilidad de posición. Crear una escala deja su operación planificada. OCC puede programar después un turno local para un agente cuyo único impedimento sea la cobertura; el panel refresca opciones y ETag antes de asignar. Ninguno de esos comandos factura ni demuestra por sí solo promoción o prueba de navegador contra el VPS.
 
@@ -1050,6 +1050,32 @@ comprobó por cálculo, con pruebas: el texto mide 12,8:1 sobre los paneles y el
 mínimo, rojo sobre la losa, 4,6:1. Nada de esto acredita un despliegue ni una
 revisión visual en el VPS.
 
+## Peticiones y renders del OCC (CN-18/19)
+
+Posterior al commit verificado de esta nota: describe el código de la rama
+`perf/noc-renders-peticiones`, que esa verificación no cubre. Lo que cambia en
+el feed (pistas agrupadas cada 10 segundos, pantallas sin observador propio,
+minuto demo de veinte pistas y presupuesto de 40 también en ese minuto) está en
+[Pistas agrupadas y pantallas con lecturas propias](../04-arquitectura/feed-de-cambios-operativos.md#pistas-agrupadas-y-pantallas-con-lecturas-propias-cn-1819).
+En la web:
+
+- **Una relectura, un render.** Una lectura de
+  [`useOccResource`](../../frontend/private-web/src/features/admin-occ/live/useOccResource.js)
+  que conserva sus datos ya no avisa a sus lectores al empezar: `refreshing`
+  solo se informa con `reportRefreshing: true` (ninguna pantalla lo muestra
+  hoy), y la consola se dibuja una vez por respuesta, no dos.
+- **Contextos separados.** El marco publica los avisos en su propio contexto
+  (`useOptionalOccShellNotices`): los avisos de la consola y las cifras del riel
+  ya no se vuelven a dibujar cuando cambia la salud de una fuente.
+- **Consola estable.** Los paneles y los hijos del mapa se conservan mientras
+  no cambian sus datos; el tablero solo se rehace cuando cambia qué vuelos se
+  dibujan en posición estimada; y las posiciones de la plataforma reciben las
+  mismas aeronaves mientras ninguna entra o sale de la caja de su posición
+  ([`standAircraft.js`](../../frontend/private-web/src/features/dashboard/noc/standAircraft.js)).
+- **Estados.** Cada vista conserva sus estados de carga, éxito, vacío, error
+  recuperable y sin autorización; «Reintentar» lee enseguida, o se une a la
+  lectura en curso.
+
 ## Marco del OCC (PR U2)
 
 Posterior al commit verificado de esta nota: esta sección describe el código del
@@ -1074,7 +1100,9 @@ que la rehace (U3, U5 y U6).
   401, 403 o 404 hasta que cambia el acceso. La
   [prueba de presupuesto](../../frontend/private-web/src/features/admin-occ/live/occRequestBudget.test.js)
   falla si el plan de peticiones de una pestaña pasa de 40 por minuto en reposo
-  o de 70 durante un minuto de vuelo demo, y exige que el
+  o de 70 durante un minuto de vuelo demo (desde CN-18/19, 40 también en un
+  minuto demo más denso; ver
+  [Peticiones y renders del OCC](#peticiones-y-renders-del-occ-cn-1819)), y exige que el
   [inventario](../../frontend/private-web/src/features/admin-occ/live/occRequestPlan.js)
   nombre cada observador que queda bajo `/admin-occ`, con el PR que lo mueve.
 - **Barra de estado.** La
@@ -2136,7 +2164,8 @@ tampoco.
   sola vez; la planificación pone los agentes.
   Panorama ya no abre su propio observador. Una consola en reposo hace 16
   peticiones por minuto, y 38 durante un minuto de vuelo demo, por debajo de
-  40 y de 70; una
+  40 y de 70 (desde CN-18/19, unas 31 en el minuto demo de veinte pistas, con
+  un tope de 40); una
   [prueba](../../frontend/private-web/src/features/dashboard/noc/useConsoleData.budget.test.jsx)
   lo repite con los hooks reales.
 - **Arranque.** La pantalla de arranque del OCC espera a que la consola esté en
@@ -2186,9 +2215,23 @@ lecturas de M5: la API no cambia.
   [`frameLoop.js`](../../frontend/private-web/src/features/maps/core/frameLoop.js)
   pide cuadros solo mientras algo se mueve, dibuja a la hora del servidor, se
   detiene con la pestaña oculta y, con movimiento reducido, mueve los aviones
-  una vez por segundo. Escribe el tráfico en cada cuadro con menos de 30
-  aviones a la vista y, con más, de 2 a 30 veces por segundo. React no
-  renderiza por cuadro.
+  una vez por segundo. Desde CN-18 (24 de noviembre de 2026) nunca escribe el
+  tráfico en cada cuadro: lo escribe cuando el avión más rápido a la vista
+  avanzó dos píxeles, de 2 a 15 veces por segundo, y solo muestrea y anima lo que
+  está a la vista o cerca de ella. React no renderiza por cuadro.
+- **Fluidez (CN-18).** Los aviones ya no se «teletransportan»: el reloj de
+  render no salta cuando el reloj del servidor corrige su desfase (se acerca a
+  un 5 % del tiempo que pasa), un cuadro tardío avanza 250 ms como máximo y
+  recupera el resto en un segundo, y cada lectura se mezcla desde donde se ve
+  el avión al recibirla, no desde la hora en que el servidor la contestó. Un
+  avión que vira sigue el arco de su giro entre señales, el rumbo dibujado gira
+  como un avión real, un vuelo estimado cuyo plan cambia se desliza en 10 a 20 s
+  y un avión que pasa de otro tráfico a vuelo de AVIAM sigue con su traza. Los
+  rótulos del mapa ya no tienen fundido. Las decisiones y la medición están en
+  la actualización del 24 de noviembre de 2026 de
+  [ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md); el laboratorio la
+  repite con `perf-approach-feed` y `perf-airfield-feed`
+  (`tests/visual/lab/map-lab.fluency.spec.mjs`).
 - **Qué se mueve y de dónde sale.**
   [`motionStore.js`](../../frontend/private-web/src/features/maps/traffic/motionStore.js)
   une cada lectura con la cinemática pura de `kinematics/`. Un avión en vivo

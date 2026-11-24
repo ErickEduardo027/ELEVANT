@@ -376,8 +376,12 @@ it('reads the board again when the frame announces occ_planning, without an obse
   act(() => shell.announce(['mobile_devices', 'operation_messages', 'notifications']));
   expect(loadOccCoverage).toHaveBeenCalledTimes(1);
 
-  // Another OCC seat covered A01: the page reads the day's board again and shows who covers it.
-  act(() => shell.announce(['occ_planning']));
+  // Another OCC seat covered A01: the page reads the day's board again and shows who covers it. A burst of
+  // announcements takes one read per window (OCC_COALESCE_MS, CN-11), never one read each.
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  act(() => { shell.announce(['occ_planning']); shell.announce(['occ_planning']); shell.announce(['occ_planning']); });
+  await act(async () => { vi.advanceTimersByTime(3_000); });
+  vi.useRealTimers();
   await waitFor(() => expect(rowOf('A1')).toHaveTextContent('Riley Ramp'));
   expect(loadOccCoverage).toHaveBeenCalledTimes(2);
   // The same station and day, read once more.
@@ -602,4 +606,62 @@ it('shows every stand by the code the map draws, without its zero padding, and s
     .toEqual(['A1', 'A2', 'B1', 'E2E-XXXX-1']);
   fireEvent.change(when, { target: { value: 's-A01' } });
   expect(when).toHaveDisplayValue('A1');
+});
+
+describe('the form follows the assignment rules before it is sent (CN-11)', () => {
+  const four = { ...board, terminals: [terminalA], agents: [agent, { ...agent, agentId: 'ag-2', name: 'Mateo Ramp', isJunior: false }],
+    stands: [stand('A01', 't-a'), stand('A02', 't-a'), stand('A03', 't-a'), stand('A04', 't-a')] };
+
+  it('stops at the terminal maximum and asks for the vehicle from the third stand', async () => {
+    loadOccCoverage.mockResolvedValue(four);
+    render(<CoverageRoute />);
+    const form = await screen.findByRole('form', { name: 'Asignar posiciones' });
+    fireEvent.change(within(form).getByLabelText('Agente'), { target: { value: 'ag-2' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'A1' }));
+    fireEvent.click(within(form).getByRole('button', { name: 'A2' }));
+    expect(within(form).queryByLabelText('Vehículo asignado')).toBeNull();
+    fireEvent.click(within(form).getByRole('button', { name: 'A3' }));
+    // More than two stands: the vehicle and why, before anything is sent.
+    expect(within(form).getByLabelText('Vehículo asignado'))
+      .toHaveAccessibleDescription(/Con más de 2 posiciones .* licencia de conducir y un vehículo asignado/);
+    // At the maximum (3) the other stands cannot be chosen, and the form says why.
+    const fourth = within(form).getByRole('button', { name: 'A4' });
+    expect(fourth).toBeDisabled();
+    expect(fourth).toHaveAccessibleDescription(/máximo de 3 posiciones por agente/);
+    fireEvent.click(fourth);
+    expect(within(form).getByText('Posiciones (3/3)')).toBeInTheDocument();
+    // Removing one frees the others again.
+    fireEvent.click(within(form).getByRole('button', { name: 'A3' }));
+    expect(within(form).getByRole('button', { name: 'A4' })).toBeEnabled();
+    expect(createOccCoverage).not.toHaveBeenCalled();
+  });
+
+  it('starts over with another agent: no stands and no mentor of the previous one', async () => {
+    loadOccCoverage.mockResolvedValue(four);
+    render(<CoverageRoute />);
+    const form = await screen.findByRole('form', { name: 'Asignar posiciones' });
+    fireEvent.change(within(form).getByLabelText('Agente'), { target: { value: 'ag-1' } });
+    fireEvent.change(within(form).getByLabelText('Mentor'), { target: { value: 'ag-2' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'A1' }));
+    fireEvent.click(within(form).getByRole('button', { name: 'A2' }));
+    fireEvent.change(within(form).getByLabelText('Agente'), { target: { value: 'ag-2' } });
+    expect(within(form).getByText('Posiciones (0/3)')).toBeInTheDocument();
+    expect(within(form).getByRole('button', { name: 'A1' })).toHaveAttribute('aria-pressed', 'false');
+    expect(within(form).queryByLabelText('Mentor')).toBeNull();
+  });
+
+  it('keeps a valid selection after a refused assignment', async () => {
+    loadOccCoverage.mockResolvedValue(four);
+    createOccCoverage.mockRejectedValueOnce(Object.assign(new Error('La cobertura no cumple las reglas de asignación.'),
+      { status: 422, reasons: ['vehicle_required'] }));
+    render(<CoverageRoute />);
+    const form = await screen.findByRole('form', { name: 'Asignar posiciones' });
+    fireEvent.change(within(form).getByLabelText('Agente'), { target: { value: 'ag-2' } });
+    for (const code of ['A1', 'A2', 'A3']) fireEvent.click(within(form).getByRole('button', { name: code }));
+    fireEvent.click(within(form).getByRole('button', { name: 'Asignar posiciones' }));
+    await waitFor(() => expect(createOccCoverage).toHaveBeenCalled());
+    await waitFor(() => expect(within(form).getByRole('button', { name: 'Asignar posiciones' })).toBeEnabled());
+    expect(within(form).getByText('Posiciones (3/3)')).toBeInTheDocument();
+    expect(within(form).getAllByRole('button', { pressed: true })).toHaveLength(3);
+  });
 });

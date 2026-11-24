@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { setContractValidity } from '../../../services/commercialGovernanceApi';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { CONTRACT_VALIDITY_MESSAGES, contractValidityMessage } from '../../../services/commercialProblems';
@@ -7,6 +7,17 @@ import { countLabel } from './agreementLabels';
 
 // N33: a select is as wide as its longest option unless it may shrink; `w-full min-w-0` keeps every field in its column.
 const input = 'w-full min-w-0 rounded-lg border border-black/10 px-3 py-2 dark:border-white/10 dark:bg-surface-dark-card';
+
+// The sentence the contract writes before the termination terms (ContractDetailDrawer, ContractPdfRenderer).
+const NOTICE_SENTENCE = /^\s*terminaci[oó]n con \d+ d[ií]as? de preaviso\s*[.:;,]?\s*/i;
+
+/**
+ * CN-14: the contract already opens the termination terms with «Terminación con N días de preaviso.»; a copy of that
+ * sentence typed at the start of the terms is dropped so it is never printed twice.
+ */
+export function withoutNoticeSentence(terms) {
+  return String(terms ?? '').replace(NOTICE_SENTENCE, '').trim();
+}
 
 /**
  * Validity step Contratos completes after Finance approves the rates and before anyone signs
@@ -23,6 +34,7 @@ export default function ContractValidityForm({ document, onSaved }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const keys = useRef(createCommandKeyHolder());
+  const termsHintId = useId();
   const set = patch => setForm(value => ({ ...value, ...patch }));
   const number = value => (value === '' || value === null ? null : Number(value));
 
@@ -37,7 +49,7 @@ export default function ContractValidityForm({ document, onSaved }) {
     const request = {
       validFrom: form.validFrom, validTo: form.validTo, renewalMode: form.renewalMode,
       renewalTermMonths: number(form.renewalTermMonths), renewalNoticeDays: number(form.renewalNoticeDays) ?? 0,
-      terminationNoticeDays: number(form.terminationNoticeDays) ?? 0, terminationTerms: form.terminationTerms,
+      terminationNoticeDays: number(form.terminationNoticeDays) ?? 0, terminationTerms: withoutNoticeSentence(form.terminationTerms),
       expectedDocumentSha256: document.contentSha256,
     };
     try {
@@ -83,10 +95,13 @@ export default function ContractValidityForm({ document, onSaved }) {
           <input type="number" min={0} max={180} value={form.terminationNoticeDays}
             onChange={event => set({ terminationNoticeDays: event.target.value })} className={input} /></label>
       </div>
-      <label className="grid gap-1">Condiciones de terminación
-        <textarea rows={3} maxLength={4000} value={form.terminationTerms}
+      <div className="grid gap-1"><label className="grid gap-1">Condiciones de terminación
+        <textarea rows={3} maxLength={4000} value={form.terminationTerms} aria-describedby={termsHintId}
           onChange={event => set({ terminationTerms: event.target.value })} className={input}
           placeholder="Ej.: incumplimiento grave de pago o de las normas de seguridad en rampa." /></label>
+        <span id={termsHintId} className="text-xs text-text-secondary-light">
+          El contrato antepone «Terminación con {countLabel(Number(form.terminationNoticeDays) || 0, 'día', 'días')} de preaviso.»: no la repitas aquí.
+        </span></div>
       {form.renewalMode === 'Automatic' && (
         <p className="text-xs text-text-secondary-light">
           La renovación automática crea la nueva versión {countLabel(Number(form.renewalNoticeDays) || 0, 'día', 'días')} antes del fin; esa versión vuelve a

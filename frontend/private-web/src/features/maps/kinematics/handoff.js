@@ -18,6 +18,10 @@ import { normalizeDeg } from './units.js';
 // change of mode is eased over the blend time, so nothing jumps at 15 or 60 s. A new fix or a new plan blends from
 // where the aircraft is drawn over 6 s, or snaps with a brief fade and a new trail part when the gap is more than 2 NM
 // in the air or 150 m on the ground. The limits widen when the feed is slower than usual (`refreshAfterSeconds`).
+// CN-18: an aircraft turning between its last two fixes is carried on along the arc of that turn (at most TURN.maxDegS
+// for TURN.horizonS, then straight), so a new fix in a turn does not pull it back; a new plan of a flight drawn from its
+// plan alone (no fix) blends over 10 to 20 s up to ten times the snap distance instead of snapping; and a blend that
+// starts after the instant drawn (the render clock catching up) holds its starting state until then.
 // SI units inside (metres, m/s, epoch milliseconds; seconds for ages and windows), degrees true, `[lng, lat]`. Pure:
 // explicit '.js' imports, no clock, no randomness, no JSON; every track and every render is frozen.
 
@@ -33,6 +37,15 @@ export const TRACK_CONFIG = Object.freeze({
   dropAviamAfterS: 600,
   snapFadeS: 1,
 });
+
+/**
+ * The turn carried on from the last two fixes (CN-18): their turn rate in the air, from `minDegS` and at most `maxDegS`,
+ * for `horizonS` seconds at most after the fix, from fixes up to `maxGapS` apart. On the ground no turn is carried on.
+ */
+export const TURN = Object.freeze({ minDegS: 0.2, maxDegS: 3, horizonS: 15, maxGapS: 30 });
+
+/** The long blend of a plan-only change (CN-18): `minS` to `maxS`, for a gap up to `maxFactor` times the snap distance. */
+export const PLAN_BLEND = Object.freeze({ minS: 10, maxS: 20, maxFactor: 10 });
 
 /** The live limit is this many times the feed's pace: 15 s for the usual 10 s. */
 export const LIVE_REFRESH_FACTOR = 1.5;
@@ -82,8 +95,21 @@ function mixHeading(a, b, w) {
   return finite(b) ? b : orNull(a);
 }
 
+/**
+ * The turn rate (°/s, positive to the right) an airborne fix carries on from the fix before it (TURN), or 0: both
+ * moving in the air, newer, at most TURN.maxGapS apart, turning at least TURN.minDegS.
+ */
+function turnRateOf(previous, fix) {
+  if (!previous || fix.onGround || previous.onGround || !isMoving(previous) || !isMoving(fix)) return 0;
+  const gapS = (fix.positionAt - previous.positionAt) / 1000;
+  if (!(gapS > 0) || gapS > TURN.maxGapS) return 0;
+  const rate = angleDiff(previous.trackDeg, fix.trackDeg) / gapS;
+  if (!finite(rate) || Math.abs(rate) < TURN.minDegS) return 0;
+  return Math.sign(rate) * Math.min(TURN.maxDegS, Math.abs(rate));
+}
+
 /** A fix in the map's units (traffic/situationModel.js) without what the hand-off does not read, frozen; `null` when unusable. */
-function toFix(fix) {
+function toFix(fix, turnDegS = 0) {
   if (!fix || !finite(fix.lon) || !finite(fix.lat) || !finite(fix.positionAt)) return null;
   return Object.freeze({
     lon: fix.lon,
@@ -94,6 +120,7 @@ function toFix(fix) {
     vrateMs: orNull(fix.vrateMs),
     onGround: fix.onGround === true,
     positionAt: fix.positionAt,
+    turnDegS: finite(turnDegS) ? turnDegS : 0,
   });
 }
 
@@ -103,21 +130,51 @@ function isMoving(state) {
     && !(state.onGround === true && state.gsMs < HEADING_RATES.holdBelowMs);
 }
 
-/** Where a state is `dtS` seconds later going straight: its speed along its track, its height at its vertical rate. */
+/**
+ * Where a moving state is `dt` seconds later turning at `turnDegS` for `turnS` of them and then straight, and its
+ * track then: `{ point, trackDeg }`.
+ */
+function alongArc(state, dt, turnDegS) {
+  const turnS = Math.min(dt, TURN.horizonS);
+  const h0 = (state.trackDeg * Math.PI) / 180;
+  const omega = (turnDegS * Math.PI) / 180;
+  const v = state.gsMs;
+  const h1 = h0 + omega * turnS;
+  const straightS = dt - turnS;
+  const east = (v / omega) * (Math.cos(h0) - Math.cos(h1)) + v * straightS * Math.sin(h1);
+  const north = (v / omega) * (Math.sin(h1) - Math.sin(h0)) + v * straightS * Math.cos(h1);
+  return { point: fromEnu([state.lon, state.lat], [east, north]), trackDeg: normalizeDeg(state.trackDeg + turnDegS * turnS) };
+}
+
+/**
+ * Where a state is `dtS` seconds later: its speed along its track (along the arc of its turn, TURN, when it carries
+ * one), its height at its vertical rate.
+ */
 function deadReckon(state, dtS) {
   const dt = Math.max(0, dtS);
-  const [lon, lat] = dt > 0 && isMoving(state)
-    ? destinationPoint([state.lon, state.lat], state.trackDeg, state.gsMs * dt) : [state.lon, state.lat];
+  const turning = dt > 0 && isMoving(state) && finite(state.turnDegS) && state.turnDegS !== 0;
+  let trackDeg = orNull(state.trackDeg);
+  let lon = state.lon;
+  let lat = state.lat;
+  if (turning) {
+    const arc = alongArc(state, dt, state.turnDegS);
+    [lon, lat] = arc.point;
+    trackDeg = arc.trackDeg;
+  } else if (dt > 0 && isMoving(state)) {
+    [lon, lat] = destinationPoint([state.lon, state.lat], state.trackDeg, state.gsMs * dt);
+  }
   const climbs = state.onGround !== true && finite(state.altM) && finite(state.vrateMs);
   return {
     lon,
     lat,
     altM: climbs ? Math.max(0, state.altM + state.vrateMs * dt) : orNull(state.altM),
     gsMs: orNull(state.gsMs),
-    trackDeg: orNull(state.trackDeg),
+    trackDeg,
     vrateMs: orNull(state.vrateMs),
     onGround: state.onGround === true,
     phase: state.phase ?? null,
+    // Still turning while within the turn's horizon: a blend carries its starting state on along the same arc.
+    turnDegS: turning && dt < TURN.horizonS ? state.turnDegS : 0,
   };
 }
 
@@ -137,6 +194,7 @@ function mix(a, b, w) {
     vrateMs: lerpOrNull(a.vrateMs, b.vrateMs, w),
     onGround: w < 0.5 ? a.onGround : b.onGround,
     phase: b.phase ?? a.phase ?? null,
+    turnDegS: lerpOrNull(a.turnDegS, b.turnDegS, w),
   };
 }
 
@@ -402,7 +460,8 @@ function drawnOf(track, tMs, config) {
   if (base === null) return null;
   let { state, opacity } = base;
   const blend = track.blend;
-  if (blend !== null && tMs >= blend.startMs && tMs < blend.startMs + blend.durationMs) {
+  // Before its start (a frame still catching up with the render clock) a blend holds where it starts from.
+  if (blend !== null && tMs < blend.startMs + blend.durationMs) {
     const w = ease((tMs - blend.startMs) / blend.durationMs);
     if (blend.opacityOnly !== true) state = mix(deadReckon(blend.from, (tMs - blend.startMs) / 1000), state, w);
     opacity = lerp(blend.from.opacity, opacity, w);
@@ -429,6 +488,7 @@ function snapshotOf({ state, opacity }) {
     vrateMs: state.vrateMs,
     onGround: state.onGround,
     phase: state.phase,
+    turnDegS: finite(state.turnDegS) ? state.turnDegS : 0,
     opacity,
   });
 }
@@ -452,7 +512,7 @@ function samePlace(a, b) {
  * the position, and of its opacity only when that changes (a cancelled demo read late fades in from where it was
  * drawn); otherwise a blend from the drawn state. A fade-in under way goes on.
  */
-function handOver(prev, next, { drawn, target, targetOpacity = 1, atMs, limitM, config }) {
+function handOver(prev, next, { drawn, target, targetOpacity = 1, atMs, limitM, config, planOnly = false }) {
   if (drawn === null) {
     const comesBack = prev.lastFix !== null || planTrajectory(prev) !== null;
     return Object.freeze({
@@ -461,7 +521,16 @@ function handOver(prev, next, { drawn, target, targetOpacity = 1, atMs, limitM, 
     });
   }
   if (target === null) return Object.freeze({ ...next, blend: null });
-  if (haversineM([drawn.state.lon, drawn.state.lat], [target.lon, target.lat]) > limitM) {
+  const gapM = haversineM([drawn.state.lon, drawn.state.lat], [target.lon, target.lat]);
+  if (gapM > limitM) {
+    // A flight drawn from its plan alone whose plan changed (a new estimate, a new stand) slides over to the new one.
+    if (planOnly && gapM <= limitM * PLAN_BLEND.maxFactor) {
+      const seconds = Math.min(PLAN_BLEND.maxS, Math.max(PLAN_BLEND.minS, (PLAN_BLEND.minS * gapM) / limitM));
+      return Object.freeze({
+        ...next,
+        blend: Object.freeze({ from: snapshotOf(drawn), startMs: atMs, durationMs: seconds * 1000, opacityOnly: false }),
+      });
+    }
     return Object.freeze({ ...next, blend: null, trailEpoch: prev.trailEpoch + 1, snapAtMs: atMs });
   }
   const durationMs = config.blendS * 1000;
@@ -477,10 +546,11 @@ function handOver(prev, next, { drawn, target, targetOpacity = 1, atMs, limitM, 
 }
 
 function onFix(prev, event, config) {
-  const fix = toFix(event.fix);
-  if (fix === null) return prev;
+  const plain = toFix(event.fix);
+  if (plain === null) return prev;
   // An older fix, or the same one again, never moves the track back.
-  if (prev.lastFix !== null && fix.positionAt <= prev.lastFix.positionAt) return prev;
+  if (prev.lastFix !== null && plain.positionAt <= prev.lastFix.positionAt) return prev;
+  const fix = toFix(event.fix, turnRateOf(prev.lastFix, plain));
   const atMs = finite(event.atMs) ? event.atMs : fix.positionAt;
   const drawn = drawnOf(prev, atMs, config);
   const next = { ...prev, lastFix: fix, dropped: false };
@@ -506,7 +576,7 @@ function onPlan(prev, event, config) {
   const target = goal?.state ?? null;
   return handOver(prev, next, {
     drawn, target, targetOpacity: goal?.opacity ?? 1, atMs: event.atMs,
-    limitM: snapLimitM(target?.onGround === true, config), config,
+    limitM: snapLimitM(target?.onGround === true, config), config, planOnly: prev.lastFix === null,
   });
 }
 

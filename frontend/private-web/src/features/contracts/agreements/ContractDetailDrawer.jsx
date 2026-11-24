@@ -51,6 +51,14 @@ const signedByBoth = document => document.signatures.some(airline => airline.par
   document.signatures.some(aviam => aviam.party === 'Aviam' && aviam.documentSha256 === airline.documentSha256));
 
 /**
+ * CN-13: Finance approved the prices; until both parties sign the same content the version is not «aprobada» alone.
+ */
+const versionWord = document => {
+  if (document.versionStatus !== 'Approved') return 'versión reemplazada';
+  return signedByBoth(document) ? 'versión aprobada' : 'precios aprobados · firmas pendientes';
+};
+
+/**
  * Detail of an approved contract version: parties, validity, stations, rates and terms, the
  * printable PDF and the signature of each party over the content hash.
  */
@@ -166,7 +174,7 @@ export default function ContractDetailDrawer({ versionId, canSign = false, canMa
           <section>
             <h3 className="font-semibold">Partes y vigencia</h3>
             <p>AVIAM (prestador) y {document.airlineLegalName ?? document.airlineName} ({airlineCodeLabel(document.airlineCode)}).</p>
-            <p>{validityLine(document)} · {document.currencyCode} · versión {document.versionStatus === 'Approved' ? 'aprobada' : 'reemplazada'}</p>
+            <p>{validityLine(document)} · {document.currencyCode} · {versionWord(document)}</p>
             <p className="text-xs text-text-secondary-light">Estaciones: {document.stations.join('; ') || 'ninguna'}</p>
             {validityLines(document).map(line => <p key={line} className="text-xs">{line}</p>)}
             {!document.validity && document.versionStatus === 'Approved' && document.signatures.length === 0 && (
@@ -241,11 +249,11 @@ export default function ContractDetailDrawer({ versionId, canSign = false, canMa
             }}
               className="min-h-[36px] rounded-lg border border-status-danger px-3 text-xs font-semibold text-status-danger">Retirar versión</button>
           </section>}
-          <ContractLifecyclePanel key={revision} versionId={versionId} canManage={canManageLifecycle} canAmend={canAmend}
+          {versionId && <ContractLifecyclePanel key={revision} versionId={versionId} canManage={canManageLifecycle} canAmend={canAmend}
             currentVersion={document.versionStatus === 'Approved'
               ? { versionNumber: document.versionNumber, validFrom: document.validFrom, validTo: document.validTo } : null}
             onOpenDrafts={onOpenDrafts ? () => { onClose?.(); onOpenDrafts(); } : undefined}
-            onChanged={() => { setRevision(value => value + 1); onSigned?.(); }} />
+            onChanged={() => { setRevision(value => value + 1); onSigned?.(); }} />}
         </div>
       )}
       <Modal open={withdrawing} onClose={() => setWithdrawingId(null)}

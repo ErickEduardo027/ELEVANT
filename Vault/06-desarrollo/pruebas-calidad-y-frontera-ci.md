@@ -416,6 +416,9 @@ de vitest corren con `npm test`; la spec visual, con la suite visual.
   estela; y que Monitoreo de vuelos como está hoy (el marco, el observador
   propio de la ruta, sus relecturas y su sondeo), más el mapa, no pasa de las
   70 peticiones de un minuto con vuelo demo. En la corrida del PR sumaron 62.
+  Desde CN-18/19 el minuto demo tiene veinte pistas, el observador del marco
+  las agrupa (una lectura del cursor cada 10 segundos como mucho) y Monitoreo
+  relee con `useOccScreenRefresh`: el tope es 40.
 - **Ritmo y estados.**
   [`useMapSituation.test.jsx`](../../frontend/private-web/src/features/maps/useMapSituation.test.jsx)
   comprueba con el mismo adaptador que la imagen se pide con `trails=short` una
@@ -696,7 +699,9 @@ vitest corren con `npm test`; la spec visual, con la suite visual.
   marco, y repite con relojes falsos, después de un minuto de calentamiento, un
   minuto en reposo y el minuto demo del
   [plan de peticiones](../../frontend/private-web/src/features/admin-occ/live/occRequestPlan.js).
-  Falla por encima de 40 o de 70 peticiones: hoy son 16 y 38. Comprueba
+  Falla por encima de 40 o de 70 peticiones: hoy son 16 y 38 (desde CN-18/19,
+  el tope es 40 en los dos minutos y el observador real, con pistas agrupadas,
+  entrega lo que lee el cursor). Comprueba
   también que los ocho `occ_planning` solo releen los vuelos del mapa, que la
   cola relee con `occ_review` y que veinte toques de la tablet en diez segundos
   no cambian ninguna lectura propia de la consola.

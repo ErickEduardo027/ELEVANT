@@ -98,6 +98,23 @@ function boardStateOf(live, board) {
     onRetry: live.retry };
 }
 
+// The flight keys of the aircraft drawn at an estimated position, one per line, sorted: what the board reads of them.
+function estimatedFlightKeysOf(aircraft) {
+  if (!Array.isArray(aircraft)) return '';
+  return [...new Set(aircraft.filter(item => item?.quality === 'estimated' && typeof item.flightKey === 'string')
+    .map(item => item.flightKey))].sort().join('\n');
+}
+
+// The first item of `items` for each key, as `Array.prototype.find` would return it.
+function firstBy(items, keyOf) {
+  const byKey = new Map();
+  for (const item of items) {
+    const key = keyOf(item);
+    if (!byKey.has(key)) byKey.set(key, item);
+  }
+  return byKey;
+}
+
 // What is chosen, as the map draws it now (consoleCamera.js: revealOf): the stand's outline, the aircraft of a flight
 // or else its stand, an aircraft's position; null with nothing chosen or nothing drawn.
 function revealNow({ chosen = null, target = null, stands = EMPTY, flights = EMPTY } = {}) {
@@ -162,9 +179,14 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
 
   const planningFlights = useMemo(() => withAssignmentReadiness(planning.data?.flights ?? EMPTY, readiness.data),
     [planning.data, readiness.data]);
-  const board = useMemo(() => (flightRows ? buildBoard({ flights: flightRows, aircraft,
+  // The board reads of the aircraft only which flights are drawn at an estimated position (boardModel.js: buildBoard),
+  // so it is rebuilt when that list changes, not on every read of the air picture.
+  const estimatedKey = estimatedFlightKeysOf(aircraft);
+  const boardAircraft = useMemo(() => (estimatedKey === '' ? EMPTY
+    : estimatedKey.split('\n').map(flightKey => ({ quality: 'estimated', flightKey }))), [estimatedKey]);
+  const board = useMemo(() => (flightRows ? buildBoard({ flights: flightRows, aircraft: boardAircraft,
     planningTurnarounds: planning.data?.turnarounds ?? null, nowMs, t }) : null),
-  [aircraft, flightRows, nowMs, planning.data, t]);
+  [boardAircraft, flightRows, nowMs, planning.data, t]);
   const figures = useMemo(() => buildFigures({ planning: planning.data, reviewQueue: reviewQueue.data,
     flights: live.flights, visits: board?.visits ?? null, nowMs }), [board, live.flights, nowMs, planning.data,
     reviewQueue.data]);
@@ -191,14 +213,20 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
 
   const planningDate = planning.data?.date ?? null;
   const canOpenImport = Boolean(station.stationId && planningDate);
-  const openImport = canOpenImport ? () => setImportOpen(true) : undefined;
-  const planningFlightOf = turnaroundId => planningFlights.find(item => item.turnaroundId === turnaroundId) ?? null;
+  const showImport = useCallback(() => setImportOpen(true), []);
+  const openImport = canOpenImport ? showImport : undefined;
+  // The planning's flights and the board's strips by key, built once per read instead of searched on every call.
+  const planningByTurnaround = useMemo(() => firstBy(planningFlights, item => item.turnaroundId), [planningFlights]);
+  const planningFlightOf = useCallback(turnaroundId => planningByTurnaround.get(turnaroundId) ?? null,
+    [planningByTurnaround]);
   const assignFlight = assignTurnaroundId === null ? null : planningFlightOf(assignTurnaroundId);
-  const canImport = flight => canOpenImport && flight?.imported !== true && flight?.proposalId != null;
-  const canAssign = flight => flight?.imported === true
-    && isInitialAssignmentCandidate(planningFlightOf(flight.turnaroundId));
-  const stripOf = flight => (board === null ? null : [...board.arrivals, ...board.departures,
-    ...board.toImport.arrivals, ...board.toImport.departures].find(item => item.flightKey === flight?.flightKey) ?? null);
+  const canImport = useCallback(flight => canOpenImport && flight?.imported !== true && flight?.proposalId != null,
+    [canOpenImport]);
+  const canAssign = useCallback(flight => flight?.imported === true
+    && isInitialAssignmentCandidate(planningFlightOf(flight.turnaroundId)), [planningFlightOf]);
+  const strips = useMemo(() => (board === null ? null : firstBy([...board.arrivals, ...board.departures,
+    ...board.toImport.arrivals, ...board.toImport.departures], item => item.flightKey)), [board]);
+  const stripOf = useCallback(flight => strips?.get(flight?.flightKey) ?? null, [strips]);
 
   // On screen: the route may now tell the boot screen, as soon as the first data are here too.
   useEffect(() => { onShown?.(); }, [onShown]);
@@ -408,61 +436,113 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
   const boardLabels = useMemo(() => ({ ...remoteLabels, unauthorized: undefined }), [remoteLabels]);
   // The reads «Pendientes de la jornada» comes from, each blanking only its own items (pendingModel.js). The readiness
   // marks belong to the planning's day and wait for it, so they count only once the planning answered.
-  const pendingSources = [
+  const pendingSources = useMemo(() => [
     { id: 'planning', ...panelStateOf(planning) },
     ...(ANSWERED.has(planning.status) ? [{ id: 'readiness', ...panelStateOf(readiness) }] : []),
     { id: 'flights', ...flightsStateOf(live) },
     { id: 'reviewQueue', ...panelStateOf(reviewQueue) },
-  ];
+  ], [live, planning, readiness, reviewQueue]);
   const mapLabels = useMemo(() => ({
     map: t('map.label'), unavailableTitle: t('map.unavailableTitle'),
     unavailableDescription: t('map.unavailableDescription'), unavailableList: t('map.unavailableList'),
   }), [t]);
 
-  function panels(place) {
-    const classes = CONSOLE_OVERLAY_LAYOUT[place];
-    const measured = place === 'float';
-    const panelLayout = place === 'float' ? 'float' : 'grid';
-    const ref = panelId => (measured ? measure(panelId) : undefined);
-    return {
-      board: (
-        <BoardPanel board={board} state={boardStateOf(live, board)} labels={boardLabels} selectedId={selectedId}
-          onSelect={selectItem} onImport={openImport} onImportFlight={canOpenImport ? () => setImportOpen(true) : undefined}
-          nowMs={nowMs} timeZone={timeZone} date={planningDate} measureRef={ref('board')} layout={panelLayout}
-          defaultFolded={narrow} className={classes.boardPanel} />
-      ),
-      figures: (
-        <FiguresPanel figures={figures} state={panelStateOf(planning)} labels={planningLabels} timeZone={timeZone}
-          measureRef={ref('figures')} layout={panelLayout} defaultFolded={narrow || figuresFolded}
-          className={classes.figuresPanel} />
-      ),
-      alerts: (
-        <AlertsPanel alerts={alerts} notices={notices} pending={pending} pendingSources={pendingSources}
-          labels={remoteLabels} onOpen={entry => router.push(notificationTargetPath(entry.notice))}
-          onSelectPending={item => selectItem(item)} onAssign={setAssignTurnaroundId}
-          onImport={openImport} timeZone={timeZone} measureRef={ref('alerts')} layout={panelLayout}
-          defaultFolded={narrow} className={chosen ? classes.alertsPanel : classes.alertsPanelAlone} />
-      ),
-      inspector: chosen ? (
-        <InspectorPanel selection={chosen} target={live.target} telemetry={live.telemetry}
-          stationAirport={live.flights?.stationAirport ?? null} stationId={station.stationId} stand={selectedStand}
-          standFlight={standFlight} stripOf={stripOf} mapFlights={mapFlights} canImport={canImport} canAssign={canAssign}
-          onImport={openImport} onAssign={flight => setAssignTurnaroundId(flight.turnaroundId)} onClear={clearChoice}
-          nowMs={nowMs} timeZone={timeZone} measureRef={ref('inspector')} layout={panelLayout}
-          className={classes.inspectorPanel} />
-      ) : null,
-      positions: (
-        <PositionsPanel stands={stands} flightsByTurnaround={flightsByTurnaround} aircraft={aircraft} figures={figures}
-          state={panelStateOf(positions)} labels={remoteLabels} nowMs={nowMs} timeZone={timeZone}
-          selectedBarId={selectedTurnaroundId} onSelectStand={selectBandStand}
-          measureRef={ref('positions')} layout={panelLayout} className={classes.positionsPanel} />
-      ),
-    };
-  }
+  // The panels, each element kept while its inputs are the same, so a render of the page that changes nothing of a
+  // panel (the map's traffic moving, the clock of another panel) does not render it again.
+  const place = layout === 'grid' ? 'grid' : 'float';
+  const classes = CONSOLE_OVERLAY_LAYOUT[place];
+  const panelLayout = place;
+  const panelRef = panelId => (place === 'float' ? measure(panelId) : undefined);
+  const boardRef = panelRef('board');
+  const figuresRef = panelRef('figures');
+  const alertsRef = panelRef('alerts');
+  const inspectorRef = panelRef('inspector');
+  const positionsRef = panelRef('positions');
+  const boardState = useMemo(() => boardStateOf(live, board), [board, live]);
+  const planningState = useMemo(() => panelStateOf(planning), [planning]);
+  const positionsState = useMemo(() => panelStateOf(positions), [positions]);
+  const openNotice = useCallback(entry => router.push(notificationTargetPath(entry.notice)), [router]);
+  const assignFlightOf = useCallback(flight => setAssignTurnaroundId(flight.turnaroundId), []);
+  const stationAirport = live.flights?.stationAirport ?? null;
+  const { target, telemetry } = live;
 
-  const pill = arrival ? (
+  const boardPanel = useMemo(() => (
+    <BoardPanel board={board} state={boardState} labels={boardLabels} selectedId={selectedId}
+      onSelect={selectItem} onImport={openImport} onImportFlight={openImport}
+      nowMs={nowMs} timeZone={timeZone} date={planningDate} measureRef={boardRef} layout={panelLayout}
+      defaultFolded={narrow} className={classes.boardPanel} />
+  ), [board, boardLabels, boardRef, boardState, classes.boardPanel, narrow, nowMs, openImport, panelLayout, planningDate,
+    selectItem, selectedId, timeZone]);
+  const figuresPanel = useMemo(() => (
+    <FiguresPanel figures={figures} state={planningState} labels={planningLabels} timeZone={timeZone}
+      measureRef={figuresRef} layout={panelLayout} defaultFolded={narrow || figuresFolded}
+      className={classes.figuresPanel} />
+  ), [classes.figuresPanel, figures, figuresFolded, figuresRef, narrow, panelLayout, planningLabels, planningState,
+    timeZone]);
+  const alertsPanel = useMemo(() => (
+    <AlertsPanel alerts={alerts} notices={notices} pending={pending} pendingSources={pendingSources}
+      labels={remoteLabels} onOpen={openNotice} onSelectPending={selectItem} onAssign={setAssignTurnaroundId}
+      onImport={openImport} timeZone={timeZone} measureRef={alertsRef} layout={panelLayout}
+      defaultFolded={narrow} className={chosen ? classes.alertsPanel : classes.alertsPanelAlone} />
+  ), [alerts, alertsRef, chosen, classes.alertsPanel, classes.alertsPanelAlone, narrow, notices, openImport, openNotice,
+    panelLayout, pending, pendingSources, remoteLabels, selectItem, timeZone]);
+  const inspectorPanel = useMemo(() => (chosen ? (
+    <InspectorPanel selection={chosen} target={target} telemetry={telemetry}
+      stationAirport={stationAirport} stationId={station.stationId} stand={selectedStand}
+      standFlight={standFlight} stripOf={stripOf} mapFlights={mapFlights} canImport={canImport} canAssign={canAssign}
+      onImport={openImport} onAssign={assignFlightOf} onClear={clearChoice}
+      nowMs={nowMs} timeZone={timeZone} measureRef={inspectorRef} layout={panelLayout}
+      className={classes.inspectorPanel} />
+  ) : null), [assignFlightOf, canAssign, canImport, chosen, classes.inspectorPanel, clearChoice, inspectorRef, mapFlights,
+    nowMs, openImport, panelLayout, selectedStand, standFlight, station.stationId, stationAirport, stripOf, target,
+    telemetry, timeZone]);
+  const positionsPanel = useMemo(() => (
+    <PositionsPanel stands={stands} flightsByTurnaround={flightsByTurnaround} aircraft={aircraft} figures={figures}
+      state={positionsState} labels={remoteLabels} nowMs={nowMs} timeZone={timeZone}
+      selectedBarId={selectedTurnaroundId} onSelectStand={selectBandStand}
+      measureRef={positionsRef} layout={panelLayout} className={classes.positionsPanel} />
+  ), [aircraft, classes.positionsPanel, figures, flightsByTurnaround, nowMs, panelLayout, positionsRef, positionsState,
+    remoteLabels, selectBandStand, selectedTurnaroundId, stands, timeZone]);
+  const panels = useMemo(() => ({ board: boardPanel, figures: figuresPanel, alerts: alertsPanel,
+    inspector: inspectorPanel, positions: positionsPanel }),
+  [alertsPanel, boardPanel, figuresPanel, inspectorPanel, positionsPanel]);
+
+  const pill = useMemo(() => (arrival ? (
     <NewArrivalPill flight={arrival} onFollow={follow} onDismiss={dismissArrival} />
-  ) : null;
+  ) : null), [arrival, dismissArrival, follow]);
+  // OccMap's shortcuts wait while a dialog of the console is open: the same function while that does not change.
+  const dialogOpen = importOpen || assignTurnaroundId !== null;
+  const isShortcutBlocked = useCallback(() => dialogOpen, [dialogOpen]);
+  const showPanels = useCallback(() => setFocus(null), [setFocus]);
+  // What the map hosts, kept while nothing of it changes, so the map is not handed new children on every render.
+  const mapChildren = useMemo(() => (
+    <>
+      <EngineStatusProbe onChange={setEngineStatus} />
+      {layout === 'map' && !focusMap ? <ConsoleOverlay layout="float" {...panels} /> : null}
+      {layout === 'map' && focusMap ? (
+        <button type="button" onClick={showPanels}
+          className={`absolute left-3 top-3 z-20 bg-occ-panel-float ${CONSOLE_ACTION}`}>
+          {t('focus.show')}
+        </button>
+      ) : null}
+      <MapSourceStatus status={live.status} picture={live.picture} sourceState={live.sourceState}
+        clock={live.clock} onRetry={live.retry} />
+      {layout === 'map' && pill ? (
+        <div data-occ-arrival-place="" className="pointer-events-none absolute z-20" style={ARRIVAL_PLACE}>
+          {pill}
+        </div>
+      ) : null}
+      <MapDock>
+        <MapLayersMenu />
+        <MapPresetSwitcher />
+        {/* «Seguir» is the S key, «Ver y seguir» and the inspector's flight: the dock keeps to the pause. */}
+        <MapMotionControl compact className="shrink-0" />
+        {/* Folded at first: the console's map is the ramp under the panels, and the legend opens over it. */}
+        <MapLegend defaultOpen={false} />
+      </MapDock>
+    </>
+  ), [focusMap, layout, live.clock, live.picture, live.retry, live.sourceState, live.status, panels, pill, showPanels,
+    t]);
 
   return (
     <div data-occ-console={layout}
@@ -474,37 +554,15 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
           <OccMap ref={mapRef} defaultView="ramp" stands={stands} flights={mapFlights} traffic={traffic}
             selection={chosen} onSelect={handleMapSelect} insets={insets} labels={mapLabels}
             overlays={routeOverlays} overlayData={routes.overlayData}
-            onCameraChange={handleCamera} isShortcutBlocked={() => importOpen || assignTurnaroundId !== null}>
-            <EngineStatusProbe onChange={setEngineStatus} />
-            {layout === 'map' && !focusMap ? <ConsoleOverlay layout="float" {...panels('float')} /> : null}
-            {layout === 'map' && focusMap ? (
-              <button type="button" onClick={() => setFocus(null)}
-                className={`absolute left-3 top-3 z-20 bg-occ-panel-float ${CONSOLE_ACTION}`}>
-                {t('focus.show')}
-              </button>
-            ) : null}
-            <MapSourceStatus status={live.status} picture={live.picture} sourceState={live.sourceState}
-              clock={live.clock} onRetry={live.retry} />
-            {layout === 'map' && pill ? (
-              <div data-occ-arrival-place="" className="pointer-events-none absolute z-20" style={ARRIVAL_PLACE}>
-                {pill}
-              </div>
-            ) : null}
-            <MapDock>
-              <MapLayersMenu />
-              <MapPresetSwitcher />
-              {/* «Seguir» is the S key, «Ver y seguir» and the inspector's flight: the dock keeps to the pause. */}
-              <MapMotionControl compact className="shrink-0" />
-              {/* Folded at first: the console's map is the ramp under the panels, and the legend opens over it. */}
-              <MapLegend defaultOpen={false} />
-            </MapDock>
+            onCameraChange={handleCamera} isShortcutBlocked={isShortcutBlocked}>
+            {mapChildren}
           </OccMap>
         </OccBootContext.Provider>
       </div>
       {layout === 'grid' ? (
         <>
           {pill ? <div className="px-2 pt-2">{pill}</div> : null}
-          <ConsoleOverlay layout="grid" {...panels('grid')} />
+          <ConsoleOverlay layout="grid" {...panels} />
         </>
       ) : null}
       <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t border-occ-line bg-occ-panel px-3 py-1">

@@ -68,6 +68,10 @@ test("Finanzas factura la operación aprobada (e-CF simulado)", async ({ page })
   const sent = page.waitForRequest(request => request.method() === "POST" &&
     request.url().includes("/api/v1/finance/invoices/from-operations"));
   await page.getByRole("button", { name: "Emitir factura" }).click();
+  // CN-15: the airline, the operations and the estimated net are confirmed before the e-NCF is assigned.
+  const confirm = page.getByRole("dialog", { name: "Emitir factura" });
+  await expect(confirm.getByLabel("Factura por emitir")).toContainText(airline.name);
+  await confirm.getByRole("button", { name: "Confirmar emisión" }).click();
   const body = (await sent).postDataJSON() as IssueBody;
   // 4-N29: the screen sends the version of each operation it showed.
   expect(body.operationVersions?.map(item => item.operationId)).toEqual(body.operationIds);

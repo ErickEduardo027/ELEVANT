@@ -86,7 +86,7 @@ function IssuedInvoice({ issue, onDismiss, emailPollMs }) {
       <h2 className="mt-1 text-lg font-bold">e-NCF {invoice.fiscalNumber}</h2>
       <p className="mt-1 text-sm">{issue.airlineName} · {money(invoice.total, invoice.currencyCode)} con ITBIS 18 %</p>
       <p className="mt-1 text-xs text-text-secondary-light">
-        Interno {invoice.number}. Simulación — sin validez fiscal.
+        Simulación — sin validez fiscal.
       </p>
       <InvoiceEmailStatus invoiceId={invoice.invoiceId} pollMs={emailPollMs} />
       <div className="mt-3 flex flex-wrap gap-2">
@@ -125,6 +125,32 @@ function NoChargeDialog({ data, open, onClose }) {
   </Modal>;
 }
 
+/** CN-15: what is about to be issued, confirmed before the e-NCF is assigned. */
+function IssueConfirmDialog({ data, open, onClose }) {
+  const issuing = data.issue.status === 'issuing';
+  const { summary } = data;
+  async function confirm() {
+    await data.issueInvoice();
+    onClose();
+  }
+  return <Modal open={open} onClose={issuing ? () => {} : onClose} title="Emitir factura" busy={issuing}
+    footer={<>
+      <button type="button" className={chip} onClick={onClose} disabled={issuing}>Cancelar</button>
+      <button type="button" className={primary} onClick={confirm} disabled={issuing || summary.count === 0}>
+        {issuing ? 'Emitiendo factura…' : 'Confirmar emisión'}
+      </button>
+    </>}>
+    <p>Se emitirá una factura con e-NCF para estas operaciones. Una factura emitida no se borra: solo se corrige con notas.</p>
+    <dl aria-label="Factura por emitir" className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+      <dt className="font-semibold">Aerolínea</dt><dd>{summary.airlineName}</dd>
+      <dt className="font-semibold">Operaciones</dt><dd>{summary.count}</dd>
+      <dt className="font-semibold">Neto estimado</dt><dd>{money(summary.net, summary.currency)}</dd>
+      <dt className="font-semibold">Total estimado</dt><dd>{money(summary.total, summary.currency)} con ITBIS 18 %</dd>
+    </dl>
+    <p className="mt-2 text-xs">El importe final lo calcula la factura con paquetes, mínimos y cargos.</p>
+  </Modal>;
+}
+
 /**
  * «Por facturar» (ADR-0035, phase 4, block A): approved operations not yet invoiced, from the oldest, issued as one
  * simulated e-CF invoice within the limits of one invoice, or closed without charge when their valuation is zero.
@@ -134,6 +160,7 @@ export default function ToInvoicePage({ initialStationId, emailPollMs = 5000 }) 
   const { access } = useDepartmentAccess();
   const canIssue = Boolean(access?.can('finance.invoicing.issue'));
   const [closing, setClosing] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const base = useId();
   const { summary, limits } = data;
   const shown = data.status === 'loading' || data.status === 'success';
@@ -149,6 +176,8 @@ export default function ToInvoicePage({ initialStationId, emailPollMs = 5000 }) 
       </header>
 
       {data.issue.status === 'issued' && <IssuedInvoice issue={data.issue} onDismiss={data.dismissIssue} emailPollMs={emailPollMs} />}
+      {data.airlineGone && <p role="status" className="rounded-xl bg-black/[0.03] p-4 text-sm dark:bg-white/[0.04]">
+        {data.airlineGone} no tiene más operaciones por facturar en este período. El filtro de aerolínea volvió a «Todas».</p>}
       {data.issue.status === 'error' && <p role="alert" className="rounded-xl bg-status-danger/10 p-4 text-sm">{data.issue.message}</p>}
       {data.issue.status === 'zero' && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-status-warning/10 p-4 text-sm">
         <span>{data.issue.message}</span>
@@ -222,7 +251,7 @@ export default function ToInvoicePage({ initialStationId, emailPollMs = 5000 }) 
           <button type="button" className={chip} onClick={data.selectAirline} disabled={data.picking} aria-busy={data.picking}>
             {data.picking ? 'Eligiendo operaciones…' : 'Toda la aerolínea del período'}</button>
           <button type="button" className={chip} onClick={data.clearSelection}>Quitar selección</button>
-          {canIssue && <button type="button" onClick={data.issueInvoice} disabled={data.issue.status === 'issuing'}
+          {canIssue && <button type="button" onClick={() => setConfirming(true)} disabled={data.issue.status === 'issuing'}
             className="rounded-xl bg-accent-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm disabled:opacity-50">
             {data.issue.status === 'issuing' ? 'Emitiendo factura…' : 'Emitir factura'}
           </button>}
@@ -270,7 +299,11 @@ export default function ToInvoicePage({ initialStationId, emailPollMs = 5000 }) 
               </table></div>
               : <p className="p-6 text-sm text-text-secondary-light">{data.totalLoaded
                 ? 'Ninguna operación coincide con la búsqueda.'
-                : 'No hay operaciones aprobadas pendientes de facturar.'}</p>}
+                : data.filtersApplied && data.airlines.length > 0
+                  ? 'Ninguna operación pendiente coincide con los filtros elegidos. Cambie la aerolínea o el período para ver las demás.'
+                  : data.filtersApplied
+                    ? 'No hay operaciones aprobadas pendientes de facturar en el período elegido.'
+                    : 'No hay operaciones aprobadas pendientes de facturar.'}</p>}
         </section>}
       {data.status === 'success' && data.totalPending > 0 && <div className="flex flex-wrap items-center gap-3 text-xs text-text-secondary-light">
         <p role="status">Mostrando {data.totalLoaded} de {data.totalPending} {data.totalPending === 1 ? 'pendiente' : 'pendientes'}.</p>
@@ -280,6 +313,7 @@ export default function ToInvoicePage({ initialStationId, emailPollMs = 5000 }) 
           <button type="button" onClick={data.loadMore} className="font-semibold underline">Reintentar</button></span>}
       </div>}
 
+      <IssueConfirmDialog data={data} open={confirming && canIssue} onClose={() => setConfirming(false)} />
       <NoChargeDialog data={data} open={closing && data.issue.status === 'zero'} onClose={() => setClosing(false)} />
     </div>
   );

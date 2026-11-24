@@ -6,7 +6,7 @@ const ID = '10000000-0000-0000-0000-000000000001';
 const change = (resource, cursor) => ({ eventId: ID, resource, resourceId: ID,
   cursor, occurredAt: '2026-09-26T00:00:00Z' });
 
-function fixture(responses = []) {
+function fixture(responses = [], options = {}) {
   const api = { getAccountChanges: vi.fn() };
   for (const response of responses) api.getAccountChanges.mockResolvedValueOnce(response);
   const connections = [];
@@ -24,7 +24,7 @@ function fixture(responses = []) {
   });
   const onChanges = vi.fn();
   const observer = createAccountChangeObserver({ api, createHubConnection,
-    onChanges, events: window, pollMs: 25_000 });
+    onChanges, events: window, pollMs: 25_000, ...options });
   return { api, observer, connections, createHubConnection, onChanges };
 }
 
@@ -123,6 +123,43 @@ describe('account change observer', () => {
     expect(f.api.getAccountChanges).toHaveBeenNthCalledWith(2, { limit: 100 });
     expect(f.onChanges).toHaveBeenCalledTimes(2);
     await f.observer.stop();
+  });
+
+  it('groups the hints of both hubs into one reconcile per window, with one trailing read for those that wait', async () => {
+    const f = fixture([], { hintCoalesceMs: 3_000 });
+    f.api.getAccountChanges.mockResolvedValue({ changes: [change('occ_planning', 'c1')], nextCursor: 'c1',
+      hasMore: false });
+    await f.observer.start();
+    expect(f.api.getAccountChanges).toHaveBeenCalledTimes(1);
+    // Two hubs and a burst of hints within the window of the start's read: one trailing read at its end.
+    await vi.advanceTimersByTimeAsync(1_000);
+    f.connections[0].handlers.ChangedV1({ eventId: ID });
+    f.connections[1].handlers.ChangedV1({ eventId: ID });
+    f.connections[0].handlers.ChangedV1({ eventId: ID });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.api.getAccountChanges).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(f.api.getAccountChanges).toHaveBeenCalledTimes(2);
+    // After a quiet window a hint reads at once.
+    await vi.advanceTimersByTimeAsync(5_000);
+    f.connections[0].handlers.ChangedV1({ eventId: ID });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.api.getAccountChanges).toHaveBeenCalledTimes(3);
+    // A reconcile for another reason (focus) satisfies the trailing read that waits.
+    f.connections[1].handlers.ChangedV1({ eventId: ID });
+    await vi.advanceTimersByTimeAsync(500);
+    window.dispatchEvent(new Event('focus'));
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(f.api.getAccountChanges).toHaveBeenCalledTimes(4);
+    expect(f.onChanges).toHaveBeenCalledWith(['occ_planning']);
+    // Stopping drops a trailing read that waits.
+    f.connections[0].handlers.ChangedV1({ eventId: ID });
+    await vi.advanceTimersByTimeAsync(0);
+    const before = f.api.getAccountChanges.mock.calls.length;
+    f.connections[0].handlers.ChangedV1({ eventId: ID });
+    await f.observer.stop();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(f.api.getAccountChanges).toHaveBeenCalledTimes(before);
   });
 
   it('cancels listeners, poll and both hubs on stop', async () => {

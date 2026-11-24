@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ContractDetailDrawer, { validityLines } from './ContractDetailDrawer';
 import {
-  createContractAmendment, getContractDocument, loadContractPdf, setContractValidity, signContractVersion,
+  createContractAmendment, getContractDocument, getContractTimeline, loadContractPdf, setContractValidity, signContractVersion,
   withdrawContractVersion,
 } from '../../../services/commercialGovernanceApi';
 
@@ -87,7 +87,10 @@ it('lets Contratos confirm validity and renewal before any signature', async () 
   await userEvent.selectOptions(within(form).getByLabelText('Renovación'), 'Automatic');
   await userEvent.clear(within(form).getByLabelText('Aviso de renovación (días antes)'));
   await userEvent.type(within(form).getByLabelText('Aviso de renovación (días antes)'), '45');
-  await userEvent.type(within(form).getByLabelText('Condiciones de terminación'), 'Incumplimiento grave.');
+  // CN-14: the notice sentence is added by the contract; a copy typed at the start is dropped on save.
+  expect(within(form).getByLabelText('Condiciones de terminación'))
+    .toHaveAccessibleDescription(/El contrato antepone «Terminación con 60 días de preaviso\.»/);
+  await userEvent.type(within(form).getByLabelText('Condiciones de terminación'), 'Terminación con 60 días de preaviso. Incumplimiento grave.');
   await userEvent.click(within(form).getByRole('button', { name: 'Confirmar vigencia' }));
   // The validity step carries the intent's Idempotency-Key.
   expect(setContractValidity).toHaveBeenCalledWith('v-1', { validFrom: '2026-11-03', validTo: '2027-11-02',
@@ -95,6 +98,15 @@ it('lets Contratos confirm validity and renewal before any signature', async () 
     terminationTerms: 'Incumplimiento grave.', expectedDocumentSha256: sha }, expect.stringMatching(/^[0-9a-f-]{36}$/));
   expect(await screen.findByRole('dialog', { name: 'Contrato CTR-2026-0001 · versión 2' })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Acepto y firmo' })).not.toBeInTheDocument();
+});
+
+it('reads no timeline once the drawer closes (CN-17)', async () => {
+  const { rerender } = render(<ContractDetailDrawer versionId="v-1" onClose={vi.fn()} />);
+  await screen.findByRole('dialog', { name: 'Contrato CTR-2026-0001 · versión 2' });
+  await waitFor(() => expect(getContractTimeline).toHaveBeenCalledWith('v-1'));
+  rerender(<ContractDetailDrawer versionId={null} onClose={vi.fn()} />);
+  await Promise.resolve();
+  expect(getContractTimeline).not.toHaveBeenCalledWith(null);
 });
 
 it('offers no signature without «Firmar por AVIAM» and explains a missing document', async () => {
@@ -245,7 +257,9 @@ it('writes a validity with no end in words, never «al Sin vencimiento» (N33)',
   getContractDocument.mockResolvedValueOnce({ ...document, validTo: null });
   render(<ContractDetailDrawer versionId="v-1" onClose={vi.fn()} />);
   const drawer = await screen.findByRole('dialog', { name: 'Contrato CTR-2026-0001 · versión 2' });
-  expect(drawer).toHaveTextContent('Desde el 3 de noviembre de 2026, sin vencimiento · USD · versión aprobada');
+  // CN-13: only the airline signed: Finance approved the prices, the signatures are still pending.
+  expect(drawer).toHaveTextContent('Desde el 3 de noviembre de 2026, sin vencimiento · USD · precios aprobados · firmas pendientes');
+  expect(drawer).not.toHaveTextContent('versión aprobada');
   expect(drawer).not.toHaveTextContent(/al Sin vencimiento/);
 });
 

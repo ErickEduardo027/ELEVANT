@@ -80,12 +80,22 @@ seeder base un `DevelopmentHistorySeeder` (`Persistence/Seed/History/`):
     turno de mañana, que entra antes), y una o dos operaciones al día que pasan
     del tiempo en tierra permitido más la gracia (OVERTIME). Se facturan en
     e-CF propios, emitidos después de las facturas normales de cada quincena.
+  - la Orden de Servicio firmada de cada operación que llegó a la entrega
+    (tramos `ops-signatures:<mes>`): el contenido es el que arma la app hoy, con
+    su SHA-256, y lleva las dos firmas obligatorias (representante de la
+    aerolínea, con nombres fijos por aerolínea, y el agente de AVIAM que la
+    entregó), dibujadas de forma determinista entre el push-back y la entrega.
+    Así OCC › Revisión la muestra firmada, no «Firma desactualizada», y las
+    entregas pendientes del historial se pueden aprobar desde la pantalla. La
+    captura queda a nombre de la cuenta OCC del historial y sin tableta, porque
+    los agentes del historial no tienen cuenta.
 - **Cómo inserta:** solo agrega filas, ya en su estado final, porque el login
   del seeder no puede hacer UPDATE ni escribir auditoría. Cada tramo (comercial,
   Gestión Humana, tasas, una semana de operaciones, un mes de facturación,
   cuentas por pagar) se confirma en su propia transacción junto con una fila
   centinela. Si el CD falla a mitad, `--retry` continúa desde el tramo
-  pendiente. Los tramos `ops-extra:<mes>` y `finance-extra:<mes>` van al final:
+  pendiente. Los tramos `ops-extra:<mes>`, `finance-extra:<mes>` y
+  `ops-signatures:<mes>` van al final:
   en una base que ya tenía el resto del historial, como la del VPS, solo se
   agregan ellos.
 - **Qué no toca:** no modifica datos existentes; omite las aerolíneas que ya
@@ -99,7 +109,10 @@ seeder base un `DevelopmentHistorySeeder` (`Persistence/Seed/History/`):
   historia de junio puede llevar números posteriores a facturas reales de
   noviembre.
 - **Límites:** «Movimientos de cuenta» de Gestión Humana sigue vacío porque sale
-  de la auditoría, y las operaciones históricas no tienen documentos firmados.
+  de la auditoría. Las operaciones históricas aprobadas liberan a sus agentes al
+  entregar, así que su Orden de Servicio dice «Sin agente asignado» en el
+  encabezado aunque la firma de AVIAM lleve el nombre del agente; el Reporte de
+  Vuelo y el checklist de puente no tienen firmas.
 
 ## Infraestructura local
 

@@ -865,13 +865,13 @@ describe('OccMap', () => {
   });
 
   it('starts the map with the extra MapLibre options it is given, keeping its own locale', () => {
-    const { map } = renderMap({ mapOptions: { fadeDuration: 0, locale: { 'Map.Title': 'Otro' } } });
-    expect(map.options.fadeDuration).toBe(0);
+    const { map } = renderMap({ mapOptions: { fadeDuration: 300, locale: { 'Map.Title': 'Otro' } } });
+    expect(map.options.fadeDuration).toBe(300);
     expect(map.options.locale).toMatchObject({ 'Map.Title': 'Mapa del OCC', 'NavigationControl.ZoomIn': 'Acercar' });
     cleanup();
-    // Without them the engine keeps its own fade.
+    // Without them the engine keeps its own: no symbol fade (CN-18).
     render(<OccMap stands={STANDS} />);
-    expect(fake.state.liveMaps().at(-1).options.fadeDuration).toBe(150);
+    expect(fake.state.liveMaps().at(-1).options.fadeDuration).toBe(0);
   });
 
   it('answers no pixel without a map', async () => {
@@ -2050,9 +2050,10 @@ describe('OccMap motion (PR M6)', () => {
     const source = map.getSource('occ-traffic');
     expect(source.updateDataCalls.flatMap(diff => diff.add.map(feature => feature.properties.id))).toEqual([DEMO_ID]);
     const writes = source.updateDataCalls.length;
-    // Every frame draws it where its trajectory puts it at the render clock's time: one updateData each, moving it.
+    // Every due frame draws it where its trajectory puts it at the render clock's time: one updateData each, moving
+    // it. On the approach it crosses about a pixel a second, so a write is due every 500 ms (CN-18).
     for (let frame = 1; frame <= 3; frame += 1) {
-      server.at += 16;
+      server.at += 500;
       expect(frames.run()).toBe(1);
       expect(source.updateDataCalls).toHaveLength(writes + frame);
     }
@@ -2072,7 +2073,7 @@ describe('OccMap motion (PR M6)', () => {
     expect(fake.state.maps).toEqual([map]);
   });
 
-  it('updates every frame with fewer than 30 aircraft in view', () => {
+  it('never writes the traffic every frame: two pixels of the fastest aircraft in view, 2 to 15 times a second (CN-18)', () => {
     const NOON = Date.parse(TRAFFIC_NOON);
     const runFor = count => {
       const frames = controlledFrames();
@@ -2096,11 +2097,10 @@ describe('OccMap motion (PR M6)', () => {
       vi.restoreAllMocks();
       return written;
     };
-    // 29 aircraft in view: every frame.
-    expect(runFor(29)).toBe(125);
-    // 35 at 250 kt at zoom 9 cross about 0.9 px a second: the slowest rate, two writes a second (one every 500 ms
-    // after the one the camera move asked for).
+    // At 250 kt at zoom 9 they cross about 0.9 px a second: the slowest rate, two writes a second (one every 500 ms
+    // after the one the camera move asked for), with few aircraft or many.
     expect(metresPerPixel(9, 18.5674)).toBeCloseTo(144.9, 0);
+    expect(runFor(29)).toBe(3);
     expect(runFor(35)).toBe(3);
   });
 
@@ -2114,12 +2114,12 @@ describe('OccMap motion (PR M6)', () => {
     const map = fake.state.liveMaps().at(-1);
     loadStyle(map);
     const source = map.getSource('occ-traffic');
-    server.at += 16;
+    server.at += 500;
     frames.run();
     // «Pausar movimiento»: the render clock holds, the context says since when, and the loop stops after its frame.
     act(() => motionRef.current.pause());
     expect(clock.isPaused()).toBe(true);
-    expect(motionProbe()).toMatchObject({ available: true, paused: true, pausedAt: NOON + 16 });
+    expect(motionProbe()).toMatchObject({ available: true, paused: true, pausedAt: NOON + 500 });
     server.at += 5_000;
     frames.run();
     const held = geometryUpdates(source, DEMO_ID).length;
@@ -2234,13 +2234,13 @@ describe('OccMap route and follow mode (PR M6)', () => {
     for (let frame = 0; frame < 130; frame += 1) frameFor(16);
     expect(routeAt).toHaveBeenCalledTimes(3);
     expect(haversineM(routeAt.mock.calls.at(-1)[1], point)).toBeGreaterThan(150);
-    // From the airfield threshold up, every frame in which it moves half a pixel on screen: at zoom 18 its 16 ms on final
-    // are more than a metre, over two pixels.
+    // From the airfield threshold up, every write in which it moved half a pixel on screen: at zoom 18 its 70 ms on
+    // final are some 5 m, over ten pixels (the traffic is written at most 15 times a second, CN-18).
     expect(18).toBeGreaterThan(thresholds.airfield);
     act(() => { ref.current.jumpTo({ center: aircraftAt(), zoom: 18 }); });
     expect(metresPerPixel(18, aircraftAt()[1])).toBeLessThan(0.5);
     const before = routeAt.mock.calls.length;
-    for (let frame = 0; frame < 10; frame += 1) frameFor(16);
+    for (let frame = 0; frame < 10; frame += 1) frameFor(70);
     expect(routeAt.mock.calls.length - before).toBe(10);
     expect(routeAt.mock.calls.at(-1)[1]).toEqual(aircraftAt());
     // A frame in which it has not moved writes nothing.

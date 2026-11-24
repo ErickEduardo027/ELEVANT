@@ -1,6 +1,7 @@
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { useCallback } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { createSimulatedOccMapAdapter } from '../../../services/occMapService';
 import { administratorAccess, DepartmentAccessProvider } from '../../access/DepartmentAccessContext';
 import { DepartmentPermissionCodes } from '../../access/testAccess';
@@ -17,7 +18,9 @@ import { useConsoleData } from './useConsoleData';
 // The console within the OCC request budget (contratos 2.7), with the real hooks: useConsoleData over counted
 // stand-ins of its four adapters, useMapSituation over the simulated map adapter, and the frame's own reads as the shell
 // sends them (its notices on useOccResource with the plan's cadence, the one observer's cursor reads and the presence
-// lease), on a test channel that delivers the scripted announcements of a demo minute (OCC_DEMO_MINUTE). Everything
+// lease), on a test channel fed by the real account-change observer (services/accountChangeObserver.js, with the
+// shell's `hintCoalesceMs`) over a stand-in feed and two stand-in hubs that hint the scripted announcements of a demo
+// minute (OCC_DEMO_MINUTE): the channel hears what the cursor read returned, once it answered. Everything
 // mounts at t = 0; after a minute of warm-up the second minute is counted. Every answer takes 200 ms, enough to join
 // the announcements that arrive while a read is in flight.
 
@@ -64,9 +67,41 @@ function FrameNotices({ record }) {
 }
 
 /**
+ * The account-change feed and the two hubs as the API sends them: each announcement is a change on the feed and a
+ * `ChangedV1` hint on its hub (notifications on the notifications hub, the rest on the operations hub); a cursor read
+ * (recorded as `shell:cursor`) answers after the latency with the changes after its cursor.
+ */
+function startObserver(record, deliver) {
+  const changes = [];
+  const hubs = [];
+  const api = {
+    getAccountChanges: ({ after } = {}) => {
+      record('shell:cursor');
+      const from = after ? Number(after) : 0;
+      const page = changes.slice(from);
+      return answerLater({ changes: page, nextCursor: String(changes.length), hasMore: false });
+    },
+  };
+  const createHubConnection = path => {
+    const hub = { path, state: 'Connected', handlers: {}, start: async () => {}, stop: async () => {},
+      on: (name, handler) => { hub.handlers[name] = handler; }, onreconnected: () => {}, onclose: () => {} };
+    hubs.push(hub);
+    return hub;
+  };
+  const observer = createAccountChangeObserver({ api, createHubConnection, onChanges: deliver, events: window,
+    pollMs: OCC_REQUEST_PLAN.observer.pollMs, hintCoalesceMs: OCC_REQUEST_PLAN.observer.hintCoalesceMs });
+  void observer.start();
+  return resource => {
+    changes.push({ resource, cursor: String(changes.length + 1) });
+    const hub = hubs.find(item => item.path === (resource === 'notifications' ? '/hubs/notifications' : '/hubs/operations'));
+    hub.handlers.ChangedV1({ eventId: String(changes.length) });
+  };
+}
+
+/**
  * Mounts the console's reads and replays `script` (announcements at their second of the counted minute). Returns the
  * requests of the counted minute by key: the console's, the map's (from the simulated adapter's log), the frame's
- * notices, the observer's cursor reads (one when it mounts, its 25 s poll and one per announcement) and the presence
+ * notices, the observer's cursor reads (one when it mounts, its 25 s poll and those its hints ask for) and the presence
  * lease.
  */
 async function replay(script) {
@@ -89,9 +124,7 @@ async function replay(script) {
     useMapSituation({ stationId: TRAFFIC_STATION_ID, service: adapter });
   }, { wrapper });
 
-  const cursor = () => record('shell:cursor');
-  cursor();
-  setInterval(cursor, OCC_REQUEST_PLAN.observer.pollMs);
+  const hint = startObserver(record, resources => shell.announce(resources));
   record('presence');
   setInterval(() => record('presence'), PRESENCE.pollMs);
 
@@ -100,10 +133,7 @@ async function replay(script) {
     const due = WARM_UP_MS + at * 1_000;
     await flush(due - elapsed);
     elapsed = due;
-    act(() => {
-      cursor();
-      shell.announce([resource]);
-    });
+    act(() => hint(resource));
   }
   await flush(WARM_UP_MS + MINUTE_MS - 1 - elapsed);
 
@@ -141,21 +171,26 @@ describe('the console within the OCC request budget (contratos 2.7)', () => {
     expect(rest.subscriptions).toEqual(['notifications', 'occ_planning', 'occ_review']);
   });
 
-  it('a demo minute stays within 70 and the secondary reads never follow occ_planning', async () => {
+  it('a demo minute stays within 40 and the secondary reads never follow occ_planning', async () => {
     const rest = await replay([]);
     cleanup();
     vi.clearAllTimers();
     const demo = await replay(OCC_DEMO_MINUTE);
     expect(demo.total, breakdown(demo)).toBeLessThanOrEqual(OCC_REQUEST_BUDGET.demo);
-    // Eight occ_planning announcements re-read only the map flights, at most one every 3 s; the queue follows
-    // occ_review and the frame's notices follow notifications.
-    expect(demo.byKey.mapFlights).toBe(rest.byKey.mapFlights + 8);
-    expect(demo.byKey.reviewQueue).toBe(rest.byKey.reviewQueue + 1);
+    // The seventeen occ_planning announcements re-read only the map flights, after the observer's cursor reads (one every
+    // 10 s at most for the hints); the queue follows occ_review and the frame's notices follow notifications.
+    const hintWindows = Math.ceil(MINUTE_MS / OCC_REQUEST_PLAN.observer.hintCoalesceMs);
+    expect(demo.byKey.mapFlights, breakdown(demo)).toBeLessThanOrEqual(rest.byKey.mapFlights + hintWindows + 2);
+    expect(demo.byKey.mapFlights, breakdown(demo)).toBeGreaterThan(rest.byKey.mapFlights);
+    // (the queue's re-read on occ_review also moves its 60 s safety poll past the counted minute).
+    expect(demo.byKey.reviewQueue, breakdown(demo)).toBeGreaterThanOrEqual(rest.byKey.reviewQueue);
+    expect(demo.byKey.reviewQueue, breakdown(demo)).toBeLessThanOrEqual(rest.byKey.reviewQueue + 1);
     expect(demo.byKey.notices).toBe(rest.byKey.notices + 2);
     for (const key of ['planning', 'positions', 'readiness', 'airPicture']) {
       expect(demo.byKey[key], `${key}: ${breakdown(demo)}`).toBe(rest.byKey[key]);
     }
-    expect(demo.byKey['shell:cursor']).toBe(rest.byKey['shell:cursor'] + OCC_DEMO_MINUTE.length);
+    // Twenty hints, far fewer cursor reads.
+    expect(demo.byKey['shell:cursor']).toBeLessThanOrEqual(rest.byKey['shell:cursor'] + hintWindows + 1);
 
     // A burst of tablet taps changes none of the console's own reads either.
     cleanup();

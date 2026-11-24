@@ -30,6 +30,7 @@ import { EVIDENCE_CLOCK_TOLERANCE_MS, serverNow } from '../../synchronization/se
 import { colors } from '../../theme/colors';
 import { radius, space, syncTone, touch, type } from '../../theme/tokens';
 import { formatStationDate, formatStationTime } from '../../utils/date-format';
+import { standDisplayCode } from '../../utils/stand-codes';
 import {
   FLIGHT_DATA_FIELDS,
   FLIGHT_DATA_LABELS,
@@ -323,7 +324,7 @@ export function FlightReportPanel({ operation, timeZone, editable }: { operation
       {/* N2: «ahora» is when the agent confirms, by ELEVANT's clock; nothing is recorded while the sheet is open. */}
       {pushbackAsk && editable && !correction ? (
         <PushbackSheet eyebrow={PUSHBACK_PHASE_LABEL} concerns={pushbackAsk}
-          effect={pushbackEffect(operation.turnaround.stand?.code)} onClose={() => setPushbackAsk(null)}
+          effect={pushbackEffect(operation.turnaround.stand ? standDisplayCode(operation.turnaround.stand.code) : null)} onClose={() => setPushbackAsk(null)}
           onConfirm={() => { setPushbackAsk(null); record(PUSHBACK_MILESTONE, serverNow()); }} />
       ) : null}
     </View>

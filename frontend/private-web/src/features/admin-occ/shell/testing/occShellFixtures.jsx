@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { createSourceHealthStore, summarizeSources } from '../../live/sourceHealth';
-import { OccShellChannelContext, OccShellContext, OccShellToastContext } from '../occShellContext';
+import {
+  OccShellChannelContext, OccShellContext, OccShellNoticesContext, OccShellToastContext,
+} from '../occShellContext';
 
 // Test-only stand-ins for OccShellProvider. Synthetic values: no observer, no request.
 
@@ -53,7 +55,9 @@ export function OccShellTestProvider({ value, toasts = NO_TOASTS, children }) {
   return (
     <OccShellChannelContext.Provider value={channel}>
       <OccShellContext.Provider value={shell}>
-        <OccShellToastContext.Provider value={toasts}>{children}</OccShellToastContext.Provider>
+        <OccShellNoticesContext.Provider value={shell.notices ?? null}>
+          <OccShellToastContext.Provider value={toasts}>{children}</OccShellToastContext.Provider>
+        </OccShellNoticesContext.Provider>
       </OccShellContext.Provider>
     </OccShellChannelContext.Provider>
   );

@@ -15,6 +15,12 @@ const timeline = status => ({ contractId: 'c-1', contractCode: 'CT-001', status,
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
+it('reads no history without a version (CN-17: a closed drawer keeps rendering it)', async () => {
+  render(<ContractLifecyclePanel versionId={null} canManage />);
+  await Promise.resolve();
+  expect(getContractTimeline).not.toHaveBeenCalled();
+});
+
 it('shows the chronological history and only the actions the current state allows', async () => {
   getContractTimeline.mockResolvedValue(timeline('Active'));
   render(<ContractLifecyclePanel versionId="v-1" canManage />);

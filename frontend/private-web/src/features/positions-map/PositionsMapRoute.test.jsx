@@ -2,6 +2,8 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, useLocation } from '../../../tests/MemoryRouter.jsx';
 import { beforeEach, expect, it, vi } from 'vitest';
 import PositionsMapRoute from './PositionsMapRoute';
+import { OCC_READ_TIMEOUT_MS, OCC_SAFETY_POLL_MS } from '../admin-occ/live/occCadence';
+import { createOccShellValue, OccShellTestProvider } from '../admin-occ/shell/testing/occShellFixtures';
 import { useAuth } from '../auth/AuthContext';
 import { usePositionsMapData } from './usePositionsMapData';
 
@@ -42,12 +44,20 @@ beforeEach(() => {
   }));
 });
 
-it('revalidates positions when another OCC session changes planning', async () => {
-  render(<MemoryRouter><PositionsMapRoute /></MemoryRouter>);
-  expect(usePositionsMapData).toHaveBeenCalledWith('PUJ', 0, false, 'occ-account');
-  expect(observerFactory).toHaveBeenCalledOnce();
-  await act(async () => observerFactory.mock.calls[0][0](['occ_planning']));
-  expect(usePositionsMapData).toHaveBeenCalledWith('PUJ', 1, false, 'occ-account');
+it('revalidates positions when the shell announces a planning change, with no observer of its own', async () => {
+  vi.useFakeTimers();
+  try {
+    const shell = createOccShellValue();
+    render(<MemoryRouter><OccShellTestProvider value={shell}><PositionsMapRoute /></OccShellTestProvider></MemoryRouter>);
+    expect(usePositionsMapData).toHaveBeenCalledWith('PUJ', 0, false, 'occ-account');
+    expect(observerFactory).not.toHaveBeenCalled();
+    expect(shell.subscriptions()).toEqual(['occ_planning']);
+    await act(async () => { await vi.advanceTimersByTimeAsync(OCC_READ_TIMEOUT_MS); });
+    act(() => shell.announce(['occ_planning']));
+    expect(usePositionsMapData).toHaveBeenCalledWith('PUJ', 1, false, 'occ-account');
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it('reads PUJ even when it is not the first authorized scope and offers no selector', () => {

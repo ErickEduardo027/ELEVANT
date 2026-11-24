@@ -212,16 +212,12 @@ const UPDATE_INTERVAL_MS = 6000;
 
 export function subscribeToPositionUpdates(onUpdate, stationCode = 'PUJ',
   { onSnapshot, onError } = {}) {
+  // Fuera de las pruebas la pantalla no tiene canal propio: relee el tablero cuando el marco anuncia `occ_planning` y en
+  // su sondeo de seguridad (PositionsMapRoute.jsx, useOccScreenRefresh), nunca con un temporizador aquí.
   if (process.env.NODE_ENV !== 'test') {
-    const intervalId = setInterval(() => {
-      getPositionsSnapshot(stationCode)
-        .then(snapshot => {
-          if (onSnapshot) onSnapshot(snapshot);
-          else snapshot.positions.forEach(onUpdate);
-        })
-        .catch(error => onError?.(error));
-    }, 30000);
-    return () => clearInterval(intervalId);
+    void onSnapshot;
+    void onError;
+    return () => {};
   }
   let tickCount = 0;
   let activated = false;

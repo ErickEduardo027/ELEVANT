@@ -102,7 +102,20 @@ it('submits to Finance without promising an activation the approval does not do 
   expect(within(dialog).getByText(/para aprobar los precios.*firman la aerolínea y AVIAM.*permiso de operación/)).toBeInTheDocument();
   expect(within(dialog).queryByText(/se activará cuando Finanzas lo apruebe/i)).not.toBeInTheDocument();
   await userEvent.click(within(dialog).getByRole('button', { name: 'Enviar' }));
-  expect(await screen.findByText(/Contrato enviado a Finanzas para aprobar los precios/)).toBeInTheDocument();
+  const notice = await screen.findByText(/Contrato enviado a Finanzas para aprobar los precios/);
+  // CN-12: the notice is over the editor the user is in, not at the top of the page, and takes the focus.
+  expect(notice.closest('section')).toContainElement(screen.getByRole('heading', { name: 'Demo Airlines' }));
+  expect(notice).toHaveFocus();
+});
+
+it('labels the code apart from the status, so a draft pending Finance never reads «Borrador» (CN-12)', async () => {
+  getManagedDrafts.mockResolvedValue([draft({ contractCode: 'DRAFT-1cc18541e2a94f3b8c7d6e5f4a3b2c1d',
+    versionStatus: 'PendingFinanceApproval' })]);
+  render(<ManagedDraftsPage />);
+  const item = await screen.findByRole('button', { name: /Demo Airlines/ });
+  expect(within(item).getByText('Código Borrador 1cc18541…')).toBeInTheDocument();
+  expect(within(item).getByLabelText('Estado: Pendiente de aprobación de Finanzas'))
+    .toHaveTextContent('Pendiente de aprobación de Finanzas');
 });
 
 it.each([
@@ -259,7 +272,8 @@ it('names a new contract «Borrador» and the start of its id, and a signed one 
   getContractDraftReadiness.mockResolvedValue(readiness());
   await open({ canDiscard: true });
   const item = screen.getByRole('button', { name: /Demo Airlines/ });
-  expect(within(item).getByText(/^Borrador 1cc18541… · Borrador · /)).toHaveAttribute('title', code);
+  expect(within(item).getByText('Código Borrador 1cc18541…')).toHaveAttribute('title', code);
+  expect(within(item).getByLabelText('Estado: Borrador')).toBeInTheDocument();
   expect(screen.getByText('Borrador 1cc18541…', { selector: 'p' })).toHaveAttribute('title', code);
   const submit = screen.getByRole('button', { name: 'Enviar a Finanzas' });
   await waitFor(() => expect(submit).toBeEnabled());
@@ -275,7 +289,7 @@ it('names a new contract «Borrador» and the start of its id, and a signed one 
   // An amendment or a renewal keeps the code its contract was signed with.
   getManagedDrafts.mockResolvedValue([draft({ contractCode: 'CTR-2026-0007' })]);
   await open({ canDiscard: true });
-  expect(within(screen.getByRole('button', { name: /Demo Airlines/ })).getByText(/^CTR-2026-0007 · Borrador · /))
+  expect(within(screen.getByRole('button', { name: /Demo Airlines/ })).getByText('Código CTR-2026-0007'))
     .not.toHaveAttribute('title');
   await userEvent.click(screen.getByRole('button', { name: 'Descartar borrador' }));
   expect(screen.getByRole('alertdialog', { name: 'Descartar el borrador de CTR-2026-0007' })).toBeInTheDocument();
@@ -289,9 +303,10 @@ it('counts the services and observations of each draft in the singular only for 
       comments: [comment('comment-1'), comment('comment-2')] }), id: 'draft-3' }]);
   render(<ManagedDraftsPage />);
   await screen.findAllByRole('button', { name: /Demo Airlines/ });
-  const lines = screen.getAllByRole('button', { name: /Demo Airlines/ }).map(item => item.querySelector('span').textContent);
-  expect(lines).toEqual(['CTR-1 · Borrador · 1 servicio · 0 observaciones', 'CTR-1 · Borrador · 1 servicio · 1 observación',
-    'CTR-1 · Borrador · 2 servicios · 2 observaciones']);
+  const lines = screen.getAllByRole('button', { name: /Demo Airlines/ })
+    .map(item => [...item.querySelector('span').children].map(part => part.textContent).join(' · '));
+  expect(lines).toEqual(['Código CTR-1 · Borrador · 1 servicio · 0 observaciones', 'Código CTR-1 · Borrador · 1 servicio · 1 observación',
+    'Código CTR-1 · Borrador · 2 servicios · 2 observaciones']);
 });
 
 it('keeps the edits and blocks the submission when a rule refuses the save', async () => {

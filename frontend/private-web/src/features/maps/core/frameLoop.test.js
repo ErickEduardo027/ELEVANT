@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  REDUCED_MOTION_STEP_MS, UPDATE_RATE, createFrameLoop, createRenderClock, metresPerPixel, updateIntervalMs,
+  CLOCK_SLEW, FRAME_STEP, REDUCED_MOTION_STEP_MS, UPDATE_RATE, createFrameLoop, createRenderClock, metresPerPixel, updateIntervalMs,
 } from './frameLoop';
 
 // The loop on fakes: frames run only when the test runs them, timers only when it fires them, the tab is shown or hidden
@@ -259,18 +259,15 @@ describe('frame loop (design H)', () => {
     expect(requestFrame.mock.calls.length).toBeGreaterThan(1);
   });
 
-  it('updateIntervalMs: every frame below 30 aircraft, 2 to 30 Hz above', () => {
-    expect(UPDATE_RATE).toEqual({ minHz: 2, maxHz: 30, everyFrameBelow: 30 });
-    expect(updateIntervalMs({ inView: 29, fastestPxPerSecond: 1_000 })).toBe(0);
-    expect(updateIntervalMs({ inView: 0, fastestPxPerSecond: 0 })).toBe(0);
-    expect(updateIntervalMs()).toBe(0);
-    // 30 aircraft or more: half the fastest one's pixels per second, between 2 and 30 Hz.
-    expect(updateIntervalMs({ inView: 30, fastestPxPerSecond: 0 })).toBe(500);
-    expect(updateIntervalMs({ inView: 30, fastestPxPerSecond: 2 })).toBe(500);
-    expect(updateIntervalMs({ inView: 30, fastestPxPerSecond: 20 })).toBe(100);
-    expect(updateIntervalMs({ inView: 200, fastestPxPerSecond: 60 })).toBeCloseTo(1_000 / 30, 9);
-    expect(updateIntervalMs({ inView: 200, fastestPxPerSecond: 600 })).toBeCloseTo(1_000 / 30, 9);
-    expect(updateIntervalMs({ inView: 40, fastestPxPerSecond: Number.NaN })).toBe(500);
+  it('updateIntervalMs: never every frame, two pixels of the fastest aircraft in view, 2 to 15 Hz (CN-18)', () => {
+    expect(UPDATE_RATE).toEqual({ minHz: 2, maxHz: 15, pxPerWrite: 2 });
+    expect(updateIntervalMs()).toBe(500);
+    expect(updateIntervalMs({ fastestPxPerSecond: 0 })).toBe(500);
+    expect(updateIntervalMs({ fastestPxPerSecond: 3 })).toBe(500);
+    expect(updateIntervalMs({ fastestPxPerSecond: 20 })).toBe(100);
+    expect(updateIntervalMs({ fastestPxPerSecond: 30 })).toBeCloseTo(1_000 / 15, 9);
+    expect(updateIntervalMs({ fastestPxPerSecond: 600 })).toBeCloseTo(1_000 / 15, 9);
+    expect(updateIntervalMs({ fastestPxPerSecond: Number.NaN })).toBe(500);
   });
 
   it('metresPerPixel matches MapLibre at the equator and at PUJ', () => {
@@ -311,5 +308,112 @@ describe('frame loop (design H)', () => {
     leave();
     expect(alive.cancelFrame).toHaveBeenCalledTimes(1);
     expect(alive.loop.isRunning()).toBe(false);
+  });
+});
+
+describe('smooth time (CN-18)', () => {
+  // A server clock as services/serverClock.js reads: the browser's time plus an offset the test moves.
+  function serverClockAt(offsetMs) {
+    const state = { local: 1_000_000, offset: offsetMs };
+    return { state, now: () => state.local + state.offset, localNow: () => state.local };
+  }
+
+  it('slews a new offset of the server clock at 5 % of the time that passes instead of stepping', () => {
+    expect(CLOCK_SLEW).toEqual({ rate: 0.05, snapMs: 5_000 });
+    const server = serverClockAt(200);
+    const clock = createRenderClock({ clock: server });
+    expect(clock.now()).toBe(1_000_200);
+    // The clock settles on another sample, 300 ms earlier: no step, 5 % of every 16 ms frame.
+    server.state.offset = -100;
+    let last = clock.now();
+    expect(last).toBe(1_000_200);
+    let largest = 0;
+    for (let frame = 0; frame < 600; frame += 1) {
+      server.state.local += 16;
+      const now = clock.now();
+      largest = Math.max(largest, Math.abs(now - last - 16));
+      expect(now).toBeGreaterThan(last);
+      last = now;
+    }
+    expect(largest).toBeLessThanOrEqual(16 * 0.05 + 1e-9);
+    // Caught up after 300 / 0.8 frames.
+    expect(clock.now()).toBe(server.now());
+  });
+
+  it('takes a gap beyond 5 s at once (its first sync, a wrong browser clock)', () => {
+    const server = serverClockAt(0);
+    const clock = createRenderClock({ clock: server });
+    expect(clock.now()).toBe(1_000_000);
+    server.state.offset = 60_000;
+    expect(clock.now()).toBe(1_060_000);
+  });
+
+  it('a clock without localNow is read as it is', () => {
+    const server = { at: T0, now() { return this.at; } };
+    const clock = createRenderClock({ clock: server });
+    server.at += 500;
+    expect(clock.now()).toBe(T0 + 500);
+  });
+
+  it('a frame 2 s late advances 250 ms, then catches up within about a second without a jump', () => {
+    expect(FRAME_STEP).toEqual({ maxMs: 250, catchUpMs: 250 });
+    const server = { at: T0, now() { return this.at; } };
+    const clock = createRenderClock({ clock: server });
+    const frames = [];
+    let local = 0;
+    const loop = createFrameLoop({
+      clock, requestFrame: callback => frames.push(callback), cancelFrame: () => {}, document: null, localNow: () => local,
+    });
+    const drawn = [];
+    loop.subscribe(tMs => drawn.push(tMs), { isAnimating: () => true });
+    const advance = ms => {
+      local += ms;
+      server.at += ms;
+      frames.splice(0).forEach(callback => callback());
+    };
+    for (let index = 0; index < 10; index += 1) advance(16);
+    const before = drawn.at(-1);
+    // A long task: the next frame comes 2 s later.
+    advance(2_000);
+    expect(drawn.at(-1) - before).toBe(250);
+    expect(loop.now()).toBeLessThan(server.at);
+    let largest = 0;
+    for (let index = 0; index < 75; index += 1) {
+      const previous = drawn.at(-1);
+      advance(16);
+      largest = Math.max(largest, drawn.at(-1) - previous);
+      expect(drawn.at(-1)).toBeGreaterThanOrEqual(previous);
+    }
+    // Faster than real time for a moment, never another jump of the whole gap.
+    expect(largest).toBeLessThan(140);
+    expect(server.at - drawn.at(-1)).toBeLessThan(20);
+  });
+
+  it('a loop that starts again after it stopped draws at the clock at once', () => {
+    const server = { at: T0, now() { return this.at; } };
+    const clock = createRenderClock({ clock: server });
+    const frames = [];
+    let local = 0;
+    let moving = true;
+    const loop = createFrameLoop({
+      clock, requestFrame: callback => frames.push(callback), cancelFrame: () => {}, document: null, localNow: () => local,
+    });
+    const drawn = [];
+    loop.subscribe(tMs => drawn.push(tMs), { isAnimating: () => moving });
+    const run = ms => {
+      local += ms;
+      server.at += ms;
+      frames.splice(0).forEach(callback => callback());
+    };
+    run(16);
+    moving = false;
+    run(16);
+    expect(frames).toHaveLength(0);
+    local += 30_000;
+    server.at += 30_000;
+    moving = true;
+    loop.wake();
+    run(16);
+    expect(drawn.at(-1)).toBe(server.at);
   });
 });

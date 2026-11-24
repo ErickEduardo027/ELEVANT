@@ -343,8 +343,11 @@ describe('hand-off between live positions and estimates', () => {
     expect(nudged).toMatchObject({ trailEpoch: 0, snapAtMs: null });
     expect(nudged.blend).not.toBeNull();
 
-    // A plan that would move the aircraft further than the snap distance snaps too.
-    const replanned = withPlan(estimating, straightPlan({ point: kinematicsPoint(0, 10_000) }), atMs);
+    // A plan of a flight drawn from its plan alone slides over 20 s up to ten snap distances (CN-18), and snaps beyond.
+    const slid = withPlan(estimating, straightPlan({ point: kinematicsPoint(0, 10_000) }), atMs);
+    expect(slid).toMatchObject({ trailEpoch: 0, snapAtMs: null });
+    expect(slid.blend.durationMs).toBe(20_000);
+    const replanned = withPlan(estimating, straightPlan({ point: kinematicsPoint(0, 50_000) }), atMs);
     expect(replanned).toMatchObject({ trailEpoch: 1, blend: null, snapAtMs: atMs });
 
     // The trail a track store records from the renders breaks there: the route never joins across the snap.
@@ -504,5 +507,92 @@ describe('hand-off between live positions and estimates', () => {
     expect(reduceTrack(track, null)).toBe(track);
     expect(tick(track, Number.NaN)).toBe(track);
     expect(reduceTrack(undefined, { type: 'fix', fix: fixAt(0), atMs: s(0) }).lastFix.positionAt).toBe(s(0));
+  });
+});
+
+describe('smooth motion (CN-18)', () => {
+  // Truth: 80 m/s from the origin heading east, turning right at 2°/s; a fix every 10 s that reaches the map 4 s late.
+  const SPEED = 80;
+  const RATE = 2;
+  function truthAt(seconds) {
+    const omega = (RATE * Math.PI) / 180;
+    const h0 = Math.PI / 2;
+    const h = h0 + omega * seconds;
+    const x = (SPEED / omega) * (Math.cos(h0) - Math.cos(h));
+    const y = (SPEED / omega) * (Math.sin(h) - Math.sin(h0));
+    return { point: kinematicsPoint(x, y), trackDeg: normalizeDeg(90 + RATE * seconds) };
+  }
+  const turningFix = seconds => {
+    const { point, trackDeg } = truthAt(seconds);
+    return fixAt(seconds, { point, gsMs: SPEED, trackDeg });
+  };
+
+  it('a turning aircraft is carried on along its turn: no pull-back when a fix arrives, close to where it flies', () => {
+    let track = createTrack({ id: 'h:f0c0aa', kind: 'other' });
+    const fixes = [0, 10, 20, 30, 40, 50].map(turningFix);
+    const lateMs = 4_000;
+    let previous = null;
+    let direction = null;
+    let backward = 0;
+    let farthest = 0;
+    let longest = 0;
+    for (let t = s(4); t <= s(60); t += 50) {
+      for (const fix of fixes) if (fix.positionAt + lateMs === t) track = withFix(track, fix, t);
+      track = tick(track, t);
+      const drawn = renderTrack(track, t);
+      // From the second fix on the turn is known (the first is carried straight on: one fix has no turn rate).
+      if (t < s(24)) {
+        previous = drawn;
+        continue;
+      }
+      farthest = Math.max(farthest, haversineM(at(drawn), truthAt((t - T0) / 1000).point));
+      if (previous !== null) {
+        const plane = toLocal(at(previous));
+        const [dx, dy] = plane.forward(at(drawn));
+        const step = Math.hypot(dx, dy);
+        longest = Math.max(longest, step);
+        if (direction !== null && (dx * direction[0] + dy * direction[1]) / step < 0) backward += 1;
+        direction = [dx / step, dy / step];
+      }
+      previous = drawn;
+    }
+    expect(backward).toBe(0);
+    // 80 m/s for 50 ms is 4 m; never a step much longer than that.
+    expect(longest).toBeLessThan(6);
+    // Straight on from each fix it would drift some 100 m outside the turn; along the arc it stays within metres.
+    expect(farthest).toBeLessThan(15);
+  });
+
+  it('carries no turn on the ground, nor between fixes too far apart', () => {
+    const straight = withFix(withFix(createTrack({ kind: 'other' }), turningFix(0)), turningFix(40));
+    const drawn = renderTrack(straight, s(50));
+    expect(drawn.trackDeg).toBeCloseTo(normalizeDeg(90 + RATE * 40), 6);
+    const ground = withFix(withFix(createTrack({ kind: 'other' }), { ...turningFix(0), onGround: true, gsMs: 8 }),
+      { ...turningFix(10), onGround: true, gsMs: 8 });
+    expect(renderTrack(ground, s(17)).trackDeg).toBeCloseTo(normalizeDeg(90 + RATE * 10), 6);
+  });
+
+  it('a new plan of a flight drawn from its plan alone slides over 10 to 20 s instead of snapping', () => {
+    const first = withPlan(createTrack({ id: 'f:x', kind: 'aviam' }), straightPlan(), s(0));
+    // The estimate moved 6 km further on: beyond the 2 NM snap, within ten times it.
+    const moved = straightPlan({ point: kinematicsPoint(6_000, 0) });
+    const next = withPlan(first, moved, s(30));
+    expect(next.snapAtMs).toBeNull();
+    expect(next.trailEpoch).toBe(first.trailEpoch);
+    expect(next.blend.durationMs).toBeGreaterThanOrEqual(10_000);
+    expect(next.blend.durationMs).toBeLessThanOrEqual(20_000);
+    expect(longestStep(next, s(30), s(52), 100, { earlier: first, changedAtMs: s(30) })).toBeLessThan(80);
+    // A track with a fix still snaps beyond the snap distance.
+    const fixed = withFix(createTrack({ id: 'f:y', kind: 'aviam' }), fixAt(0, { gsMs: 100 }));
+    const far = withFix(fixed, fixAt(10, { x: 20_000, gsMs: 100 }));
+    expect(far.snapAtMs).toBe(s(10));
+  });
+
+  it('a blend that starts after the drawn instant holds where it starts from', () => {
+    const one = withFix(createTrack({ kind: 'other' }), fixAt(0));
+    const two = withFix(one, fixAt(10, { x: 900, trackDeg: 95 }), s(12));
+    const before = renderTrack(two, s(11.9));
+    const from = renderTrack(one, s(12));
+    expect(haversineM(at(before), at(from))).toBeLessThan(1);
   });
 });

@@ -1,18 +1,23 @@
-import { OCC_COALESCE_MS, OCC_OBSERVER_POLL_MS, OCC_SAFETY_POLL_MS } from './occCadence';
+import {
+  OCC_COALESCE_MS, OCC_HINT_COALESCE_MS, OCC_OBSERVER_POLL_MS, OCC_SAFETY_POLL_MS,
+} from './occCadence';
 
 // What one OCC tab asks the API for, and how often (contracts 2.7). occRequestBudget.test.js replays a minute of it
 // with the same refresh scheduler the shell uses and fails above the budget. The API allows 600 requests a minute per
 // address in Development and 100 elsewhere; the console, Superadmin and the tablet share one address in a presentation.
 
-/** Requests a minute for one OCC tab. */
-export const OCC_REQUEST_BUDGET = Object.freeze({ rest: 40, demo: 70 });
+/** Requests a minute for one OCC tab, at rest and during a demo minute alike (CN-18/19). */
+export const OCC_REQUEST_BUDGET = Object.freeze({ rest: 40, demo: 40 });
 
 /**
- * One minute of a demo flight, in seconds (contracts 2.7): occ_planning for the worker's landing, the import, the
- * assignment and five tablet taps; two notices; one hand-off for review.
+ * One minute of a demo flight, in seconds (contracts 2.7), as the VPS showed it during a live demo (CN-18/19): the
+ * demo worker writes occ_planning on each of its passes, every 5 s, while the flight lands, taxis and parks
+ * (DemoFlightProgressWorker.cs); five tablet taps in two bursts; two notices; one hand-off for review. Replayed with the
+ * code before CN-18/19 it gives Panorama about the 52 requests a minute measured then.
  */
 export const OCC_DEMO_MINUTE = Object.freeze([
-  ...[5, 12, 19, 26, 33, 40, 47, 54].map(at => ({ at, resource: 'occ_planning' })),
+  ...[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map(at => ({ at, resource: 'occ_planning' })),
+  ...[21, 22, 23, 37, 38].map(at => ({ at, resource: 'occ_planning' })),
   { at: 20, resource: 'notifications' },
   { at: 45, resource: 'notifications' },
   { at: 50, resource: 'occ_review' },
@@ -23,9 +28,10 @@ export const OCC_DEMO_MINUTE = Object.freeze([
  * the safety poll, counted from the last finished read. `owner` is the file that issues the read.
  */
 export const OCC_REQUEST_PLAN = Object.freeze({
-  // The tab's one account-change observer: a cursor read per announcement and its own HTTP poll.
+  // The tab's one account-change observer: its own HTTP poll, and a cursor read for the hints, at once after a quiet
+  // window and at most once more in each `hintCoalesceMs` (services/accountChangeObserver.js).
   observer: Object.freeze({ owner: 'src/features/admin-occ/shell/OccShellProvider.jsx', read: 'getAccountChanges',
-    pollMs: OCC_OBSERVER_POLL_MS }),
+    pollMs: OCC_OBSERVER_POLL_MS, hintCoalesceMs: OCC_HINT_COALESCE_MS }),
   // The frame, on every OCC screen.
   frame: Object.freeze([
     Object.freeze({ key: 'notices', read: 'getOperationalNotifications', resources: Object.freeze(['notifications']),
@@ -98,37 +104,52 @@ export const OCC_OBSERVER_SITES = Object.freeze({
     movesIn: 'U2', resources: ['occ_review'], pollMs: null,
     // The review route re-reads its queue, and the open operation's detail and incidents.
     readsPerRefresh: 3 }),
-  'src/features/flight-monitoring/FlightMonitoringRoute.jsx': site({ mode: 'screen', screen: 'flight-monitoring',
-    movesIn: 'U5', resources: ['occ_planning'], pollMs: 25_000, readsPerRefresh: 1 }),
-  'src/features/positions-map/PositionsMapRoute.jsx': site({ mode: 'screen', screen: 'positions-map', movesIn: 'U5',
-    resources: ['occ_planning'], pollMs: 25_000, readsPerRefresh: 1 }),
-  // The planning snapshot and the assignment readiness marks.
-  'src/features/planning/PlanningRoute.jsx': site({ mode: 'screen', screen: 'planning', movesIn: 'U5',
-    resources: ['occ_planning'], pollMs: 25_000, readsPerRefresh: 2 }),
-  'src/features/planning/attendance/useAttendanceDraft.js': site({ mode: 'screen', screen: 'planning', movesIn: 'U5',
-    resources: ['attendance_draft'], pollMs: 25_000, readsPerRefresh: 1,
+  // Inside the OCC frame it hears the shell's channel (CN-18/19), with its own 25 s poll while the panel is open.
+  'src/features/planning/attendance/useAttendanceDraft.js': site({ mode: 'outside-shell-fallback', screen: 'planning',
+    movesIn: null, resources: ['attendance_draft'], pollMs: 25_000, readsPerRefresh: 1,
     mountedWhen: 'the attendance panel of an operation is open' }),
   // The closures and the published services.
-  'src/features/contracts/catalog/ServiceClosurePanel.jsx': site({ mode: 'shared-page', screen: 'notifications',
+  'src/features/contracts/catalog/ServiceClosurePanel.jsx': site({ mode: 'outside-shell-fallback', screen: 'notifications',
     movesIn: null, resources: ['service_closures', 'commercial_catalog'], pollMs: null, readsPerRefresh: 2,
     mountedWhen: 'the services tab of Notificaciones' }),
   // The summary, the users, the access profiles and the access requests.
-  'src/features/department-users/useDepartmentGovernance.js': site({ mode: 'shared-page', screen: 'users',
+  'src/features/department-users/useDepartmentGovernance.js': site({ mode: 'outside-shell-fallback', screen: 'users',
     movesIn: null, resources: ['department_users', 'access_requests'], pollMs: null, readsPerRefresh: 4 }),
-  'src/features/human-resources/users/RampProfilesPanel.jsx': site({ mode: 'shared-page', screen: 'users',
+  'src/features/human-resources/users/RampProfilesPanel.jsx': site({ mode: 'outside-shell-fallback', screen: 'users',
     movesIn: null, resources: ['ramp_profiles', 'department_users'], pollMs: 25_000, readsPerRefresh: 1,
     mountedWhen: 'the ramp profiles tab of Usuarios' }),
 });
 
-/** Other periodic reads the OCC screens send today, outside any observer (file and pace read from the code). */
+/**
+ * Other periodic reads the OCC screens send today, outside any observer (file and pace read from the code). The 30 s
+ * snapshot timers of Monitoreo de vuelos and Mapa de posiciones (flightMonitoringService.js, positionsMapService.js)
+ * are gone since CN-18/19: those screens re-read on OCC_SCREEN_REFRESH.
+ */
 export const OCC_SCREEN_POLLS = Object.freeze([
-  Object.freeze({ screen: 'flight-monitoring', key: 'flightSnapshot', pollMs: 30_000, file: 'src/services/flightMonitoringService.js' }),
-  Object.freeze({ screen: 'positions-map', key: 'positionsSnapshot', pollMs: 30_000, file: 'src/services/positionsMapService.js' }),
   Object.freeze({ screen: 'chat', key: 'conversations', pollMs: 20_000, file: 'src/features/chat/useChatPages.js' }),
   Object.freeze({ screen: 'chat', key: 'messages', pollMs: 10_000, file: 'src/features/chat/CanonicalChatRoute.jsx' }),
   Object.freeze({ screen: 'chat', key: 'operationPresence', pollMs: 15_000, file: 'src/features/chat/useOperationPresence.js' }),
   Object.freeze({ screen: 'chat', key: 'ownPresence', pollMs: 30_000, file: 'src/features/chat/useOwnPresence.js' }),
 ]);
+
+/**
+ * The screens whose data hooks re-read on a token of useOccScreenRefresh (admin-occ/live/useOccScreenRefresh.js,
+ * CN-18/19), keyed by the route that drives it: the shell's announcements of `resources`, coalesced to one re-read every
+ * `coalesceMs`, joined with a read in flight, plus a safety poll `pollMs` after the last one. Each re-read sends
+ * `readsPerRefresh` requests. `map` names the map reads (OCC_REQUEST_PLAN.console, useMapSituation) the screen mounts
+ * when it opens: Monitoreo and Mapa de posiciones draw the live map at once, Planificación only on its Mapa tab.
+ */
+export const OCC_SCREEN_REFRESH = Object.freeze({
+  'src/features/flight-monitoring/FlightMonitoringRoute.jsx': site({ screen: 'flight-monitoring',
+    resources: ['occ_planning'], coalesceMs: OCC_COALESCE_MS, pollMs: OCC_SAFETY_POLL_MS, readsPerRefresh: 1,
+    map: Object.freeze(['airPicture', 'mapFlights']) }),
+  'src/features/positions-map/PositionsMapRoute.jsx': site({ screen: 'positions-map', resources: ['occ_planning'],
+    coalesceMs: OCC_COALESCE_MS, pollMs: OCC_SAFETY_POLL_MS, readsPerRefresh: 1,
+    map: Object.freeze(['airPicture', 'mapFlights']) }),
+  // The planning snapshot and the assignment readiness marks (PlanningPage.jsx re-reads them on `dataRevision`).
+  'src/features/planning/PlanningRoute.jsx': site({ screen: 'planning', resources: ['occ_planning'],
+    coalesceMs: OCC_COALESCE_MS, pollMs: OCC_SAFETY_POLL_MS, readsPerRefresh: 2, map: Object.freeze([]) }),
+});
 
 /**
  * The screens that hear the feed on the shell's channel themselves (`useOccShellChannel().subscribe`), outside

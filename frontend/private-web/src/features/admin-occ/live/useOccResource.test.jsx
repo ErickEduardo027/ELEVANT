@@ -93,7 +93,7 @@ describe('useOccResource', () => {
     const load = vi.fn()
       .mockResolvedValueOnce({ rows: [1] })
       .mockImplementationOnce(() => new Promise(resolve => { answer = resolve; }));
-    const { result } = setup({ load, isEmpty: data => data.rows.length === 0 });
+    const { result } = setup({ load, isEmpty: data => data.rows.length === 0, reportRefreshing: true });
     expect(result.current.status).toBe('loading');
     await flush();
     expect(load).toHaveBeenCalledTimes(1);
@@ -340,11 +340,42 @@ describe('useOccResource', () => {
     expect(first.result.current).toMatchObject({ status: 'success', data: { rows: [3] } });
   });
 
+  it('renders a refresh that keeps the data once, when it answers, unless asked to report it', async () => {
+    let answer;
+    const load = vi.fn()
+      .mockResolvedValueOnce({ rows: [1] })
+      .mockImplementationOnce(() => new Promise(resolve => { answer = resolve; }));
+    const views = [];
+    const loadAccess = vi.fn().mockResolvedValue(ACCESS);
+    const wrapper = ({ children }) => (
+      <DepartmentAccessProvider initialAccess={ACCESS} load={loadAccess} observe={false}>
+        <OccShellTestProvider value={createOccShellValue()}>{children}</OccShellTestProvider>
+      </DepartmentAccessProvider>
+    );
+    const { result } = renderHook(() => {
+      const read = useOccResource({ key: 'planning', permission: PERMISSION, load });
+      views.push(read);
+      return read;
+    }, { wrapper });
+    await flush();
+    const before = result.current;
+    const rendered = views.length;
+    act(() => result.current.refresh());
+    // The read is in flight: nothing changed on screen, so the readers keep the same view and do not render.
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(result.current).toBe(before);
+    expect(result.current.refreshing).toBe(false);
+    expect(views.length).toBe(rendered);
+    await act(async () => { answer({ rows: [2] }); });
+    expect(result.current).toMatchObject({ status: 'success', data: { rows: [2] }, refreshing: false });
+    expect(views.length).toBe(rendered + 1);
+  });
+
   it('drops the data when the scope changes', async () => {
     // Answers that ignore the abort, so a late one can arrive after its scope ended.
     const answers = [];
     const load = vi.fn(() => new Promise(resolve => { answers.push(resolve); }));
-    const { result, rerender } = setup({ load, scopeKey: 'station-a' });
+    const { result, rerender } = setup({ load, scopeKey: 'station-a', reportRefreshing: true });
     await act(async () => { answers[0]({ station: 'a' }); });
     expect(result.current).toMatchObject({ status: 'success', data: { station: 'a' } });
     act(() => result.current.refresh());

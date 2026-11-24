@@ -886,6 +886,16 @@
         "evidence": "repo-verified"
       },
       {
+        "path": "Vault/12-backlog/caja-negra-2026-11.md",
+        "id": "backlog-caja-negra-2026-11",
+        "title": "Caja negra noviembre 2026: corridas en Development y hallazgos",
+        "type": "backlog",
+        "area": "backlog",
+        "status": "documented",
+        "maturity": "evolving",
+        "evidence": "operator-recorded"
+      },
+      {
         "path": "Vault/12-backlog/pendientes-transversales.md",
         "id": "backlog-pendientes-transversales",
         "title": "Pendientes transversales: dependencias y prueba de cierre",

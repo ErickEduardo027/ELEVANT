@@ -28,6 +28,13 @@ import { createTrailStore, trailFeatures } from './traffic/trailStore';
 // gives the map its frame-by-frame motion on the render clock (core/frameLoop.js); no read is added for it.
 
 // Any of them lets an OCC account read the map (contracts 1.3, OccMapAccess); the list is maps/mapPermissions.js's.
+
+// Runs `callback` when the browser is idle (at most 250 ms later), else on the next turn of the event loop.
+function deferToIdle(callback) {
+  if (typeof globalThis.requestIdleCallback === 'function') globalThis.requestIdleCallback(callback, { timeout: 250 });
+  else globalThis.setTimeout(callback, 0);
+}
+
 export { MAP_PERMISSIONS };
 
 /**
@@ -199,7 +206,8 @@ export function useMapSituation({ stationId = null, enabled = true, service = oc
   // The motion of the map (PR M6): the render clock it draws at, over the clock the reads feed, and the motion store,
   // one each for the life of the hook, as the telemetry store below.
   const [renderClock] = useState(() => createRenderClock({ clock }));
-  const [motion] = useState(() => createMotionStore({ clock: renderClock }));
+  // A rebuild from an aged fix runs when the browser is idle, never inside a frame (CN-18).
+  const [motion] = useState(() => createMotionStore({ clock: renderClock, defer: deferToIdle }));
 
   // The situation at the newest server instant known: the last answer's, or the next instant something changes without
   // a new read (a live aircraft turning stale, a demo flight appearing, landing, parking or leaving). Every read goes
