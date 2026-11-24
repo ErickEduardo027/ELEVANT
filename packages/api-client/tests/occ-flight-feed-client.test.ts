@@ -92,6 +92,22 @@ describe("OCC flight feed client (ADR-0028)", () => {
       await expect(read({ isDemo })).rejects.toMatchObject({ kind: "malformed-response" });
   });
 
+  it("reads the sources of the suggested type and stand and the live registration, all optional (CN-28)", async () => {
+    const read = (extra: Record<string, unknown>) => createElevantApiClient({ baseUrl: "https://api.example.test",
+      fetch: async () => Response.json({ ...feed, proposals: [{ ...proposal, ...extra }] }) })
+      .getOccFlightFeed(stationId, "2026-11-03");
+    const live = await read({ suggestedAircraftTypeSource: "Live", suggestedRegistration: "HP-1849CMP",
+      suggestedStandId: standId, suggestedStandSource: "Gate" });
+    expect(live.proposals[0]).toMatchObject({ suggestedAircraftTypeSource: "Live", suggestedRegistration: "HP-1849CMP",
+      suggestedStandId: standId, suggestedStandSource: "Gate" });
+    await expect(read({ suggestedAircraftTypeSource: "History", suggestedStandSource: "Free", suggestedStandId: standId }))
+      .resolves.toMatchObject({ proposals: [{ suggestedAircraftTypeSource: "History" }] });
+    await expect(read({ suggestedAircraftTypeSource: null, suggestedStandId: null })).resolves.toBeTruthy();
+    for (const bad of [{ suggestedAircraftTypeSource: "Guess" }, { suggestedStandSource: "Anywhere" },
+      { suggestedStandId: "B20" }, { suggestedRegistration: "" }, { suggestedRegistration: "X".repeat(17) }])
+      await expect(read(bad)).rejects.toMatchObject({ kind: "malformed-response" });
+  });
+
   it("rejects unknown fields, statuses and an arrival paired with itself", async () => {
     const one = (body: unknown) => createElevantApiClient({ baseUrl: "https://api.example.test",
       fetch: async () => Response.json(body) });

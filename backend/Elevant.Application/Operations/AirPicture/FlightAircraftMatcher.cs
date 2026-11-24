@@ -90,6 +90,21 @@ public static class FlightAircraftMatcher
     }
 
     /// <summary>
+    /// <see cref="Match"/> seen from the flights (CN-28): by flight key, the live aircraft that is that flight (its freshest
+    /// position). The import of the provider's flights reads the type and the registration it broadcasts.
+    /// </summary>
+    public static IReadOnlyDictionary<string, AirTrafficAircraft> AircraftByFlight(IReadOnlyList<AirTrafficAircraft> aircraft,
+        IReadOnlyList<MapFlightMatchKey> flights, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(aircraft);
+        var freshest = aircraft.Where(item => item is not null && !string.IsNullOrWhiteSpace(item.Hex))
+            .GroupBy(item => item.Hex, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.MaxBy(item => item.PositionAt)!, StringComparer.Ordinal);
+        return Match(aircraft, flights, now).ToDictionary(match => match.Value.FlightKey, match => freshest[match.Key],
+            StringComparer.Ordinal);
+    }
+
+    /// <summary>
     /// The callsign an airline's flight is flown with: its ICAO designator and the number without leading zeros
     /// (<c>ZZA</c> and <c>ZZ0123</c> give <c>ZZA123</c>; a letter after the number stays, <c>ZZA123A</c>). Null when
     /// <paramref name="icao"/> is not three letters or the flight number has no number of one to four digits. The map

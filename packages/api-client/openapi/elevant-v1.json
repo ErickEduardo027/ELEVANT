@@ -53129,6 +53129,23 @@
             "format": "uuid",
             "nullable": true
           },
+          "suggestedAircraftTypeSource": {
+            "type": "string",
+            "nullable": true
+          },
+          "suggestedRegistration": {
+            "type": "string",
+            "nullable": true
+          },
+          "suggestedStandId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "suggestedStandSource": {
+            "type": "string",
+            "nullable": true
+          },
           "isDemo": {
             "type": "boolean",
             "nullable": true
