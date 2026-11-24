@@ -69,7 +69,7 @@ const stateKey = (source, id) => `${source}\u0000${typeof id}:${String(id)}`;
  * @param {boolean} [options.interactive=true]
  * @param {string|string[]} [options.attribution] the custom attribution of the compact control.
  * @param {(id: string) => object|null} [options.imageResolver] images the style names (style/mapImages.js).
- * @param {object} [options.mapOptions] extra MapLibre options, applied last (the map lab passes `fadeDuration: 0`).
+ * @param {object} [options.mapOptions] extra MapLibre options, applied last.
  * @param {(status: object) => void} [options.onStatus] `{ engine: 'starting'|'ready'|'unavailable', basemap:
  *   'off'|'loading'|'ok'|'degraded', reason: null|'webgl'|'error' }`, on every change. `unavailable` comes with
  *   `basemap: 'off'` and is the last status reported: the map never started, or the engine removed it when its WebGL
@@ -329,7 +329,9 @@ export function createMapEngine({
       renderWorldCopies: false,
       canvasContextAttributes: { antialias: true },
       validateStyle: process.env.NODE_ENV !== 'production',
-      fadeDuration: 150,
+      // No symbol fade (CN-18): the traffic is written several times a second, and every fade after a placement kept
+      // MapLibre repainting without a pause.
+      fadeDuration: 0,
       interactive,
       ...cameraOptions(camera),
       ...mapOptions,

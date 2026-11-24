@@ -6,7 +6,7 @@ import { STAND_REFERENCE } from '../stands/standReference';
 import { SCENARIO_AGENTS, boardStand, boardVisit } from '../testing/mapFixtures';
 import { TRAFFIC_FLIGHT_KEY } from '../testing/trafficFixtures';
 import { createAerodromeWeather } from '../testing/weatherFixtures';
-import { LAB_CHOSEN_HEX, TRAFFIC_SCENARIOS } from './trafficScenes';
+import { FEED_SCENARIOS, LAB_CHOSEN_HEX, TRAFFIC_SCENARIOS } from './trafficScenes';
 
 // The fixed scenes of the map lab (app/map-lab, development only): synthetic data over the internal reference
 // catalogue of Punta Cana, the same on every run, so the visual suite (tests/visual) drives and photographs each one
@@ -518,6 +518,18 @@ export const SCENES = deepFreeze([
     selection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival },
     follow: true,
   }),
+  // The motion measurements (CN-18): the traffic read again every 10 s, late, on a running clock (open without `?t=`).
+  { ...scene('perf-approach-feed', {
+    title: 'Medición: aproximación con lectura en vivo',
+    description: 'El vuelo demo en la aproximación y 40 aviones más, un tercio virando, leídos cada 10 s con 3 s de '
+      + 'retraso y el reloj del servidor corrigiéndose: los aviones deben moverse sin saltos.',
+    view: 'approach',
+  }), traffic: FEED_SCENARIOS['perf-approach-feed'] },
+  { ...scene('perf-airfield-feed', {
+    title: 'Medición: aeródromo con lectura en vivo',
+    description: 'El vuelo demo rodando hacia la A6 entre el mismo tráfico, leído cada 10 s con 3 s de retraso.',
+    view: 'airfield',
+  }), traffic: FEED_SCENARIOS['perf-airfield-feed'] },
   // The 3D aircraft (PR M7): models of the type table on their stands and in motion, lit by the sun of the instant.
   scene3d('ramp-3d-parked', {
     title: 'Rampa en 3D: aviones en sus posiciones',

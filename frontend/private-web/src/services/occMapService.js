@@ -10,7 +10,9 @@ import { createServerClock, parseInstant, serverClock } from './serverClock';
 // passes the adapter; a component never chooses the source. The scenario data lives with the tests and the lab
 // (features/maps/testing, features/maps/lab), never in this module, so no synthetic data reaches the production bundle.
 
-const defaultClient = () => createPrivateWebApiClient({ getAccessToken: () => readSession()?.token });
+// The private web's client for one read; `fetch` (when given) is the one the read stamps its answer with.
+const defaultClient = ({ fetch } = {}) => createPrivateWebApiClient({ getAccessToken: () => readSession()?.token,
+  ...(typeof fetch === 'function' ? { fetch } : {}) });
 
 /** Spanish explanation of the map's Problem Details codes. The server title is never shown. */
 export const OCC_MAP_MESSAGES = Object.freeze({
@@ -34,16 +36,25 @@ async function guarded(request) {
 
 /**
  * The map reads over the API. Each read takes the instants it was sent and answered and feeds `clock` with the
- * answer's `serverTime`; `ping` only answers, and syncServerClock feeds the clock with it. A 401 signs out through
- * handleUnauthorizedResponse; every failure is thrown again as it came, with its `status` and `code`. `client` is the
- * API client or a function that creates it (by default, the private web's, created on each read).
+ * answer's `serverTime`; `ping` only answers, and syncServerClock feeds the clock with it. The answer's instant is the
+ * one its response arrived at (CN-18), before its body is read and validated, so a busy main thread does not lengthen
+ * the round trip the clock weighs; a client that does not take the stamping `fetch` is stamped after its answer. A
+ * 401 signs out through handleUnauthorizedResponse; every failure is thrown again as it came, with its `status` and
+ * `code`. `client` is the API client or a function that creates it from `{ fetch }` (by default, the private web's,
+ * created on each read).
  */
 export function createRemoteOccMapAdapter({ client = defaultClient, clock = serverClock } = {}) {
   const api = typeof client === 'function' ? client : () => client;
   async function timed(read, signal) {
     const sentAt = clock.localNow();
-    const data = await guarded(() => read(api(), { signal, cache: 'no-store' }));
-    clock.observe(data?.serverTime, sentAt, clock.localNow());
+    let receivedAt = null;
+    const stamped = async (...args) => {
+      const response = await globalThis.fetch(...args);
+      receivedAt = clock.localNow();
+      return response;
+    };
+    const data = await guarded(() => read(api({ fetch: stamped }), { signal, cache: 'no-store' }));
+    clock.observe(data?.serverTime, sentAt, receivedAt ?? clock.localNow());
     return data;
   }
   return Object.freeze({
@@ -58,7 +69,7 @@ export function createRemoteOccMapAdapter({ client = defaultClient, clock = serv
     getAircraftTrack: ({ stationId, hex, signal } = {}) =>
       timed((api, options) => api.getOccAircraftTrack({ stationId, hex }, options), signal),
     /** The server's ping, `{ timestampUtc, … }`, for syncServerClock. */
-    ping: ({ signal } = {}) => guarded(() => api().getSystemPing({ signal, cache: 'no-store' })),
+    ping: ({ signal } = {}) => guarded(() => api({}).getSystemPing({ signal, cache: 'no-store' })),
   });
 }
 

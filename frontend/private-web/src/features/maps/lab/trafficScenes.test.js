@@ -40,7 +40,9 @@ describe('the traffic scenes of the map lab', () => {
     // two of them, and the 3D scenes of PR M7 reuse the demo flight's; no other scene has traffic.
     const reused = { 'ramp-3d-parked': 'airfield-demo-taxiing', 'ramp-3d-selected': 'airfield-demo-taxiing',
       'airfield-3d-final': 'approach-demo-final' };
-    expect(SCENES.filter(scene => scene.traffic && scene.weather === undefined && !reused[scene.id]).map(scene => scene.id))
+    // The feed scenes of the motion measurements (CN-18) have scenarios of their own (FEED_SCENARIOS).
+    expect(SCENES.filter(scene => scene.traffic && scene.weather === undefined && !reused[scene.id] && !scene.traffic.feed)
+      .map(scene => scene.id))
       .toEqual(Object.keys(TRAFFIC_SCENARIOS));
     expect(SCENES.filter(scene => scene.traffic && scene.weather !== undefined).map(scene => scene.id))
       .toEqual(['region-references', 'approach-references', 'region-satellite']);
