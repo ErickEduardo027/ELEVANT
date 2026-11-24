@@ -85,6 +85,12 @@ Una nota de crédito reduce el saldo comercial; no inicia devolución ni
 refacturación. Las pruebas SQL cubren saldo parcial, reintentos, concurrencia,
 mezcla histórica, aplicaciones, notas y el cambio registrado.
 
+*Posterior al commit verificado (CN-02):* en el filtro de aerolínea de Cobros,
+dos aerolíneas activas con el mismo nombre se distinguen por su código IATA (o
+ICAO si no tiene IATA): «AMERICAN AIRLINES (AA)». El servidor arma ese nombre
+en las opciones de Tesorería; el contrato HTTP no cambia
+([lecturas](../../database/DevelopmentDB/Elevant.Persistence/Finance/FinanceTreasuryStore.Reads.cs)).
+
 ## Portal de aerolínea
 
 La API publica lecturas bajo `/api/v1/airline/portal/treasury`

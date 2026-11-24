@@ -491,7 +491,7 @@ internal sealed class EfContractLifecycleStore(ElevantDbContext context, Commerc
             .Select(item => item.Name).SingleAsync(cancellationToken);
         await DepartmentNotificationWriter.NotifyAsync(context, Department.Contracts, "contracts.agreements.read",
             ContractLifecycleIssues.RenewalBlocked, contract.PublicId,
-            $"{contract.ContractCode} · {airline} · {RenewalBlockedReason(code)}", now, cancellationToken);
+            $"{ContractValidity.DisplayCode(contract.ContractCode)} · {airline} · {RenewalBlockedReason(code)}", now, cancellationToken);
     }
 
     private static string RenewalBlockedReason(string? code) => code switch

@@ -482,6 +482,8 @@ export function AccessRequestWizard() {
         </div>
       </> : step === 2 ? <>
         <div className="access-panel__heading"><p>02 / AEROLÍNEA</p><h2 ref={stepHeading} tabIndex={-1}>¿A cuál aerolínea representa?</h2><span>La ficha se carga desde el catálogo de AVIAM y se revisará antes de aprobar el contrato.</span></div>
+        {/* CN-09: a static notice, the same for everyone; whether the airline already operates with AVIAM is not looked up. */}
+        <p className="access-airline__verification">Si su aerolínea ya opera con AVIAM, use su portal para gestionar contratos y servicios; esta solicitud es para afiliaciones nuevas.</p>
         {catalog?.airlines.length === 0 && <p className="access-airline__verification" role="note">Aún no hay aerolíneas publicadas en el listado. Indique los datos de la suya y Contratos la verificará.</p>}
         {!proposing && catalog?.airlines.length !== 0 && <>
           <label className="access-label" htmlFor="airline-select">Seleccione una aerolínea</label>

@@ -327,7 +327,7 @@ public sealed partial class SqlServerMigrationTests
         var flight = created.Value!;
         var onBlock = now.AddMinutes(8);
         // 45 % of the eight minutes on the ground: touchdown 3 min 36 s before the stand.
-        Assert.Equal(("ZZ9001", "ZZ9002", "HIDM01", "Airbus A320 Development", "MIA", "MIA", "A03"),
+        Assert.Equal(("ZZ9001", "ZZ9002", "HIDM01", "Airbus A320", "MIA", "MIA", "A03"),
             (flight.ArrivalFlightNumber, flight.DepartureFlightNumber, flight.AircraftRegistration, flight.AircraftModel,
                 flight.OriginIata, flight.DestinationIata, flight.SuggestedStandCode));
         Assert.Equal((SeededPujStation, "PUJ", demo.Airline, "Demo Airlines"),
@@ -347,7 +347,7 @@ public sealed partial class SqlServerMigrationTests
             // The seed's Miami had neither a time zone nor coordinates: the catalogue fills what it lacks and nothing else.
             var airport = await check.Airports.AsNoTracking().SingleAsync(item => item.IataCode == "MIA", ct);
             miami = airport.Id;
-            Assert.Equal(("Miami Development Airport", "America/New_York", 25.7959m, -80.287m),
+            Assert.Equal(("Aeropuerto Internacional de Miami", "America/New_York", 25.7959m, -80.287m),
                 (airport.Name, airport.IanaTimeZone, airport.Latitude, airport.Longitude));
         }
         // The arrival carries the demo id as its own id; both share it in their references.
@@ -360,9 +360,9 @@ public sealed partial class SqlServerMigrationTests
         Assert.All(new[] { rows.Arrival, rows.Departure }, row =>
         {
             Assert.Equal((DemoProvider, demo.Day, ExternalFlightProposalStatus.Proposed), (row.Provider, row.OperationDate, row.Status));
-            Assert.Equal(((long?)miami, "MIA", "Miami Development Airport"),
+            Assert.Equal(((long?)miami, "MIA", "Aeropuerto Internacional de Miami"),
                 (row.CounterpartAirportId, row.CounterpartIata, row.CounterpartName));
-            Assert.Equal(("HIDM01", "Airbus A320 Development", "A", "A03"),
+            Assert.Equal(("HIDM01", "Airbus A320", "A", "A03"),
                 (row.AircraftRegistration, row.AircraftModel, row.Terminal, row.Gate));
             Assert.Equal((now, now, now, now), (row.FirstSeenAt, row.LastSeenAt, row.CreatedAt, row.UpdatedAt));
             Assert.Null(row.RunwayAt);
@@ -1458,19 +1458,19 @@ public sealed partial class SqlServerMigrationTests
         var options = await demo.Options();
         Assert.True(options.Enabled);
         Assert.Equal((demo.Now, (Guid?)SeededPujStation, (DateOnly?)demo.Day), (options.ServerTime, options.StationId, options.OperationDate));
-        Assert.Equal(new DemoStationOptionData(SeededPujStation, "PUJ", "AVIAM PUJ Development"),
+        Assert.Equal(new DemoStationOptionData(SeededPujStation, "PUJ", "AVIAM Punta Cana"),
             Assert.Single(options.Stations));
         // Only the airline with exactly one contract in force: the carrier without one is a charter, not a demo.
         Assert.Equal(new DemoAirlineOptionData(demo.Airline, "Demo Airlines", "ZZ", "DZZ"), Assert.Single(options.Airlines));
         // The seed's Miami (the catalogue will complete it), the catalogue's other airports and the located one; never
         // the station's own airport, an airport without coordinates or the one whose ICAO code is taken.
         Assert.Equal(["BOG", "JFK", "MAD", "MIA", "SDQ", "XQA"], options.Airports.Select(item => item.IataCode));
-        Assert.Equal(new DemoAirportOptionData("MIA", "KMIA", "Miami Development Airport", "Miami", "US"),
+        Assert.Equal(new DemoAirportOptionData("MIA", "KMIA", "Aeropuerto Internacional de Miami", "Miami", "US"),
             options.Airports.Single(item => item.IataCode == "MIA"));
         Assert.Equal(new DemoAirportOptionData("MAD", "LEMD", "Adolfo Suárez Madrid-Barajas Airport", "Madrid", "ES"),
             options.Airports.Single(item => item.IataCode == "MAD"));
         Assert.Equal(["A320", "A333"], options.AircraftTypes.Select(item => item.IcaoCode));
-        Assert.Equal(new DemoAircraftTypeOptionData(demo.AircraftType, "A320", "Airbus", "A320 Development", "Narrowbody"),
+        Assert.Equal(new DemoAircraftTypeOptionData(demo.AircraftType, "A320", "Airbus", "A320", "Narrowbody"),
             options.AircraftTypes[0]);
         // By terminal and then as people count them: A9 before A10.
         Assert.Equal([("A", "A01", false), ("A", "A02", true), ("A", "A03", false), ("A", "A9", true), ("A", "A10", true),

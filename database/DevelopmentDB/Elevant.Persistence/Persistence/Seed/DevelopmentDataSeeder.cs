@@ -125,7 +125,7 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
             {
                 Code = "AVIAM",
                 LegalName = "AVIAM DEVELOPMENT OPERATOR S.A.",
-                DisplayName = "AVIAM Development",
+                DisplayName = "AVIAM",
                 Type = OrganizationType.AviamOperator,
                 Status = OrganizationStatus.Active,
             }, "10000000-0000-7000-8000-000000000001"),
@@ -151,7 +151,7 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
             {
                 IataCode = "PUJ",
                 IcaoCode = "MDPC",
-                Name = "Punta Cana Development Airport",
+                Name = "Aeropuerto Internacional de Punta Cana",
                 City = "Punta Cana",
                 CountryCode = "DO",
             }, "20000000-0000-7000-8000-000000000001"),
@@ -164,7 +164,7 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
             {
                 IataCode = "MIA",
                 IcaoCode = "KMIA",
-                Name = "Miami Development Airport",
+                Name = "Aeropuerto Internacional de Miami",
                 City = "Miami",
                 CountryCode = "US",
             }, "20000000-0000-7000-8000-000000000002"),
@@ -177,7 +177,7 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
             {
                 AirportId = puj.Id,
                 Code = "PUJ",
-                Name = "AVIAM PUJ Development",
+                Name = "AVIAM Punta Cana",
                 IanaTimeZone = "America/Santo_Domingo",
                 IsActive = true,
             }, "20000000-0000-7000-8000-000000000003"),
@@ -228,8 +228,8 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
             () => Stamp(new ServiceDefinition
             {
                 Code = "BAGGAGE",
-                Name = "Baggage handling",
-                Description = "Synthetic Development service.",
+                Name = "Manejo de equipaje",
+                Description = "Carga, descarga y traslado del equipaje de bodega entre la aeronave y la terminal.",
                 DefaultBillingUnit = "operation",
                 IsActive = true,
             }, "20000000-0000-7000-8000-000000000006"),
@@ -241,8 +241,8 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
             () => Stamp(new ServiceDefinition
             {
                 Code = "PASSENGER-BRIDGE",
-                Name = "Passenger boarding bridge operation",
-                Description = "Synthetic Development service exercised by the ramp checklist.",
+                Name = "Operación de pasarela de abordaje",
+                Description = "Acople, operación y retiro de la pasarela de abordaje de pasajeros, verificado en el checklist de rampa.",
                 DefaultBillingUnit = "operation",
                 IsActive = true,
             }, DeterministicGuid("service-definition:PASSENGER-BRIDGE").ToString("D")),
@@ -268,7 +268,7 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
             () => Stamp(new OperationalPosition
             {
                 Code = "RAMP-AGENT",
-                Name = "Ramp agent",
+                Name = "Agente de rampa",
                 RequiresQualification = false,
                 IsActive = true,
             }, "20000000-0000-7000-8000-000000000008"),
@@ -282,7 +282,7 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                 IcaoCode = "A320",
                 IataCode = "320",
                 Manufacturer = "Airbus",
-                Model = "A320 Development",
+                Model = "A320",
                 IsActive = true,
                 SizeCategory = AircraftSizeCategory.Narrowbody,
             }, "20000000-0000-7000-8000-000000000009"),
@@ -410,12 +410,12 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
         await EnsureUserRoleAsync(financeAccount.Id, financeRole.Id, cancellationToken);
         if (superAdminAccount is not null)
             await EnsureUserRoleAsync(superAdminAccount.Id, superAdminRole.Id, cancellationToken);
-        await EnsureMembershipAsync(adminAccount.Id, aviam.Id, MembershipKind.InternalStaff, "OCC administrator", cancellationToken);
-        await EnsureMembershipAsync(agentAccount.Id, aviam.Id, MembershipKind.InternalStaff, "Ramp agent", cancellationToken);
-        await EnsureMembershipAsync(clientAccount.Id, airlineOrganization.Id, MembershipKind.AirlineClient, "Operations contact", cancellationToken);
+        await EnsureMembershipAsync(adminAccount.Id, aviam.Id, MembershipKind.InternalStaff, "Administrador OCC", cancellationToken);
+        await EnsureMembershipAsync(agentAccount.Id, aviam.Id, MembershipKind.InternalStaff, "Agente de rampa", cancellationToken);
+        await EnsureMembershipAsync(clientAccount.Id, airlineOrganization.Id, MembershipKind.AirlineClient, "Contacto de operaciones", cancellationToken);
         await EnsureMembershipAsync(humanResourcesAccount.Id, aviam.Id, MembershipKind.InternalStaff, "Gestión Humana", cancellationToken);
-        await EnsureMembershipAsync(contractsAccount.Id, aviam.Id, MembershipKind.InternalStaff, "Contracts", cancellationToken);
-        await EnsureMembershipAsync(financeAccount.Id, aviam.Id, MembershipKind.InternalStaff, "Finance", cancellationToken);
+        await EnsureMembershipAsync(contractsAccount.Id, aviam.Id, MembershipKind.InternalStaff, "Contratos", cancellationToken);
+        await EnsureMembershipAsync(financeAccount.Id, aviam.Id, MembershipKind.InternalStaff, "Finanzas", cancellationToken);
         if (superAdminAccount is not null)
             await EnsureMembershipAsync(superAdminAccount.Id, aviam.Id,
                 MembershipKind.InternalStaff, "Gobernanza", cancellationToken);
@@ -1655,7 +1655,7 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                 IcaoCode = "A333",
                 IataCode = "333",
                 Manufacturer = "Airbus",
-                Model = "A330-300 Development",
+                Model = "A330-300",
                 IsActive = true,
                 SizeCategory = AircraftSizeCategory.Widebody,
             }, DeterministicGuid("aircraft-type:A333").ToString("D")),

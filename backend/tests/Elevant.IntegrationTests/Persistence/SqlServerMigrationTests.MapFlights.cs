@@ -193,7 +193,7 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal((SeededPujStation, "PUJ", now, now.AddHours(-2), now.AddHours(12)),
             (map.StationId, map.StationCode, map.ServerTime, map.WindowFrom, map.WindowTo));
         // Punta Cana's row has no reference point and the catalogue does not know it: nobody does.
-        Assert.Equal(new OccMapAirportData("PUJ", "MDPC", "Punta Cana Development Airport", null, null), map.StationAirport);
+        Assert.Equal(new OccMapAirportData("PUJ", "MDPC", "Aeropuerto Internacional de Punta Cana", null, null), map.StationAirport);
         // By best time and then number; the cancelled and diverted flights and the arrival after the window are not there.
         Assert.Equal(["ZZ171", flight.ArrivalFlightNumber, "ZZ172", "ZZ911", "ZZ161", flight.DepartureFlightNumber, "ZZ911D",
             "ZZ162", "C9100", "ZZ181", "C9101", "ZZ199"], map.Flights.Select(item => item.FlightNumber));
@@ -229,7 +229,7 @@ public sealed partial class SqlServerMigrationTests
             new(RampEvidenceTimePolicy.BlockOn, now.AddMinutes(-57)), new("WALKAROUND_START", now.AddMinutes(-55)),
             new(RampEvidenceTimePolicy.Pushback, now.AddMinutes(-5)),
         ];
-        var registered = new OccMapAircraftData("HI1002", "A320", "Airbus A320 Development", "Narrowbody");
+        var registered = new OccMapAircraftData("HI1002", "A320", "Airbus A320", "Narrowbody");
         AssertMapFlight(new OccMapFlightData(Key("ZZ171"), Key("ZZ171"), ids["ZZ171"], legs["ZZ171"], imported.TurnaroundId,
             "Arrival", "ZZ171", "DZZ171", airline, origin, now.AddMinutes(-60), null, now.AddMinutes(-63),
             MapFlightActualKinds.Runway, MapFlightPhases.Landed, "Arrived", registered, true, turnaround, a02, null, recorded, false,
@@ -240,7 +240,7 @@ public sealed partial class SqlServerMigrationTests
 
         // A flight OCC typed: leg and turnaround keys, no provider word, and Miami's reference point from the catalogue
         // because its row has none.
-        var miami = new OccMapAirportData("MIA", "KMIA", "Miami Development Airport", 25.7959m, -80.2870m);
+        var miami = new OccMapAirportData("MIA", "KMIA", "Aeropuerto Internacional de Miami", 25.7959m, -80.2870m);
         var typed = new OccMapTurnaroundData(manual.TurnaroundId.Value, manual.OperationCode!, "Confirmed",
             manualOperation.PublicId, "Planned");
         var b01 = new OccMapStandData(demo.Stands["B01"], "B01", "B");
@@ -255,7 +255,7 @@ public sealed partial class SqlServerMigrationTests
         // The demo flight before its import: the arrival's key is its demo id, the stand it was triggered for, the clock
         // resolved now and New York's row, which the trigger completed from the catalogue.
         var jfk = new OccMapAirportData("JFK", "KJFK", "John F. Kennedy International Airport", 40.6413m, -73.7781m);
-        var demoAircraft = new OccMapAircraftData("HIDM01", "A320", "Airbus A320 Development", "Narrowbody");
+        var demoAircraft = new OccMapAircraftData("HIDM01", "A320", "Airbus A320", "Narrowbody");
         var clock = new OccMapDemoData(flight.Id, "Active", "Approach", flight.AppearAt, flight.TouchdownAt, flight.OnBlockAt,
             flight.ScheduledOffBlockAt, flight.OffBlockAt, flight.TakeoffAt, flight.VanishAt);
         var demoVisit = MapFlightKeys.Proposal(flight.Id);

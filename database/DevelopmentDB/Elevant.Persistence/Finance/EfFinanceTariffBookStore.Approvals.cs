@@ -301,7 +301,7 @@ internal sealed partial class EfFinanceTariffBookStore
         if (decision == ContractFinanceDecision.Approved &&
             ContractLifecycle.ClosedFor(row.Contract.Status, row.Contract.TerminatedOn, row.Version.ValidFrom) is { } closed)
             return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, closed);
-        var subject = $"{row.Contract.ContractCode} · {row.Airline}";
+        var subject = $"{ContractValidity.DisplayCode(row.Contract.ContractCode)} · {row.Airline}";
         if (decision == ContractFinanceDecision.Approved &&
             await ApprovalBlockAsync(row.Version, row.Contract, cancellationToken) is { } blocked)
             return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, blocked);

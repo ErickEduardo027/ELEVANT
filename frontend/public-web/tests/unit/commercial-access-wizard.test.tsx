@@ -89,6 +89,22 @@ function stubCatalogOnly(extra?: (url: string) => Response | undefined) {
   }));
 }
 
+// CN-09: the airline step tells an airline already working with AVIAM to use its portal, without asking the server.
+it("points airlines that already operate with AVIAM to their portal on the airline step", async () => {
+  vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
+  const { AccessRequestWizard } = await import("@/components/commercial/AccessRequestWizard");
+  stubCatalogOnly();
+  render(<AccessRequestWizard />);
+  const notice = "Si su aerolínea ya opera con AVIAM, use su portal para gestionar contratos y servicios; "
+    + "esta solicitud es para afiliaciones nuevas.";
+  fireEvent.click(await screen.findByRole("button", { name: "Añadir servicio +" }));
+  expect(screen.queryByText(notice)).not.toBeInTheDocument();
+  const calls = vi.mocked(fetch).mock.calls.length;
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+  expect(await screen.findByText(notice)).toBeInTheDocument();
+  expect(vi.mocked(fetch).mock.calls.length).toBe(calls);
+});
+
 it("does not show representative errors before the user interacts", async () => {
   vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
   const { AccessRequestWizard } = await import("@/components/commercial/AccessRequestWizard");

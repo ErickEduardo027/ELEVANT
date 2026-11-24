@@ -96,7 +96,7 @@ internal static class ContractActivation
         var airline = await context.Airlines.AsNoTracking().Where(item => item.Id == contract.AirlineId)
             .Select(item => new { item.Name, item.OrganizationId }).SingleAsync(cancellationToken);
         await DepartmentNotificationWriter.NotifyAsync(context, Department.Contracts, "contracts.agreements.read", kind,
-            contract.PublicId, $"{contract.ContractCode} · {airline.Name}", now, cancellationToken);
+            contract.PublicId, $"{ContractValidity.DisplayCode(contract.ContractCode)} · {airline.Name}", now, cancellationToken);
         var accounts = await context.OrganizationMemberships.AsNoTracking()
             .Where(item => item.OrganizationId == airline.OrganizationId && item.Kind == MembershipKind.AirlineClient &&
                 item.Status == MembershipStatus.Active)

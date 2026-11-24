@@ -309,7 +309,7 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal((85m, false, (decimal?)85m, "operation"),
             (cargoRate.UnitPrice, cargoRate.IsConfirmed, cargoRate.BasePrice, cargoRate.BillingUnit));
         // With two stations the base is the all-stations tariff, as Finance compares it.
-        Assert.Equal(130m, Assert.Single(widened.Rates, item => item.ServiceName == "Baggage handling").BasePrice);
+        Assert.Equal(130m, Assert.Single(widened.Rates, item => item.ServiceName == "Manejo de equipaje").BasePrice);
         Assert.Equal(1, await context.AuditEntries.CountAsync(item =>
             item.Action == "commercial.draft.scope_changed" && item.EntityPublicId == version.PublicId, ct));
 
@@ -377,7 +377,7 @@ public sealed partial class SqlServerMigrationTests
         Assert.True((await drafts.SetScopeAsync(ContractsAdministrator, version.PublicId, Guid.NewGuid(),
             new SetContractDraftScopeInput(inPesos.Version, [baggage.PublicId], [puj.PublicId, mia.PublicId]), ct)).IsSuccess);
         var trimmed = await DraftAsync();
-        Assert.Equal("Baggage handling", Assert.Single(trimmed.Rates).ServiceName);
+        Assert.Equal("Manejo de equipaje", Assert.Single(trimmed.Rates).ServiceName);
         Assert.True((await drafts.UpdateAsync(ContractsAdministrator, version.PublicId, new UpdateContractDraftInput(
             trimmed.ValidFrom, null, "DOP", "Condiciones.",
             trimmed.Rates.Select(rate => new UpdateDraftRateInput(rate.Id, rate.BillingUnit, 7000m, 1m, true)).ToArray(),

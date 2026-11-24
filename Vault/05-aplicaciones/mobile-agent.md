@@ -219,7 +219,10 @@ funciones están en la
 - La asignación del detalle dice «Agente principal» en lugar de `primary`. No
   muestra un rol que la tablet no conoce.
 - La posición operativa se nombra solo por su nombre: «Ramp agent» en lugar de
-  «RAMP-AGENT · Ramp agent». El nombre sembrado en Development sigue en inglés.
+  «RAMP-AGENT · Ramp agent». *Posterior al commit verificado (CN del ciclo de caja
+  negra del 24 de noviembre de 2026):* una base Development nueva siembra la
+  posición como «Agente de rampa»; el seeder solo inserta, así que una base ya
+  sembrada conserva «Ramp agent».
 - La APK instalada conserva la ruta y la asignación anteriores hasta que se
   instale la nueva.
 

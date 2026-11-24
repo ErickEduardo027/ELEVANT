@@ -169,7 +169,7 @@ public sealed partial class SqlServerMigrationTests
             .Where(item => item.ContractVersionId == original.Id).Select(item => item.UnitPrice).ToArrayAsync(ct);
         Assert.Equal(originalPrices.Order(), draft.Rates.Select(rate => rate.UnitPrice).Order());
         Assert.All(draft.Rates, rate => Assert.Equal(("operation", false), (rate.BillingUnit, rate.IsConfirmed)));
-        Assert.Equal(["PUJ · AVIAM PUJ Development"], draft.Stations);
+        Assert.Equal(["PUJ · AVIAM Punta Cana"], draft.Stations);
         Assert.Equal(["rates_unconfirmed"],
             (await drafts.GetReadinessAsync(ContractsAccount, draft.Id, ct)).Data!.Issues.Select(item => item.Code));
 
