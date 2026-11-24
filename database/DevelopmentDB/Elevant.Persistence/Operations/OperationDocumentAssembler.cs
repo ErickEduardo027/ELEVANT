@@ -22,7 +22,7 @@ namespace Elevant.Persistence.Operations;
 internal sealed class OperationDocumentAssembler(ElevantDbContext context, TimeProvider? timeProvider = null)
 {
     /// <summary>What a line OCC excluded from billing in the review says on the forms (3-N11).</summary>
-    public const string ExcludedLineSuffix = " · Excluido de la facturación por OCC";
+    public const string ExcludedLineSuffix = OperationDocumentSignedFacts.ExcludedLineSuffix;
 
     public sealed record Assembled(IReadOnlyList<OperationDocumentContent> Documents, IReadOnlyList<DamageMarkData> DamageMarks);
 
