@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { destinationPoint } from '../airport/geo';
+import { LIVERIES } from '../aircraft/liveries';
 import {
-  AIRCRAFT_3D_SLOT, GOVERNOR, GOVERNOR_PAUSED, MODE_3D_STORAGE_KEY, RETRY_LOAD_MS, createAircraft3dController,
-  createGovernor, parkedFromStands, readMode3d, translatePick, writeMode3d,
+  AIRCRAFT_3D_SLOT, DETAIL_MIN_ZOOM, GOVERNOR, GOVERNOR_PAUSED, MODE_3D_STORAGE_KEY, RETRY_LOAD_MS,
+  createAircraft3dController, createGovernor, detailOf, parkedFromStands, readMode3d, translatePick, writeMode3d,
 } from './aircraft3d';
 
 // The 3D aircraft without three or a map (PR M7): the remembered choice, the stands' aircraft, the pick translation,
@@ -340,4 +341,87 @@ describe('createAircraft3dController', () => {
     expect(controller.state()).toMatchObject({ status: 'ready', level: 0 });
     expect(layer.setQuality).toHaveBeenCalledTimes(1);
   });
+
+  it('CN-30: the followed aircraft draws in 3D with its detailed model even with the 3D off, and then the layer goes', async () => {
+    const { controller, load, engine, made, settle } = world();
+    const copa = aviam('f:k-9', { callsign: 'CMP893', registration: 'zz-cmp1', typeIcao: 'B738' });
+    // 2D on the map, far below the 3D threshold: following loads the chunk for it alone.
+    expect(controller.plan({ aircraft: [copa], zoom: 9, minZoom: 15, followedId: 'f:k-9' }).size).toBe(0);
+    expect(load).toHaveBeenCalledOnce();
+    expect(controller.state()).toMatchObject({ enabled: false, status: 'off', follow: 'loading' });
+    await settle();
+    expect(engine.layers).toHaveLength(1);
+    const ids = controller.plan({ aircraft: [copa], zoom: 9, minZoom: 15, followedId: 'f:k-9' });
+    expect([...ids]).toEqual(['f:k-9']);
+    expect(controller.state().follow).toBe('ready');
+    const { plan, detail } = made[0].options.getInstances();
+    // Nothing else is planned; the followed one has its type, its airline's livery and its registration.
+    expect(plan.size).toBe(0);
+    expect(detail).toMatchObject({ id: 'f:k-9', code: 'B738', livery: LIVERIES.CMP, registration: 'ZZ-CMP1',
+      key: 'B738|CMP|ZZ-CMP1', followed: true, onStand: false, heightM: 0, gearDown: true });
+    // Posed again every frame from the camera's sample.
+    const moved = { ...copa, lon: copa.lon + 0.0001 };
+    expect(controller.poseFollowed(moved)).toBe(true);
+    expect(controller.followedPose()).toMatchObject({ id: 'f:k-9', lon: moved.lon, heightM: 0, headingDeg: 80 });
+    const posed = made[0].options.getInstances().detail;
+    expect(posed.lon).toBe(moved.lon);
+    expect(posed.revision).toBeGreaterThan(detail.revision);
+    expect(controller.poseFollowed({ ...copa, id: 'f:other' })).toBe(false);
+    // Followed no more: a map in 2D takes the layer off.
+    controller.plan({ aircraft: [copa], zoom: 9, minZoom: 15 });
+    expect(engine.layers).toEqual([]);
+    expect(controller.state().follow).toBe('off');
+  });
+
+  it('CN-30: a pause of the governor keeps the followed aircraft in 3D; without WebGL its follow says failed', async () => {
+    const { controller, made, engine, settle } = world();
+    controller.setEnabled(true);
+    const aircraft = [aviam('f:k-1'), aviam('f:k-2', { lon: near(600)[0], lat: near(600)[1] })];
+    controller.plan({ aircraft, ...AT_RAMP });
+    await settle();
+    controller.pause();
+    expect(engine.layers).toEqual([]);
+    controller.plan({ aircraft, ...AT_RAMP, followedId: 'f:k-2' });
+    expect(engine.layers).toHaveLength(1);
+    const { plan, detail } = made[0].options.getInstances();
+    expect(plan.size).toBe(0);
+    expect(detail.id).toBe('f:k-2');
+    expect(controller.state()).toMatchObject({ status: 'paused', follow: 'ready' });
+    controller.plan({ aircraft, ...AT_RAMP });
+    expect(engine.layers).toEqual([]);
+
+    const flat = world({ webgl: false });
+    flat.controller.plan({ aircraft, ...AT_RAMP, followedId: 'f:k-1' });
+    expect(flat.controller.state().follow).toBe('failed');
+    expect(flat.load).not.toHaveBeenCalled();
+  });
+
+  it('CN-30: the chosen aircraft gets the detailed model up close only; the others are pitched and banked', async () => {
+    const { controller, made, settle } = world();
+    controller.setEnabled(true);
+    const climbing = aviam('f:k-3', { onGround: false, altM: 14 + 300, gsMs: 80, vrateMs: 10, trackDeg: 80 });
+    const aircraft = [aviam('f:k-1'), climbing];
+    controller.plan({ aircraft, ...AT_RAMP });
+    await settle();
+    controller.plan({ aircraft, zoom: DETAIL_MIN_ZOOM - 0.5, minZoom: 15, selectedId: 'f:k-1' });
+    expect(made[0].options.getInstances().detail).toBeNull();
+    const ids = controller.plan({ aircraft, zoom: DETAIL_MIN_ZOOM + 0.5, minZoom: 15, selectedId: 'f:k-1' });
+    const { plan, detail } = made[0].options.getInstances();
+    expect(detail).toMatchObject({ id: 'f:k-1', followed: false });
+    expect(ids.has('f:k-1')).toBe(true);
+    // Drawn in detail, it leaves the instanced plan; the climbing one stands 300 m up, nose up.
+    expect(plan.get('A320').ids).toEqual(['f:k-3', null]);
+    const matrix = plan.get('A320').matrices;
+    expect(matrix[14]).toBeCloseTo(300, 0);
+    // Rx(pitch) lifts the nose: the model's +y axis gains a z component (column 1, row 2).
+    expect(matrix[6]).toBeGreaterThan(0.1);
+  });
+
+  it('CN-30: detailOf reads the stand an aircraft is parked on and an aircraft without its height', () => {
+    const parked = detailOf({ item: { id: 's:A6', lon: 1, lat: 2, headingDeg: 175, typeIcao: 'A320' }, onStand: true },
+      { heightM: 3, pitchDeg: 4, bankDeg: 5, gearDown: false, lights: { beacon: false } });
+    expect(parked).toMatchObject({ heightM: 0, pitchDeg: 0, bankDeg: 0, gearDown: true, headingDeg: 175, onStand: true });
+    expect(detailOf({ item: { id: 'x', lon: 1, lat: 2 }, onStand: false }, null)).toBeNull();
+  });
 });
+

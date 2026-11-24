@@ -5,6 +5,7 @@ import { useOptionalOccShellChannel } from '../admin-occ/shell/occShellContext';
 import { useOccStation } from '../admin-occ/useOccStation';
 import { useOccMap } from './core/OccMapContext';
 import FlightDataBlock from './ui/FlightDataBlock';
+import Follow3dPanel from './ui/Follow3dPanel';
 import MapSourceStatus from './ui/MapSourceStatus';
 
 // What a screen with an OCC map reads of the sky and of the ELEVANT flights (PR M6): the map situation of the station of
@@ -78,6 +79,10 @@ export function MapSituationOverlays({ live, onClose, blockStyle = DOCKED_BLOCK_
         <FlightDataBlock target={live.target} telemetry={live.telemetry} station={live.flights?.stationAirport ?? null}
           stationId={live.stationId ?? null} onClose={onClose} onFollow={follow.available ? follow.toggle : null}
           following={follow.following} style={blockStyle} />
+      )}
+      {/* «Seguir en 3D» (CN-30): the followed aircraft's panel, while the map orbits it. */}
+      {engineStatus !== 'unavailable' && (
+        <Follow3dPanel flights={live.flights} stationCode={live.flights?.stationCode || 'PUJ'} />
       )}
     </>
   );

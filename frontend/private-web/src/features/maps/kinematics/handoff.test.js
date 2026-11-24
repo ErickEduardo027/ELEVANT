@@ -265,7 +265,7 @@ describe('hand-off between live positions and estimates', () => {
     expect(needsReplan(noRoute, s(62))).toBe(false);
   });
 
-  it('a fix while estimating blends position and heading over 6 s', () => {
+  it('a fix while estimating blends position and heading over 1.5 s (CN-31)', () => {
     let track = withPlan(createTrack({ id: 'f:p:2', kind: 'aviam' }), straightPlan({ bearingDeg: 350 }), s(0));
     const estimating = track;
     const atMs = s(100);
@@ -276,36 +276,36 @@ describe('hand-off between live positions and estimates', () => {
     const fixPoint = destinationPoint(at(before), 80, 400);
     const fix = { ...lonLat(fixPoint), altM: 950, gsMs: 100, trackDeg: 20, vrateMs: 0, onGround: false, positionAt: atMs };
     track = withFix(track, fix, atMs);
-    expect(track.blend).toMatchObject({ startMs: atMs, durationMs: 6_000 });
+    expect(track.blend).toMatchObject({ startMs: atMs, durationMs: 1_500 });
     expect(track).toMatchObject({ trailEpoch: 0, snapAtMs: null });
     // Nothing moves when the fix arrives.
     expect(haversineM(at(renderTrack(track, atMs)), at(before))).toBeLessThan(1e-6);
     expect(renderTrack(track, atMs).trackDeg).toBeCloseTo(before.trackDeg, 9);
     // Half way it is half of each: the position in the east-north plane, the heading the short way across north.
-    const middle = renderTrack(track, atMs + 3_000);
-    const expected = planeMix(destinationPoint(at(before), before.trackDeg, 300), destinationPoint(fixPoint, 20, 300), 0.5);
+    const middle = renderTrack(track, atMs + 750);
+    const expected = planeMix(destinationPoint(at(before), before.trackDeg, 75), destinationPoint(fixPoint, 20, 75), 0.5);
     expect(haversineM(at(middle), expected)).toBeLessThan(0.01);
     expect(middle.trackDeg).toBeCloseTo(normalizeDeg(before.trackDeg + angleDiff(before.trackDeg, 20) / 2), 9);
     expect(middle.trackDeg).toBeLessThan(10);
     expect(middle.altM).toBeCloseTo(925, 9);
     expect(middle).toMatchObject({ mode: 'live', quality: 'live' });
-    // After 6 s it is the fix, carried on.
-    const done = renderTrack(track, atMs + 6_000);
-    expect(haversineM(at(done), destinationPoint(fixPoint, 20, 600))).toBeLessThan(0.01);
+    // After 1.5 s it is the fix, carried on.
+    const done = renderTrack(track, atMs + 1_500);
+    expect(haversineM(at(done), destinationPoint(fixPoint, 20, 150))).toBeLessThan(0.01);
     expect(done.trackDeg).toBe(20);
     // The heading turns through north, never the long way, and the position never jumps.
-    for (let ms = 0; ms <= 6_000; ms += 250) {
+    for (let ms = 0; ms <= 1_500; ms += 100) {
       const heading = renderTrack(track, atMs + ms).trackDeg;
       expect(heading >= before.trackDeg - 1e-9 || heading <= 20 + 1e-9, `${ms} ms: ${heading}`).toBe(true);
     }
-    // It closes the 400 m sideways while it flies on, never by a jump.
+    // It closes the 400 m sideways in 1.5 s while it flies on (CN-31: close to the reported fix), never by a jump.
     expect(longestStep(track, atMs - 2_000, atMs + 8_000, 100, { earlier: estimating, changedAtMs: atMs }))
-      .toBeLessThan(3 * 100 * 0.1);
+      .toBeLessThan(6 * 100 * 0.1);
     // The tick clears the blend once it is over, and the aircraft stays where it was drawn.
-    expect(tick(track, atMs + 5_999)).toBe(track);
-    const cleared = tick(track, atMs + 6_000);
+    expect(tick(track, atMs + 1_499)).toBe(track);
+    const cleared = tick(track, atMs + 1_500);
     expect(cleared.blend).toBeNull();
-    expect(renderTrack(cleared, atMs + 6_500)).toEqual(renderTrack(track, atMs + 6_500));
+    expect(renderTrack(cleared, atMs + 2_000)).toEqual(renderTrack(track, atMs + 2_000));
   });
 
   it('a gap above 2 NM in the air or 150 m on the ground snaps with a brief fade and starts a new trail part', () => {
@@ -427,7 +427,8 @@ describe('hand-off between live positions and estimates', () => {
 
   it('limits widen to 1.5 × refreshAfterSeconds for a slower feed', () => {
     expect(TRACK_CONFIG).toEqual({
-      liveMaxAgeS: 15, coastMaxAgeS: 60, groundCoastMaxAgeS: 20, blendS: 6, snapAirM: 3_704, snapGroundM: 150,
+      liveMaxAgeS: 15, coastMaxAgeS: 60, groundCoastMaxAgeS: 20, blendS: 6, fixBlendS: 1.5, groundReckonMaxS: 3,
+      snapAirM: 3_704, snapGroundM: 150,
       dropOtherAfterS: 120, dropAviamAfterS: 600, snapFadeS: 1,
     });
     expect(Object.isFrozen(TRACK_CONFIG)).toBe(true);

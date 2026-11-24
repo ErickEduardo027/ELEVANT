@@ -7,7 +7,7 @@ import { destinationPoint, METRES_PER_NM } from '../airport/geo';
 import { thresholdsFromFits } from '../core/cameraPresets';
 import {
   AIRCRAFT_3D_COLORS, AIRCRAFT_3D_RADIUS_NM, DROP_LINE_MIN_M, SHADOW, TYPE_MEMO_LIMIT, instanceKey, linearRgb,
-  mercatorFrame, planInstances, typeMemoSizeForTests,
+  mercatorFrame, planInstances, typeMemoSizeForTests, pivotOf, poseMatrix,
 } from './instancePlan';
 import { AIRCRAFT_TYPES, CATEGORY_FALLBACKS } from './types';
 
@@ -343,5 +343,55 @@ describe('the 3D instance plan (design G3)', () => {
     const second = planInstances(traffic, parked, options);
     second.get('A320').matrices[12] = 999;
     expect(first.get('A320').matrices[12]).not.toBe(999);
+  });
+});
+
+describe('poseMatrix and attitudes (CN-30)', () => {
+  const apply = (matrix, [x, y, z]) => new Vector3(x, y, z).applyMatrix4(new Matrix4().fromArray(matrix));
+
+  it('is the plain heading matrix without pitch or bank, and puts the model where it is', () => {
+    expect([...poseMatrix({ x: 5, y: 6, z: 7, headingDeg: 90 })].map(value => Math.round(value * 1e6) / 1e6))
+      .toEqual([0, -1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 5, 6, 7, 1]);
+    // Heading 90: the nose (+y) points east.
+    const nose = apply(poseMatrix({ headingDeg: 90 }), [0, 10, 0]);
+    expect(nose.x).toBeCloseTo(10, 6);
+    expect(nose.y).toBeCloseTo(0, 6);
+  });
+
+  it('pitches the nose up about the main wheels and banks the right wing down for a right turn', () => {
+    const pivot = { pivotY: -2, pivotZ: 2 };
+    const up = poseMatrix({ pitchDeg: 10, ...pivot });
+    // The main wheels stay where they were; the nose rises, the tail sinks less than it would about the middle.
+    const wheels = apply(up, [0, -2, 0]);
+    expect(wheels.y).toBeCloseTo(-2, 6);
+    expect(wheels.z).toBeCloseTo(0, 6);
+    expect(apply(up, [0, 18, 0]).z).toBeCloseTo(20 * Math.sin((10 * Math.PI) / 180), 5);
+    const right = poseMatrix({ bankDeg: 20, ...pivot });
+    expect(apply(right, [17, 0, 2]).z).toBeLessThan(2);
+    expect(apply(right, [-17, 0, 2]).z).toBeGreaterThan(2);
+    // The fuselage's axis is the bank's: it does not move.
+    const axis = apply(right, [0, 0, 2]);
+    expect(axis.x).toBeCloseTo(0, 6);
+    expect(axis.z).toBeCloseTo(2, 6);
+    expect(pivotOf(AIRCRAFT_TYPES.A320).y).toBeLessThan(0);
+  });
+
+  it('pitches, banks and lifts an aircraft of the traffic by its attitude, leaving its shadow level', () => {
+    const [lon, lat] = destinationPoint(MDPC_LAYOUT.meta.arp, 90, 500);
+    const climbing = { id: 'f:climb', kind: 'aviam', lon, lat, altM: 400, onGround: false, trackDeg: 0, typeIcao: 'A320' };
+    const plan = planInstances([climbing], [], {
+      zoom: 16, minZoom: 15, originLngLat: MDPC_LAYOUT.meta.arp,
+      attitudes: new Map([['f:climb', { heightM: 250, pitchDeg: 12, bankDeg: -15 }]]),
+    });
+    const { matrices } = plan.get('A320');
+    // At its height, give or take what pitching about its main wheels moves its origin.
+    expect(Math.abs(matrices[14] - 250)).toBeLessThan(2);
+    // The nose (column 1) rises; the shadow's is level and on the ground.
+    expect(matrices[6]).toBeGreaterThan(0.15);
+    expect(matrices[16 + 6]).toBeCloseTo(0, 6);
+    expect(matrices[16 + 14]).toBeCloseTo(0.05, 6);
+    // Left out when the detailed model draws it.
+    expect(planInstances([climbing], [], { zoom: 16, minZoom: 15, originLngLat: MDPC_LAYOUT.meta.arp,
+      excludeId: 'f:climb' }).size).toBe(0);
   });
 });

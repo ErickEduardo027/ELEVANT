@@ -37,7 +37,10 @@ import { createContext, useContext } from 'react';
 //   newest data the map draws, and the two actions (ui/MapMotionControl.jsx).
 // - follow mode (PR M6, design A6): `follow` is `{ available, following, canFollow, toggle() }`: whether the map can
 //   follow (it moves its traffic), whether it follows now (`follow=1`), whether the selection names an aircraft it
-//   draws, and the action of the S key (ui/MapFollowButton.jsx, the data block's «Seguir»).
+//   draws, and the action of the S key (ui/MapFollowButton.jsx, the data block's «Seguir»). CN-30: `follow.three` is
+//   «Seguir en 3D»: `{ on, view, auto, subject, start(), stop(), setView(view), rotate(sign), tilt(sign), zoom(sign),
+//   hold(kind, sign), reset(), setAuto(on) }`, `subject` a store of the followed aircraft as the frames draw it (the
+//   panel's, ui/Follow3dPanel.jsx); outside an OccMap there is none.
 // Outside an OccMap the value is a map that does nothing and shows nothing.
 
 const doNothing = () => {};

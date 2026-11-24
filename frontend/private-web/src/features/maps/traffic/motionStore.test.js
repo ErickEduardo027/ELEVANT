@@ -431,18 +431,23 @@ describe('motion store (design F4, contracts 2.3)', () => {
       store.ingest(read);
       const item = situationOf(store, read).byId.get(`f:${key}`);
       expect(item, label).toMatchObject({ quality: 'stale', hex: HEX.groundInOwnedStand });
-      // From the end of its 20 s on the ground it is estimated where it was, still, for as long as that fix stays.
+      // CN-31: from the end of its 20 s on the ground it is held where it was reported, still, for as long as that fix
+      // stays: a real position carried on, never an estimate.
       for (const seconds of [30, 300, 1_200]) {
         const drawn = store.sampleOne(item.id, fixAt + seconds * 1_000, item);
         expect(haversineM(point(drawn), standOf('A2').center), `${label}, ${seconds} s`).toBeLessThan(0.5);
+        // The arrival has its BLOCK_ON on A2: that is the real state, said as such (CN-31).
         expect(drawn, `${label}, ${seconds} s`).toMatchObject({
-          gsMs: 0, onGround: true, mode: 'estimate', quality: 'estimated', statusKey: 'noSignal', opacity: 1,
+          gsMs: 0, onGround: true, mode: 'estimate', quality: key === KEY.parkedArrival ? 'reported' : 'stale',
+          statusKey: 'noSignal', opacity: 1, parkedStand: 'A2', standMismatch: null,
         });
       }
       store.sample([item], fixAt + 1_200_000);
       expect(store.isAnimating(fixAt + 1_200_000), label).toBe(false);
-      // Rebuilt from that fix once; it never taxis away.
-      expect([...calls.arrival, ...calls.departure].filter(kind => kind === 'fix'), label).toEqual(['fix']);
+      // Rebuilt from that fix once when it is stopped in its own stand (CN-31: a flight without a stand is never
+      // rebuilt on the ground); it never taxis away.
+      const rebuilt = flights === notImported ? [] : ['fix'];
+      expect([...calls.arrival, ...calls.departure].filter(kind => kind === 'fix'), label).toEqual(rebuilt);
     }
     // The waiting departure's route is still its way out from A2, from its schedule.
     const store = createMotionStore();
@@ -782,7 +787,8 @@ describe('smooth motion of the reads (CN-18)', () => {
     renderNow = at(1);
     store.ingest({ picture: toPictureModel(createAirPicture({ serverTime: trafficInstant(1), aircraft: [{ ...base,
       trackDegrees: base.trackDegrees + 40, positionAt: trafficInstant(0.5) }] })), flights });
-    let last = first.trackDeg;
+    let last = store.sample([item], renderNow)[0].trackDeg;
+    expect(Math.abs(((last - first.trackDeg + 540) % 360) - 180)).toBeLessThanOrEqual(3 + 1e-6);
     for (renderNow = at(1) + 100; renderNow <= at(4); renderNow += 100) {
       const drawn = store.sample([item], renderNow)[0];
       const turn = Math.abs(((drawn.trackDeg - last + 540) % 360) - 180);

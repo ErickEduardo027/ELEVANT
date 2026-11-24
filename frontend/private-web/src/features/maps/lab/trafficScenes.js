@@ -10,6 +10,7 @@ import { createMotionStore } from '../traffic/motionStore';
 import { buildRoute } from '../traffic/routeFeatures';
 import { buildSituation, selectionTarget, toFlightsModel, toPictureModel, toTrackModel } from '../traffic/situationModel';
 import { createTrailStore, trailFeatures } from '../traffic/trailStore';
+import { offPlanScenario, replayScenarioAt } from './replayScenes';
 
 // The traffic of the map lab's scenes (PR M5 and M6): synthetic air pictures, map flights and tracks at the lab's noon,
 // in the shape of the API (contracts 1.3), built on the fixtures of maps/testing/trafficFixtures.js. Invented hex
@@ -410,6 +411,8 @@ function feedPictureAt(base, readAtMs) {
 
 /** A feed scenario as the read answered at `readAtMs` brings it: its picture and its map flights of that instant. */
 export function feedScenarioAt(scenario, readAtMs) {
+  // The replay of a real visit (CN-31, lab/replayScenes.js) answers with its own fixes at that instant.
+  if (scenario.replay === true) return replayScenarioAt(readAtMs);
   const base = scenario.feedBase ?? scenario;
   return {
     ...scenario,
@@ -452,6 +455,8 @@ export const TRAFFIC_SCENARIOS = Object.freeze({
   // Followed (the scenes say `follow`): on final as approach-demo-final, taxiing as airfield-demo-taxiing.
   'approach-follow-final': approachDemoFinal(),
   'airfield-follow-taxi': airfieldDemoTaxiing(),
+  // CN-29: AA465 live north-west of Higüey, off its plan, chosen (lab/replayScenes.js).
+  'approach-live-offplan': offPlanScenario(),
 });
 
 /**
@@ -482,7 +487,7 @@ export function labTraffic(scenario, { nowMs = null, selection = null, allTrails
   for (const model of tracks.values()) store.ingestTrack(model.hex, model.points);
   const aviamHexes = new Set(situation.aircraft.filter(item => item.kind === 'aviam' && item.hex).map(item => item.hex));
   const observed = trailFeatures(store.getSnapshot(), { aviamHexes, includeOther: allTrails, selectedHex: chosenHex,
-    nowMs: time });
+    nowMs: time, selectionActive: target !== null });
   const trails = { type: 'FeatureCollection', features: observed.features };
   const snapshot = store.getSnapshot();
   const chosenTrail = chosenHex === null ? null : snapshot.entries.get(chosenHex)?.points ?? null;
@@ -491,7 +496,8 @@ export function labTraffic(scenario, { nowMs = null, selection = null, allTrails
     trajectory: target.flight ? moving.trajectoryForRoute(target.flight) : null, breakMs: snapshot.breakMs, language,
   };
   const route = routeInputs === null ? null : buildRoute({ ...routeInputs, nowMs: time });
-  const routeAt = routeInputs === null ? undefined : (tMs, aircraft) => buildRoute({ ...routeInputs, nowMs: tMs, aircraft });
+  const routeAt = routeInputs === null ? undefined
+    : (tMs, aircraft, state = null) => buildRoute({ ...routeInputs, nowMs: tMs, aircraft, state });
   return {
     map: { aircraft: situation.aircraft, trails, route, routeAt, source: situation.source, motion: moving },
     picture,
@@ -499,6 +505,8 @@ export function labTraffic(scenario, { nowMs = null, selection = null, allTrails
     situation,
     target,
     stationAirport: flights.stationAirport,
+    // The map flight rows, for the panel of «Seguir en 3D» (CN-30).
+    flights,
     motion: moving,
   };
 }

@@ -6,6 +6,7 @@ import { parseInstant } from '../../../services/serverClock';
 import { normalizeStandCode } from '../../../services/standCodes';
 import OccPlate from '../../occ-ui/OccPlate';
 import OccStandSwatch from '../../occ-ui/OccStandSwatch';
+import { useOccMap } from '../core/OccMapContext';
 import { TAGS } from '../../occ-ui/statusVocabulary';
 import { STATUS_MESSAGES, formatTimeScale, kinematicsMessages, timeScaleMessage } from '../kinematics/kinematicsMessages';
 import { mapMessages } from '../mapMessages';
@@ -148,6 +149,9 @@ export function sourceLine(telemetry, { t, language, tk = null }) {
   if (telemetry.quality === 'estimated') {
     return { kind: 'estimated', words: TAGS.estimated.description[language] ?? TAGS.estimated.description.es };
   }
+  if (telemetry.quality === 'reported') {
+    return { kind: 'reported', words: t('dataBlock.reported', { stand: telemetry.parkedStand ?? '—' }) };
+  }
   if (telemetry.quality === 'stale') return { kind: 'stale', words: staleWords(telemetry.positionAt, language) };
   if (telemetry.mode === 'coast' && tk !== null) {
     return { kind: 'coast', words: tk(STATUS_MESSAGES.noSignal, { seconds: Math.max(0, Math.floor(telemetry.ageS ?? 0)) }) };
@@ -178,7 +182,7 @@ function SourceMark({ kind }) {
   if (kind === 'stale') return <OccStandSwatch tag="stale" />;
   if (kind === 'estimated') return <OccStandSwatch tag="estimated" />;
   let style = { fill: 'none', stroke: 'var(--occ-faint)', strokeWidth: 1.2 };
-  if (kind === 'live') style = { fill: 'var(--occ-text)' };
+  if (kind === 'live' || kind === 'reported') style = { fill: 'var(--occ-text)' };
   if (kind === 'coast') style = { fill: 'none', stroke: 'var(--occ-text)', strokeWidth: 1.6 };
   return (
     <svg viewBox="0 0 24 16" aria-hidden="true" focusable="false" data-source-mark={kind} className="h-4 w-6 shrink-0">
@@ -262,6 +266,8 @@ const ACTION_ON = 'inline-flex min-h-9 items-center rounded border border-occ-ac
  *   that keeps its name and is pressed while `following` (pressing it again stops); it waits, disabled, while the
  *   aircraft has no position on the map. Screens inside an OccMap pass its context's `follow` (`toggle`,
  *   `following`).
+ * - «Seguir en 3D» (CN-30): inside an OccMap that can follow, the card also offers it (the map context's
+ *   `follow.three`), pressed while the camera orbits the aircraft; pressing it again stops and flies the camera back.
  */
 export default function FlightDataBlock({ target, telemetry: store = null, station = null, stationId = null, onClose,
   onFollow = null, following = false, style, className = '' }) {
@@ -271,6 +277,7 @@ export default function FlightDataBlock({ target, telemetry: store = null, stati
   const flight = target?.flight ?? null;
   const fromStore = useTelemetry(store, aircraft?.id ?? null);
   const nowMs = useServerTime(store, STEP_MS);
+  const three = useOccMap()?.follow?.three ?? null;
   if (!target) return null;
 
   // Until the store holds the aircraft, the values the target was built with.
@@ -361,12 +368,19 @@ export default function FlightDataBlock({ target, telemetry: store = null, stati
 
       {shownStatus !== null && <p data-status-line="" className="font-semibold text-occ-text">{shownStatus}</p>}
 
+      {telemetry?.standMismatch && (
+        <p data-stand-mismatch="" className="flex items-start gap-1.5 font-semibold text-occ-warn">
+          <span aria-hidden="true">≠</span>
+          <span>{t('dataBlock.standMismatch', telemetry.standMismatch)}</span>
+        </p>
+      )}
+
       <p data-source-line={source.kind} className="flex items-start gap-1.5 text-occ-muted">
         <span className="mt-0.5"><SourceMark kind={source.kind} /></span>
         <span>{source.words}</span>
       </p>
 
-      {(flight !== null || onFollow !== null) && (
+      {(flight !== null || onFollow !== null || three !== null) && (
         <div className="flex flex-wrap gap-2 pt-1">
           {onFollow !== null && (
             <button
@@ -378,6 +392,17 @@ export default function FlightDataBlock({ target, telemetry: store = null, stati
               className={following === true ? ACTION_ON : (aircraft === null ? ACTION_OFF : ACTION)}
             >
               {t('follow.label')}
+            </button>
+          )}
+          {three !== null && (three.on || onFollow !== null) && (
+            <button
+              type="button"
+              aria-pressed={three.on}
+              disabled={!three.on && aircraft === null}
+              onClick={three.on ? three.stop : three.start}
+              className={three.on ? ACTION_ON : (aircraft === null ? ACTION_OFF : ACTION)}
+            >
+              {t('follow.label3d')}
             </button>
           )}
           {flight !== null && (links.turnaround !== null

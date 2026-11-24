@@ -340,6 +340,16 @@ function createModule(state) {
       this.missingImageResolver = null;
       this.listeners = new Map();
       this.renderedFeatures = () => [];
+      // The gesture handlers MapLibre 6.16 exposes (CN-30: «Seguir en 3D» disables them and gives them back), the
+      // centre's elevation and whether it is clamped to the ground.
+      const handler = () => {
+        let enabled = options.interactive !== false;
+        return { enable() { enabled = true; }, disable() { enabled = false; }, isEnabled: () => enabled };
+      };
+      for (const name of ['dragPan', 'dragRotate', 'scrollZoom', 'touchZoomRotate', 'doubleClickZoom', 'keyboard',
+        'boxZoom', 'touchPitch']) this[name] = handler();
+      this.centerElevation = 0;
+      this.centerClampedToGround = true;
 
       // The DOM of MapLibre's _setupContainer: a canvas and the four control corners inside the container.
       container.classList.add('maplibregl-map');
@@ -404,7 +414,29 @@ function createModule(state) {
       return layer;
     }
 
-    _setCamera({ center, zoom, bearing, pitch }) {
+    getMaxPitch() {
+      return this.options.maxPitch ?? 60;
+    }
+
+    setMaxPitch(maxPitch) {
+      this.options = { ...this.options, maxPitch };
+      return this;
+    }
+
+    getCenterClampedToGround() {
+      return this.centerClampedToGround;
+    }
+
+    setCenterClampedToGround(clamped) {
+      this.centerClampedToGround = clamped !== false;
+    }
+
+    getCenterElevation() {
+      return this.centerElevation;
+    }
+
+    _setCamera({ center, zoom, bearing, pitch, elevation }) {
+      if (elevation !== undefined) this.centerElevation = elevation;
       if (center !== undefined) this.camera.center = FakeLngLat.convert(center);
       if (zoom !== undefined) {
         this.camera.zoom = Math.min(Math.max(zoom, this.options.minZoom ?? 0), this.options.maxZoom ?? 22);

@@ -308,3 +308,138 @@ export function arrivalAirPath({ origin = null, runwayEnd, speedMs }) {
     thresholdAlongM: measured.lengthM,
   });
 }
+
+// CN-29: the approach still to fly from where the aircraft really is. A plan built from the origin's bearing (above)
+// is no guide for an aircraft that flies somewhere else: joining it would draw a perpendicular dog-leg to the plan and
+// then the plan's own corners. Instead the map flies the aircraft from its position and track onto the final of its
+// runway with the shortest path of turns at the 25° bank radius and straight legs (a Dubins path: turn, straight, turn),
+// established on the extended centreline at a join chosen near the gate, then straight down the final to the
+// threshold. Tangent-continuous: no corner anywhere, so it never doubles back or draws a rectangle.
+
+/** Where the final may be joined, in NM before the threshold, and the join the approach prefers (the gate). */
+export const INTERCEPT = Object.freeze({
+  minFinalNm: 3,
+  maxFinalNm: 14,
+  stepNm: 0.5,
+  preferredNm: GATE_NM,
+  // Every NM short of the preferred join costs this many metres: the shortest path alone joins very short finals.
+  shortFinalPenaltyM: 2 * NM,
+  // Farther than this from the threshold the aircraft flies the great circle to that distance first.
+  farM: 60_000,
+  // The turn radius uses the aircraft's speed within these bounds (m/s).
+  minSpeedMs: 60,
+  maxSpeedMs: 130,
+  // Within this of the extended centreline, before the threshold, the aircraft joins ahead of itself.
+  nearFinalLateralNm: 3,
+});
+
+const TWO_PI = 2 * Math.PI;
+const mod2pi = value => ((value % TWO_PI) + TWO_PI) % TWO_PI;
+// A heading (degrees true) as a math angle (radians from east, counter-clockwise), and back.
+const mathAngle = bearingDeg => degToRad(90 - bearingDeg);
+
+/**
+ * The shortest turn-straight-turn path in a plane from `p` heading `h0` (math angle) to `q` heading `h1` at radius `r`:
+ * `{ lengthM, sample(stepRad) }`; `sample` gives the points from `p` to `q`, arcs every `stepRad` of turn.
+ */
+function dubinsCsc(p, h0, q, h1, r) {
+  let best = null;
+  for (const s1 of [1, -1]) {
+    // s = 1 a left (counter-clockwise) turn, −1 a right one.
+    for (const s2 of [1, -1]) {
+      const c1 = [p[0] - s1 * r * Math.sin(h0), p[1] + s1 * r * Math.cos(h0)];
+      const c2 = [q[0] - s2 * r * Math.sin(h1), q[1] + s2 * r * Math.cos(h1)];
+      const vx = c2[0] - c1[0];
+      const vy = c2[1] - c1[1];
+      const d = Math.hypot(vx, vy);
+      let heading;
+      let straight;
+      if (s1 === s2) {
+        heading = Math.atan2(vy, vx);
+        straight = d;
+      } else {
+        if (d < 2 * r) continue;
+        straight = Math.sqrt(d * d - 4 * r * r);
+        // The inner tangent: the line of centres turned by atan(2r / straight), towards the second turn's side.
+        heading = Math.atan2(vy, vx) - s2 * Math.atan2(2 * r, straight);
+      }
+      const sweep1 = s1 === 1 ? mod2pi(heading - h0) : mod2pi(h0 - heading);
+      const sweep2 = s2 === 1 ? mod2pi(h1 - heading) : mod2pi(heading - h1);
+      const lengthM = r * (sweep1 + sweep2) + straight;
+      if (best === null || lengthM < best.lengthM) best = { lengthM, s1, s2, c1, c2, sweep1, sweep2, heading };
+    }
+  }
+  const arc = (centre, s, startHeading, sweep, stepRad) => {
+    const points = [];
+    const steps = Math.max(1, Math.ceil(sweep / stepRad));
+    for (let at = 1; at <= steps; at += 1) {
+      const h = startHeading + (s * sweep * at) / steps;
+      points.push([centre[0] + s * r * Math.sin(h), centre[1] - s * r * Math.cos(h)]);
+    }
+    return points;
+  };
+  return {
+    lengthM: best.lengthM,
+    sample(stepRad) {
+      const first = best.sweep1 > 1e-9 ? arc(best.c1, best.s1, h0, best.sweep1, stepRad) : [];
+      const second = best.sweep2 > 1e-9 ? arc(best.c2, best.s2, best.heading, best.sweep2, stepRad) : [];
+      const t2 = [best.c2[0] + best.s2 * r * Math.sin(best.heading), best.c2[1] - best.s2 * r * Math.cos(best.heading)];
+      return [[p[0], p[1]], ...first, ...(best.sweep2 > 1e-9 ? [t2] : []), ...second.slice(0, -1), [q[0], q[1]]];
+    },
+  };
+}
+
+/**
+ * The approach still to fly from an aircraft at `from` (`[lng, lat]`) on track `trackDeg` (degrees true; without one,
+ * towards the final) at `speedMs` to the threshold of `runwayEnd` (`{ threshold, headingTrue }`, airport/runwayInUse.js):
+ * `{ coords, joinNm, lengthM }`, frozen. Turns at the 25° bank radius for the aircraft's speed (60 to 130 m/s), a straight
+ * leg, a turn onto the extended centreline at the join (3 to 14 NM out, preferring the 10 NM gate, never behind the
+ * aircraft's own distance along the final: one close in joins shorter, down to 0.3 NM), and the final straight to the threshold. Farther than 60 km from the
+ * threshold the aircraft first flies the great circle to 60 km. `coords` starts exactly at `from` and ends exactly at
+ * the threshold, its last leg on the runway's heading.
+ */
+export function interceptPath({ from, trackDeg = null, speedMs = null, runwayEnd }) {
+  const threshold = runwayEnd.threshold;
+  const plane = toLocal(threshold);
+  let head = [];
+  let start = from;
+  let startTrack = Number.isFinite(trackDeg) ? trackDeg : null;
+  const distance = haversineM(from, threshold);
+  if (distance > INTERCEPT.farM) {
+    const great = greatCirclePath(from, threshold, 10_000);
+    const measured = measurePolyline(great);
+    const cut = pointAlong(measured, measured.lengthM - INTERCEPT.farM);
+    head = [...measured.coords.filter((_, at) => measured.cumM[at] < measured.lengthM - INTERCEPT.farM)];
+    start = cut.p;
+    startTrack = initialBearing(start, threshold);
+  }
+  const speed = Math.min(INTERCEPT.maxSpeedMs, Math.max(INTERCEPT.minSpeedMs, Number.isFinite(speedMs) ? speedMs : INTERCEPT.maxSpeedMs));
+  const radius = turnRadiusM(speed);
+  const p = plane.forward(start);
+  const along = unitOf(runwayEnd.headingTrue);
+  // How far the aircraft is before the threshold along the final course.
+  const behindM = -(p[0] * along[0] + p[1] * along[1]);
+  const h1 = mathAngle(runwayEnd.headingTrue);
+  // Without a track it heads for the threshold. The join is never behind the aircraft: one already close in (or on
+  // final) joins short, down to a third of a mile.
+  const h0 = mathAngle(startTrack ?? initialBearing(start, threshold));
+  let best = null;
+  const behindNm = behindM / NM;
+  const lateralM = Math.abs(p[0] * along[1] - p[1] * along[0]);
+  // Close to the extended centreline before the threshold: the join is ahead of the aircraft.
+  const nearFinal = behindNm > 0 && lateralM < INTERCEPT.nearFinalLateralNm * NM;
+  const lowNm = nearFinal ? Math.min(INTERCEPT.minFinalNm, Math.max(0.3, behindNm / 2)) : INTERCEPT.minFinalNm;
+  const maxNm = nearFinal ? Math.max(lowNm, Math.min(INTERCEPT.maxFinalNm, behindNm - 0.5)) : INTERCEPT.maxFinalNm;
+  const step = Math.min(INTERCEPT.stepNm, Math.max(0.1, (maxNm - lowNm) / 8));
+  for (let nm = lowNm; nm <= maxNm + 1e-9; nm += step) {
+    const joinM = nm * NM;
+    const q = [-joinM * along[0], -joinM * along[1]];
+    const path = dubinsCsc(p, h0, q, h1, radius);
+    const cost = path.lengthM + joinM + Math.max(0, INTERCEPT.preferredNm - nm) * INTERCEPT.shortFinalPenaltyM;
+    if (best === null || cost < best.cost) best = { cost, nm, path, q };
+  }
+  const local = best.path.sample(AIR_ARC_STEP_RAD * 2);
+  const air = local.map((point, at) => (at === 0 ? freezePoint(start) : freezePoint(plane.inverse(point))));
+  const coords = [...head.map(freezePoint), ...air, freezePoint(threshold)];
+  return Object.freeze({ coords: Object.freeze(coords), joinNm: best.nm, lengthM: measurePolyline(coords).lengthM });
+}

@@ -62,13 +62,15 @@ const EMPTY_HEXES = new Set();
 
 /**
  * The trails a map draws, from a store snapshot: one LineString per part of two or more points, with `{ id, hex, kind,
- * quality, selected }`. The ELEVANT flights' trails (`aviamHexes`) and the chosen aircraft's (`selectedHex`) are drawn
+ * quality, selected, dimmed }`. The ELEVANT flights' trails (`aviamHexes`) and the chosen aircraft's (`selectedHex`) are drawn
  * whole; other traffic only with `includeOther` («Estelas de todo el tráfico») and only its last 2 minutes. `quality` is
  * `stale` when the aircraft's newest point is older than the picture's stale limit at `nowMs`, else `live` (every point
- * here was observed; estimated parts come with PR M6).
+ * here was observed; estimated parts come with PR M6). `dimmed` (CN-29) marks every trail but the chosen aircraft's
+ * while something is chosen (`selectionActive`, or a `selectedHex`): the layers hide the other ELEVANT trails and draw
+ * the other traffic's, shown only when the layers menu asks for them, fainter.
  */
 export function trailFeatures(snapshot, { includeOther = false, selectedHex = null, aviamHexes = EMPTY_HEXES,
-  nowMs } = {}) {
+  nowMs, selectionActive = false } = {}) {
   const now = finite(nowMs) ? nowMs : (snapshot.lastIngestAt ?? 0);
   const aviam = aviamHexes instanceof Set ? aviamHexes : new Set(aviamHexes ?? []);
   const selected = selectedHex == null ? null : String(selectedHex).toLowerCase();
@@ -87,7 +89,7 @@ export function trailFeatures(snapshot, { includeOther = false, selectedHex = nu
       features.push({
         type: 'Feature',
         properties: { id: `${entry.hex}:${part[0].at}`, hex: entry.hex, kind: isAviam ? 'aviam' : 'other', quality,
-          selected: isSelected },
+          selected: isSelected, dimmed: (selectionActive === true || selected !== null) && !isSelected },
         geometry: { type: 'LineString', coordinates: part.map(point => [point.lon, point.lat]) },
       });
     }

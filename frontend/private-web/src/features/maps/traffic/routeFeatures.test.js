@@ -67,6 +67,8 @@ describe('the route of the chosen flight (design E5, PR M6)', () => {
     const trail = trails.segmentsOf(HEX.arrival).flat();
     const direct = buildFlightRoute(target.flight, trajectory, trail, NOON, {
       origin: MIA, aircraft: [target.aircraft.lon, target.aircraft.lat], breakMs: trails.getSnapshot().breakMs,
+      // CN-29: the target's own track, speed and ground flag.
+      state: { trackDeg: target.aircraft.trackDeg, gsMs: target.aircraft.gsMs, onGround: target.aircraft.onGround === true },
     });
     // The same lines and points, and the same properties with the aircraft's address.
     expect(route.features.map(feature => feature.geometry)).toEqual(direct.features.map(feature => feature.geometry));

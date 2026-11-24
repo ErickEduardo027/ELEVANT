@@ -107,6 +107,9 @@ const OTHER_TAG = ['format', get('tag1'), { 'text-font': bold() }, ...SUFFIX, ..
 // No tag: the symbol is its icon alone.
 const NO_TAG = ['format', '', {}];
 
+// The zoom from which the ELEVANT tags are always drawn, overlapping if need be (CN-29): below it they declutter.
+export const TAG_DECLUTTER_UNTIL_ZOOM = 15;
+
 // Beside the aircraft, wherever it fits best, clear of its silhouette: right first, then left, below, above.
 const TAG_ANCHORS = ['left', 'right', 'top', 'bottom', 'top-left', 'top-right', 'bottom-left', 'bottom-right'];
 const tagLayout = (size, extra = {}) => ({
@@ -242,7 +245,9 @@ export function trafficOverlay({ theme = 'dark' } = {}) {
         source: TRAILS_SOURCE,
         filter: ['all', OTHER, isNot('selected'), ['!=', get('quality'), 'estimated']],
         layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': occColor('faint'), 'line-width': 1, 'line-opacity': ['case', ['==', get('quality'), 'stale'], 0.3, 0.6] },
+        // CN-29: fainter while another aircraft is chosen (only shown when the layers menu asks for every trail).
+        paint: { 'line-color': occColor('faint'), 'line-width': 1, 'line-opacity': ['*', ['case', is('dimmed'), 0.4, 1],
+          ['case', ['==', get('quality'), 'stale'], 0.3, 0.6]] },
         metadata: { 'occ:group': TRAFFIC_GROUPS.trails },
       },
       {
@@ -250,7 +255,8 @@ export function trafficOverlay({ theme = 'dark' } = {}) {
         id: 'occ-trails-live',
         type: 'line',
         source: TRAILS_SOURCE,
-        filter: ['all', ['any', AVIAM, is('selected')], ['!=', get('quality'), 'estimated']],
+        // CN-29: while an aircraft is chosen, the other ELEVANT trails give way to its route.
+        filter: ['all', ['any', AVIAM, is('selected')], isNot('dimmed'), ['!=', get('quality'), 'estimated']],
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-width': 2,
@@ -266,7 +272,7 @@ export function trafficOverlay({ theme = 'dark' } = {}) {
         id: 'occ-trails-estimated',
         type: 'line',
         source: TRAILS_SOURCE,
-        filter: ['==', get('quality'), 'estimated'],
+        filter: ['all', ['==', get('quality'), 'estimated'], isNot('dimmed')],
         layout: { 'line-join': 'round' },
         paint: { 'line-color': occColor('muted'), 'line-width': 1.5, 'line-dasharray': [2, 2] },
         metadata: { 'occ:group': TRAFFIC_GROUPS.aviam },
@@ -340,9 +346,13 @@ export function trafficOverlay({ theme = 'dark' } = {}) {
         filter: ['all', AVIAM, NOT_PARKED],
         layout: tagLayout(12, {
           'text-field': ['case', ['!=', get('tagStand'), ''], aviamTag({ stand: true }), aviamTag({ stand: false })],
-          // Always on: where no anchor is free, over what is there.
-          'text-allow-overlap': true,
-          'symbol-sort-key': ['case', is('selected'), 1, 0],
+          // CN-29: below the ramp's zoom (the approach and the airfield, where the aircraft at the terminals crowd
+          // together) a tag gives way where it would cover another: the chosen aircraft's first, then those in the air,
+          // then those on the ground. From the ramp's zoom on, always on: where no anchor is free, over what is there,
+          // the chosen one on top.
+          'text-overlap': ['step', ['zoom'], 'never', TAG_DECLUTTER_UNTIL_ZOOM, 'always'],
+          'symbol-sort-key': ['step', ['zoom'], ['case', is('selected'), 0, is('ground'), 2, 1],
+            TAG_DECLUTTER_UNTIL_ZOOM, ['case', is('selected'), 1, 0]],
         }),
         paint: tagPaint(occColor('text')),
         metadata: { 'occ:group': TRAFFIC_GROUPS.aviam },

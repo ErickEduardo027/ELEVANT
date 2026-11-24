@@ -29,7 +29,7 @@ const deg = value => (value * Math.PI) / 180;
 // - mainGear: the main legs under the wing at that share of the half span, `fuselage` (under the belly) or `nacelle`.
 //   noseGear: the nose leg's distance from the nose, as a share of the length.
 // - radial and nacelleRadial: segments around the fuselage and a nacelle, chosen so every type stays in the budget.
-const TUBE_FRAMES = Object.freeze({
+export const TUBE_FRAMES = Object.freeze({
   twinUnderwing: {
     belly: 0.4, wing: 'low', dihedral: 5, thickness: 0.11, tTail: false, stabDihedral: 6, finTip: 0.065, finSweep: 38,
     mainGear: 0.2, noseGear: 0.12, radial: 64, nacelleRadial: 24,

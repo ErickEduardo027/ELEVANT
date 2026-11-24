@@ -27,7 +27,8 @@ const round = (value, unit) => (finite(value) ? Math.round(value / unit) : null)
  * milliseconds (a stale position says its time: traffic/stationTime.js); a value it does not know is `null`. From the
  * motion (PR M6): its hand-off mode ('live', 'coast', 'estimate' or `null`), the status of its plan (a demo's
  * «Esperando posición»), the time scale of the part it is in (1 in real time), its opacity (1 unless it fades out) and
- * the runway its plan uses with where that choice comes from. No aircraft, `null`.
+ * the runway its plan uses with where that choice comes from, the stand it stands parked on and a mismatch with its
+ * assigned stand (CN-31). No aircraft, `null`.
  */
 export function telemetryAt(aircraft, nowMs) {
   if (aircraft == null) return null;
@@ -47,12 +48,15 @@ export function telemetryAt(aircraft, nowMs) {
     opacity: finite(aircraft.opacity) ? aircraft.opacity : 1,
     runwayIdent: typeof aircraft.runwayIdent === 'string' ? aircraft.runwayIdent : null,
     runwaySource: typeof aircraft.runwaySource === 'string' ? aircraft.runwaySource : null,
+    // CN-31: the stand it stands parked on, and the stand it was given when that is another one.
+    parkedStand: typeof aircraft.parkedStand === 'string' ? aircraft.parkedStand : null,
+    standMismatch: aircraft.standMismatch ?? null,
   });
 }
 
 const TELEMETRY_FIELDS = Object.freeze([
   'altFt', 'gsKt', 'trackDeg', 'vrate', 'ageS', 'positionAt', 'quality', 'onGround', 'mode', 'statusKey', 'timeScale',
-  'opacity', 'runwayIdent', 'runwaySource',
+  'opacity', 'runwayIdent', 'runwaySource', 'parkedStand', 'standMismatch',
 ]);
 const sameTelemetry = (first, second) => first === second
   || (first != null && second != null && TELEMETRY_FIELDS.every(field => Object.is(first[field], second[field])));

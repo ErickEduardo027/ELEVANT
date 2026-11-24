@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { CONSOLE_READS } from '../../dashboard/noc/consoleReads';
-import { airPictureDelayMs, MAP_SITUATION_READS } from '../../maps/useMapSituation';
+import { AIRFIELD_PICTURE_POLL_MS, airPictureDelayMs, MAP_SITUATION_READS } from '../../maps/useMapSituation';
 import { occMountedFiles, readSource } from '../../../styles/occSourceScan';
 import { ADMIN_OCC_NAVIGATION } from '../navigation';
 import { OCC_COALESCE_MS, OCC_HINT_COALESCE_MS, OCC_OBSERVER_POLL_MS } from './occCadence';
@@ -374,6 +374,27 @@ describe('OCC request budget', () => {
     expect(rest.byKey).toEqual({ 'shell:cursor': 2, airPicture: 6, mapFlights: 1, planning: 1, positions: 1,
       reviewQueue: 1, readiness: 1, notices: 1, presence: 2 });
     expect(rest.total).toBe(16);
+  });
+
+  it('the airfield pace of the air picture (CN-31) keeps the console within 40 requests, at rest and in the demo minute', () => {
+    const live = { status: 'Live', refreshAfterSeconds: 10, observedAt: '2026-11-24T15:00:00.000Z',
+      aircraft: [{ positionAt: '2026-11-24T14:59:58.000Z' }] };
+    // Only a live picture with an aircraft placed after its instant (the server's airfield read) asks every 5 s.
+    expect(airPictureDelayMs(live)).toBe(10_000);
+    const merged = { ...live, aircraft: [...live.aircraft, { positionAt: '2026-11-24T15:00:03.000Z' }] };
+    expect(airPictureDelayMs(merged)).toBe(AIRFIELD_PICTURE_POLL_MS);
+    expect(airPictureDelayMs({ ...merged, refreshAfterSeconds: 60 })).toBe(60_000);
+    expect(airPictureDelayMs({ ...merged, status: 'Stale' })).toBe(10_000);
+    expect(airPictureDelayMs(merged, 1)).toBe(20_000);
+    const fast = (script) => simulate({
+      shellReads: [...OCC_REQUEST_PLAN.frame, ...OCC_REQUEST_PLAN.console.map(entry => (entry.key === 'airPicture'
+        ? { ...entry, pollMs: AIRFIELD_PICTURE_POLL_MS } : entry))], script });
+    const rest = fast([]);
+    expect(rest.byKey.airPicture).toBe(12);
+    expect(rest.total, breakdown(rest)).toBe(22);
+    const demo = fast(OCC_DEMO_MINUTE);
+    expect(demo.total, breakdown(demo)).toBeLessThanOrEqual(OCC_REQUEST_BUDGET.demo);
+    expect(demo.total - plannedConsole(OCC_DEMO_MINUTE).total).toBe(6);
   });
 
   it('the planned console stays within 40 requests during the demo minute', () => {

@@ -1,7 +1,11 @@
 import { mapStandCode } from '../../positions-map/positionsMapMappers';
-import { aircraft3dColors, planInstances } from '../aircraft/instancePlan';
+import { METRES_PER_NM, haversineM } from '../airport/geo';
+import { createAttitudeTracker } from '../aircraft/attitude';
+import { AIRCRAFT_3D_RADIUS_NM, aircraft3dColors, instanceKey, planInstances } from '../aircraft/instancePlan';
+import { resolveLivery } from '../aircraft/liveries';
 import { loadAircraft3d } from '../aircraft/loadAircraft3d';
 import { resolveAircraftType } from '../aircraft/types';
+import { isDrawn } from '../traffic/trafficFeatures';
 import { sunPosition } from '../traffic/solar';
 import { TRAFFIC_SOURCE } from '../traffic/trafficFeatures';
 import { isRetired, standCodeOf } from './cameraPresets';
@@ -42,11 +46,53 @@ export const RETRY_LOAD_MS = 30_000;
 /** The slot of the map's style the 3D aircraft draw in: above the footprints and the buildings, under the tags. */
 export const AIRCRAFT_3D_SLOT = 'models';
 
+/**
+ * From this zoom the chosen aircraft is drawn with its detailed model and its airline's livery (CN-30,
+ * aircraft/aircraftDetail.js); the followed aircraft («Seguir en 3D») always is.
+ */
+export const DETAIL_MIN_ZOOM = 16.5;
+
 const NO_IDS = Object.freeze(new Set());
 // The layer a 3D pick names in its feature: the custom layer's id (aircraft/aircraft3dLayer.js), which this module may
 // not import (only the 3D chunk does).
 const AIRCRAFT_3D_PICK_LAYER = 'occ-aircraft-3d';
 const finite = value => typeof value === 'number' && Number.isFinite(value);
+const ATTITUDE_RADIUS_M = (AIRCRAFT_3D_RADIUS_NM + 1) * METRES_PER_NM;
+
+/** The aircraft of a write (or of the stands) with that id, as the plan takes it, and whether it is on its stand. */
+function findAircraft(aircraft, parked, id) {
+  if (id == null) return null;
+  const onStand = (Array.isArray(parked) ? parked : []).find(item => item?.id === id) ?? null;
+  if (onStand !== null && finite(onStand.lon) && finite(onStand.lat)) return { item: onStand, onStand: true };
+  const moving = (Array.isArray(aircraft) ? aircraft : []).find(item => item?.id === id) ?? null;
+  if (moving === null || !isDrawn(moving) || !finite(moving.lon) || !finite(moving.lat)) return null;
+  return { item: moving, onStand: false };
+}
+
+/**
+ * What the layer draws of the detailed aircraft (CN-30): `{ id, lon, lat, spec, code, key, livery, registration,
+ * headingDeg, heightM, pitchDeg, bankDeg, gearDown, lights, onStand, followed }`, frozen; `null` for one in the air
+ * without an altitude. `key` names its model: its type, its livery and its registration.
+ */
+export function detailOf(found, attitude, { followed = false } = {}) {
+  if (found === null || attitude === null) return null;
+  const { item, onStand } = found;
+  const resolved = resolveAircraftType({ typeIcao: item.typeIcao ?? null, model: item.model ?? null,
+    sizeCategory: item.sizeCategory ?? null, emitterCategory: item.emitterCategory ?? null });
+  const livery = resolveLivery(item);
+  const registration = typeof item.registration === 'string' && item.registration.trim() !== ''
+    ? item.registration.trim().toUpperCase() : null;
+  let heading = 0;
+  if (finite(item.trackDeg)) heading = item.trackDeg;
+  else if (finite(item.headingDeg)) heading = item.headingDeg;
+  return Object.freeze({
+    id: item.id, lon: item.lon, lat: item.lat, spec: resolved.spec, code: resolved.code,
+    key: `${instanceKey(resolved)}|${livery.id}|${registration ?? ''}`, livery, registration, headingDeg: heading,
+    heightM: onStand ? 0 : attitude.heightM, pitchDeg: onStand ? 0 : attitude.pitchDeg,
+    bankDeg: onStand ? 0 : attitude.bankDeg, gearDown: onStand ? true : attitude.gearDown, lights: attitude.lights,
+    gsMs: finite(item.gsMs) ? item.gsMs : 0, onStand, followed,
+  });
+}
 
 /** Whether the browser can draw WebGL2 at all (jsdom and very old browsers cannot): the 3D is off by default there. */
 export function supportsWebgl2() {
@@ -200,13 +246,20 @@ export function createGovernor({ limits = GOVERNOR, following = false } = {}) {
  * `load`, `now` and `webgl` (whether the browser has WebGL2) are for tests.
  *
  * - `setEnabled(on)`: the 3D mode; off removes the layer (and its renderer) from the map;
- * - `plan({ aircraft, parked, zoom, minZoom, selectedId })`: the aircraft of a write of the traffic; plans them,
- *   loads the chunk the first time the zoom reaches `minZoom` with 3D on, and answers the ids whose 2D symbol gives
- *   way (none while the layer is not drawing: loading, failed, paused, off, or below the threshold);
+ * - `plan({ aircraft, parked, zoom, minZoom, selectedId, followedId })`: the aircraft of a write of the traffic; plans
+ *   them, loads the chunk the first time the zoom reaches `minZoom` with 3D on, and answers the ids whose 2D symbol
+ *   gives way (none while the layer is not drawing: loading, failed, paused, off, or below the threshold). Each
+ *   aircraft near the airfield is pitched, banked and set at its height over the field (aircraft/attitude.js, eased
+ *   over time). CN-30: `followedId` («Seguir en 3D») draws that aircraft with its detailed model and livery
+ *   (aircraft/aircraftDetail.js) at any zoom and distance, even while the 3D is off or paused for the rest (the chunk is
+ *   loaded for it and the layer added; the governor never pauses it); without one, the chosen aircraft gets the
+ *   detailed model from DETAIL_MIN_ZOOM while the 3D draws. Its id is among the answered ones while the layer draws it;
+ *   `poseFollowed(sample)` poses it again from a sample of the frame (the follow camera's), between the writes;
  * - `pick(point)`: what the 3D draws under a pixel, `{ kind: 'aircraft', id }` with the plan's id, or null;
- * - `setFollowing(on)`, `pause()` and `resume()` («Volver a 3D»), `state()` → `{ enabled, status, notice, level }`
- *   (status `off` · `idle` · `loading` · `ready` · `failed` · `paused`; notice `null` · `failed` · `paused`),
- *   `stats()` (the layer's, or null) and `dispose()`.
+ * - `setFollowing(on)`, `pause()` and `resume()` («Volver a 3D»), `state()` → `{ enabled, status, notice, level,
+ *   follow }` (status `off` · `idle` · `loading` · `ready` · `failed` · `paused`; notice `null` · `failed` · `paused`;
+ *   follow, the followed aircraft's 3D: `off` without one, `loading`, `ready`, or `failed` when the browser cannot draw
+ *   3D, so the map says it shows it in 2D), `stats()` (the layer's, or null) and `dispose()`.
  */
 export function createAircraft3dController({
   engine, originLngLat, fieldElevationM = 0, theme = 'dark', getNow = () => Date.now(), onChange,
@@ -230,6 +283,17 @@ export function createAircraft3dController({
   let drawnIds = NO_IDS;
   let lastFrameAt = null;
   let basePixelRatio = null;
+  // CN-30: the eased attitude of every aircraft the 3D draws, the followed aircraft («Seguir en 3D»: always in 3D, its
+  // detailed model, even while the 3D is off or paused for the rest) and what the last plan drew in detail.
+  const attitudes = createAttitudeTracker();
+  let followedId = null;
+  let followingCamera = false;
+  let detailFound = null;
+  let detailRevision = 0;
+  // The zoom and the chosen aircraft of the last plan: a zoom across DETAIL_MIN_ZOOM plans again (the chosen aircraft
+  // gets or loses its detailed model) without waiting for the traffic's next write.
+  let lastPlanZoom = null;
+  let lastSelectedId = null;
 
   const changed = () => {
     if (!disposed) onChange?.();
@@ -275,8 +339,19 @@ export function createAircraft3dController({
     applyLevel(governor.level);
   }
 
+  // A zoom across DETAIL_MIN_ZOOM with an aircraft chosen asks the map for a new plan (its onChange writes the traffic).
+  function checkDetailZoom() {
+    if (lastSelectedId === null || followedId !== null || !finite(lastPlanZoom)) return;
+    const zoom = engine?.getCamera?.()?.zoom;
+    if (!finite(zoom) || (zoom >= DETAIL_MIN_ZOOM) === (lastPlanZoom >= DETAIL_MIN_ZOOM)) return;
+    lastPlanZoom = zoom;
+    // After this frame: the map's onChange writes the traffic, never inside the layer's render.
+    Promise.resolve().then(changed);
+  }
+
   // Each frame the map draws with the 3D on: the governor hears how long it took since the previous one.
   function onRendered() {
+    checkDetailZoom();
     const at = now();
     const dt = lastFrameAt === null ? null : at - lastFrameAt;
     lastFrameAt = at;
@@ -316,11 +391,13 @@ export function createAircraft3dController({
     // A browser without WebGL2 draws no 3D: nothing to load.
     if (!webgl()) {
       failedAt = now();
-      setStatus('failed', 'failed');
+      // With the 3D off only the followed aircraft asked: its follow status says it (state().follow).
+      if (enabled) setStatus('failed', 'failed');
+      else changed();
       return;
     }
     loading = true;
-    setStatus('loading', notice === 'failed' ? 'failed' : null);
+    if (enabled) setStatus('loading', notice === 'failed' ? 'failed' : null);
     load().then(loaded => {
       loading = false;
       if (disposed) return;
@@ -337,6 +414,11 @@ export function createAircraft3dController({
       }
       if (!enabled || status === 'paused') {
         setStatus(enabled ? status : 'off');
+        // The followed aircraft still draws in 3D.
+        if (forced()) {
+          addLayer();
+          changed();
+        }
         return;
       }
       showLayer();
@@ -360,11 +442,48 @@ export function createAircraft3dController({
     governor.level = GOVERNOR_PAUSED;
     governor.reset();
     lastFrameAt = null;
-    removeLayer();
+    // The followed aircraft keeps its layer: only the rest of the 3D pauses.
+    if (!forced()) removeLayer();
     setStatus('paused', 'paused');
   }
 
   const drawing = () => enabled && added && !layerFailed && status === 'ready' && engine?.map != null;
+  // The followed aircraft forces the layer onto the map even while the 3D is off or paused for the rest.
+  const forced = () => followedId !== null && detailFound !== null;
+  const drawingDetail = () => added && !layerFailed && engine?.map != null && (forced() || drawing());
+
+  // The eased attitude of an aircraft at the controller's clock (aircraft/attitude.js).
+  function attitudeOf(item, onStand) {
+    return attitudes.update(item.id, item, { nowMs: now(), fieldElevationM, onStand });
+  }
+
+  // The detailed aircraft of the plan, posed again: a new revision of the instances the layer reads.
+  function poseDetail(found) {
+    const attitude = attitudeOf(found.item, found.onStand);
+    const detail = detailOf(found, attitude, { followed: followedId !== null && found.item.id === followedId });
+    detailRevision += 1;
+    return detail === null ? null : Object.freeze({ ...detail, revision: detailRevision });
+  }
+
+  // While a flight is followed the layer stays on the map for its detailed model; once it is not, a map whose 3D is
+  // off or paused takes the layer off again.
+  function syncForcedLayer() {
+    if (forced()) {
+      if (modules === null) startLoad();
+      else if (layer !== null && !added && !disposed) {
+        layerFailed = false;
+        addLayer();
+      }
+      return;
+    }
+    if (added && (!enabled || status === 'paused')) removeLayer();
+  }
+
+  function followStatus() {
+    if (followedId === null) return 'off';
+    if (layerFailed || (modules === null && failedAt !== null)) return 'failed';
+    return added && detailFound !== null ? 'ready' : 'loading';
+  }
 
   return {
     setEnabled(on) {
@@ -374,7 +493,7 @@ export function createAircraft3dController({
       lastFrameAt = null;
       governor.reset();
       if (!enabled) {
-        removeLayer();
+        if (!forced()) removeLayer();
         governor.level = 0;
         setStatus('off', null);
         return;
@@ -384,23 +503,65 @@ export function createAircraft3dController({
       else setStatus('idle', null);
     },
 
-    plan({ aircraft = [], parked = [], zoom, minZoom, selectedId = null } = {}) {
-      if (!enabled || disposed) {
+    plan({ aircraft = [], parked = [], zoom, minZoom, selectedId = null, followedId: followed = null } = {}) {
+      if (disposed) {
         drawnIds = NO_IDS;
         return drawnIds;
       }
+      const followChanged = (followed ?? null) !== followedId;
+      followedId = followed ?? null;
+      lastPlanZoom = finite(zoom) ? zoom : null;
+      lastSelectedId = selectedId ?? null;
+      governor.setFollowing(followingCamera || followedId !== null);
+      const followFound = followedId === null ? null : findAircraft(aircraft, parked, followedId);
       const reached = finite(zoom) && finite(minZoom) && zoom >= minZoom;
-      if (reached && modules === null) startLoad();
-      const plan = planInstances(aircraft, parked, { zoom, minZoom, originLngLat, fieldElevationM, selectedId, colors });
-      revision += 1;
-      current = { revision, plan };
-      if (!drawing() || plan.size === 0) {
+      // The detailed model: the followed aircraft, else the chosen one up close while the 3D draws.
+      let found = followFound;
+      if (found === null && enabled && status === 'ready' && reached && finite(zoom) && zoom >= DETAIL_MIN_ZOOM) {
+        found = findAircraft(aircraft, parked, selectedId);
+      }
+      detailFound = found;
+      if (!enabled && found === null) {
+        syncForcedLayer();
+        current = { revision: (revision += 1), plan: new Map(), detail: null };
         drawnIds = NO_IDS;
+        // Said after this write, never inside it (the map's onChange writes the traffic again).
+      if (followChanged) Promise.resolve().then(changed);
         return drawnIds;
       }
+      if (enabled && reached && modules === null) startLoad();
+      syncForcedLayer();
+      // The attitude of every aircraft the plan may draw: near the airfield, and the detailed one wherever it is.
+      const eased = new Map();
+      const kept = new Set();
+      for (const item of Array.isArray(aircraft) ? aircraft : []) {
+        if (item?.id == null || !isDrawn(item) || !finite(item.lon) || !finite(item.lat)) continue;
+        if (item.id !== found?.item.id && haversineM(originLngLat, [item.lon, item.lat]) > ATTITUDE_RADIUS_M) continue;
+        kept.add(item.id);
+        if (item.id === found?.item.id) continue;
+        const attitude = attitudeOf(item, false);
+        if (attitude !== null) eased.set(item.id, attitude);
+      }
+      const detail = found === null ? null : poseDetail(found);
+      if (found !== null) kept.add(found.item.id);
+      attitudes.retain(kept);
+      const plan = enabled && status !== 'paused'
+        ? planInstances(aircraft, parked, { zoom, minZoom, originLngLat, fieldElevationM, selectedId, colors,
+          attitudes: eased, excludeId: detail?.id ?? null })
+        : new Map();
+      revision += 1;
+      current = { revision, plan, detail };
       const ids = new Set();
-      for (const entry of plan.values()) {
-        for (const id of entry.ids) if (id !== null) ids.add(id);
+      if (drawing()) {
+        for (const entry of plan.values()) {
+          for (const id of entry.ids) if (id !== null) ids.add(id);
+        }
+      }
+      if (detail !== null && drawingDetail()) ids.add(detail.id);
+      if (followChanged) Promise.resolve().then(changed);
+      if (ids.size === 0) {
+        drawnIds = NO_IDS;
+        return drawnIds;
       }
       drawnIds = ids;
       // The 2D write may change nothing the map draws: the 3D still needs the frame that shows the new plan.
@@ -408,8 +569,30 @@ export function createAircraft3dController({
       return ids;
     },
 
+    /**
+     * Poses the detailed aircraft again from a sample of this frame (CN-30, «Seguir en 3D»: the same sample the follow
+     * camera eases to), so the model moves with the camera every frame between the writes of the traffic. Answers
+     * whether it did: the sample must be the aircraft the last plan drew in detail.
+     */
+    poseFollowed(item) {
+      if (disposed || item == null || detailFound === null || item.id !== detailFound.item.id) return false;
+      if (!finite(item.lon) || !finite(item.lat)) return false;
+      detailFound = { item, onStand: detailFound.onStand };
+      const detail = poseDetail(detailFound);
+      current = { ...current, detail };
+      if (drawingDetail()) engine.map.triggerRepaint?.();
+      return detail !== null;
+    },
+
     /** The ids the last plan drew in 3D (their 2D symbols give way). */
     drawnIds: () => drawnIds,
+
+    /**
+     * The pose of the detailed aircraft the layer draws now (CN-30): `{ id, lon, lat, heightM, headingDeg, pitchDeg,
+     * bankDeg, gearDown, onStand, followed, … }` (detailOf), or null. The follow camera aims at its height over the
+     * field and turns with its heading.
+     */
+    followedPose: () => current.detail ?? null,
 
     pick(point) {
       if (!drawing() || layer === null) return null;
@@ -421,7 +604,8 @@ export function createAircraft3dController({
     },
 
     setFollowing(on) {
-      governor.setFollowing(on);
+      followingCamera = on === true;
+      governor.setFollowing(followingCamera || followedId !== null);
     },
 
     pause() {
@@ -438,7 +622,7 @@ export function createAircraft3dController({
       else setStatus('idle', null);
     },
 
-    state: () => ({ enabled, status, notice, level: governor.level }),
+    state: () => ({ enabled, status, notice, level: governor.level, follow: followStatus() }),
 
     stats: () => (layer === null || !added ? null : layer.stats()),
 

@@ -6,11 +6,12 @@ import { indexLayout, matchStand } from '../airport/layoutIndex';
 import { runwayEnd, runwayEnds, runwayIdsInUse, runwayInUse } from '../airport/runwayInUse';
 import { demoClock, endDemoTrajectory, fitDemoTrajectory } from '../kinematics/demoProfile';
 import {
-  buildArrivalTrajectory, buildDepartureTrajectory, departureAnchors, flightTimesFromRow, shouldEstimate,
+  buildArrivalTrajectory, buildDepartureTrajectory, departureAnchors, flightTimesFromRow, isInStand, isStoppedOnGround,
+  shouldEstimate,
 } from '../kinematics/estimator';
 import { TRACK_CONFIG, createTrack, needsReplan, reduceTrack, renderTrack, trackConfigFor } from '../kinematics/handoff';
 import { perfFor } from '../kinematics/perfProfiles';
-import { displayHeading } from '../kinematics/smoothing';
+import { HEADING_RATES, angleDiff, displayHeading } from '../kinematics/smoothing';
 import { apronHoldFor } from '../kinematics/taxiRoute';
 import { NM, ftToM } from '../kinematics/units';
 import { claimFixes, fixIdentity } from './situationModel';
@@ -69,6 +70,15 @@ export const FINAL_VOTE = Object.freeze({
 const NOMINAL_TAXI_OUT_MS = 5 * 60_000;
 // Below this speed an aircraft stands still (a fix on the ground under 2 kt holds its position).
 const MOVING_MS = 0.5;
+
+/**
+ * CN-31: an ELEVANT aircraft stopped on the ground inside a stand's box is drawn on that stand's parking point with the
+ * stand's heading, eased in over `easeMs`; one whose operation has its BLOCK_ON recorded (and no PUSHBACK) and whose
+ * signal is gone stays on its assigned stand. A stand other than the assigned one is where it really is: it is drawn
+ * there and the mismatch is said (`standMismatch`). The drawn turn rate (`turnDegS`, for the 3D bank) is smoothed with
+ * the time constant `turnTauS`.
+ */
+export const STAND_PARKING = Object.freeze({ easeMs: 2_000, turnTauS: 1.5 });
 
 const finite = value => typeof value === 'number' && Number.isFinite(value);
 const text = value => (typeof value === 'string' && value.trim() !== '' ? value.trim() : null);
@@ -218,6 +228,8 @@ export function createMotionStore({
   // The heading each aircraft was drawn with by the last frame (`{ deg, tMs, epoch }`), and the rebuilds waiting.
   const headings = new Map();
   const pendingReplans = new Set();
+  // CN-31: since when each ELEVANT aircraft stands parked on a stand (`{ code, sinceMs, from }`).
+  const parking = new Map();
   // The trajectories built for the route of a flight the store does not draw, by its key: `{ key, trajectory }`.
   let routePlans = new Map();
   let plans = new Map();
@@ -519,11 +531,16 @@ export function createMotionStore({
     const coastS = fix.onGround ? config.groundCoastMaxAgeS : config.coastMaxAgeS;
     const atMs = Math.max(fix.positionAt + coastS * 1_000, track.plan?.atMs ?? -Infinity);
     let trajectory = null;
-    if (row !== null) {
+    // CN-31: a fix on the ground is rebuilt only when it has the aircraft stopped in its own stand (parked there, or
+    // leaving it at its recorded PUSHBACK); anywhere else a real aircraft holds where it was reported and no taxi route
+    // is estimated for it (the plan records the fix without a trajectory, so it is not asked again).
+    const groundHold = fix.onGround === true
+      && !(isStoppedOnGround(fix) && isInStand(standOfCode(layout, row?.stand?.code), [fix.lon, fix.lat]));
+    if (row !== null && !groundHold) {
       const ctx = contextOf(row);
       trajectory = realTrajectory(row, ctx, { kind: 'fix', fix });
     }
-    const next = reduceTrack(track, { type: 'plan', trajectory, atMs, anchorFixAt: fix.positionAt }, config);
+    const next = reduceTrack(track, { type: 'plan', trajectory, atMs, anchorFixAt: fix.positionAt, hold: groundHold }, config);
     tracks.set(id, next);
     return next;
   }
@@ -565,12 +582,23 @@ export function createMotionStore({
       if (smooth) headings.delete(item.id);
       return null;
     }
-    const trackDeg = smooth ? smoothedHeading(item.id, render, tMs) : render.trackDeg;
+    let trackDeg = smooth ? smoothedHeading(item.id, render, tMs) : render.trackDeg;
+    const parked = parkingOf(item, render, tMs);
+    let { lon, lat } = render;
+    if (parked !== null) {
+      ({ lon, lat } = parked);
+      trackDeg = parked.trackDeg;
+      if (smooth) headings.set(item.id, { ...(headings.get(item.id) ?? {}), deg: trackDeg, tMs, epoch: render.trailEpoch, turn: 0 });
+    }
+    const turnDegS = smooth ? (headings.get(item.id)?.turn ?? 0) : 0;
+    let quality = render.quality === 'estimated' ? 'estimated' : item.quality;
+    // The operation's own BLOCK_ON on its assigned stand is the real state, not an estimate (CN-31).
+    if (parked?.reported === true) quality = 'reported';
     return {
       sampled: Object.freeze({
         ...item,
-        lon: render.lon,
-        lat: render.lat,
+        lon,
+        lat,
         altM: render.altM,
         gsMs: render.gsMs,
         trackDeg,
@@ -578,7 +606,10 @@ export function createMotionStore({
         onGround: render.onGround,
         phase: render.phase ?? item.phase ?? null,
         mode: render.mode,
-        quality: render.quality === 'estimated' ? 'estimated' : item.quality,
+        quality,
+        turnDegS,
+        parkedStand: parked?.code ?? null,
+        standMismatch: parked?.mismatch ?? null,
         ageS: render.ageS ?? item.ageS ?? 0,
         statusKey: render.statusKey,
         opacity: render.opacity,
@@ -586,7 +617,55 @@ export function createMotionStore({
         runwayIdent: runwayIdentOf(track, item),
         runwaySource: runwaySourceOf(track, item),
       }),
-      moving: moves(track, render, tMs, config),
+      moving: moves(track, render, tMs, config) || parked?.easing === true,
+    };
+  }
+
+  // The stand a point lies in (its box), the assigned one first.
+  function standAt(point, assigned) {
+    if (assigned && isInStand(assigned, point)) return assigned;
+    return (layout?.stands ?? []).find(stand => stand.retired !== true && isInStand(stand, point)) ?? null;
+  }
+
+  // Where an ELEVANT aircraft stands parked (STAND_PARKING), or null: `{ lon, lat, trackDeg, code, mismatch, reported,
+  // easing }`.
+  function parkingOf(item, render, tMs) {
+    const stopped = render.onGround === true && !(finite(render.gsMs) && render.gsMs >= HEADING_RATES.holdBelowMs);
+    if (item.kind !== 'aviam' || !stopped) {
+      parking.delete(item.id);
+      return null;
+    }
+    const row = flightsByKey.get(item.flightKey) ?? null;
+    const assigned = standOfCode(layout, row?.stand?.code);
+    const times = row ? flightTimesFromRow(row, parseInstant) : null;
+    const onBlocks = row !== null && row.direction !== 'Departure' && finite(times?.blockOnAtMs) && !finite(times?.pushbackAtMs);
+    let stand = standAt([render.lon, render.lat], assigned);
+    // Its signal gone after the BLOCK_ON on its assigned stand: it is there (the tablet said so).
+    if (stand === null && onBlocks && assigned !== null && render.quality !== 'live' && render.mode !== 'live') stand = assigned;
+    if (stand === null) {
+      parking.delete(item.id);
+      return null;
+    }
+    let state = parking.get(item.id);
+    if (!state || state.code !== stand.code || tMs < state.sinceMs) {
+      state = { code: stand.code, sinceMs: tMs, from: { lon: render.lon, lat: render.lat, trackDeg: render.trackDeg } };
+      parking.set(item.id, state);
+    }
+    const u = Math.min(1, Math.max(0, (tMs - state.sinceMs) / STAND_PARKING.easeMs));
+    const w = u * u * (3 - 2 * u);
+    const [cx, cy] = stand.center;
+    const fromDeg = finite(state.from.trackDeg) ? state.from.trackDeg : stand.headingTrue;
+    const trackDeg = ((fromDeg + angleDiff(fromDeg, stand.headingTrue) * w) % 360 + 360) % 360;
+    return {
+      lon: state.from.lon + (cx - state.from.lon) * w,
+      lat: state.from.lat + (cy - state.from.lat) * w,
+      trackDeg,
+      code: stand.code,
+      mismatch: assigned !== null && assigned.code !== stand.code
+        ? Object.freeze({ assigned: assigned.code, actual: stand.code }) : null,
+      // Said as the tablet's on-block only while no live signal says where it is.
+      reported: onBlocks && assigned !== null && assigned.code === stand.code && render.mode !== 'live',
+      easing: u < 1,
     };
   }
 
@@ -611,8 +690,17 @@ export function createMotionStore({
       prevDeg: usable ? previous.deg : null, trackDeg: render.trackDeg, gsMs: render.gsMs, onGround: render.onGround,
       dtS: usable ? (tMs - previous.tMs) / 1000 : 0, estimated: render.quality === 'estimated',
     });
-    if (finite(deg)) headings.set(id, { deg, tMs, epoch: render.trailEpoch });
-    else headings.delete(id);
+    if (finite(deg)) {
+      // The drawn turn rate, smoothed (STAND_PARKING.turnTauS): the 3D layer banks the aircraft by it.
+      let turn = 0;
+      if (usable && tMs > previous.tMs) {
+        const dtS = (tMs - previous.tMs) / 1000;
+        const rate = angleDiff(previous.deg, deg) / dtS;
+        const k = 1 - Math.exp(-dtS / STAND_PARKING.turnTauS);
+        turn = (previous.turn ?? 0) + ((finite(rate) ? rate : 0) - (previous.turn ?? 0)) * k;
+      } else if (usable) turn = previous.turn ?? 0;
+      headings.set(id, { deg, tMs, epoch: render.trailEpoch, turn });
+    } else headings.delete(id);
     return finite(deg) ? deg : render.trackDeg;
   }
 
