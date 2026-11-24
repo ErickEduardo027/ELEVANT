@@ -4,8 +4,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createTranslator } from '../../i18n/languageStore';
 import OccFlightStrip from '../occ-ui/OccFlightStrip';
 import {
-  buildFlightBoard, FLIGHT_BOARD_FILTERS, FLIGHT_BOARD_STATUS_KEYS, filterBoard, findBoardFlight, flightDirection,
-  stripStatus,
+  buildFlightBoard, DEFAULT_FLIGHT_BOARD_SORT, FLIGHT_BOARD_FILTERS, FLIGHT_BOARD_SORT_KEYS, FLIGHT_BOARD_STATUS_KEYS,
+  filterBoard, findBoardFlight, flightDirection, nextBoardSort, sortBoard, stripStatus,
 } from './flightBoardModel';
 import { flightMonitoringMessages } from './flightMonitoringMessages';
 
@@ -175,5 +175,43 @@ describe('findBoardFlight', () => {
     expect(findBoardFlight(null, 'leg-a')).toBeNull();
     // The page's numeric ids are read as text.
     expect(findBoardFlight([{ id: 7, direction: 'arrival' }], '7')?.id).toBe(7);
+  });
+});
+
+describe('sortBoard (CN-32)', () => {
+  const strips = board([
+    leg({ id: 'a1', flightNumber: 'ZZ300', origin: 'MIA', stand: 'B21', scheduledAt: at(40) }),
+    leg({ id: 'a2', flightNumber: 'ZZ101', origin: 'SDQ', stand: null, scheduledAt: at(10) }),
+    departure({ id: 'd1', flightNumber: 'ZZ20', destination: 'BOG', stand: 'A5', scheduledAt: at(25) }),
+    leg({ id: 'a3', flightNumber: 'ZZ9', origin: null, stand: 'A12', scheduledAt: null, eta: null }),
+  ]).all;
+  const ids = sort => sortBoard(strips, sort).map(strip => strip.id);
+
+  it('opens by time and sorts by any column of the header, either way, with what lacks the value last', () => {
+    expect(FLIGHT_BOARD_SORT_KEYS).toEqual(['time', 'flight', 'status', 'route', 'stand']);
+    expect(DEFAULT_FLIGHT_BOARD_SORT).toEqual({ key: 'time', direction: 'ascending' });
+    expect(ids()).toEqual(['a2', 'd1', 'a1', 'a3']);
+    expect(ids({ key: 'time', direction: 'descending' })).toEqual(['a1', 'd1', 'a2', 'a3']);
+    // Flight numbers in natural order: ZZ9 before ZZ20.
+    expect(ids({ key: 'flight', direction: 'ascending' })).toEqual(['a3', 'd1', 'a2', 'a1']);
+    expect(ids({ key: 'route', direction: 'ascending' })).toEqual(['d1', 'a1', 'a2', 'a3']);
+    expect(ids({ key: 'stand', direction: 'descending' })).toEqual(['a1', 'a3', 'd1', 'a2']);
+    // By status: what asks for attention first (the arrival without a stand due within the hour), then by the words.
+    expect(ids({ key: 'status', direction: 'ascending' })[0]).toBe('a2');
+    // A new array: the board keeps its own order.
+    expect(strips.map(strip => strip.id)).toEqual(['a2', 'd1', 'a1', 'a3']);
+    expect(() => sortBoard(strips, { key: 'airline', direction: 'ascending' })).toThrow(RangeError);
+    expect(() => sortBoard(strips, { key: 'time', direction: 'up' })).toThrow(RangeError);
+  });
+
+  it('a click on a column sorts by it, and a second click turns the order', () => {
+    expect(nextBoardSort(DEFAULT_FLIGHT_BOARD_SORT, 'flight')).toEqual({ key: 'flight', direction: 'ascending' });
+    expect(nextBoardSort({ key: 'flight', direction: 'ascending' }, 'flight')).toEqual({ key: 'flight', direction: 'descending' });
+    expect(nextBoardSort({ key: 'flight', direction: 'descending' }, 'flight')).toEqual({ key: 'flight', direction: 'ascending' });
+  });
+
+  it('each strip carries its delay: the minutes its best time runs past the scheduled one', () => {
+    const late = board([leg({ id: 'late', scheduledAt: at(10), estimatedAt: at(28) }), leg({ id: 'on', scheduledAt: at(10) })]);
+    expect(late.all.map(strip => [strip.id, strip.delayMinutes])).toEqual([['on', null], ['late', 18]]);
   });
 });

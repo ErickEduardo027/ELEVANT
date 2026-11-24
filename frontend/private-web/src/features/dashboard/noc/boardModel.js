@@ -1,6 +1,7 @@
 import { parseInstant } from '../../../services/serverClock';
 import { normalizeStandCode } from '../../../services/standCodes';
 import { endsItsVisit, matchFlight } from '../../maps/core/mapSelection';
+import { delayChipOf, delayMinutesOf } from '../../occ-ui/occDelay';
 import { isInOperation } from '../../occ-ui/statusVocabulary';
 import { missingResources } from '../dashboardModel';
 
@@ -206,7 +207,7 @@ function mapStrip(flight, { nowMs, t, estimatedKeys }, facts) {
     imported: flight.imported === true, direction: flight.direction, flightNumber: flight.flightNumber ?? '',
     counterpartIata: flight.counterpart?.iataCode ?? null,
     time: bestTime(flight), standCode: assignedStandCode(flight),
-    demo: flight.isDemo === true, estimated: estimatedKeys.has(flight.flightKey),
+    demo: flight.isDemo === true, estimated: estimatedKeys.has(flight.flightKey), delayMinutes: delayMinutesOf(flight),
   }, flightStatus(flight, { nowMs, onStand: facts?.onStand }), t);
 }
 
@@ -218,6 +219,7 @@ function planningStrip(turnaround, leg, direction, { nowMs, t }) {
     legId: leg.id ?? null, turnaroundId: turnaround.id, proposalId: null, imported: true, direction,
     flightNumber: leg.flightNumber ?? '', counterpartIata: counterpart?.iataCode ?? null, time: bestTime(leg),
     standCode: assignedStandCode(turnaround), demo: turnaround.isDemo === true, estimated: false,
+    delayMinutes: delayMinutesOf(leg),
   }, planningLegStatus(turnaround, leg, direction, nowMs), t);
 }
 
@@ -419,7 +421,7 @@ export function selectionIdOf(item, flights = NO_ROWS) {
 }
 
 /** The marks of the board its legend explains, in the legend's order: the two signals, then the two tags. */
-export const BOARD_LEGEND_KEYS = Object.freeze(['attention', 'urgent', 'demo', 'estimated']);
+export const BOARD_LEGEND_KEYS = Object.freeze(['attention', 'urgent', 'demo', 'estimated', 'delay']);
 
 /**
  * What the legend of the board names (contratos 2.4: a board shows its legend in its header, and a legend lists only
@@ -434,6 +436,10 @@ export function boardLegendKeys({ strips = NO_ROWS, visits = NO_ROWS } = {}) {
     if (item?.status?.signal) found.add(item.status.signal);
     if (item?.demo) found.add('demo');
     if (item?.estimated) found.add('estimated');
+    // A delay chip (CN-32): its meaning, and the amber triangle it carries from 15 minutes.
+    const delay = delayChipOf(item?.delayMinutes);
+    if (delay !== null) found.add('delay');
+    if (delay?.signal) found.add(delay.signal);
   }
   for (const item of Array.isArray(visits) ? visits : NO_ROWS) {
     if (Array.isArray(item?.missing) && item.missing.length > 0) found.add('attention');

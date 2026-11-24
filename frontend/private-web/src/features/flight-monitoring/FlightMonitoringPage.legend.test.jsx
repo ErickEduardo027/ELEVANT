@@ -71,7 +71,7 @@ describe('FlightMonitoringPage with its map', () => {
     const [button, ...others] = screen.getAllByRole('button', { name: 'Leyenda' });
     expect(others).toEqual([]);
     expect(screen.getByTestId('occ-map')).toContainElement(button);
-    expect(within(screen.getByTestId('map-legend')).getAllByRole('listitem').map(item => item.textContent))
+    expect(within(screen.getByTestId('map-legend')).getAllByRole('listitem', { hidden: true }).map(item => item.textContent))
       .toEqual(['VueloApunta según su rumbo; al norte si no se conoce']);
   });
 
@@ -88,7 +88,7 @@ describe('FlightMonitoringPage with its map', () => {
     act(() => resetLanguageForTests('en'));
     renderPage(DATA, { english: true });
     expect(screen.getAllByRole('button', { name: 'Legend' })).toHaveLength(1);
-    expect(within(screen.getByTestId('map-legend')).getAllByRole('listitem').map(item => item.textContent))
+    expect(within(screen.getByTestId('map-legend')).getAllByRole('listitem', { hidden: true }).map(item => item.textContent))
       .toEqual(['FlightPoints along its heading; north when unknown']);
     expect(screen.queryByText('Leyenda')).not.toBeInTheDocument();
   });

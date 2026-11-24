@@ -75,8 +75,23 @@ describe('insetsFromPanels', () => {
   });
 
   it('names an edge for every floating panel of the console', () => {
-    expect(CONSOLE_PANEL_EDGES).toEqual({ board: 'left', figures: 'top', alerts: 'right', inspector: 'right',
+    // The panels of the columns take room from the side they are docked at (CN-32).
+    expect(CONSOLE_PANEL_EDGES).toEqual({ board: 'side', figures: 'top', alerts: 'side', inspector: 'side',
       positions: 'bottom' });
+  });
+
+  it('a panel of a column takes room from the side its middle is on, and a pill from the nearer of top and bottom (CN-32)', () => {
+    const map = { left: 0, top: 0, right: 1000, bottom: 600 };
+    // The inspector docked under the board at the left (below 1536 px), then in its own column at the right.
+    expect(insetsFromPanels(map, [{ side: 'side', rect: { left: 0, top: 0, right: 384, bottom: 600 } }]))
+      .toEqual({ top: 0, right: 0, bottom: 0, left: 392 });
+    expect(insetsFromPanels(map, [{ side: 'side', rect: { left: 648, top: 60, right: 1000, bottom: 560 } }]))
+      .toEqual({ top: 0, right: 360, bottom: 0, left: 0 });
+    // Folded at the foot of the left column, the pill of «Alertas» takes room from the bottom, not the top.
+    expect(insetsFromPanels(map, [{ side: 'side', folded: true, rect: { left: 0, top: 560, right: 150, bottom: 600 } }]))
+      .toEqual({ top: 0, right: 0, bottom: 48, left: 0 });
+    expect(insetsFromPanels(map, [{ side: 'side', folded: true, rect: { left: 0, top: 0, right: 150, bottom: 40 } }]))
+      .toEqual({ top: 48, right: 0, bottom: 0, left: 0 });
   });
 });
 

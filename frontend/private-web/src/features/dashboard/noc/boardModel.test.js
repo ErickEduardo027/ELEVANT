@@ -139,7 +139,7 @@ describe('boardModel', () => {
   });
 
   it('the legend names only the marks the visible tab draws', () => {
-    expect(BOARD_LEGEND_KEYS).toEqual(['attention', 'urgent', 'demo', 'estimated']);
+    expect(BOARD_LEGEND_KEYS).toEqual(['attention', 'urgent', 'demo', 'estimated', 'delay']);
     const situation = buildSituation({ picture: toPictureModel(createAirPicture()),
       flights: toFlightsModel(createMapFlights()), nowMs: NOW, estimates: createEstimates() });
     const board = buildBoard({ flights: FLIGHTS, aircraft: situation.aircraft, nowMs: NOW, t });
@@ -147,9 +147,10 @@ describe('boardModel', () => {
     const arrivals = [...board.arrivals, ...board.toImport.arrivals];
     expect(arrivals.find(item => item.flightNumber === 'ZZ9001')).toMatchObject({ demo: true, estimated: true,
       status: { key: 'noStand', signal: 'attention' } });
-    expect(boardLegendKeys({ strips: arrivals })).toEqual(['attention', 'demo', 'estimated']);
-    // Without the demo pair the same tab has nothing to explain: no legend.
-    const plain = arrivals.filter(item => !item.demo);
+    // The synthetic day also runs a few arrivals late (CN-32): their delay chips add the delay to the legend.
+    expect(boardLegendKeys({ strips: arrivals })).toEqual(['attention', 'demo', 'estimated', 'delay']);
+    // Without the demo pair and the late ones the same tab has nothing to explain: no legend.
+    const plain = arrivals.filter(item => !item.demo && !(item.delayMinutes >= 5));
     expect(plain.some(item => item.status.signal || item.estimated)).toBe(false);
     expect(boardLegendKeys({ strips: plain })).toEqual([]);
     // An urgent strip says so; a strip that is only demo, only that.
@@ -160,6 +161,11 @@ describe('boardModel', () => {
       .toEqual(['attention', 'demo']);
     expect(boardLegendKeys({ visits: [{ missing: null }, { missing: [] }] })).toEqual([]);
     expect(boardLegendKeys()).toEqual([]);
+    // A delay chip (CN-32) names its meaning from 5 minutes, and the amber triangle it carries from 15.
+    const late = minutes => ({ status: { signal: null }, delayMinutes: minutes });
+    expect(boardLegendKeys({ strips: [late(4)] })).toEqual([]);
+    expect(boardLegendKeys({ strips: [late(8)] })).toEqual(['delay']);
+    expect(boardLegendKeys({ strips: [late(20)] })).toEqual(['attention', 'delay']);
   });
 
   it('groups the two legs of a visit and its missing resources', () => {

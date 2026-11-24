@@ -69,6 +69,12 @@ describe('FlightInspector', () => {
     expect(within(region).getByText('HI1001')).toHaveAttribute('data-occ-plate', 'registration');
     expect(within(region).getByText('14:25').tagName).toBe('TIME');
     expect(within(region).getByText('14:25')).toHaveAttribute('dateTime', '2026-11-14T18:25:00.000Z');
+    // Its delay (CN-32): 15 minutes past its scheduled time, at the right of «Horarios», with the amber triangle.
+    const times = within(region).getByRole('region', { name: 'Horarios' });
+    const delay = times.querySelector('[data-occ-delay]');
+    expect(delay).toHaveAttribute('data-occ-delay', '15');
+    expect(delay).toHaveAttribute('data-signal', 'attention');
+    expect(delay).toHaveTextContent('Atención: 15 min de demora');
   });
 
   it('says what a flight lacks: no stand, no aircraft, nobody and no services', () => {

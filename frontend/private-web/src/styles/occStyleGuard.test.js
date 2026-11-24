@@ -406,14 +406,15 @@ describe('OCC legacy bridge', () => {
   });
 
   it('the bridge maps every legacy colour class used in files mounted under /admin-occ', () => {
-    const files = occMountedFiles();
-    const unmapped = legacyClassesIn(files)
+    // One scan of every file mounted under /admin-occ (about 2 s on a laptop): the scan is the test's whole cost.
+    const used = legacyClassesIn(occMountedFiles());
+    const unmapped = used
       .filter(found => {
         const className = found.slice(found.indexOf(': ') + 2);
         return !mappedClasses.has(className) && !Object.hasOwn(OCC_BRIDGE_UNMAPPED, className);
       });
     expect(unmapped, 'add these classes to src/styles/occLegacyBridgeMap.js').toEqual([]);
-    expect(legacyClassesIn(files).length).toBeGreaterThan(100);
+    expect(used.length).toBeGreaterThan(100);
   });
 
   it('also reads the legacy colours that the global stylesheets copy through @apply', () => {

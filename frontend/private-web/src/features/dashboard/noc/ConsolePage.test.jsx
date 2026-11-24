@@ -621,15 +621,19 @@ describe('the OCC console', () => {
     const legend = () => within(board()).queryByRole('list', { name: 'Leyenda del tablero' });
     const legendKeys = () => [...(legend()?.querySelectorAll('[data-occ-legend-item]') ?? [])]
       .map(item => item.getAttribute('data-occ-legend-item'));
-    // What the tab's body draws: the glyph of a signal, the «Demo» and «est.» tags.
-    const marksOf = body => BOARD_LEGEND_KEYS.filter(key => body.querySelector(key === 'demo' || key === 'estimated'
-      ? `[data-occ-tag="${key}"]` : `[data-occ-glyph="${key}"]`) !== null);
+    // What the tab's body draws: the glyph of a signal, the «Demo» and «est.» tags and the delay chip (CN-32).
+    const markSelector = key => {
+      if (key === 'demo' || key === 'estimated') return `[data-occ-tag="${key}"]`;
+      return key === 'delay' ? '[data-occ-delay]' : `[data-occ-glyph="${key}"]`;
+    };
+    const marksOf = body => BOARD_LEGEND_KEYS.filter(key => body.querySelector(markSelector(key)) !== null);
     const body = () => board().querySelector('[role="tabpanel"]');
 
     // «Llegadas»: the demo arrival still to import, without a stand and due within the hour; the map draws its aircraft
     // where its demo clock puts it (PR M6), an estimated position, so its strip also says «est.».
     await waitFor(() => expect(body()).toHaveTextContent('ZZ9001'));
-    await waitFor(() => expect(legendKeys()).toEqual(['attention', 'demo', 'estimated']));
+    await waitFor(() => expect(legendKeys()).toEqual(marksOf(body())));
+    expect(legendKeys()).toEqual(expect.arrayContaining(['attention', 'demo', 'estimated']));
     expect(legend()).toHaveTextContent('Atención');
     expect(legend()).toHaveTextContent('Simulado para la demostración');
     expect(within(legend()).getByText('Demo')).toHaveAttribute('data-occ-tag', 'demo');

@@ -71,9 +71,16 @@ test.describe('the OCC console on the map engine', () => {
       await expect(root).toHaveAttribute('data-occ-console', 'map');
       await expect(map).toHaveAttribute('data-occ-view', 'ramp');
       await settled(page, map);
-      // Below 1600 px the figures open folded; the band always does.
-      await expect(panel(page, 'Cifras de la jornada')).toHaveAttribute('data-folded', size.width < 1600 ? 'true' : 'false');
+      // The figures are one strip along the top of the map (CN-32), open from 1280 px; the band opens folded.
+      await expect(panel(page, 'Cifras de la jornada')).toHaveAttribute('data-folded', 'false');
       await expect(panel(page, 'Posiciones')).toHaveAttribute('data-folded', 'true');
+      // Docked flush against the map: «Tablero» and «Alertas» share the left column, the figures run along the top.
+      const [boardBox, alertsBox, figuresBox, mapBox] = await Promise.all([panel(page, 'Tablero').boundingBox(),
+        panel(page, 'Alertas').boundingBox(), panel(page, 'Cifras de la jornada').boundingBox(), map.boundingBox()]);
+      expect(Math.round(boardBox.x), 'the board against the left edge of the map').toBe(Math.round(mapBox.x));
+      expect(Math.round(alertsBox.x)).toBe(Math.round(boardBox.x));
+      expect(alertsBox.y, 'the alerts under the board').toBeGreaterThanOrEqual(boardBox.y + boardBox.height - 1);
+      expect(Math.round(figuresBox.y), 'the figures against the top edge of the map').toBe(Math.round(mapBox.y));
       await shoot(page, testInfo, `u3-consola-inicio-${size.width}`);
 
       for (const name of PANELS) await setOpen(page, name, false);
@@ -221,9 +228,10 @@ test.describe('the OCC console on the map engine', () => {
       await shoot(page, testInfo, 'u3-consola-ver-y-seguir-1920');
     });
 
-    // With «Alertas» folded, the inspector that opens with the selection takes its column from the map, and the new
-    // padding of the map would stop a camera move already under way: the console flies only once it is measured. The
-    // legend lists only what the panels leave in sight, so it names the aircraft once the camera has brought it there.
+    // With «Alertas» folded, the inspector that opens with the selection docks under the board at 1440 px (CN-32) and
+    // takes its width from the map, and the new padding of the map would stop a camera move already under way: the
+    // console flies only once it is measured. The legend lists only what the panels leave in sight, so it names the
+    // aircraft once the camera has brought it there.
     test('a strip chosen beside a folded «Alertas» brings its aircraft beside the inspector at 1440×900',
       async ({ page, isolation }, testInfo) => {
         await page.setViewportSize({ width: 1440, height: 900 });
@@ -234,8 +242,13 @@ test.describe('the OCC console on the map engine', () => {
         await panel(page, 'Tablero').getByRole('button', { name: /ZZ161/ }).click();
         await expect.poll(() => new URL(page.url()).searchParams.get('flightId')).toBe(ARRIVAL_ON_FINAL_KEY);
         await expect(panel(page, 'Inspector').getByRole('dialog', { name: 'Vuelo ZZ161' })).toBeVisible();
+        // Below 1536 px the inspector docks in the left column, under the board: the right edge stays free.
+        const [inspectorBox, boardBox] = await Promise.all([panel(page, 'Inspector').boundingBox(),
+          panel(page, 'Tablero').boundingBox()]);
+        expect(Math.round(inspectorBox.x)).toBe(Math.round(boardBox.x));
+        await expect.poll(() => map.evaluate(node => node.style.getPropertyValue('--occ-map-inset-right'))).toBe('0px');
         await expect.poll(async () => Number.parseFloat(await map.evaluate(node =>
-          node.style.getPropertyValue('--occ-map-inset-right')))).toBeGreaterThan(300);
+          node.style.getPropertyValue('--occ-map-inset-left')))).toBeGreaterThan(300);
         await expect(map).toHaveAttribute('data-occ-settled', 'true');
         const legendButton = map.getByRole('button', { name: 'Leyenda', exact: true });
         if ((await legendButton.getAttribute('aria-expanded')) !== 'true') await legendButton.click();
