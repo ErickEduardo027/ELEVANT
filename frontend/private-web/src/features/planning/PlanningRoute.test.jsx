@@ -5,6 +5,8 @@ import { usePlanningData } from './usePlanningData';
 import { useAuth } from '../auth/AuthContext';
 import { useAdminOccPreview } from '../admin-occ/AdminOccPreviewContext';
 import { createPlanningSnapshot, STATION_ID, STATION_SCOPES } from './testing/planningFixtures';
+import { OCC_READ_TIMEOUT_MS, OCC_SAFETY_POLL_MS } from '../admin-occ/live/occCadence';
+import { createOccShellValue, OccShellTestProvider } from '../admin-occ/shell/testing/occShellFixtures';
 
 const pageCapture = vi.hoisted(() => ({ props: null }));
 const observerCapture = vi.hoisted(() => ({ onChanges: null, stop: vi.fn() }));
@@ -125,33 +127,42 @@ describe('PlanningRoute', () => {
     });
   });
 
-  it('refreshes station planning and assignment options after a durable OCC invalidation', () => {
-    render(<PlanningRoute />);
-    expect(pageCapture.props.dataRevision).toBe(0);
+  it('refreshes station planning and assignment options when the shell announces a planning change', () => {
+    vi.useFakeTimers();
+    try {
+      const shell = createOccShellValue();
+      const { unmount } = render(<OccShellTestProvider value={shell}><PlanningRoute /></OccShellTestProvider>);
+      expect(pageCapture.props.dataRevision).toBe(0);
+      // The route opens no observer of its own (OCC_SCREEN_REFRESH).
+      expect(observerCapture.onChanges).toBeNull();
+      expect(shell.subscriptions()).toEqual(['occ_planning']);
+      // The mount's read, which this stand-in never reports as running, counts until the read timeout.
+      act(() => vi.advanceTimersByTime(OCC_READ_TIMEOUT_MS));
 
-    act(() => observerCapture.onChanges(['hr_absences']));
-    expect(pageCapture.props.dataRevision).toBe(0);
-    act(() => observerCapture.onChanges(['occ_planning']));
-    expect(vi.mocked(usePlanningData)).toHaveBeenLastCalledWith(expect.objectContaining({
-      stationId: STATION_ID,
-      refreshToken: 1,
-    }));
-    expect(pageCapture.props.dataRevision).toBe(1);
+      act(() => shell.announce(['hr_absences']));
+      expect(pageCapture.props.dataRevision).toBe(0);
+      act(() => shell.announce(['occ_planning']));
+      expect(vi.mocked(usePlanningData)).toHaveBeenLastCalledWith(expect.objectContaining({
+        stationId: STATION_ID,
+        refreshToken: 1,
+      }));
+      expect(pageCapture.props.dataRevision).toBe(1);
+      unmount();
+      expect(shell.subscriptions()).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
-  it('reconciles planning on focus and disconnects the observer on unmount', () => {
-    const { unmount } = render(<PlanningRoute />);
-    act(() => window.dispatchEvent(new Event('focus')));
-    expect(pageCapture.props.dataRevision).toBe(1);
-    unmount();
-    expect(observerCapture.stop).toHaveBeenCalledOnce();
-  });
-
-  it('revalidates the station snapshot when visible even without a delivered hint', () => {
+  it('does not re-read on focus nor on a 25 s timer of its own: only on its 60 s safety poll', () => {
     vi.useFakeTimers();
     try {
       const { unmount } = render(<PlanningRoute />);
+      act(() => vi.advanceTimersByTime(OCC_READ_TIMEOUT_MS));
+      act(() => window.dispatchEvent(new Event('focus')));
       act(() => vi.advanceTimersByTime(25_000));
+      expect(pageCapture.props.dataRevision).toBe(0);
+      act(() => vi.advanceTimersByTime(OCC_SAFETY_POLL_MS));
       expect(pageCapture.props.dataRevision).toBe(1);
       unmount();
     } finally {

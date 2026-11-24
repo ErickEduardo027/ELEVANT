@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { readAttendanceDraft, saveOccAttendanceDraft } from '../../../services/attendanceDraftService';
+import { useOptionalOccShellChannel } from '../../admin-occ/shell/occShellContext';
 
 const POLL_MS = 25_000;
 
@@ -13,6 +14,9 @@ export function useAttendanceDraft({ operationId, assignmentId, enabled = true }
   const generationRef = useRef(0);
   const abortRef = useRef(null);
   const pendingRef = useRef(null);
+  // Inside the OCC frame the draft follows `attendance_draft` on the shell's single observer; only outside it (a test, a
+  // screen of another department) does it open an observer of its own.
+  const subscribe = useOptionalOccShellChannel()?.subscribe;
 
   const reload = useCallback(async ({ initial = false } = {}) => {
     if (!enabled || !operationId || !assignmentId) return null;
@@ -55,10 +59,11 @@ export function useAttendanceDraft({ operationId, assignmentId, enabled = true }
     if (!enabled || !operationId || !assignmentId) return undefined;
     void reload({ initial: true });
     const refresh = () => { void reload(); };
-    const observer = createPrivateWebAccountChangeObserver(resources => {
+    const observer = subscribe ? null : createPrivateWebAccountChangeObserver(resources => {
       if (resources.includes('attendance_draft')) refresh();
     });
-    void observer.start().catch(() => {});
+    const unsubscribe = subscribe ? subscribe(['attendance_draft'], refresh) : null;
+    void observer?.start().catch(() => {});
     window.addEventListener('focus', refresh);
     window.addEventListener('online', refresh);
     const onVisibility = () => {
@@ -75,10 +80,11 @@ export function useAttendanceDraft({ operationId, assignmentId, enabled = true }
       window.removeEventListener('focus', refresh);
       window.removeEventListener('online', refresh);
       document.removeEventListener('visibilitychange', onVisibility);
-      void observer.stop();
+      unsubscribe?.();
+      void observer?.stop();
       pendingRef.current = null;
     };
-  }, [reload, enabled, operationId, assignmentId]);
+  }, [reload, enabled, operationId, assignmentId, subscribe]);
 
   const send = useCallback(async (intent) => {
     try {

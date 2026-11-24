@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
+import { useOptionalOccShellChannel } from '../admin-occ/shell/occShellContext';
 import {
   getDepartmentOptions,
   getDepartmentSummary,
@@ -56,18 +57,23 @@ export function useDepartmentGovernance(department, filters) {
     return () => { version.current += 1; };
   }, [refresh]);
 
+  // Inside the OCC frame it hears the shell's single observer; only outside it does it open one of its own.
+  const subscribe = useOptionalOccShellChannel()?.subscribe;
   useEffect(() => {
     if (process.env.NODE_ENV === 'test') return undefined;
-    const observer = createPrivateWebAccountChangeObserver(resources => {
-      if (resources.some(resource => RESOURCES.includes(resource))) void refresh();
+    const onChange = () => { void refresh(); };
+    const observer = subscribe ? null : createPrivateWebAccountChangeObserver(resources => {
+      if (resources.some(resource => RESOURCES.includes(resource))) onChange();
     });
-    void observer.start().catch(() => {});
+    const unsubscribe = subscribe ? subscribe(RESOURCES, onChange) : null;
+    void observer?.start().catch(() => {});
     window.addEventListener('focus', refresh);
     return () => {
       window.removeEventListener('focus', refresh);
-      void observer.stop();
+      unsubscribe?.();
+      void observer?.stop();
     };
-  }, [refresh]);
+  }, [refresh, subscribe]);
 
   return { ...state, ...reference, refresh };
 }

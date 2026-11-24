@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
+import { useOptionalOccShellChannel } from '../../admin-occ/shell/occShellContext';
 import { getRampProfiles, saveRampProfile, uploadCommercialMedia } from '../../../services/commercialGovernanceApi';
 import FileDropField from '../../../components/FileDropField';
 import PrivateMediaImage from '../../../components/PrivateMediaImage';
@@ -94,11 +95,15 @@ export default function RampProfilesPanel({ canEdit = false, embedded = false, s
     void refresh();
     return () => { requestVersion.current += 1; };
   }, [refresh]);
+  // Inside the OCC frame it hears the shell's single observer; only outside it does it open one of its own.
+  const subscribe = useOptionalOccShellChannel()?.subscribe;
   useEffect(() => {
-    const observer = createPrivateWebAccountChangeObserver(resources => {
-      if (resources.some(resource => ['ramp_profiles', 'department_users'].includes(resource))) void refresh();
+    const onChange = () => { void refresh(); };
+    const observer = subscribe ? null : createPrivateWebAccountChangeObserver(resources => {
+      if (resources.some(resource => ['ramp_profiles', 'department_users'].includes(resource))) onChange();
     });
-    void observer.start().catch(() => {});
+    const unsubscribe = subscribe ? subscribe(['ramp_profiles', 'department_users'], onChange) : null;
+    void observer?.start().catch(() => {});
     window.addEventListener('focus', refresh);
     window.addEventListener('online', refresh);
     const poll = window.setInterval(() => void refresh(), 25_000);
@@ -106,9 +111,10 @@ export default function RampProfilesPanel({ canEdit = false, embedded = false, s
       window.clearInterval(poll);
       window.removeEventListener('focus', refresh);
       window.removeEventListener('online', refresh);
-      void observer.stop();
+      unsubscribe?.();
+      void observer?.stop();
     };
-  }, [refresh]);
+  }, [refresh, subscribe]);
   useEffect(() => {
     if (!editingId || catalog?.profiles.some(profile => profile.id === editingId)) return;
     setEditingId(null);

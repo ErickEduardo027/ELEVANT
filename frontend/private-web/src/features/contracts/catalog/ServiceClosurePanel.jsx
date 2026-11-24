@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePrivateMediaUrl } from '../../../hooks/usePrivateMediaUrl';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
+import { useOptionalOccShellChannel } from '../../admin-occ/shell/occShellContext';
 import { useCommercialRevalidation } from '../../../hooks/useCommercialRevalidation';
 import { decideServiceClosure, getPublishedCommercialServices, getServiceClosures,
   reopenService, requestServiceClosure, commercialMediaUrl } from '../../../services/commercialGovernanceApi';
@@ -59,14 +60,17 @@ export default function ServiceClosurePanel({ mode = 'occ', canRequest = mode ==
 
   useEffect(() => { void reload(); }, [reload]);
   useCommercialRevalidation(reload);
+  // Inside the OCC frame it hears the shell's single observer; only outside it does it open one of its own.
+  const subscribe = useOptionalOccShellChannel()?.subscribe;
   useEffect(() => {
+    if (subscribe) return subscribe(['service_closures', 'commercial_catalog'], () => { void reload(); });
     const observer = createPrivateWebAccountChangeObserver(resources => {
       if (resources.includes('service_closures') || resources.includes('commercial_catalog'))
         void reload();
     });
     void observer.start();
     return () => { void observer.stop(); };
-  }, [reload]);
+  }, [reload, subscribe]);
 
   const open = (action, item) => {
     setDialog({ action, item }); setReason(''); setError(''); setNotice('');

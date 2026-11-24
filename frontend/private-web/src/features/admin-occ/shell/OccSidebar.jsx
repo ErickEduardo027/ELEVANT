@@ -7,7 +7,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { ChevronLeftIcon, ChevronRightIcon, LogOutIcon, XIcon } from '../../shell/components/icons';
 import { OCC_NAV_SECTIONS } from '../navigation';
-import { useOptionalOccShell } from './occShellContext';
+import { useOptionalOccShellNotices } from './occShellContext';
 import { occNavLabel } from './occNavLabel';
 import OccSkipLink from './OccSkipLink';
 import { occShellMessages } from './occShellMessages';
@@ -265,7 +265,7 @@ function SidebarBody({ navigation, badges, user, onLogout, expanded, presentatio
 export default function OccSidebar({
   navigation = [], user, onLogout, breakpoint, railVisible, railExpanded, overlayOpen, onToggle, onCloseOverlay,
 }) {
-  const notices = useOptionalOccShell()?.notices?.items;
+  const notices = useOptionalOccShellNotices()?.items;
   const badges = useMemo(() => railBadges(notices), [notices]);
   const showOverlay = breakpoint !== 'desktop';
   return (

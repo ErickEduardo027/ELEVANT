@@ -81,27 +81,16 @@ describe('canonical positions map', () => {
     await expect(getPositionsSnapshot('SDQ')).rejects.toThrow(/estación/);
   });
 
-  it('polls the selected station and reports full replacement and failure', async () => {
+  it('keeps no timer of its own: the screen re-reads on the shell\'s announcements (CN-18/19)', async () => {
     vi.useFakeTimers();
-    const secondId = '20000000-0000-0000-0000-000000000002';
-    mocks.readSession.mockReturnValue({ stationScopes: [
-      { stationId, stationCode: 'PUJ' }, { stationId: secondId, stationCode: 'SDQ' },
-    ] });
-    mocks.getPlanningSnapshot.mockResolvedValue({
-      station: { id: secondId, code: 'SDQ' }, turnarounds: [],
-    });
     const onSnapshot = vi.fn();
     const onError = vi.fn();
     const stop = subscribeToPositionUpdates(() => {}, 'SDQ', { onSnapshot, onError });
     try {
-      await vi.advanceTimersByTimeAsync(30_000);
-      expect(mocks.getPlanningSnapshot).toHaveBeenCalledWith({ stationId: secondId });
-      expect(onSnapshot).toHaveBeenCalledWith(expect.objectContaining({
-        station: expect.objectContaining({ code: 'SDQ' }), positions: [],
-      }));
-      mocks.getPlanningSnapshot.mockRejectedValueOnce(new Error('API unavailable'));
-      await vi.advanceTimersByTimeAsync(30_000);
-      expect(onError).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(mocks.getPlanningSnapshot).not.toHaveBeenCalled();
+      expect(onSnapshot).not.toHaveBeenCalled();
+      expect(onError).not.toHaveBeenCalled();
     } finally {
       stop();
       vi.useRealTimers();

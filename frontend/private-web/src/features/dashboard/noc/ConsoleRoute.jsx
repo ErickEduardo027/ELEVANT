@@ -15,6 +15,7 @@ import { standInputsOf } from '../../maps/traffic/standInputs';
 import { useMapSituation } from '../../maps/useMapSituation';
 import { useMdpcWeather } from '../../weather/useMdpcWeather';
 import { consoleMessages } from './consoleMessages';
+import { useStandAircraft } from './standAircraft';
 import { flightsByTurnaroundOf } from './standTimeline';
 import { CONSOLE_SERVICES, useConsoleData } from './useConsoleData';
 
@@ -63,11 +64,14 @@ export default function ConsoleRoute({ mapService = occMapService, services = CO
   const flightsByTurnaround = flightsByTurnaroundOf(live.flights?.flights);
   // The stands read on the clock the map draws its aircraft at (PR M6, the render clock, paused with the motion) and
   // with the aircraft inside their box, so a demo stand turns Ocupada in the moment its aircraft parks.
-  const { aircraftByTurnaround } = standInputsOf(live.situation);
+  // Between two air-picture reads the aircraft move but the stands read the same of them (standAircraft.js): the stands
+  // and the map keep their identity until an aircraft enters or leaves a stand's box.
+  const positionStands = data.positions.data?.stands ?? NO_STANDS;
+  const aircraftByTurnaround = useStandAircraft(standInputsOf(live.situation).aircraftByTurnaround, positionStands);
   const standClock = live.renderClock ?? null;
   const standOptions = useMemo(() => ({ flightsByTurnaround, aircraftByTurnaround, clock: standClock }),
     [aircraftByTurnaround, flightsByTurnaround, standClock]);
-  const stands = useStandDisplay(data.positions.data?.stands ?? NO_STANDS, standOptions);
+  const stands = useStandDisplay(positionStands, standOptions);
   const stationScope = useMemo(() => ({ stationId: stationId ?? '', stationCode: station.stationCode }),
     [station.stationCode, stationId]);
 

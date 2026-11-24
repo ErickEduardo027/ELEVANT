@@ -7,7 +7,7 @@ import { loadOccReviewQueue } from '../../../services/occReviewService';
 import { getAssignmentReadiness, getPlanningSnapshot } from '../../../services/planningService';
 import { serverClock } from '../../../services/serverClock';
 import { useOccResource } from '../../admin-occ/live/useOccResource';
-import { useOptionalOccShell } from '../../admin-occ/shell/occShellContext';
+import { useOptionalOccShellNotices } from '../../admin-occ/shell/occShellContext';
 import { OCC_STATION_CODE } from '../../admin-occ/useOccStation';
 import { mapOccPlanningSnapshot } from '../../planning/planningMappers';
 import { mapOccupancyToRampPositions } from '../../positions-map/positionsMapMappers';
@@ -46,13 +46,13 @@ function readOptions(entry) {
 }
 
 /**
- * The shell's notices of the station (useOccShell().notices, read once for the whole frame), as a view of the console:
+ * The shell's notices of the station (useOptionalOccShellNotices(), read once for the whole frame), as a view of the console:
  * `{ status, data, refreshing, refreshFailed, fetchedAt, hasMore, retry, refresh, markRead }`, with `data` the notices
  * of `stationCode` once the shell has read them (null before), `empty` when the station has none. No request of its
  * own; «Recibido» is `markRead(id)`, the account's read receipt. Without the shell or the scope it is `idle`.
  */
 function useStationNotices(stationCode, reading) {
-  const notices = useOptionalOccShell()?.notices ?? null;
+  const notices = useOptionalOccShellNotices();
   return useMemo(() => {
     if (!reading || notices === null) return IDLE_NOTICES;
     const answered = ANSWERED.has(notices.status);
