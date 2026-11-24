@@ -31,11 +31,13 @@ const EMPTY = Object.freeze([]);
 // movimiento», which show only on a map that moves its traffic. Without them it is the map it always was.
 // `focusSelectedOnStart` (U5): a stand the page opens with (a `stand=` link) is brought to the centre once the map is
 // ready, as a row of the list does; it starts with the legend folded. `legendFoldKey` folds the legend when it changes.
+// `railTools` (CN-32) are the screen's own map tools, such as Mapa de posiciones' 2D/3D, «Centrar PUJ» and full screen:
+// they go in the map's control rail, after «Seguir» and before the pause.
 const PositionMap = forwardRef(function PositionMap({
   positions = EMPTY, selectedPositionId = null, onSelectPosition, viewMode = '2d', initialCamera, onCameraChange,
   allowBuildingExtrusion = false, dashboardLabels = false, onMapClick, placing = false, placingCode = null,
   pendingLocation = null, onCancelPlacing, weather, traffic, trafficSelection = null, onSelectTraffic,
-  focusSelectedOnStart = false, legendFoldKey = null, children,
+  focusSelectedOnStart = false, legendFoldKey = null, railTools = null, children,
 }, ref) {
   const { t } = useTranslation(positionsMapMessages);
   const { t: tMap } = useTranslation(mapMessages);
@@ -111,6 +113,7 @@ const PositionMap = forwardRef(function PositionMap({
       <MapDock>
         <MapPresetSwitcher />
         <MapFollowButton />
+        {railTools}
         <MapMotionControl />
         {/* A stand a link opens with is brought to the centre: the legend starts folded so it does not cover it. */}
         <MapLegend defaultOpen={!dashboardLabels && !(focusSelectedOnStart && selectedPositionId != null)}

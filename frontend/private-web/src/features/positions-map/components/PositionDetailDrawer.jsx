@@ -3,7 +3,6 @@ import DemoTag from '../../occ-ui/DemoTag';
 import { occButtonClass } from '../../occ-ui/OccButton';
 import OccPlate from '../../occ-ui/OccPlate';
 import { formatClockTime } from '../../dashboard/mappers';
-import { XIcon } from '../../shell/components/icons';
 import { TERMINAL_LABELS } from '../positionsMapMappers';
 import CombinedPositionBanner from './CombinedPositionBanner';
 import PositionActions from './PositionActions';
@@ -11,18 +10,17 @@ import { visitAgentOf } from './PositionsTable';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import StandDetailFacts from '../../maps/ui/StandDetailFacts';
 import StandTurnaround from '../../maps/ui/StandTurnaround';
+import MapSidePanel from '../../maps/ui/MapSidePanel';
 import { positionsMapMessages } from '../positionsMapMessages';
 
-// The inspector of Mapa de posiciones (design E.2, template B): the chosen stand docked at the right of the map, never
-// over it, so it covers no stand and the map needs no inset. It is a landmark (`aside`), not a dialog: no veil and no
+// The inspector of Mapa de posiciones (design E.2, template B; CN-32): the chosen stand in the screen's docked side
+// panel (maps/ui/MapSidePanel.jsx) at the right of the map, never over it, so it covers no stand and the map needs no
+// inset. It is a landmark (`aside`), not a dialog: no veil and no
 // focus trap, the map keeps its keys. Esc closes it first and is marked as used, so the next Esc, on the map, leaves the
 // selection (contratos 2.2). It keeps the test id and «Cerrar detalle» the cycle E2E closes it with, and the stand's
 // facts (maps/ui/StandDetailFacts.jsx), its turnaround with the milestone strip of its flight (maps/ui/
 // StandTurnaround.jsx) and the OCC commands («Registrar llegada», «Asignar posición», «Liberar posición», «Ubicar en el
 // mapa»).
-
-const CLOSE = 'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded text-occ-muted hover:bg-occ-panel-raised '
-  + 'hover:text-occ-text [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11';
 
 const textOf = value => (typeof value === 'string' && value.trim() !== '' ? value.trim() : null);
 
@@ -61,32 +59,33 @@ export default function PositionDetailDrawer({ position, onClose, onViewFlightIn
   const aircraftType = textOf(position.aircraftType) ?? textOf(position.display?.aircraftType);
 
   return (
-    <aside
+    <MapSidePanel
       data-testid="position-detail-drawer"
       data-occ-inspector="stand"
-      aria-label={t('inspector.label', { code: position.id })}
-      className={`flex min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-occ-line bg-occ-panel text-occ-text ${className}`}
-    >
-      <div className="flex items-start justify-between gap-2 border-b border-occ-line py-2 pl-3 pr-2">
-        <div className="min-w-0 space-y-1">
-          <h2 id="position-drawer-title" className="flex flex-wrap items-center gap-1.5 text-sm font-semibold">
-            <OccPlate kind="stand" className="text-sm">{position.id}</OccPlate>
-            {/* ADR-0041: the flight the stand shows is a demo flight the superadministrator triggered. */}
-            {position.isDemo && <DemoTag />}
-          </h2>
-          {/* No state here: «Estado en el mapa» below says it once, in the words of the map (contracts 2.4). */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-occ-muted">
-              {TERMINAL_LABELS[position.terminal] ? t(`terminals.labels.${position.terminal}`) : position.terminal}
-            </span>
-          </div>
-        </div>
-        <button type="button" aria-label={t('detail.close')} title={t('detail.close')} onClick={onClose} className={CLOSE}>
-          <XIcon className="h-4 w-4" />
+      label={t('inspector.label', { code: position.id })}
+      className={className}
+      title={(
+        <>
+          <OccPlate kind="stand" className="text-sm">{position.id}</OccPlate>
+          {/* ADR-0041: the flight the stand shows is a demo flight the superadministrator triggered. */}
+          {position.isDemo && <DemoTag />}
+        </>
+      )}
+      // No state here: «Estado en el mapa» below says it once, in the words of the map (contracts 2.4).
+      subtitle={(
+        <span className="text-occ-muted">
+          {TERMINAL_LABELS[position.terminal] ? t(`terminals.labels.${position.terminal}`) : position.terminal}
+        </span>
+      )}
+      onClose={onClose}
+      closeLabel={t('detail.close')}
+      footer={position.flightId ? (
+        <button type="button" onClick={() => onViewFlightInMonitoring(position.flightId)}
+          className={`${occButtonClass({ variant: 'secondary', size: 'sm' })} w-full`}>
+          {t('detail.viewFlight')}
         </button>
-      </div>
-
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-3 [scrollbar-width:thin]">
+      ) : null}
+    >
         {/* Its state, why and what comes next, and its characteristics (owner request of 2026-11-15); `aircraftFacts`
             describes the aircraft parked on it or arriving (maps/ui/StandDetailFacts.jsx). */}
         <StandDetailFacts position={position} aircraftFacts={aircraftFacts} />
@@ -118,16 +117,6 @@ export default function PositionDetailDrawer({ position, onClose, onViewFlightIn
         <p className="font-mono text-xs text-occ-muted">
           {t('detail.lastUpdate', { time: position.updatedAt ? formatClockTime(position.updatedAt, locale) : '—' })}
         </p>
-      </div>
-
-      {position.flightId && (
-        <div className="border-t border-occ-line px-3 py-2">
-          <button type="button" onClick={() => onViewFlightInMonitoring(position.flightId)}
-            className={`${occButtonClass({ variant: 'secondary', size: 'sm' })} w-full`}>
-            {t('detail.viewFlight')}
-          </button>
-        </div>
-      )}
-    </aside>
+    </MapSidePanel>
   );
 }

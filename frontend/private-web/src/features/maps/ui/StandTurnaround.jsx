@@ -112,7 +112,7 @@ export default function StandTurnaround({ position, milestones = true, className
       {visit && (
         <>
           <div className="flex flex-wrap items-baseline justify-between gap-x-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-occ-muted">{t('turnaround.current')}</h3>
+            <h3 className="text-xs font-semibold text-occ-muted">{t('turnaround.current')}</h3>
             {countdown && <span data-fact="countdown" className="font-mono text-xs font-semibold text-occ-text">{countdown}</span>}
           </div>
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
@@ -130,7 +130,7 @@ export default function StandTurnaround({ position, milestones = true, className
       )}
       {nextLine && (
         <p data-fact="next" className="border-t border-occ-line pt-2 text-xs">
-          <span className="block font-semibold uppercase tracking-wide text-occ-muted">{t('turnaround.next')}</span>
+          <span className="block font-semibold text-occ-muted">{t('turnaround.next')}</span>
           <span className="font-mono">{nextLine}</span>
         </p>
       )}

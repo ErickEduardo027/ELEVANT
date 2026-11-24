@@ -100,7 +100,8 @@ describe('MapLegend', () => {
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     expect(toggle).toHaveAttribute('aria-controls', list.parentElement.id);
     expect(toggle).toHaveAttribute('title', 'Ocultar leyenda');
-    expect(toggle).toHaveClass('min-h-11');
+    // A control of the map's rail (CN-32): as wide as the rail, 32 px high and 44 px on a touch screen.
+    expect(toggle).toHaveClass('min-h-8', 'w-full', '[@media(pointer:coarse)]:min-h-11');
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     expect(toggle).toHaveAttribute('title', 'Mostrar leyenda');
@@ -707,40 +708,28 @@ describe('MapLegend', () => {
     ]);
   });
 
-  it('the open legend stays inside a short map: capped at the room above its button, it scrolls (PR M6)', () => {
-    // A map whose top is at 100 px with the legend's button at 420 px: 300 px above it, 20 of them kept free.
-    const tops = new Map([['occ-map', 100], ['map-legend', 420]]);
-    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function boxOf() {
-      const top = tops.get(this.dataset?.testid) ?? 0;
-      return { top, bottom: top, left: 0, right: 0, width: 0, height: 0, x: 0, y: top, toJSON: () => ({}) };
-    });
-    try {
-      const inMap = stands => (
-        <div data-testid="occ-map"><MapLegend stands={stands} /></div>
-      );
-      const { rerender } = render(inMap(STANDS));
-      const panel = () => screen.getByRole('list', { name: 'Leyenda' }).parentElement;
-      expect(panel().style.maxHeight).toBe('300px');
-      expect(panel()).toHaveClass('overflow-y-auto');
-      // The map grows (a resize): the room is measured again.
-      tops.set('occ-map', 20);
-      act(() => window.dispatchEvent(new Event('resize')));
-      expect(panel().style.maxHeight).toBe('380px');
-      // Too little room to read a list in: left as it is, rather than a sliver.
-      tops.set('occ-map', 340);
-      act(() => window.dispatchEvent(new Event('resize')));
-      expect(panel().style.maxHeight).toBe('');
-      tops.set('occ-map', 100);
-      rerender(inMap(STANDS.slice(0, 2)));
-      act(() => window.dispatchEvent(new Event('resize')));
-      expect(panel().style.maxHeight).toBe('300px');
-      cleanup();
-      // Outside a map nothing caps it.
-      render(<MapLegend stands={STANDS} />);
-      expect(panel().style.maxHeight).toBe('');
-    } finally {
-      rect.mockRestore();
-    }
+  it('flies out of the rail of the map, capped at the column and scrolling past it (CN-32)', () => {
+    render(<MapLegend stands={STANDS} />);
+    const panel = screen.getByRole('list', { name: 'Leyenda' }).parentElement;
+    // occ-map.css places it to the left of the rail and caps it at the column's height; it scrolls when longer.
+    expect(panel).toHaveClass('occ-map-flyout', 'overflow-y-auto', 'bg-occ-panel-float');
+    expect(panel.style.maxHeight).toBe('');
+    // The legend places nothing itself, so its panel measures against the rail, as the layers menu's.
+    expect(screen.getByTestId('map-legend').className).not.toMatch(/relative/);
+  });
+
+  it('shares its place with the layers menu: opening one folds the other (CN-32)', () => {
+    const value = { ...OCC_MAP_IDLE, standMarksOnScreen: ['sameAgent'], layersMenuOpen: false, setLayersMenuOpen: vi.fn() };
+    const { rerender } = render(<OccMapContext.Provider value={value}><MapLegend /></OccMapContext.Provider>);
+    const toggle = screen.getByRole('button', { name: 'Leyenda' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    // The layers menu opens: the legend folds.
+    rerender(<OccMapContext.Provider value={{ ...value, layersMenuOpen: true }}><MapLegend /></OccMapContext.Provider>);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    // The legend opens: it closes the layers menu.
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(value.setLayersMenuOpen).toHaveBeenCalledWith(false);
   });
 });
 

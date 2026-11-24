@@ -6,9 +6,11 @@ import { OCC_SHORTCUTS } from '../../occ-ui/occShortcuts';
 import { LAYER_GROUPS, LOCKED_LAYERS } from '../core/layersMenu';
 import { useOccMap } from '../core/OccMapContext';
 import { mapMessages } from '../mapMessages';
+import { RAIL_FLYOUT, RAIL_KEY, railToolClass } from './railClasses';
 
-// The layers menu of an OccMap (design E7): a «Capas» button in the map's dock and, above it, a panel with one fieldset
-// per group of core/layersMenu.js, listing only the keys the map can show. The choices live in OccMap (kept in the
+// The layers menu of an OccMap (design E7): a «Capas» button in the map's control rail (CN-32) and a panel that flies out
+// to the left of the rail (occ-map.css: .occ-map-flyout), with one fieldset per group of core/layersMenu.js, listing
+// only the keys the map can show. It and the legend share that place, so opening one closes the other (ui/MapLegend.jsx). The choices live in OccMap (kept in the
 // browser as differences from the defaults of the view on screen); the menu only draws them. L opens and closes it from
 // the map (contracts 2.2), and Esc closes it first, so one Esc never also clears the selection.
 
@@ -52,13 +54,14 @@ export default function MapLayersMenu({ className = '' }) {
   const key = SHORTCUT.key.toUpperCase();
 
   return (
-    <div ref={rootRef} data-testid="map-layers-menu" className={`relative ${className}`.trim()}>
+    // No position of its own: the panel is placed against the rail (occ-map.css), as the legend's.
+    <div ref={rootRef} data-testid="map-layers-menu" className={className || undefined}>
       <div
         id={panelId}
         role="group"
         aria-label={t('layers.menu')}
         hidden={!open}
-        className="absolute bottom-full left-0 mb-2 w-72 space-y-3 rounded-md border border-occ-line bg-occ-panel-float p-3 text-sm text-occ-text"
+        className={`${RAIL_FLYOUT} w-72 space-y-3`}
       >
         {groups.map(group => (
           <fieldset key={group.id} className="space-y-1">
@@ -101,11 +104,9 @@ export default function MapLayersMenu({ className = '' }) {
         aria-keyshortcuts={key}
         title={open ? t('layers.hide') : t('layers.show')}
         onClick={() => setLayersMenuOpen(!open)}
-        className={`flex min-h-11 items-center gap-2 rounded border px-3 text-sm font-semibold text-occ-text hover:bg-occ-panel-raised ${open
-          ? 'border-occ-accent bg-occ-accent-soft'
-          : 'border-occ-line bg-occ-panel'}`}
+        className={railToolClass(open)}
       >
-        <span aria-hidden="true" className="occ-map-key font-mono text-xs text-occ-faint">{key}</span>
+        <span aria-hidden="true" className={RAIL_KEY}>{key}</span>
         {SHORTCUT[language] ?? SHORTCUT.es}
       </button>
     </div>

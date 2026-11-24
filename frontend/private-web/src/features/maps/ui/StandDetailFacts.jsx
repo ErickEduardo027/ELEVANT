@@ -151,7 +151,7 @@ export default function StandDetailFacts({ position, layout = MDPC_LAYOUT, aircr
         {reason && <li data-fact="reason" data-reason={status.reason.key}>{reason}</li>}
         {nextChange && (
           <li data-fact="next-change" data-next={status.next.key} className="text-xs tabular-nums text-occ-text">
-            <span className="mr-1.5 font-semibold uppercase tracking-wide text-occ-muted">{t('standStatus.nextChange')}</span>{' '}
+            <span className="mr-1.5 font-semibold text-occ-muted">{t('standStatus.nextChange')}</span>{' '}
             {nextChange}
           </li>
         )}
@@ -188,7 +188,7 @@ export default function StandDetailFacts({ position, layout = MDPC_LAYOUT, aircr
       {slot ? <div data-slot="aircraft-facts">{slot}</div> : null}
       <section aria-label={t('standInfo.label')} data-testid="stand-characteristics"
         className="rounded-md border border-occ-line bg-occ-panel px-3 py-2">
-        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-occ-muted">{t('standInfo.label')}</h3>
+        <h3 className="mb-1 text-xs font-semibold text-occ-muted">{t('standInfo.label')}</h3>
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
           {/* No code row: the drawer's title and the inspector's plate already name the stand. */}
           {(facts.terminal || access) && (

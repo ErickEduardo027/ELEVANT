@@ -20,14 +20,16 @@ function renderControls(props = {}) {
 it('is one opaque block with its joint around the three tools, so nothing of the map shows between them (N29)', () => {
   renderControls();
   const buttons = ['Cambiar a vista 3D', 'Centrar PUJ', 'Pantalla completa'].map(name => screen.getByRole('button', { name }));
-  // One block holds the three tools, at the top left of the map.
+  // One block holds the three tools, a row of the map's control rail (CN-32): it places nothing itself.
   const [block] = new Set(buttons.map(button => button.parentElement));
   for (const button of buttons) expect(button.parentElement).toBe(block);
   expect(block.children).toHaveLength(3);
-  expect(block).toHaveClass('absolute', 'left-3', 'top-3');
+  expect(classesOf(block).filter(name => /^(?:absolute|left-|top-)/.test(name))).toEqual([]);
   // The opaque panel slab with a 1 px joint around it and between the tools, as the map's own control groups: never
   // the see-through floating panel, and no gap between separate buttons where a label or a «Demo» plate would show.
-  expect(block).toHaveClass('bg-occ-panel', 'border', 'border-occ-line', 'divide-y', 'divide-occ-line');
+  // On a touch screen the three stand one under the other, so the rail keeps its width.
+  expect(block).toHaveClass('bg-occ-panel', 'border', 'border-occ-line', 'divide-x', 'divide-occ-line',
+    '[@media(pointer:coarse)]:flex-col', '[@media(pointer:coarse)]:divide-y');
   expect(classesOf(block).filter(name => /panel-float|^gap-|opacity|backdrop/.test(name))).toEqual([]);
   // It clips nothing, so the focus ring the OCC draws 2 px outside a tool stays whole.
   expect(classesOf(block).filter(name => /^overflow-/.test(name))).toEqual([]);
