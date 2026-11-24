@@ -332,6 +332,106 @@ function approachHexScenario() {
   return { ...base, tracks: { ...base.tracks, [chosen.hex]: trackOf(chosen) } };
 }
 
+// The live feed of the lab's motion measurements (CN-18, map-lab.fluency.spec.mjs): the approach's traffic with the
+// demo flight and FEED_TRAFFIC_COUNT other aircraft, a third of them turning, read again every `periodMs` as the app
+// polls the air picture. Each read reaches the map `lateMs` after the server answered it (a busy main thread, a slow
+// network) and moves the server clock's offset by the next of `offsetsMs` (the clock settling on another sample), the
+// two things that made the aircraft jump. Invented addresses and callsigns; the positions are a function of the time
+// alone (feedPictureAt), so every run reads the same.
+export const LAB_FEED = Object.freeze({
+  periodMs: 10_000,
+  lateMs: 3_000,
+  offsetsMs: Object.freeze([0, 180, -120, 240, -60, 150, -200, 90]),
+});
+const FEED_TRAFFIC_COUNT = 40;
+const FEED_TYPES = Object.freeze([['A20N', 'A3'], ['B738', 'A3'], ['E190', 'A3'], ['AT76', 'A2'], ['B77W', 'A5']]);
+
+// The other traffic of the feed, the same on every run: around PUJ within 6 to 40 NM, below 15 000 ft; every third
+// aircraft turns at 1.5 to 3°/s (a holding, a vector onto final), the rest fly straight.
+const FEED_SPECS = Object.freeze(Array.from({ length: FEED_TRAFFIC_COUNT }, (_, index) => {
+  const [type, category] = FEED_TYPES[index % FEED_TYPES.length];
+  const turning = index % 3 === 0;
+  return Object.freeze({
+    hex: `f0d${String(index).padStart(3, '0')}`, callsign: `ZZZ${String(300 + index)}`, type, category,
+    start: destinationPoint(ARP, (index * 137.5) % 360, (6 + ((index * 7) % 35)) * METRES_PER_NM),
+    track: (index * 53) % 360, speed: 180 + ((index * 11) % 120), altitude: 3_000 + ((index * 977) % 12_000),
+    turnDegS: turning ? (index % 2 === 0 ? 1 : -1) * (1.5 + (index % 4) * 0.5) : 0,
+  });
+}));
+
+/** Where a feed aircraft is `seconds` after noon: along its track at its speed, turning at its rate, and its heading. */
+export function feedTruthAt(spec, seconds) {
+  const speedMs = spec.speed * KNOT_MS;
+  const h0 = (spec.track * Math.PI) / 180;
+  const omega = (spec.turnDegS * Math.PI) / 180;
+  const [east, north] = Math.abs(omega) < 1e-9
+    ? [speedMs * seconds * Math.sin(h0), speedMs * seconds * Math.cos(h0)]
+    : [(speedMs / omega) * (Math.cos(h0) - Math.cos(h0 + omega * seconds)),
+      (speedMs / omega) * (Math.sin(h0 + omega * seconds) - Math.sin(h0))];
+  const bearing = (Math.atan2(east, north) * 180) / Math.PI;
+  const point = destinationPoint(spec.start, (bearing + 360) % 360, Math.hypot(east, north));
+  return { point, track: (((spec.track + spec.turnDegS * seconds) % 360) + 360) % 360 };
+}
+
+/** The ids the map draws the feed's measured aircraft as: the demo flight, a straight one and a turning one. */
+export const LAB_FEED_IDS = Object.freeze({
+  demo: `f:${KEY.demoArrival}`,
+  straight: `h:${FEED_SPECS[1].hex}`,
+  turning: `h:${FEED_SPECS[3].hex}`,
+});
+
+// The air picture of the feed answered at `readAtMs`: each aircraft's fix 2 to 6 s older than the answer.
+function feedPictureAt(base, readAtMs) {
+  const iso = ms => new Date(ms).toISOString();
+  const moved = base.aircraft.map(item => {
+    const fixAt = parseInstant(item.positionAt);
+    const ageS = (readAtMs - 2_000 - fixAt) / 1_000;
+    if (!(ageS > 0) || item.onGround) return item;
+    const speed = (item.groundSpeedKnots ?? 0) * KNOT_MS;
+    const [longitude, latitude] = speed > 0 && item.trackDegrees != null
+      ? destinationPoint([item.longitude, item.latitude], item.trackDegrees, speed * ageS) : [item.longitude, item.latitude];
+    const climbFt = ((item.verticalRateFeetPerMinute ?? 0) * ageS) / 60;
+    return { ...item, latitude: round6(latitude), longitude: round6(longitude), positionAt: iso(readAtMs - 2_000),
+      altitudeFeet: item.altitudeFeet == null ? null : Math.max(0, Math.round(item.altitudeFeet + climbFt)), trail: [] };
+  });
+  const others = FEED_SPECS.map((spec, index) => {
+    const fixAt = readAtMs - (2 + (index % 5)) * 1_000;
+    const { point, track } = feedTruthAt(spec, (fixAt - NOON_MS) / 1_000);
+    return {
+      hex: spec.hex, callsign: spec.callsign, registration: null, typeIcaoCode: spec.type, category: spec.category,
+      latitude: round6(point[1]), longitude: round6(point[0]), altitudeFeet: spec.altitude, onGround: false,
+      groundSpeedKnots: spec.speed, trackDegrees: Math.round(track * 10) / 10, verticalRateFeetPerMinute: 0, squawk: null,
+      positionAt: iso(fixAt), matchedFlightKey: null, matchedBy: null, trail: [],
+    };
+  });
+  return { ...base, serverTime: iso(readAtMs), observedAt: iso(readAtMs - 2_000), ageSeconds: 2,
+    aircraft: [...moved, ...others] };
+}
+
+/** A feed scenario as the read answered at `readAtMs` brings it: its picture and its map flights of that instant. */
+export function feedScenarioAt(scenario, readAtMs) {
+  const base = scenario.feedBase ?? scenario;
+  return {
+    ...scenario,
+    at: new Date(readAtMs).toISOString(),
+    picture: feedPictureAt(base.picture, readAtMs),
+    flights: { ...base.flights, serverTime: new Date(readAtMs).toISOString() },
+  };
+}
+
+function feedScenario(base) {
+  const frozenBase = Object.freeze({ picture: base.picture, flights: base.flights });
+  return { ...feedScenarioAt({ ...base, feedBase: frozenBase }, NOON_MS), feed: LAB_FEED };
+}
+
+/** The feed scenarios of the lab's motion measurements by scene id (scenes.js: perf-*). */
+export const FEED_SCENARIOS = Object.freeze({
+  // The demo flight three minutes out on the approach, landing and taxiing in during a minute's measurement.
+  'perf-approach-feed': feedScenario(demoScenario(demoBlockAt({ appearS: 30, imported: true }), { imported: true })),
+  // The demo flight taxiing to A6 among the same traffic, at the airfield's zoom.
+  'perf-airfield-feed': feedScenario(airfieldDemoTaxiing()),
+});
+
 /** The traffic scenarios of the lab by scene id: `{ at, picture, flights, tracks, estimates, estimatedTrails }`. */
 export const TRAFFIC_SCENARIOS = Object.freeze({
   'region-traffic-mixed': regionScenario(),

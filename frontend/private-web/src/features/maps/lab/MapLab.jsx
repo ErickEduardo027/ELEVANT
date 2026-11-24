@@ -26,7 +26,7 @@ import MapSourceStatus from '../ui/MapSourceStatus';
 import { LAB_PATH, LabPlate, frozenLabel, useFrozenMapClock } from './labChrome';
 import LayoutQaScene from './LayoutQaScene';
 import { SCENES, labWeather, readLabQuery } from './scenes';
-import { labTraffic } from './trafficScenes';
+import { feedScenarioAt, labTraffic } from './trafficScenes';
 import { createSimulatedSatelliteImagery } from '../useSatelliteImagery';
 
 // The map lab (app/map-lab, development only): the OCC map with the fixed scenes of scenes.js, without a session or
@@ -131,18 +131,51 @@ function LabScene({ scene, basemap, frozenAt, governed = false }) {
   const { selection, follow, selectStand, selectFlight, selectAircraft, clear, setFollow } = useMapSelection();
   // The render clock of the scene's traffic (PR M6): frozen at `?t=`, else running from the scene's own instant; and
   // its motion store, one for the scene's whole life, as useMapSituation keeps one.
+  // A feed scene (CN-18) reads on a server clock whose offset moves at every read, as the app's does.
+  const feed = frozenAt === null ? scene.traffic?.feed ?? null : null;
+  const offsetRef = useRef(0);
   const [renderClock] = useState(() => {
     if (frozenAt !== null) return createRenderClock({ frozenAt });
     const sceneAt = parseInstant(scene.traffic?.at ?? null) ?? 0;
     const openedAt = Date.now();
+    if (feed) {
+      return createRenderClock({ clock: { now: () => sceneAt + (Date.now() - openedAt) + offsetRef.current,
+        localNow: () => Date.now() } });
+    }
     return createRenderClock({ clock: { now: () => sceneAt + (Date.now() - openedAt) } });
   });
   const [motion] = useState(() => createMotionStore({ clock: renderClock }));
+  // A feed scene's reads (CN-18): every `periodMs` the server answers at its time, and the answer reaches the map
+  // `lateMs` later, moving the clock's offset by the next of `offsetsMs`.
+  const [feedAt, setFeedAt] = useState(null);
+  useEffect(() => {
+    if (!feed) return undefined;
+    const timers = new Set();
+    let reads = 0;
+    const read = () => {
+      const readAt = renderClock.now();
+      const timer = setTimeout(() => {
+        timers.delete(timer);
+        reads += 1;
+        offsetRef.current = feed.offsetsMs[reads % feed.offsetsMs.length];
+        setFeedAt(readAt);
+      }, feed.lateMs);
+      timers.add(timer);
+    };
+    const interval = setInterval(read, feed.periodMs);
+    return () => {
+      clearInterval(interval);
+      timers.forEach(clearTimeout);
+    };
+  }, [feed, renderClock]);
+  const scenario = useMemo(() => (feedAt === null || !scene.traffic ? scene.traffic
+    : feedScenarioAt(scene.traffic, feedAt)), [feedAt, scene.traffic]);
   // The traffic of a traffic scene (PR M5, lab/trafficScenes.js), built at the frozen clock for the URL's selection:
-  // the lab never polls. Every trail is there; the map shows the other traffic's only when the layers menu asks.
-  const traffic = useMemo(() => (scene.traffic
-    ? labTraffic(scene.traffic, { nowMs: frozenAt, selection, allTrails: true, motion })
-    : null), [scene.traffic, frozenAt, selection, motion]);
+  // the lab never polls (a feed scene reads its synthetic feed). Every trail is there; the map shows the other
+  // traffic's only when the layers menu asks.
+  const traffic = useMemo(() => (scenario
+    ? labTraffic(scenario, { nowMs: frozenAt, selection, allTrails: true, motion })
+    : null), [scenario, frozenAt, selection, motion]);
   // What the map draws of it, with the map flights whose counterparts the references emphasise (PR M8).
   const mapTraffic = useMemo(() => (traffic ? { ...traffic.map, flights: traffic.situation.flights } : undefined), [traffic]);
   // The weather of a reference scene (PR M8), read once as useMdpcWeather would answer it: the lab never polls. A scene
@@ -217,6 +250,8 @@ function LabScene({ scene, basemap, frozenAt, governed = false }) {
         return drawn ? [drawn.lon, drawn.lat] : null;
       },
       placing: () => (placingRef.current ? JSON.parse(JSON.stringify(placingRef.current)) : null),
+      // Where the map's last traffic write drew an aircraft, as `[lng, lat]`, or null (the motion measurements, CN-18).
+      drawnAt: id => mapRef.current?.drawnPosition?.(id) ?? null,
       // Where the scene's wind stands by the airfield (PR M8), as `[lng, lat]`, or null without weather.
       windAt: () => (scene.weather ? windPoint() : null),
       // The 3D aircraft (PR M7): `{ enabled, status, notice, level, stats, pause, resume }`, or null.

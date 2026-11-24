@@ -789,6 +789,13 @@ const OccMapView = forwardRef(function OccMapView({
   }, []);
   // Resolves true once the map has drawn a frame with nothing left to load or move, false without a map.
   const whenIdle = useCallback(() => engineRef.current?.whenIdle() ?? Promise.resolve(false), []);
+  // Where the last traffic write drew an aircraft (its id), as `[lng, lat]`, or null: the map lab's motion measurements
+  // read what the map holds, not a new sample.
+  const drawnPosition = useCallback(id => {
+    const drawn = appliedRef.current?.sampledAircraft ?? latest.current?.traffic?.aircraft ?? EMPTY;
+    const item = drawn.find(entry => entry?.id === id);
+    return item && Number.isFinite(item.lon) && Number.isFinite(item.lat) ? [item.lon, item.lat] : null;
+  }, []);
 
   // The traffic (PR M5). The aircraft of other traffic under the pointer, whose tag shows while it is there.
   const trafficFocusRef = useRef(null);
@@ -2024,9 +2031,9 @@ const OccMapView = forwardRef(function OccMapView({
 
   useImperativeHandle(ref, () => ({
     flyToPreset, flyToStand, flyToFlight, flyToBounds, flyToAll, flyToPuj, resetNorth, getCamera, jumpTo, project, whenIdle,
-    aircraft3d,
+    aircraft3d, drawnPosition,
   }), [flyToPreset, flyToStand, flyToFlight, flyToBounds, flyToAll, flyToPuj, resetNorth, getCamera, jumpTo, project, whenIdle,
-    aircraft3d]);
+    aircraft3d, drawnPosition]);
 
   // The overlays read only these: the tooltip, which changes with the pointer, renders here and re-renders none of them.
   const {

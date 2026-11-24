@@ -41,7 +41,8 @@ describe('map lab scenes', () => {
       'region-layers-menu', 'region-references', 'region-references-night', 'approach-references', 'region-satellite',
       'airfield-wind-live', 'airfield-wind-stale', 'airfield-wind-unavailable', 'approach-demo-final', 'airfield-demo-taxiing',
       'ramp-demo-awaiting-stand', 'approach-traffic-live-estimated', 'airfield-demo-cancelled', 'approach-demo-accelerated',
-      'approach-demo-route', 'airfield-departure-route', 'approach-follow-final', 'airfield-follow-taxi', 'ramp-3d-parked',
+      'approach-demo-route', 'airfield-departure-route', 'approach-follow-final', 'airfield-follow-taxi', 'perf-approach-feed',
+      'perf-airfield-feed', 'ramp-3d-parked',
       'ramp-3d-selected', 'airfield-3d-final', 'ramp-3d-night',
     ]);
     expect(new Set(ids).size).toBe(ids.length);
