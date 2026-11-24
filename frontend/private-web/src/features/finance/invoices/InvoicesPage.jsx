@@ -261,7 +261,7 @@ function InvoiceList({ initialStationId, onOpenReceipt }) {
         <button type="button" className={secondaryClass} disabled={!state.page.hasMore || state.loading} onClick={() => goTo(shownPage + 1)}>Siguiente</button>
       </nav>}
       <Drawer open={Boolean(current)} onClose={() => setSelected(null)} title={current ? `Factura ${current.airline}` : ''}
-        description={current?.fiscalNumber ? `${current.fiscalNumber} · ${current.number}` : current?.number} widthClassName="lg:w-[560px]">
+        description={current?.fiscalNumber || current?.number} widthClassName="lg:w-[560px]">
         {current && <InvoiceDetail key={current.id} invoiceId={current.id} revision={revision} onOpenReceipt={openReceipt} onChanged={message => { setNotice(message); setRevision(value => value + 1); }} />}
       </Drawer>
     </div>

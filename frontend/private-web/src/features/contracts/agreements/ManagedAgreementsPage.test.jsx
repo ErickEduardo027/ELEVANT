@@ -31,6 +31,15 @@ it('shows only published agreements and no unsupported write action', async () =
   expect(getManagedContracts).toHaveBeenCalledWith(1);
 });
 
+it('says a never-activated contract only has its prices approved, not «Aprobada» (CN-13)', async () => {
+  getManagedContracts.mockResolvedValue({ page: 1, limit: 20, hasMore: false,
+    contracts: [{ ...agreement, status: 'Draft', signedOn: null }] });
+  render(<ManagedAgreementsPage mode="contracts" />);
+  expect(await screen.findByText('Versión 2 · Precios aprobados · pendiente de firmas y permiso · 01/09/2026 — Sin vencimiento · USD'))
+    .toBeInTheDocument();
+  expect(screen.queryByText(/· Aprobada ·/)).not.toBeInTheDocument();
+});
+
 it('paginates real agreed service rates without invoking legacy routes', async () => {
   getManagedContracts.mockResolvedValueOnce({ page: 1, limit: 20, hasMore: true,
     contracts: [agreement] }).mockResolvedValueOnce({ page: 2, limit: 20, hasMore: false,

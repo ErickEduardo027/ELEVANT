@@ -4,7 +4,7 @@ import { billingUnitLabel } from '../../../services/billingUnits';
 import { getManagedContracts } from '../../../services/commercialGovernanceApi';
 import { contractStatusLabel } from '../contractStatus';
 import { contractCodeLabel } from '../requests/requestLabels';
-import { airlineCodeLabel, countLabel, validityRange } from './agreementLabels';
+import { airlineCodeLabel, countLabel, publishedVersionLabel, validityRange } from './agreementLabels';
 import ContractDetailDrawer from './ContractDetailDrawer';
 import ContractListDownloads from './ContractListDownloads';
 
@@ -83,7 +83,7 @@ export default function ManagedAgreementsPage({ mode = 'contracts', canSign = fa
             <p className="text-xs text-text-secondary-light">{airlineCodeLabel(contract.airlineCode)} · {contractStatusLabel(contract.status)}</p>
           </div><span className="text-xs text-text-secondary-light">{countLabel(contract.approvedVersions.length, 'versión publicada', 'versiones publicadas')}</span></div>
           {contract.approvedVersions.map(version => <div key={version.id} className="mt-3 border-t border-black/5 pt-3 text-sm dark:border-white/10">
-            <p>Versión {version.versionNumber} · {version.status === 'Superseded' ? 'Reemplazada' : 'Aprobada'} · {validityRange(version.validFrom, version.validTo)} · {version.currencyCode}</p>
+            <p>Versión {version.versionNumber} · {publishedVersionLabel(version, contract)} · {validityRange(version.validFrom, version.validTo)} · {version.currencyCode}</p>
             <p className="mt-1 text-xs text-text-secondary-light">Estaciones: {version.stations.map(station => <span key={station.id} className="mr-2">{station.code}</span>)}</p>
             <div className="mt-1 flex flex-wrap items-center gap-3"><p className="text-xs text-text-secondary-light">{countLabel(version.rates.length, 'tarifa pactada', 'tarifas pactadas')}</p>
               <button type="button" onClick={() => setDetailId(version.id)} className="text-xs font-semibold text-accent-600 underline">
@@ -99,7 +99,7 @@ export default function ManagedAgreementsPage({ mode = 'contracts', canSign = fa
             <td className="p-3"><span title={code.title}>{code.text}</span><span className="block text-xs">{rate.contract.airline}</span></td>
             <td className="p-3">{rate.version.currencyCode} {Number(rate.unitPrice).toFixed(4)}<span className="block text-xs">Por {billingUnitLabel(rate.billingUnit)} · mínimo {rate.minimumQuantity}</span></td>
             <td className="p-3">{rate.version.stations.map(station => station.code).join(', ') || 'Sin estación'}</td>
-            <td className="p-3">{rate.version.status === 'Superseded' ? 'Reemplazada' : 'Aprobada'}</td>
+            <td className="p-3">{publishedVersionLabel(rate.version, rate.contract)}</td>
             <td className="p-3">{validityRange(rate.version.validFrom, rate.version.validTo)}</td>
           </tr>;
         })}</tbody></table></div> : <p className="rounded-xl border p-8 text-center">No hay servicios pactados en esta página.</p>)}

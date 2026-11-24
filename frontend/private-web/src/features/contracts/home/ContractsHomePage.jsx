@@ -44,7 +44,7 @@ export default function ContractsHomePage({ status, data, error, onRetry, onNavi
     <div>
       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">Departamento de Contratos</p>
       <h1 className="mt-1 text-2xl font-bold text-ink-900 dark:text-text-primary-dark">Resumen contractual</h1>
-      <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">Solicitudes comerciales y borradores contractuales en Development.</p>
+      <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">Solicitudes comerciales y borradores contractuales.</p>
       <p className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">Los indicadores de solicitudes cuentan todas las registradas; los de borradores, hasta 100.</p>
       {status === 'refreshing' && <p role="status" className="mt-2 text-xs font-semibold text-accent-600">Actualizando datos…</p>}
     </div>

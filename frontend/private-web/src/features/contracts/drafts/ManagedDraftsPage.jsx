@@ -29,6 +29,7 @@ const VERSION_STATUS = {
   Draft: 'Borrador',
   PendingFinanceApproval: 'Pendiente de aprobación de Finanzas',
 };
+const versionStatusLabel = status => VERSION_STATUS[status] ?? 'Borrador';
 /**
  * The draft inside a sentence (N35): «el borrador 1cc18541…» of a new contract, «el borrador de CTR-2026-0007» of a
  * signed one (an amendment or a renewal).
@@ -99,9 +100,17 @@ export default function ManagedDraftsPage({ canEdit = true, canActivate = true, 
   }, [reload]);
   const drafts = view.drafts;
   const selected = drafts.find(item => item.id === selectedId) ?? null;
+  // CN-12: the notice of a command sits where the user is — over the open editor — and is brought into view.
+  const noticeRef = useRef(null);
+  useEffect(() => {
+    if (!notice) return;
+    noticeRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+    noticeRef.current?.focus?.({ preventScroll: true });
+  }, [notice]);
+  const noticeView = notice && <p ref={noticeRef} tabIndex={-1} role={notice.tone === 'error' ? 'alert' : 'status'} className={`rounded-lg p-3 text-sm outline-none ${notice.tone === 'error' ? 'bg-status-danger/10 text-status-danger' : 'bg-status-success/10'}`}>{notice.text}</p>;
   const retry = <button type="button" onClick={() => { void reload(); }} className="rounded-lg border border-status-danger px-3 py-1 text-xs font-semibold">Reintentar</button>;
   return <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5"><header className="flex items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[.18em] text-signal-500">Gestión contractual / Versiones</p><h1 className="mt-1 text-2xl font-bold">Borradores</h1><p className="mt-1 text-sm text-text-secondary-light">Revisa las observaciones de la aerolínea, configura alcance, condiciones y tarifas y envía el contrato a Finanzas para su aprobación.</p></div><button type="button" onClick={() => { void reload(); }} className="rounded-lg border px-4 py-2 text-sm">Actualizar</button></header>
-    {notice && <p role={notice.tone === 'error' ? 'alert' : 'status'} className={`rounded-lg p-3 text-sm ${notice.tone === 'error' ? 'bg-status-danger/10 text-status-danger' : 'bg-status-success/10'}`}>{notice.text}</p>}
+    {!selected && noticeView}
     {view.status === 'forbidden' ? <p role="alert" className="rounded-xl border border-status-danger/30 bg-white p-8 text-center text-sm dark:bg-surface-dark-card">No tienes permiso para ver los borradores de contrato. Pide acceso al administrador de Contratos.</p> : <>
       {view.status === 'ready' && view.error && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger"><span>{view.error}</span>{retry}</div>}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] xl:grid-cols-[minmax(0,1fr)_500px]"><section className="h-fit rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card"><h2 className="font-bold">Versiones pendientes</h2>
@@ -109,10 +118,10 @@ export default function ManagedDraftsPage({ canEdit = true, canActivate = true, 
           : view.status === 'error' ? <div role="alert" className="mt-5 space-y-2 text-sm text-status-danger"><p>{view.error}</p>{retry}</div>
             : drafts.length ? <div className="mt-4 divide-y divide-black/5 dark:divide-white/5">{drafts.map(item => {
               const code = contractCodeLabel(item.contractCode);
-              return <button type="button" key={item.id} onClick={() => { setSelectedId(item.id); setNotice(null); }} className={`w-full py-4 text-left hover:text-accent-600 ${selectedId === item.id ? 'text-accent-600' : ''}`}><strong className="block">{item.airline}</strong><span title={code.title} className="text-xs text-text-secondary-light">{code.text} · {VERSION_STATUS[item.versionStatus] ?? 'Borrador'} · {countLabel(item.rates.length, 'servicio', 'servicios')} · {countLabel(item.comments.length, 'observación', 'observaciones')}</span></button>;
+              return <button type="button" key={item.id} onClick={() => { setSelectedId(item.id); setNotice(null); }} className={`w-full py-4 text-left hover:text-accent-600 ${selectedId === item.id ? 'text-accent-600' : ''}`}><strong className="block">{item.airline}</strong><span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-text-secondary-light"><span title={code.title}>Código {code.text}</span><span aria-label={`Estado: ${versionStatusLabel(item.versionStatus)}`} className={`rounded-full px-2 py-0.5 font-semibold ${item.versionStatus === 'PendingFinanceApproval' ? 'bg-status-warning/15 text-amber-800 dark:text-amber-300' : 'bg-black/5 dark:bg-white/10'}`}>{versionStatusLabel(item.versionStatus)}</span><span>{countLabel(item.rates.length, 'servicio', 'servicios')} · {countLabel(item.comments.length, 'observación', 'observaciones')}</span></span></button>;
             })}</div>
               : <p className="mt-5 text-sm text-text-secondary-light">No hay borradores pendientes.</p>}</section>
-        <section className="h-fit rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card">{selected ? <DraftEditor key={selected.id} draft={selected} units={units} canEdit={canEdit} canActivate={canActivate} canDiscard={canDiscard} onNotice={showNotice} onChanged={reload} /> : <p className="py-12 text-center text-sm text-text-secondary-light">Selecciona un borrador para revisarlo.</p>}</section></div>
+        <section className="h-fit space-y-4 rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card">{selected && noticeView}{selected ? <DraftEditor key={selected.id} draft={selected} units={units} canEdit={canEdit} canActivate={canActivate} canDiscard={canDiscard} onNotice={showNotice} onChanged={reload} /> : <p className="py-12 text-center text-sm text-text-secondary-light">Selecciona un borrador para revisarlo.</p>}</section></div>
     </>}
   </div>;
 }

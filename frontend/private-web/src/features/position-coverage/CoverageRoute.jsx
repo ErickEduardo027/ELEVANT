@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import AppLink from '../../components/AppLink';
 import { useTranslation } from '../../i18n/LanguageScope';
 import { useOptionalDepartmentAccess } from '../access/DepartmentAccessContext';
+import { createRefreshScheduler } from '../admin-occ/live/refreshScheduler';
 import { useOccShellChannel } from '../admin-occ/shell/occShellContext';
 import { useOccStation } from '../admin-occ/useOccStation';
 import { OCC_CLASSES } from '../occ-ui/classes';
@@ -37,6 +38,8 @@ const STATE_SLAB = 'rounded-md border border-occ-line bg-occ-panel text-occ-text
 // A check box on its label: the box in cyan once ticked (it is chosen), 32 px high with a mouse and 44 px on touch.
 const CHECK = 'inline-flex min-h-8 items-start gap-2 py-1.5 text-sm text-occ-text [@media(pointer:coarse)]:min-h-11';
 const CHECKBOX = 'mt-0.5 h-4 w-4 shrink-0 accent-occ-accent';
+// PositionCoveragePolicy.StandsWithoutVehicle: more stands than this need a driver licence and a vehicle.
+const STANDS_WITHOUT_VEHICLE = 2;
 // The same box inside a table row, beside its short word.
 const FLAG = 'inline-flex items-center gap-1.5 text-sm text-occ-text [@media(pointer:coarse)]:min-h-11';
 const FLAG_BOX = 'h-4 w-4 shrink-0 accent-occ-accent';
@@ -153,10 +156,11 @@ function AgentConditions({ agent }) {
 function CoverageForm({ board, terminal, date, onDone, onStale }) {
   const { t, locale } = useTranslation(coverageMessages);
   const bridgeMarkId = useId();
+  const limitId = useId();
   const agents = board.agents.filter(agent => agent.terminalId === terminal.terminalId || terminal.code === 'B');
   const stands = board.stands.filter(stand => stand.terminalId === terminal.terminalId && stand.isActive);
   const [agentId, setAgentId] = useState('');
-  const [selected, setSelected] = useState([]);
+  const [picked, setSelected] = useState([]);
   const [mentorId, setMentorId] = useState('');
   const [vehicle, setVehicle] = useState('');
   const [reinforcement, setReinforcement] = useState(false);
@@ -165,7 +169,27 @@ function CoverageForm({ board, terminal, date, onDone, onStale }) {
   const creation = useRef(createCommandKeyHolder());
   const agent = board.agents.find(item => item.agentId === agentId);
   const mentors = board.agents.filter(item => !item.isJunior && item.agentId !== agentId);
-  const toggle = id => setSelected(value => value.includes(id) ? value.filter(item => item !== id) : [...value, id]);
+  const max = terminal.maxStandsPerAgent;
+  // CN-11: never more stands than the terminal allows, and only stands still active here (a re-read can change both).
+  const selected = picked.filter(id => stands.some(stand => stand.standId === id)).slice(0, max);
+  const atLimit = selected.length >= max;
+  // The server's rule (vehicle_required): more than STANDS_WITHOUT_VEHICLE stands need a licence and a vehicle.
+  const needsVehicle = selected.length > STANDS_WITHOUT_VEHICLE;
+  const toggle = id => setSelected(() => {
+    if (selected.includes(id)) return selected.filter(item => item !== id);
+    return selected.length >= max ? selected : [...selected, id];
+  });
+  // Another agent starts over: their stands and mentor are chosen for them, never carried from the previous agent.
+  // The first choice of an agent keeps the stands already ticked.
+  const chooseAgent = id => {
+    if (agentId && id !== agentId) {
+      setSelected([]);
+      setMentorId('');
+      setVehicle('');
+      setError(null);
+    }
+    setAgentId(id);
+  };
 
   const submit = async event => {
     event.preventDefault();
@@ -180,6 +204,8 @@ function CoverageForm({ board, terminal, date, onDone, onStale }) {
       onDone(result);
     } catch (failure) {
       setError(failure);
+      // CN-11: what stays chosen is a valid selection (`selected` is already within the terminal's rules).
+      setSelected(selected);
       // The board changed meanwhile: it is read again before a new intent.
       if (failure?.status === 409) onStale?.();
     } finally { setBusy(false); }
@@ -190,7 +216,7 @@ function CoverageForm({ board, terminal, date, onDone, onStale }) {
     <OccPanel title={t('form.label')} meta={t('terminal', { code: terminal.code })}>
       <form onSubmit={submit} aria-label={t('form.label')} className="flex flex-col gap-3 p-3">
         <p className="text-xs text-occ-muted">{t(rules, { max: terminal.maxStandsPerAgent })}</p>
-        <OccSelectField label={t('form.agent')} value={agentId} onChange={event => setAgentId(event.target.value)} required>
+        <OccSelectField label={t('form.agent')} value={agentId} onChange={event => chooseAgent(event.target.value)} required>
           <option value="">{t('form.chooseAgent')}</option>
           {agents.map(item => (
             <option key={item.agentId} value={item.agentId}>
@@ -210,17 +236,23 @@ function CoverageForm({ board, terminal, date, onDone, onStale }) {
             <div className="flex flex-wrap gap-1.5">
               {stands.map(stand => {
                 const on = selected.includes(stand.standId);
+                const blocked = !on && atLimit;
                 // The name is the stand's code alone, as the map draws it (N27: the seed's A01 is A1; the cycle E2E
                 // presses it); the bridge mark describes it.
                 return (
                   <button key={stand.standId} type="button" aria-pressed={on} onClick={() => toggle(stand.standId)}
-                    aria-describedby={stand.hasBoardingBridge ? bridgeMarkId : undefined}
-                    className={`${STAND_TOGGLE} ${on ? STAND_ON : STAND_OFF}`}>
+                    disabled={blocked}
+                    aria-describedby={[stand.hasBoardingBridge ? bridgeMarkId : null, blocked ? limitId : null]
+                      .filter(Boolean).join(' ') || undefined}
+                    className={`${STAND_TOGGLE} ${on ? STAND_ON : STAND_OFF} disabled:cursor-not-allowed disabled:opacity-40`}>
                     {standDisplayCode(stand.code)}{stand.hasBoardingBridge ? <span aria-hidden="true">⌁</span> : null}
                   </button>
                 );
               })}
             </div>
+          )}
+          {atLimit && stands.length > max && (
+            <p id={limitId} role="status" className="text-xs text-occ-muted">{t('form.limitReached', { max })}</p>
           )}
           {stands.some(stand => stand.hasBoardingBridge) && (
             <p className="text-xs text-occ-muted"><span aria-hidden="true">⌁ </span><span id={bridgeMarkId}>{t('form.bridgeMark')}</span></p>
@@ -237,9 +269,9 @@ function CoverageForm({ board, terminal, date, onDone, onStale }) {
             ))}
           </OccSelectField>
         )}
-        {selected.length > 2 && (
+        {needsVehicle && (
           <OccTextField label={t('form.vehicle')} value={vehicle} maxLength={32} onChange={event => setVehicle(event.target.value)}
-            placeholder={t('form.vehiclePlaceholder')} />
+            placeholder={t('form.vehiclePlaceholder')} hint={t('form.vehicleHint', { stands: STANDS_WITHOUT_VEHICLE })} />
         )}
         <label className={CHECK}>
           <input type="checkbox" className={CHECKBOX} checked={reinforcement} onChange={event => setReinforcement(event.target.checked)} />
@@ -641,6 +673,7 @@ export default function CoverageRoute() {
   const [showReleased, setShowReleased] = useState(false);
   const [recentIds, setRecentIds] = useState(() => new Set());
   const live = useRef(() => {});
+  const announced = useRef(() => {});
   const shown = useRef(null);
   const recentTimer = useRef(null);
   useEffect(() => () => clearTimeout(recentTimer.current), []);
@@ -648,22 +681,43 @@ export default function CoverageRoute() {
   useEffect(() => {
     if (!station.stationId || !date) return undefined;
     const controller = new AbortController();
-    const read = () => loadOccCoverage(station.stationId, date, { signal: controller.signal, includeReleased: showReleased })
-      .then(board => setState({ status: 'success', board: orderCoverageBoard(board) }))
-      .catch(error => {
-        if (error?.name === 'AbortError') return;
-        // Without access the view says so and offers no retry; another failure keeps the board on screen.
-        setState(value => error?.status === 403 ? { status: 'forbidden' }
-          : value.board ? value : { status: 'error', error });
-      });
-    live.current = read;
+    let inFlight = false;
+    const isHidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden';
+    let read = () => Promise.resolve();
+    // CN-11 (request budget, contratos 2.7): one read at a time. An announcement that arrives during a read joins the
+    // one after it, and the announcements of a burst take one read per window (OCC_COALESCE_MS).
+    const scheduler = createRefreshScheduler({ isHidden, run: () => { void read(); } });
+    read = () => {
+      inFlight = true;
+      scheduler.started();
+      return loadOccCoverage(station.stationId, date, { signal: controller.signal, includeReleased: showReleased })
+        .then(board => setState({ status: 'success', board: orderCoverageBoard(board) }))
+        .catch(error => {
+          if (error?.name === 'AbortError') return;
+          // Without access the view says so and offers no retry; another failure keeps the board on screen.
+          setState(value => error?.status === 403 ? { status: 'forbidden' }
+            : value.board ? value : { status: 'error', error });
+        })
+        .finally(() => { inFlight = false; scheduler.settled(); });
+    };
+    // A command of this seat (an assignment, a refused change) reads at once, or joins the read already on its way.
+    live.current = () => { if (inFlight) scheduler.request(); else void read(); };
+    announced.current = () => scheduler.request();
+    const onVisible = () => { if (!isHidden()) scheduler.becameVisible(); };
+    document.addEventListener('visibilitychange', onVisible);
     void read();
-    return () => controller.abort();
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      scheduler.dispose();
+      live.current = () => {};
+      announced.current = () => {};
+      controller.abort();
+    };
   }, [station.stationId, date, attempt, showReleased]);
 
   // Another OCC seat, HR or the airport changes something: re-read under current permissions. The announcement comes
   // from the tab's single account-change observer, the OCC frame's (contratos 2.7): the page opens none of its own.
-  useEffect(() => subscribe(['occ_planning'], () => { void live.current(); }), [subscribe]);
+  useEffect(() => subscribe(['occ_planning'], () => { announced.current(); }), [subscribe]);
 
   const board = state.board;
   useEffect(() => { shown.current = board; }, [board]);

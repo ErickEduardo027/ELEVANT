@@ -78,6 +78,8 @@ export default function ContractLifecyclePanel({ versionId, canManage = false, c
    * unauthorized state instead of «Reintentar»).
    */
   const load = useCallback(async () => {
+    // CN-17: a closed drawer keeps its last content on screen with no version: nothing is read for it.
+    if (!versionId) return null;
     try {
       const timeline = await getContractTimeline(versionId);
       setState({ status: 'ready', timeline });
