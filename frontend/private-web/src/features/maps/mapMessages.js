@@ -169,7 +169,7 @@ export const mapMessages = {
     },
     // The altitude scale of the traffic (ui/AltitudeLegend.jsx, style/mapColors.js).
     altitude: {
-      title: 'ALTITUD (ft)',
+      title: 'Altitud (ft)',
       label: 'Escala de colores por altitud, en pies',
       show: 'Mostrar la escala de altitud',
       hide: 'Ocultar la escala de altitud',
@@ -668,7 +668,7 @@ export const mapMessages = {
       },
     },
     altitude: {
-      title: 'ALTITUDE (ft)',
+      title: 'Altitude (ft)',
       label: 'Colour scale by altitude, in feet',
       show: 'Show the altitude scale',
       hide: 'Hide the altitude scale',

@@ -66,6 +66,8 @@ vi.mock('./components/PositionMap', () => ({
         data-traffic-selection={props.trafficSelection ? `${props.trafficSelection.kind}:${props.trafficSelection.id}` : ''}>
         {props.onMapClick && <button type="button" onClick={() => props.onMapClick(map.next)}>Clic en el mapa</button>}
         {props.positions.map(item => <span key={item.id} data-stand={item.id} data-state={item.displayStatus} />)}
+        {/* The page's own map tools go in the map's control rail (CN-32). */}
+        <div data-testid="position-map-rail">{props.railTools}</div>
         {props.children}
       </div>
     );
@@ -574,8 +576,8 @@ describe('PositionsMapPage inside the OCC frame (PR M6)', () => {
     expect(stub).toHaveAttribute('data-traffic-selection', `flight:${TRAFFIC_FLIGHT_KEY.arrival}`);
     expect(stub).toHaveAttribute('data-selected', '');
     const block = within(stub).getByRole('dialog', { name: 'Vuelo ZZ161' });
-    // Right of the page's map tools, one block 38 px wide with its joint (N29), 12 px from the map's edge.
-    expect(block).toHaveStyle({ top: '12px', left: '58px' });
+    // At the top left corner of the map, 12 px from its edges: the page's map tools are in the map's rail (CN-32).
+    expect(block).toHaveStyle({ top: '12px', left: '12px' });
     // «Cerrar» lets it go, keeping the other keys of the URL.
     act(() => within(block).getByRole('button', { name: 'Cerrar' }).click());
     expect(query().has('flightId')).toBe(false);

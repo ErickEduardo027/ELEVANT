@@ -51,8 +51,9 @@ const layersButton = () => within(screen.getByTestId('map-layers-menu')).getByRo
 const trafficGroup = () => screen.queryByRole('group', { name: 'Tráfico' });
 const checkbox = name => within(trafficGroup()).getByRole('checkbox', { name });
 const visibilityOf = (map, id) => map.getLayoutProperty(id, 'visibility');
-const legendTraffic = () => within(screen.getByRole('list', { name: 'Leyenda' })).getAllByRole('listitem')
-  .map(item => item.getAttribute('data-legend-traffic')).filter(Boolean);
+// What the legend lists, open or folded: opening the layers menu folds it (CN-32, they fly out in the same place).
+const legendTraffic = () => within(screen.getByRole('list', { name: 'Leyenda', hidden: true }))
+  .getAllByRole('listitem', { hidden: true }).map(item => item.getAttribute('data-legend-traffic')).filter(Boolean);
 
 beforeEach(() => {
   fake.state.reset();

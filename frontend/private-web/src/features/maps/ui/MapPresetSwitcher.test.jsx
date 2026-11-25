@@ -55,12 +55,14 @@ afterEach(() => {
 });
 
 describe('MapPresetSwitcher', () => {
-  it('four 44 px buttons; aria-pressed follows the real zoom, not the last click', () => {
+  it('four buttons one under the other in the rail; aria-pressed follows the real zoom, not the last click', () => {
     const map = renderSwitcher();
     const buttons = within(group()).getAllByRole('button');
-    // The four views of the key table with their key, on 44 px targets (min-h-11 and min-w-11 are 2.75 rem).
+    // The four views of the key table with their key, one under the other in the map's control rail (CN-32): as wide as
+    // the rail, 32 px high and 44 px on a touch screen, as every OCC control.
+    expect(group()).toHaveClass('flex-col');
     expect(buttons.map(wideText)).toEqual(['1Región', '2Aproximación', '3Aeródromo', '4Rampa']);
-    // A narrow map's short words (occ-map.css) never change a button's name.
+    // The rail's short words (occ-map.css) never change a button's name.
     expect(buttons.map(button => button.querySelector('.occ-map-label-short')?.textContent ?? null))
       .toEqual([null, 'Aprox.', 'Aeród.', null]);
     expect(buttons[1].querySelector('.occ-map-label-short')).toHaveAttribute('aria-hidden', 'true');
@@ -68,7 +70,7 @@ describe('MapPresetSwitcher', () => {
     expect(buttons.map(button => button.getAttribute('aria-keyshortcuts'))).toEqual(['1', '2', '3', '4']);
     for (const [index, button] of buttons.entries()) {
       expect(button).toHaveAccessibleName(NAMES[index]);
-      expect(button).toHaveClass('min-h-11', 'min-w-11');
+      expect(button).toHaveClass('min-h-8', 'w-full', '[@media(pointer:coarse)]:min-h-11');
       expect(button).toBeEnabled();
     }
     // The map opened on the ramp, its default view.

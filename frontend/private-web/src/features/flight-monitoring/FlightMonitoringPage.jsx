@@ -19,9 +19,11 @@ import { flightMonitoringMessages } from './flightMonitoringMessages';
 import { useFlightAlerts } from './useFlightAlerts';
 import { useIsTabletBreakpoint } from './useIsTabletBreakpoint';
 
-// Monitoreo de vuelos as a work map (design E.2, template B «Mapa de trabajo»): the board of flight strips at the left,
-// the maps lane's map (components/FlightMap.jsx, Región to Rampa with everything it draws) in the rest, and the inspector
-// of the chosen flight docked beside them, never over the map, so it covers no aircraft and the map takes no inset.
+// Monitoreo de vuelos as a work map (design E.2, template B «Mapa de trabajo»; CN-32): the board of flight strips at the
+// left, the maps lane's map (components/FlightMap.jsx, Región to Rampa with everything it draws) in the rest, and the
+// inspector of the chosen flight in the screen's docked side panel, never over the map, so it covers no aircraft and the
+// map takes no inset. The map renders the flight's live data block inside that panel (its `liveSlot`), so nothing
+// floats over the map.
 // Below 1024 px the board opens in a drawer from «Ver vuelos». One selection, the URL's (contratos 2.1,
 // maps/core/useMapSelection.js): a strip writes `flightId=` with the leg id and keeps every other key, the map reads the
 // same flight and writes `hex=` for other traffic, and a link with a leg id (or its turnaround) selects that flight. The
@@ -33,24 +35,26 @@ const NO_FLIGHTS = Object.freeze([]);
 /**
  * How the screen is laid out, as pure classes so a test can read what jsdom does not lay out. The board is 24rem wide:
  * a strip's fixed columns take 20.9rem (occ-ui/OccFlightStrip.jsx) and its tags the rest. From 1024 px the board and the
- * map share the height, and the inspector goes under the board: the map keeps all the width it has, which its dock of
- * views and tools needs (about 54rem in one row, more with 3D). Only from 2200 px, where a third column still leaves the
- * map that room with the rail open, does the inspector take its own column at the right. Below 1024 px the map comes
- * first and the inspector under it.
+ * map share the height. The map's controls run down its own right edge (maps/ui/MapDock.jsx, CN-32), so it needs no
+ * width for them. The inspector of the chosen flight (CN-32):
+ * - from 1536 px, a column of its own at the right of the map (22.5rem), the place of the flight panel of follow mode;
+ * - from 1024 to 1536 px, in the board's column, which folds away while the inspector is open (as Mapa de posiciones
+ *   folds its list), so the map keeps its width on a 1366 px laptop; «Cerrar detalle» brings the board back;
+ * - below 1024 px, under the map (the board opens in a drawer from «Ver vuelos»).
  */
 export const FLIGHT_MONITORING_LAYOUT = Object.freeze({
   root: 'flex h-full min-h-0 flex-col gap-3',
   grid: 'grid min-h-0 flex-1 gap-3 grid-cols-1 grid-rows-[minmax(26rem,1fr)] lg:grid-cols-[24rem_minmax(0,1fr)] '
     + 'lg:grid-rows-[minmax(0,1fr)]',
   gridWithInspector: 'grid min-h-0 flex-1 gap-3 grid-cols-1 grid-rows-[minmax(26rem,1fr)_auto] '
-    + 'lg:grid-cols-[24rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)_auto] '
-    + 'min-[2200px]:grid-cols-[24rem_minmax(0,1fr)_22.5rem] min-[2200px]:grid-rows-[minmax(0,1fr)]',
+    + 'lg:grid-cols-[24rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)] '
+    + '2xl:grid-cols-[24rem_minmax(0,1fr)_22.5rem]',
   board: 'flex min-h-0 min-w-0 flex-col lg:col-start-1 lg:row-start-1',
+  boardWithInspector: 'flex min-h-0 min-w-0 flex-col lg:col-start-1 lg:row-start-1 lg:max-2xl:hidden',
   map: 'relative min-h-[26rem] min-w-0 row-start-1 lg:col-start-2 lg:row-start-1 lg:min-h-0',
-  mapWithInspector: 'relative min-h-[26rem] min-w-0 row-start-1 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:min-h-0 '
-    + 'min-[2200px]:row-span-1',
-  inspector: 'flex min-h-0 min-w-0 max-h-[45dvh] flex-col row-start-2 lg:col-start-1 lg:row-start-2 '
-    + 'min-[2200px]:col-start-3 min-[2200px]:row-start-1 min-[2200px]:max-h-none',
+  mapWithInspector: 'relative min-h-[26rem] min-w-0 row-start-1 lg:col-start-2 lg:row-start-1 lg:min-h-0',
+  inspector: 'flex min-h-0 min-w-0 max-h-[45dvh] flex-col row-start-2 lg:col-start-1 lg:row-start-1 lg:max-h-none '
+    + '2xl:col-start-3',
 });
 
 /**
@@ -105,6 +109,8 @@ export default function FlightMonitoringPage({
   const [search, setSearch] = useState('');
   const [listOpen, setListOpen] = useState(false);
   const [followed, setFollowed] = useState(null);
+  // The element of the inspector the map renders the flight's live data block into (CN-32).
+  const [liveSlot, setLiveSlot] = useState(null);
   const boardRef = useRef(null);
   const toggleRef = useRef(null);
   const focusAfterClose = useRef(null);
@@ -180,7 +186,7 @@ export default function FlightMonitoringPage({
   );
   const inspector = selectedStrip ? (
     <FlightInspector flight={selectedFlight} strip={selectedStrip} stationId={stationId} timeZone={timeZone}
-      onClose={closeInspector}
+      onClose={closeInspector} liveSlotRef={setLiveSlot} className="lg:h-full"
       milestones={mapChoice?.flight ? inspectorMilestones(mapChoice.flight, mapChoice.flights, language) : null} />
   ) : null;
   const layout = FLIGHT_MONITORING_LAYOUT;
@@ -198,13 +204,15 @@ export default function FlightMonitoringPage({
 
       {isLoading ? <MonitoringSkeleton label={t('page.loading')} /> : (
         <div className={inspector ? layout.gridWithInspector : layout.grid}>
-          {isTablet ? null : <div ref={boardRef} className={layout.board}>{boardPanel}</div>}
+          {isTablet ? null : (
+            <div ref={boardRef} className={inspector ? layout.boardWithInspector : layout.board}>{boardPanel}</div>
+          )}
           <div className={inspector ? layout.mapWithInspector : layout.map}>
             {code === 'PUJ' ? (
               // The same props as before: every flight of the page, so a click on the map finds any of them; the
               // inspector replaces the page's card (`detail`).
               <FlightMap flights={flights} selectedFlightId={mapSelectedId} onSelectFlight={selectFromMap} theme={theme}
-                detail={null} onSelectionFlights={hearMapChoice} />
+                detail={null} onSelectionFlights={hearMapChoice} dataBlockSlot={inspector ? liveSlot : null} />
             ) : (
               <div role="status"
                 className="absolute inset-0 flex items-center justify-center rounded-md border border-occ-line bg-occ-panel p-8 text-center text-sm text-occ-muted">

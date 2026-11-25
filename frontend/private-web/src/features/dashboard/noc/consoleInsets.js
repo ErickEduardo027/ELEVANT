@@ -5,6 +5,12 @@
 /** The edges a panel of the console takes room from. */
 export const CONSOLE_PANEL_SIDES = Object.freeze(['top', 'right', 'bottom', 'left']);
 
+/**
+ * The edge of a panel that docks in a column at either side of the map (CN-32): the side of the map its box is on, the
+ * left or the right, by where its middle falls. The inspector docks at the left under 1536 px and at the right above.
+ */
+export const CONSOLE_SIDE_EDGE = 'side';
+
 /** The room left between a panel and what the map shows beside it, in pixels. */
 export const CONSOLE_INSET_GAP_PX = 8;
 
@@ -14,12 +20,15 @@ export const CONSOLE_INSET_GAP_PX = 8;
  */
 export const MIN_VISIBLE_MAP_PX = Object.freeze({ width: 240, height: 160 });
 
-/** Where each floating panel of the console sits: the edge of the map it takes room from. */
+/**
+ * Where each panel of the console sits: the edge of the map it takes room from. The panels of the columns take it from
+ * the side they are docked at (CONSOLE_SIDE_EDGE).
+ */
 export const CONSOLE_PANEL_EDGES = Object.freeze({
-  board: 'left',
+  board: CONSOLE_SIDE_EDGE,
   figures: 'top',
-  alerts: 'right',
-  inspector: 'right',
+  alerts: CONSOLE_SIDE_EDGE,
+  inspector: CONSOLE_SIDE_EDGE,
   positions: 'bottom',
 });
 
@@ -41,9 +50,9 @@ function fit(first, second, size, minimum) {
  * The insets `{ top, right, bottom, left }` in whole pixels of the map whose box is `rootRect` (a DOMRect-like
  * `{ top, right, bottom, left }`), from its panels `[{ side, rect, folded }]`:
  * - an open panel takes its width from the left or right edge, or its height from the top or bottom edge, as far as it
- *   reaches into the map, plus `gapPx`;
- * - a folded panel is a pill: it takes room only from the top edge (the pills of the top and the sides) or the bottom
- *   edge (the pill of «Posiciones»), never from the left or the right;
+ *   reaches into the map, plus `gapPx`; a panel of a column (`side`) takes it from the side its middle is on;
+ * - a folded panel is a pill: it takes room only from the top or the bottom edge, the one it is nearer to (the pills of
+ *   the top and of the columns' heads, or of «Posiciones» and of a column's foot), never from the left or the right;
  * - a panel without size (hidden), outside the map or with an unknown side takes nothing.
  * Opposite insets that would leave less than MIN_VISIBLE_MAP_PX of the map give back room in proportion. Without a
  * valid map box every inset is 0.
@@ -58,13 +67,18 @@ export function insetsFromPanels(rootRect, panels = [], gapPx = CONSOLE_INSET_GA
 
   for (const panel of Array.isArray(panels) ? panels : []) {
     const rect = panel?.rect;
-    if (!CONSOLE_PANEL_SIDES.includes(panel?.side) || !isRect(rect)) continue;
+    if (!(CONSOLE_PANEL_SIDES.includes(panel?.side) || panel?.side === CONSOLE_SIDE_EDGE) || !isRect(rect)) continue;
     if (rect.right - rect.left <= 0 || rect.bottom - rect.top <= 0) continue;
     // A panel the map does not hold in its box covers nothing of it.
     if (rect.right <= rootRect.left || rect.left >= rootRect.right || rect.bottom <= rootRect.top
       || rect.top >= rootRect.bottom) continue;
     let side = panel.side;
-    if (panel.folded === true) side = panel.side === 'bottom' ? 'bottom' : 'top';
+    if (side === CONSOLE_SIDE_EDGE) {
+      side = (rect.left + rect.right) / 2 < (rootRect.left + rootRect.right) / 2 ? 'left' : 'right';
+    }
+    if (panel.folded === true) {
+      side = (rect.top + rect.bottom) / 2 < (rootRect.top + rootRect.bottom) / 2 ? 'top' : 'bottom';
+    }
     if (side === 'top') insets.top = Math.max(insets.top, rect.bottom - rootRect.top + gap);
     else if (side === 'bottom') insets.bottom = Math.max(insets.bottom, rootRect.bottom - rect.top + gap);
     else if (side === 'left') insets.left = Math.max(insets.left, rect.right - rootRect.left + gap);

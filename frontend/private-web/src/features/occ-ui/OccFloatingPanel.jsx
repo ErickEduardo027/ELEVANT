@@ -11,10 +11,22 @@ import { readPanelFolded, subscribePanelFolds, writePanelFolded } from './occPan
  *   Flat: no shadow and no blur, so it reads the same over any part of the map and costs nothing over WebGL.
  * - `grid`: the plain grid the console falls back to when the map engine is unavailable, on the panel slab with the
  *   6 px panel radius.
+ * - `dock` (CN-32): flush against an edge of the map, on the opaque panel slab, with no border or radius of its own: the
+ *   console docks it and draws the 1 px joint on the side that meets the map (CONSOLE_OVERLAY_LAYOUT).
  */
 export const OCC_FLOATING_PANEL_LAYOUT = Object.freeze({
   float: 'border border-occ-line bg-occ-panel-float rounded-[var(--occ-radius-overlay)] text-occ-text',
   grid: 'border border-occ-line bg-occ-panel rounded-md',
+  dock: 'bg-occ-panel text-occ-text',
+});
+
+/**
+ * How the header and the body of a panel sit (CN-32): `column`, the header over the body; `row`, the header at the
+ * left of the body on one line, for a strip of figures docked along the top of the map.
+ */
+export const OCC_FLOATING_PANEL_ORIENTATIONS = Object.freeze({
+  column: Object.freeze({ root: 'flex-col', header: 'border-b border-occ-line', body: 'min-h-0 flex-1' }),
+  row: Object.freeze({ root: 'flex-row items-stretch', header: 'border-r border-occ-line', body: 'min-w-0 flex-1' }),
 });
 
 const HEADING_LEVELS = Object.freeze([2, 3, 4]);
@@ -35,6 +47,8 @@ const NOTHING_REMEMBERED = () => null;
  * - Folded, only the header stays: the pill. The body stays mounted, `hidden`, so what it holds keeps its state and the
  *   console's ResizeObserver measures the pill. `foldedSummary` (the counts of «Posiciones») shows only while folded,
  *   next to the button, which it describes (`aria-describedby`); `meta` shows in both states; `actions` only open.
+ * - `shortTitle` (CN-32): a shorter word the button shows instead of the title below 1400 px, such as «Cifras» for the
+ *   strip of figures on a 1366 px laptop; the button's name stays the title.
  * - `legend`, the key to the marks the body draws (contratos 2.4: a board shows its legend in its header), takes a line
  *   of its own at the foot of the header, only while open: folded, there is nothing on screen for it to explain.
  * - Each panel remembers its fold for the tab session (occPanelMemory.js, keyed by `panelId`) and starts from
@@ -42,14 +56,17 @@ const NOTHING_REMEMBERED = () => null;
  *   fold and hears every press through `onFoldedChange(next)`.
  * - It answers no key of its own: no shortcut, no Esc, no key handler. It is never a dialog, so the map's keys keep
  *   working while it is open (occShortcuts.js), and every key typed in it reaches the map container untouched.
- * - `layout`: `float` over the map, `grid` in the fallback grid (OCC_FLOATING_PANEL_LAYOUT). It never places itself:
+ * - `layout`: `float` over the map, `dock` docked flush at an edge of the map, `grid` in the fallback grid
+ *   (OCC_FLOATING_PANEL_LAYOUT); `orientation`, `column` or `row` (OCC_FLOATING_PANEL_ORIENTATIONS). It never places itself:
  *   the console positions it with `className` and measures it through `ref`. The root carries
  *   `data-occ-floating-panel` (the `panelId`), `data-folded` and `data-layout`; `bodyClassName` lays out the body.
- * A missing `panelId`, or an unknown layout or heading level, throws.
+ * A missing `panelId`, or an unknown layout, orientation or heading level, throws.
  */
 export default function OccFloatingPanel({
-  ref, panelId, title, meta, actions, legend, foldedSummary, defaultFolded = false, folded: foldedProp, onFoldedChange,
-  layout = 'float', headingLevel = 2, className = '', bodyClassName = '', children, 'data-testid': testId,
+  ref, panelId, title, shortTitle, meta, actions, legend, foldedSummary, defaultFolded = false, folded: foldedProp,
+  onFoldedChange,
+  layout = 'float', orientation = 'column', headingLevel = 2, className = '', bodyClassName = '', children,
+  'data-testid': testId,
 }) {
   const titleId = useId();
   const bodyId = useId();
@@ -58,6 +75,10 @@ export default function OccFloatingPanel({
   if (typeof panelId !== 'string' || panelId.length === 0) throw new TypeError('An OCC floating panel needs a panelId');
   if (!Object.hasOwn(OCC_FLOATING_PANEL_LAYOUT, layout)) throw new RangeError(`Unknown OCC floating panel layout: ${String(layout)}`);
   if (!HEADING_LEVELS.includes(headingLevel)) throw new RangeError(`Unknown OCC panel heading level: ${String(headingLevel)}`);
+  if (!Object.hasOwn(OCC_FLOATING_PANEL_ORIENTATIONS, orientation)) {
+    throw new RangeError(`Unknown OCC floating panel orientation: ${String(orientation)}`);
+  }
+  const sides = OCC_FLOATING_PANEL_ORIENTATIONS[orientation];
 
   const controlled = foldedProp !== undefined;
   const folded = controlled ? Boolean(foldedProp) : (remembered ?? Boolean(defaultFolded));
@@ -72,13 +93,14 @@ export default function OccFloatingPanel({
 
   return (
     <section ref={ref} aria-labelledby={titleId} data-occ-floating-panel={panelId} data-folded={folded ? 'true' : 'false'}
-      data-layout={layout} data-testid={testId}
-      className={`flex min-w-0 flex-col ${OCC_FLOATING_PANEL_LAYOUT[layout]} ${className}`}>
-      <div className={`flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-1.5 py-1 ${folded ? '' : 'border-b border-occ-line'}`}>
+      data-layout={layout} data-orientation={orientation} data-testid={testId}
+      className={`flex min-w-0 ${sides.root} ${OCC_FLOATING_PANEL_LAYOUT[layout]} ${className}`}>
+      <div className={`flex min-w-0 ${orientation === 'row' ? 'shrink-0' : ''} flex-wrap items-center gap-x-2 gap-y-1 px-1.5 py-1 ${folded ? '' : sides.header}`}>
         <Heading id={titleId} className="min-w-0">
           <button type="button" aria-expanded={!folded} aria-controls={bodyId}
             aria-describedby={summarised ? summaryId : undefined} onClick={toggle} className={FOLD}>
-            <span className="min-w-0 truncate">{title}</span>
+            <span className={`min-w-0 truncate ${shortTitle ? 'max-[1399.98px]:sr-only' : ''}`}>{title}</span>
+            {shortTitle ? <span aria-hidden="true" className="min-w-0 truncate min-[1400px]:hidden">{shortTitle}</span> : null}
             <ChevronDownIcon className={`h-4 w-4 shrink-0 text-occ-muted ${folded ? '' : 'rotate-180'}`} />
           </button>
         </Heading>
@@ -88,7 +110,7 @@ export default function OccFloatingPanel({
         {!folded && legend ? <div data-occ-panel-legend="" className="w-full min-w-0 px-0.5 pb-0.5">{legend}</div> : null}
       </div>
       {/* No display class here: one would override `hidden`. The body's own layout goes on the element inside. */}
-      <div id={bodyId} hidden={folded} data-occ-panel-body="" className="min-h-0 flex-1">
+      <div id={bodyId} hidden={folded} data-occ-panel-body="" className={sides.body}>
         <div className={bodyClassName}>{children}</div>
       </div>
     </section>

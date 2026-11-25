@@ -4,6 +4,8 @@ import { useTranslation } from '../../i18n/LanguageScope';
 import { PlaneIcon } from '../shell/components/icons';
 import DemoTag from './DemoTag';
 import EstimatedTag from './EstimatedTag';
+import { delayChipOf } from './occDelay';
+import OccDelayChip from './OccDelayChip';
 import OccGlyph from './OccGlyph';
 import OccPlate from './OccPlate';
 import { durationText, formatClock, relativeTimeParts, relativeTimeText, toInstantMs } from './occTime';
@@ -22,7 +24,7 @@ export const OCC_FLIGHT_STRIP_PARTS = Object.freeze([
  * under the airport and the stand. The stand column fits «Sin posición».
  */
 export const OCC_FLIGHT_STRIP_LAYOUT = Object.freeze({
-  grid: 'grid grid-cols-[1rem_4.75rem_4.5rem_minmax(0,1fr)_2.75rem_5rem] items-center gap-x-1.5 gap-y-0.5 px-2 py-1.5',
+  grid: 'grid grid-cols-[1rem_4.75rem_4.5rem_minmax(0,1fr)_2.75rem_5rem] items-center gap-x-1.5 gap-y-0.5 px-2 py-1',
   control: 'w-full rounded text-left hover:bg-occ-panel-raised',
   selected: 'outline outline-2 -outline-offset-2 outline-occ-accent',
 });
@@ -48,6 +50,14 @@ function checkFlight(flight) {
 }
 
 const hasInstant = time => Number.isFinite(toInstantMs(time?.at));
+
+// The delay of a strip in words (CN-32, occDelay.js), as its chip reads it: «Atención: 18 min de demora».
+function delayWords(flight, { t, language }) {
+  const chip = delayChipOf(flight.delayMinutes);
+  if (chip === null) return '';
+  const words = t('delay.name', { count: chip.minutes });
+  return chip.signal ? `${SIGNALS[chip.signal][language]}: ${words}` : words;
+}
 
 // The countdown of a strip with a time: «en 12 min», «ahora» or «hace 3 min». An arrival's runway time (`actualKind:
 // 'Runway'`, as the feed and the demo worker write it) says what it is, «aterrizó hace 3 min»: it only says that the
@@ -82,6 +92,7 @@ export function flightStripName(flight, { t, language = 'es', locale, timeZone =
     flight.counterpartIata ? t(direction.counterpart, { code: flight.counterpartIata }) : '',
     flight.standCode ? t('flightStrip.stand', { code: flight.standCode }) : t('flightStrip.noStand'),
     status?.label ? (signal ? `${SIGNALS[signal][language]}: ${status.label}` : status.label) : '',
+    delayWords(flight, { t, language }),
     hasInstant(flight.time) ? countdownText(flight, now, t) : '',
   ];
   return parts.filter(part => typeof part === 'string' && part.length > 0).join(', ');
@@ -138,6 +149,8 @@ function Cells({ flight, t, language, locale, timeZone, now }) {
         {signal ? <OccGlyph name={signal} /> : null}
         {signal ? <span className="sr-only">{`${SIGNALS[signal][language]}: `}</span> : null}
         {flight.status?.label ? <span className="min-w-0 truncate">{flight.status.label}</span> : null}
+        {/* The delay goes with what the flight is doing (CN-32): the strip's button says it in flightStripName. */}
+        <OccDelayChip minutes={flight.delayMinutes} />
       </span>
       <span data-part="countdown" className="col-start-5 col-end-7 whitespace-nowrap text-right text-xs tabular-nums text-occ-muted">
         {countdown}
@@ -149,10 +162,11 @@ function Cells({ flight, t, language, locale, timeZone, now }) {
 /**
  * One flight as a strip of the board (design F): its cells always in the order of OCC_FLIGHT_STRIP_PARTS, direction
  * glyph · time with its kind («real», «est.», «prog.») · flight plate · «Demo» and «est.» tags · the other airport ·
- * stand plate or «Sin posición» · status · countdown («en 12 min», «ahora», «hace 3 min», once `now` is given;
+ * stand plate or «Sin posición» · status with its delay chip (CN-32) · countdown («en 12 min», «ahora», «hace 3 min», once `now` is given;
  * «aterrizó hace 3 min» for an arrival's runway time, N23).
  * `flight` is `{ id, direction: 'Arrival' | 'Departure', flightNumber, counterpartIata, time: { at, kind, actualKind? }
- * | null, standCode, status: { label, signal: null | 'attention' | 'urgent' } | null, demo, estimated }`, `actualKind`
+ * | null, standCode, status: { label, signal: null | 'attention' | 'urgent' } | null, demo, estimated, delayMinutes? }`
+ * (`delayMinutes`, CN-32: the minutes its best time runs past its scheduled one, occDelay.js), `actualKind`
  * the kind of an actual time when it is known (`Runway` or `OnBlock`, dashboard/noc/boardModel.js: bestTime); the board
  * model builds it (the status words are its own).
  * - With `onSelect` it is a toggle button with `aria-pressed`, named in full words (flightStripName), that calls

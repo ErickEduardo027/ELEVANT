@@ -268,9 +268,14 @@ const ACTION_ON = 'inline-flex min-h-9 items-center rounded border border-occ-ac
  *   `following`).
  * - «Seguir en 3D» (CN-30): inside an OccMap that can follow, the card also offers it (the map context's
  *   `follow.three`), pressed while the camera orbits the aircraft; pressing it again stops and flies the camera back.
+ * - `variant` (CN-32): `overlay`, the card over the map or in a panel's flow (a dialog without aria-modal, with its
+ *   heading and «Cerrar»), or `embedded`, the live part of a side panel that already names the flight, closes it and
+ *   links to its turnaround and its stand (ui/MapSidePanel.jsx, Monitoreo de vuelos): a group without its own heading,
+ *   «Cerrar» or links, that keeps its tags, its route and time, the telemetry, its stand and runway, its status, the
+ *   source of its position and «Seguir».
  */
 export default function FlightDataBlock({ target, telemetry: store = null, station = null, stationId = null, onClose,
-  onFollow = null, following = false, style, className = '' }) {
+  onFollow = null, following = false, variant = 'overlay', style, className = '' }) {
   const { t, language, locale } = useTranslation(mapMessages);
   const { t: tk } = useTranslation(kinematicsMessages);
   const aircraft = target?.aircraft ?? null;
@@ -298,17 +303,21 @@ export default function FlightDataBlock({ target, telemetry: store = null, stati
   const status = flight !== null ? statusLine(telemetry, tk) : null;
   const shownStatus = status !== null && status !== time?.words ? status : null;
   const scaled = flight?.isDemo === true ? timeScaleLine(telemetry, tk, language) : null;
+  const embedded = variant === 'embedded';
 
   return (
     <div
-      role="dialog"
+      role={embedded ? 'group' : 'dialog'}
       aria-label={t('dataBlock.label', { id: identifier })}
       data-testid="flight-data-block"
+      data-variant={variant}
       data-source={source.kind}
-      style={style}
-      className={`absolute z-20 w-80 max-w-[calc(100%_-_1.5rem)] space-y-2 rounded-md border border-occ-line border-l-2 border-l-occ-accent bg-occ-panel-float p-3 text-sm text-occ-text ${className}`.trim()}
+      style={embedded ? undefined : style}
+      className={embedded
+        ? `space-y-2 text-sm text-occ-text ${className}`.trim()
+        : `absolute z-20 w-80 max-w-[calc(100%_-_1.5rem)] space-y-2 rounded-md border border-occ-line border-l-2 border-l-occ-accent bg-occ-panel-float p-3 text-sm text-occ-text ${className}`.trim()}
     >
-      <div className="flex items-start gap-2">
+      {!embedded && <div className="flex items-start gap-2">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
           <h2 className="mr-1 font-mono text-base font-semibold leading-6 text-occ-text">{identifier}</h2>
           {type !== null && <OccPlate kind="code">{type}</OccPlate>}
@@ -325,7 +334,7 @@ export default function FlightDataBlock({ target, telemetry: store = null, stati
             <path d="M4 4 L12 12 M12 4 L4 12" style={{ fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round' }} />
           </svg>
         </button>
-      </div>
+      </div>}
 
       {(flight?.isDemo === true || notImported || flight === null) && (
         <p className="flex flex-wrap items-center gap-2 text-xs font-semibold text-occ-muted">
@@ -380,7 +389,7 @@ export default function FlightDataBlock({ target, telemetry: store = null, stati
         <span>{source.words}</span>
       </p>
 
-      {(flight !== null || onFollow !== null || three !== null) && (
+      {((flight !== null && !embedded) || onFollow !== null || three !== null) && (
         <div className="flex flex-wrap gap-2 pt-1">
           {onFollow !== null && (
             <button
@@ -405,10 +414,11 @@ export default function FlightDataBlock({ target, telemetry: store = null, stati
               {t('follow.label3d')}
             </button>
           )}
-          {flight !== null && (links.turnaround !== null
+          {flight !== null && !embedded && (links.turnaround !== null
             ? <Link href={links.turnaround} className={ACTION}>{t('dataBlock.viewTurnaround')}</Link>
             : <button type="button" disabled className={ACTION_OFF}>{t('dataBlock.viewTurnaround')}</button>)}
-          {flight !== null && links.stand !== null && <Link href={links.stand} className={ACTION}>{t('dataBlock.viewStand')}</Link>}
+          {flight !== null && !embedded && links.stand !== null
+            && <Link href={links.stand} className={ACTION}>{t('dataBlock.viewStand')}</Link>}
         </div>
       )}
     </div>

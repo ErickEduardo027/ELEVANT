@@ -12,6 +12,9 @@ export const OCC_STAT_TONES = Object.freeze(['neutral', 'attention', 'urgent']);
 // Manrope, proportional figures (the global tabular figures of tokens.css are switched off here): a figure of the day
 // is read alone, not compared down a column. Never mono, because it is not an identifier.
 const FIGURE = "text-2xl font-semibold leading-8 text-occ-text [font-feature-settings:'tnum'_0]";
+// The figure of a strip of figures docked along the top of the console's map (CN-32): one size down, so the strip stays
+// one line low over the map.
+const FIGURE_COMPACT = "text-lg font-semibold leading-6 text-occ-text [font-feature-settings:'tnum'_0]";
 // A linked figure stays plain text with an underline, so the console's figures never light up.
 const FIGURE_LINK = 'rounded-sm underline decoration-occ-line-strong decoration-1 underline-offset-4 '
   + 'hover:decoration-occ-accent';
@@ -27,12 +30,13 @@ const FIGURE_LINK = 'rounded-sm underline decoration-occ-line-strong decoration-
  * - `detail` says more of the figure on a line under it, on screen («1 abierta tras la salida», N30), and only once
  *   the figure is counted. `detailTone` `attention` or `urgent` puts that signal's glyph before it, with its word for
  *   assistive technology; the label and the figure keep the tile's own tone.
+ * - `compact` (CN-32) draws the figure one size down, for a strip of figures along the top of a map.
  * `data-occ-stat` marks the tile, `data-tone` the tone it shows and `data-occ-stat-detail` its line. An unknown tone
  * throws.
  */
 export default function OccStatTile({
   label, value, hint, tone = 'neutral', isLowerBound = false, href, loading = false, detail, detailTone = 'neutral',
-  className = '',
+  compact = false, className = '',
 }) {
   const { t, language } = useTranslation(occUiMessages);
   if (!OCC_STAT_TONES.includes(tone)) throw new RangeError(`Unknown OCC stat tone: ${String(tone)}`);
@@ -58,7 +62,7 @@ export default function OccStatTile({
         <span className="min-w-0">{label}</span>
         {lit ? <span className="sr-only">{`, ${SIGNALS[tone][language]}`}</span> : null}
       </dt>
-      <dd className={`mt-0.5 ${FIGURE}`}>
+      <dd className={`mt-0.5 ${compact ? FIGURE_COMPACT : FIGURE}`}>
         {href && !pending ? <Link href={href} className={FIGURE_LINK}>{figure}</Link> : figure}
       </dd>
       {said ? (

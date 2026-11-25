@@ -29,6 +29,27 @@ export const flightMonitoringMessages = {
         all: 'Todos',
       },
       legend: 'Leyenda del tablero',
+      // The board's columns, which sort it (CN-32): a click sorts by one, a second click turns the order.
+      sort: {
+        label: 'Ordenar el tablero',
+        by: 'Ordenar por {column}',
+        ascending: 'Ordenado por {column}, de menor a mayor',
+        descending: 'Ordenado por {column}, de mayor a menor',
+        columns: {
+          time: 'Hora',
+          flight: 'Vuelo',
+          status: 'Estado',
+          route: 'Ruta',
+          stand: 'Pos.',
+        },
+        names: {
+          time: 'hora',
+          flight: 'vuelo',
+          status: 'estado',
+          route: 'ruta',
+          stand: 'posición',
+        },
+      },
       forbidden: 'No tienes permiso para ver los vuelos de la estación.',
       unauthorized: 'La sesión terminó. Vuelve a iniciar sesión para ver los vuelos.',
       status: {
@@ -91,6 +112,10 @@ export const flightMonitoringMessages = {
       links: 'Abrir en otro módulo',
       viewPlanning: 'Ver planificación',
       viewPositions: 'Ver mapa de posiciones',
+      // The sections of the docked panel (CN-32).
+      live: 'En vivo',
+      times: 'Horarios',
+      visit: 'Escala',
     },
     alerts: {
       delayed: 'Vuelo {flight} retrasado',
@@ -125,6 +150,26 @@ export const flightMonitoringMessages = {
         all: 'All',
       },
       legend: 'Board legend',
+      sort: {
+        label: 'Sort the board',
+        by: 'Sort by {column}',
+        ascending: 'Sorted by {column}, ascending',
+        descending: 'Sorted by {column}, descending',
+        columns: {
+          time: 'Time',
+          flight: 'Flight',
+          status: 'Status',
+          route: 'Route',
+          stand: 'Stand',
+        },
+        names: {
+          time: 'time',
+          flight: 'flight',
+          status: 'status',
+          route: 'route',
+          stand: 'stand',
+        },
+      },
       forbidden: 'You do not have permission to see the station’s flights.',
       unauthorized: 'Your session ended. Sign in again to see the flights.',
       status: {
@@ -187,6 +232,9 @@ export const flightMonitoringMessages = {
       links: 'Open in another module',
       viewPlanning: 'View planning',
       viewPositions: 'View positions map',
+      live: 'Live',
+      times: 'Times',
+      visit: 'Turnaround',
     },
     alerts: {
       delayed: 'Flight {flight} delayed',

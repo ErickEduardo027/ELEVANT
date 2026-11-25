@@ -75,6 +75,7 @@ asignación en OCC → operación completa en la tablet → revisión OCC → e-
 | CN-29 | La ruta prevista de un vuelo real dibuja un rodeo en ángulo recto cerca de Higüey | Aproximación propia desde la posición y el rumbo del avión, suave hasta la final; estelas de otros vuelos ocultas mientras se elige uno; rótulos que no se pisan en las terminales | En PR |
 | CN-30 | Seguir al avión en 3D con un panel de vuelo y operación | «Seguir en 3D»: cámara que orbita el avión (vistas, gestos y botones), panel lateral, modelos 3D detallados con libreas y actitud real | En PR |
 | CN-31 | Los aviones reales deben verse donde están, también en rodaje | Mezcla de 1,5 s, sin rodaje estimado para un avión real, estacionamiento en su posición, calzos de la tablet, aviso de posición distinta; lectura del aeródromo cada 3 s | En PR |
+| CN-32 | Monitoreo OCC más profesional: paneles y controles dispersos sobre el mapa | Una columna de control por mapa, paneles acoplados en Panorama, detalle acoplado con los datos en vivo y tablero ordenable con demoras en Monitoreo | En PR |
 
 ### Medición del NOC (base, antes de CN-18/19)
 

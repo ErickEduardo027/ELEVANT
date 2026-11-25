@@ -154,7 +154,9 @@ describe('FlightMap', () => {
     // The region view holds the flight about 19 NM from PUJ: the legend explains its aircraft.
     const legend = screen.getByTestId('map-legend');
     expect(screen.getAllByRole('button', { name: 'Leyenda' })).toEqual([within(legend).getByRole('button', { name: 'Leyenda' })]);
-    expect(within(legend).getAllByRole('listitem').map(item => item.textContent))
+    // It opens folded (CN-32): its rail button says so, and its list is there to open.
+    expect(within(legend).getByRole('button', { name: 'Leyenda' })).toHaveAttribute('aria-expanded', 'false');
+    expect(within(legend).getAllByRole('listitem', { hidden: true }).map(item => item.textContent))
       .toEqual(['VueloApunta según su rumbo; al norte si no se conoce']);
     // Away from the flight there is nothing to explain; the legend comes back with it.
     act(() => map.jumpTo({ center: [-70.55, 19.45], zoom: 12 }));
@@ -178,7 +180,7 @@ describe('FlightMap', () => {
     // It is a notice, not a fallback: the flight is still drawn and its legend still explains it.
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(map.getSource('occ-flights').data.features).toHaveLength(1);
-    expect(within(screen.getByTestId('map-legend')).getAllByRole('listitem').map(item => item.textContent))
+    expect(within(screen.getByTestId('map-legend')).getAllByRole('listitem', { hidden: true }).map(item => item.textContent))
       .toEqual(['VueloApunta según su rumbo; al norte si no se conoce']);
     cleanup();
 
@@ -377,7 +379,8 @@ describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
     const attribution = map.controls.find(entry => entry.control instanceof fake.module.AttributionControl).control;
     expect(attribution.options.customAttribution).not.toContain('Datos de aeronaves');
     // The legend explains the traffic on screen.
-    expect(within(screen.getByTestId('map-legend')).getAllByRole('listitem')[0]).toHaveTextContent('Vuelo de AVIAM que llega');
+    expect(within(screen.getByTestId('map-legend')).getAllByRole('listitem', { hidden: true })[0])
+      .toHaveTextContent('Vuelo de AVIAM que llega');
   });
 
   it('passes the weather and the map flights to the map', async () => {
@@ -529,6 +532,30 @@ describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
     expect(screen.getByRole('group', { name: 'Referencias' })).toBeInTheDocument();
     expect(screen.queryByRole('group', { name: 'Tráfico' })).not.toBeInTheDocument();
     expect(within(screen.getByTestId('occ-map')).getByRole('dialog', { name: 'Detalle del vuelo ZZ101' })).toBeInTheDocument();
+  });
+
+  it('renders the data block in the side panel of the page when the page gives its slot, so nothing floats over the map (CN-32)', async () => {
+    const slot = document.createElement('div');
+    document.body.append(slot);
+    try {
+      const { map, rerender } = renderLive({ selectedFlightId: arrivalRow.legId, dataBlockSlot: slot });
+      loadStyle(map);
+      await flush();
+      // In the slot, embedded: a group without its own heading, «Cerrar» or links; the map holds no card.
+      const block = within(slot).getByRole('group', { name: 'Vuelo ZZ161' });
+      expect(block).toHaveAttribute('data-variant', 'embedded');
+      expect(block).toHaveTextContent('Llega 11:10 · en 10 min');
+      expect(within(screen.getByTestId('occ-map')).queryByTestId('flight-data-block')).not.toBeInTheDocument();
+      // Through a portal it keeps the map's context: «Seguir» is the map's switch.
+      expect(within(block).getByRole('button', { name: 'Seguir' })).toHaveAttribute('aria-pressed', 'false');
+      // Without the slot, back on the map at the top left.
+      rerender({ dataBlockSlot: null });
+      expect(within(screen.getByTestId('occ-map')).getByRole('dialog', { name: 'Vuelo ZZ161' }))
+        .toHaveStyle({ top: '12px', left: '12px' });
+      expect(slot).toBeEmptyDOMElement();
+    } finally {
+      slot.remove();
+    }
   });
 
   it('shows the data block of the selected flight', async () => {

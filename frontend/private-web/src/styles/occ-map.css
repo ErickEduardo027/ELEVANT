@@ -1,19 +1,54 @@
 /* The OCC map (src/features/maps/core/OccMap.jsx imports this file). MapLibre's controls sit on the OCC tokens,
    flat (no shadow, no blur, no gradient), inside the insets the page reports: OccMap writes --occ-map-inset-* on
    its root and the map engine on its own container. Next keeps a global stylesheet loaded after a navigation, so
-   every rule is scoped under .occ-map and reaches no other map. */
+   every rule is scoped under .occ-map and reaches no other map.
+
+   The chrome around the map follows one plan on every OCC map (CN-32, «Monitoreo OCC más profesional»):
+   - the right edge of the area in sight is the control column: MapLibre's zoom and compass on top and, under them and
+     as wide as they are, the control rail (ui/MapDock.jsx) with the views, 3D, follow, the screen's own tools, the
+     pause, «Capas» and «Leyenda». The layers menu and the legend fly out to the left of the rail, one at a time;
+   - the bottom left holds the key of what the map paints: the altitude scale over the credit of the aircraft data;
+   - the bottom right keeps MapLibre's nautical scale and its credits;
+   - the top centre shows a state of the map only while something is off (a base map that failed, the traffic late);
+   - the top left is the screen's own (the «Llegada nueva» pill, «Ubicar en el mapa»). */
 
 .occ-map {
   --occ-map-gap: 12px;
+  /* The width of the control column and the height of one of its controls (44 px on a touch screen). */
+  --occ-map-rail: 5.5rem;
+  --occ-map-control: 32px;
+  /* The height of MapLibre's zoom group (zoom in, zoom out and the compass, with their joints and border), under which
+     the rail starts. */
+  --occ-map-zoom-height: calc(3 * var(--occ-map-control) + 4px);
   isolation: isolate;
-  /* The map is the container of its dock's compact steps below (its root fills its parent, so its size does not depend
-     on what it holds). */
+  /* The map is the container of its narrow-map rule below (its root fills its parent, so its size does not depend on
+     what it holds). */
   container: occ-map / inline-size;
 }
 
-/* The short word of a view button shows only on a narrow map. */
+@media (pointer: coarse) {
+  .occ-map {
+    --occ-map-control: 44px;
+  }
+}
+
+/* The short word of a view button: the rail shows it, and keeps the full word as the button's name. Only a word that
+   has a short one gives way to it: «Región» and «Rampa» stay as they are. */
 .occ-map .occ-map-label-short {
   display: none;
+}
+
+.occ-map .occ-map-dock .occ-map-label-short {
+  display: inline;
+}
+
+.occ-map .occ-map-dock .occ-map-label-full:has(+ .occ-map-label-short) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 /* The four control corners, inside the insets. */
@@ -32,9 +67,19 @@
   left: var(--occ-map-inset-left, 0px);
 }
 
+/* The scale and the credits of the bottom right corner sit left of the control column, never under it. */
 .occ-map .maplibregl-ctrl-bottom-right {
   bottom: var(--occ-map-inset-bottom, 0px);
-  right: var(--occ-map-inset-right, 0px);
+  right: calc(var(--occ-map-inset-right, 0px) + var(--occ-map-rail) + var(--occ-map-gap));
+}
+
+/* The zoom group heads the control column: the map's gap from the corner, as wide as the rail under it. */
+.occ-map .maplibregl-ctrl-top-right .maplibregl-ctrl {
+  margin: var(--occ-map-gap) var(--occ-map-gap) 0 0;
+}
+
+.occ-map .maplibregl-ctrl-top-right .maplibregl-ctrl-group {
+  width: var(--occ-map-rail);
 }
 
 /* Control groups: a flat panel slab with a 1 px joint. MapLibre draws its icons dark, so they are inverted. */
@@ -49,8 +94,8 @@
 }
 
 .occ-map .maplibregl-ctrl-group button {
-  width: 36px;
-  height: 36px;
+  width: 100%;
+  height: var(--occ-map-control);
 }
 
 .occ-map .maplibregl-ctrl-group button + button {
@@ -121,7 +166,7 @@
   filter: none;
 }
 
-/* Opened, the credits wrap in the corner instead of running left under the dock of the map's controls. */
+/* Opened, the credits wrap in the corner instead of running left over the key of the map. */
 .occ-map .maplibregl-ctrl-attrib.maplibregl-compact-show {
   max-width: min(20rem, calc(100% - 20px));
 }
@@ -134,24 +179,23 @@
   font-size: 12px;
 }
 
-/* The group of map controls at the bottom centre of the visible area (contracts 2.5): the view selector and the
-   legend now, then 2D/3D, follow and layers. Only its children take the pointer. Its own width is its content's, up to
-   the visible area (a box placed at the middle would otherwise get half of it, and fold its items); there they shrink.
-   */
+/* The control rail (ui/MapDock.jsx, CN-32): one column at the right edge of the area in sight, under MapLibre's zoom
+   group and as wide as it, from there down to the bottom of that area (the scale and the credits of the bottom right
+   corner sit at its left). It holds, top to
+   bottom, the views and 3D, follow, the screen's own tools, the pause, «Capas» and «Leyenda», each group one slab.
+   The column takes no pointer itself (the map under it keeps working), only its controls do. Its height is set by
+   the area in sight, so the menus it opens (.occ-map-flyout) measure themselves against it. */
 .occ-map .occ-map-dock {
   position: absolute;
   z-index: 10;
+  top: calc(var(--occ-map-inset-top, 0px) + var(--occ-map-gap) + var(--occ-map-zoom-height) + 8px);
+  right: calc(var(--occ-map-inset-right, 0px) + var(--occ-map-gap));
   bottom: calc(var(--occ-map-inset-bottom, 0px) + var(--occ-map-gap));
-  left: calc(var(--occ-map-inset-left, 0px)
-    + (100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px)) / 2);
   display: flex;
-  width: max-content;
-  /* Up to the map's width (PR M7): a dock wider than the area the panels leave stays centred on it and spills evenly to
-     both sides, under the panels' bottom edge, instead of running off the right of the screen. */
-  max-width: calc(100% - 2 * var(--occ-map-gap));
-  align-items: flex-end;
-  gap: 8px;
-  transform: translateX(-50%);
+  width: var(--occ-map-rail);
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
   pointer-events: none;
 }
 
@@ -159,17 +203,39 @@
   pointer-events: auto;
 }
 
-/* The altitude scale of the traffic (ui/AltitudeLegend.jsx): at the left of the visible area, above the dock (its 44 px
-   buttons and the gap) and above the credit line MapLibre stacks there (about 40 px), as wide as its ticks need and
-   never wider than the area in sight. The legend and the layers menu open at the right of the dock, mostly clear of
-   it; where they meet, they open over it. */
+/* A menu of the rail («Capas», «Leyenda»): it flies out to the left of the column, from the top of the zoom group down
+   to the bottom of the column at most, and scrolls when what it lists is longer. */
+.occ-map .occ-map-flyout {
+  position: absolute;
+  z-index: 1;
+  top: calc(-1 * (var(--occ-map-zoom-height) + 8px));
+  right: calc(100% + 8px);
+  max-height: calc(100% + var(--occ-map-zoom-height) + 8px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-color: var(--occ-line-strong) transparent;
+  scrollbar-width: thin;
+}
+
+/* The key of the map at the bottom left of the area in sight: the credit of the aircraft data on the bottom line and,
+   over it, the altitude scale of the traffic (ui/AltitudeLegend.jsx); both short of the control column and of the
+   nautical scale of the bottom right corner. */
+.occ-map .occ-map-credit {
+  position: absolute;
+  z-index: 10;
+  left: calc(var(--occ-map-inset-left, 0px) + var(--occ-map-gap));
+  bottom: calc(var(--occ-map-inset-bottom, 0px) + var(--occ-map-gap));
+  max-width: calc(100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px) - var(--occ-map-rail)
+    - 3 * var(--occ-map-gap) - 7rem);
+}
+
 .occ-map .occ-map-altitude {
   position: absolute;
   z-index: 9;
-  bottom: calc(var(--occ-map-inset-bottom, 0px) + 2 * var(--occ-map-gap) + 88px);
+  bottom: calc(var(--occ-map-inset-bottom, 0px) + var(--occ-map-gap) + 32px);
   left: calc(var(--occ-map-inset-left, 0px) + var(--occ-map-gap));
-  width: min(30rem, calc(100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px)
-    - 2 * var(--occ-map-gap)));
+  width: min(30rem, calc(100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px) - var(--occ-map-rail)
+    - 3 * var(--occ-map-gap) - 7rem));
 }
 
 .occ-map .occ-map-altitude[data-open="false"] {
@@ -194,32 +260,34 @@
   }
 }
 
-/* A short state of the map itself, such as a base map that did not load, at the top centre of the visible area. */
+/* A short state of the map itself, such as a base map that did not load, at the top centre of the area the control
+   column leaves. */
 .occ-map .occ-map-chip {
   position: absolute;
   z-index: 11;
   top: calc(var(--occ-map-inset-top, 0px) + var(--occ-map-gap));
   left: calc(var(--occ-map-inset-left, 0px)
-    + (100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px)) / 2);
+    + (100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px) - var(--occ-map-rail)
+    - var(--occ-map-gap)) / 2);
   max-width: min(36rem, calc(100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px)
-    - 2 * var(--occ-map-gap)));
+    - var(--occ-map-rail) - 3 * var(--occ-map-gap)));
   transform: translateX(-50%);
 }
 
 /* The air traffic's state (src/features/maps/ui/MapSourceStatus.jsx): its chip and, apart, the notice of the AVIAM
-   flights, one under the other at the top centre of the visible area, below the base-map notice when both show; and
-   the credit of the aircraft data at the bottom left, above the row of the dock, so neither covers the other on a
-   narrow map. */
+   flights, one under the other at the top centre, below the base-map notice when both show. Its credit of the aircraft
+   data is the bottom line of the map's key (.occ-map-credit above). */
 .occ-map .occ-map-source-chips {
   position: absolute;
   z-index: 11;
   top: calc(var(--occ-map-inset-top, 0px) + var(--occ-map-gap));
   left: calc(var(--occ-map-inset-left, 0px)
-    + (100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px)) / 2);
+    + (100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px) - var(--occ-map-rail)
+    - var(--occ-map-gap)) / 2);
   display: flex;
   width: max-content;
   max-width: min(36rem, calc(100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px)
-    - 2 * var(--occ-map-gap)));
+    - var(--occ-map-rail) - 3 * var(--occ-map-gap)));
   flex-direction: column;
   align-items: center;
   gap: 8px;
@@ -231,57 +299,27 @@
 }
 
 /* A short notice of the map that answers something just done, such as «Dejaste de seguir a …» (follow mode, PR M6):
-   at the bottom left of the visible area, over the credit of the aircraft data (one 24 px line over the dock's row),
-   where neither the dock's row nor the legend, open by default over the dock's right end, lie; up to 28rem wide, the
-   room a narrow map leaves beside the legend. The dock's own panels, opened by a person, stay over it (it comes first,
-   at the dock's level). */
+   at the bottom centre of the area the control column leaves, over the map's key. The rail's menus, opened by a
+   person, stay over it (it comes first, at the rail's level). */
 .occ-map .occ-map-notice {
   position: absolute;
   z-index: 10;
-  left: calc(var(--occ-map-inset-left, 0px) + var(--occ-map-gap));
-  bottom: calc(var(--occ-map-inset-bottom, 0px) + var(--occ-map-gap) + 52px + 24px + 8px);
+  left: calc(var(--occ-map-inset-left, 0px)
+    + (100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px) - var(--occ-map-rail)
+    - var(--occ-map-gap)) / 2);
+  bottom: calc(var(--occ-map-inset-bottom, 0px) + var(--occ-map-gap) + 32px + 64px);
+  width: max-content;
   max-width: min(28rem, calc(100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px)
-    - 2 * var(--occ-map-gap)));
+    - var(--occ-map-rail) - 3 * var(--occ-map-gap)));
+  transform: translateX(-50%);
 }
 
-.occ-map .occ-map-credit {
-  position: absolute;
-  z-index: 10;
-  left: calc(var(--occ-map-inset-left, 0px) + var(--occ-map-gap));
-  bottom: calc(var(--occ-map-inset-bottom, 0px) + var(--occ-map-gap) + 52px);
-  max-width: calc(100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px) - 2 * var(--occ-map-gap));
-}
-
-/* The dock on a narrow map (U5): a map beside a list and an inspector, as on a 1440 px laptop, gets less width than the
-   dock's one row needs (about 56 rem with every tool). First the keys of the key table go (they stay in each button's
-   aria-keyshortcuts, and the key table lists them) and the buttons tighten; then «Aproximación» and «Aeródromo» take
-   their short word, keeping the full one as the button's name. The dock never wraps onto the map. */
-@container occ-map (max-width: 64rem) {
-  .occ-map .occ-map-dock {
-    gap: 4px;
-  }
-
-  .occ-map .occ-map-dock .occ-map-key {
-    display: none;
-  }
-
-  .occ-map .occ-map-dock button {
-    padding-inline: 0.5rem;
-  }
-}
-
-@container occ-map (max-width: 48rem) {
-  /* Only a word that has a short one gives way to it: «Región» and «Rampa» stay as they are. */
-  .occ-map .occ-map-dock .occ-map-label-full:has(+ .occ-map-label-short) {
-    position: absolute;
-    width: 1px;
-    height: 1px;
+/* A narrow map (beside a list and an inspector on a 1366 px laptop): the credit of the aircraft data keeps one line, so
+   the key never climbs over the map. */
+@container occ-map (max-width: 36rem) {
+  .occ-map .occ-map-credit {
     overflow: hidden;
-    clip: rect(0 0 0 0);
+    text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .occ-map .occ-map-dock .occ-map-label-short {
-    display: inline;
   }
 }

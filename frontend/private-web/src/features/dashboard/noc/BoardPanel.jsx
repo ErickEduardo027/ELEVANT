@@ -3,7 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import DemoTag from '../../occ-ui/DemoTag';
-import EstimatedTag from '../../occ-ui/EstimatedTag';
+import OccBoardLegend from '../../occ-ui/OccBoardLegend';
 import OccEmptyState from '../../occ-ui/OccEmptyState';
 import OccFlightStrip from '../../occ-ui/OccFlightStrip';
 import OccFloatingPanel from '../../occ-ui/OccFloatingPanel';
@@ -11,8 +11,6 @@ import OccGlyph from '../../occ-ui/OccGlyph';
 import { OccRemoteView } from '../../occ-ui/OccPanel';
 import OccPlate from '../../occ-ui/OccPlate';
 import OccSegmented from '../../occ-ui/OccSegmented';
-import { occUiMessages } from '../../occ-ui/occUiMessages';
-import { SIGNALS } from '../../occ-ui/statusVocabulary';
 import { boardLegendKeys, filterVisits, VISIT_FILTERS } from './boardModel';
 import { formatConsoleDate } from './consoleFormat';
 import { consoleMessages } from './consoleMessages';
@@ -62,24 +60,6 @@ function StripList({ items, selectedId, onSelect, now, timeZone, locale, importL
 
 // The legend of the visible tab (boardModel.js: boardLegendKeys), in the words of the status bar's «Leyenda»: each
 // signal with its glyph and its word, each tag as the board draws it with what it means.
-function BoardLegend({ keys, label, language, tUi }) {
-  return (
-    <ul aria-label={label} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-occ-muted">
-      {keys.map(key => {
-        const signal = Object.hasOwn(SIGNALS, key);
-        return (
-          <li key={key} data-occ-legend-item={key} className="inline-flex items-center gap-1.5 whitespace-nowrap">
-            {signal ? <OccGlyph name={key} /> : null}
-            {key === 'demo' ? <DemoTag /> : null}
-            {key === 'estimated' ? <EstimatedTag /> : null}
-            <span>{signal ? SIGNALS[key][language] : tUi(`legend.tagMeaning.${key}`)}</span>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
 function VisitRow({ visit, selected, onSelect, t }) {
   const arrival = visit.arrival?.flightNumber ?? null;
   const departure = visit.departure?.flightNumber ?? null;
@@ -137,8 +117,7 @@ export default function BoardPanel({
   board, state, labels, selectedId = null, onSelect, onImport, onImportFlight, nowMs, timeZone, date = null,
   measureRef, layout = 'float', defaultFolded = false, className = '',
 }) {
-  const { t, language, locale } = useTranslation(consoleMessages);
-  const { t: tUi } = useTranslation(occUiMessages);
+  const { t, locale } = useTranslation(consoleMessages);
   const [tab, setTab] = useState('arrivals');
   const [filter, setFilter] = useState('all');
   // The selection the board made itself, and the last selection whose tab the board followed.
@@ -241,7 +220,7 @@ export default function BoardPanel({
 
   // The legend of what the tab on screen draws, once the board answered: its strips are on screen only then.
   const legend = state?.status === 'success' && legendKeys.length > 0
-    ? <BoardLegend keys={legendKeys} label={t('board.legend')} language={language} tUi={tUi} /> : null;
+    ? <OccBoardLegend keys={legendKeys} label={t('board.legend')} /> : null;
 
   return (
     <OccFloatingPanel ref={measureRef} panelId="board" title={t('panels.board')} layout={layout} meta={meta}

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { useOptionalOccShellChannel } from '../../admin-occ/shell/occShellContext';
 import { useOccStation } from '../../admin-occ/useOccStation';
@@ -19,6 +20,7 @@ import MapLegend from '../../maps/ui/MapLegend';
 import MapMotionControl from '../../maps/ui/MapMotionControl';
 import MapPresetSwitcher from '../../maps/ui/MapPresetSwitcher';
 import MapSourceStatus from '../../maps/ui/MapSourceStatus';
+import { RAIL_ICON_TOOL, RAIL_TOOL_ROW } from '../../maps/ui/railClasses';
 import { useMapSituation } from '../../maps/useMapSituation';
 import { useMdpcWeather } from '../../weather/useMdpcWeather';
 import { flightMonitoringMessages } from '../flightMonitoringMessages';
@@ -32,8 +34,6 @@ const DOCKED_BLOCK_STYLE = Object.freeze({ top: 12, left: 12 });
 
 const findFlight = (flights, id) => (id == null ? null : flights.find(flight => String(flight.id) === String(id)) ?? null);
 
-const toolClass = 'flex min-h-11 min-w-11 items-center justify-center rounded border border-occ-line bg-occ-panel '
-  + 'text-occ-text hover:bg-occ-panel-raised';
 
 // The map of Monitoreo de vuelos on the one map engine: a thin adapter over OccMap over the NOC style. It opens on the
 // region, or on the approach when the linked flight is within 40 NM (contracts 2.3), draws the flights that carry a
@@ -103,19 +103,25 @@ function FlightMapView({
       onFallbackSelect={selectFlight}
     >
       {children}
+      {/* The control rail (CN-32): the views and 3D, «Seguir», the screen's two framing tools in one slab, the pause,
+          «Capas» and «Leyenda». */}
       <MapDock>
-        <MapLayersMenu />
         <MapPresetSwitcher />
         <MapFollowButton />
-        <button type="button" onClick={resetView} title={t('map.resetView')} aria-label={t('map.resetView')} className={toolClass}>
-          <RotateCcwIcon className="h-4 w-4" />
-        </button>
-        <button type="button" onClick={() => mapRef.current?.flyToPreset('approach')} title={t('map.centerPuj')}
-          aria-label={t('map.centerPuj')} className={toolClass}>
-          <CrosshairIcon className="h-4 w-4" />
-        </button>
+        <div className={RAIL_TOOL_ROW}>
+          <button type="button" onClick={resetView} title={t('map.resetView')} aria-label={t('map.resetView')}
+            className={RAIL_ICON_TOOL}>
+            <RotateCcwIcon className="h-4 w-4" />
+          </button>
+          <button type="button" onClick={() => mapRef.current?.flyToPreset('approach')} title={t('map.centerPuj')}
+            aria-label={t('map.centerPuj')} className={RAIL_ICON_TOOL}>
+            <CrosshairIcon className="h-4 w-4" />
+          </button>
+        </div>
         <MapMotionControl />
-        <MapLegend />
+        <MapLayersMenu />
+        {/* Folded at first (CN-32): it flies out over the map, which opens clear. */}
+        <MapLegend defaultOpen={false} />
       </MapDock>
     </OccMap>
   );
@@ -131,11 +137,14 @@ function FlightMapView({
  * gives the map its flights, whose counterparts the references emphasise (PR M8). The plain map draws no weather.
  * The state of the traffic (from the air picture alone, its age on the server's clock), the credit of its source and,
  * apart, a failed read of the AVIAM flights sit over the map (MapSourceStatus). The chosen flight or
- * aircraft has its data block docked at the top left (FlightDataBlock) and its route on the map; a flight of the page
- * the map does not know (outside its window, or while the map cannot read its flights) keeps the page's own card, as
- * does every flight of the page while the map cannot draw.
+ * aircraft has its data block (FlightDataBlock) and its route on the map: inside the page's side panel when the page
+ * gives its `dataBlockSlot` (CN-32: the flight's inspector, so nothing floats over the map), else docked at the top left
+ * of the map, as for another aircraft; a flight of the page the map does not know (outside its window, or while the map
+ * cannot read its flights) keeps the page's own card, as does every flight of the page while the map cannot draw.
  */
-function LiveFlightMap({ flights = EMPTY, selectedFlightId = null, onSelectFlight, detail = null, onSelectionFlights }) {
+function LiveFlightMap({
+  flights = EMPTY, selectedFlightId = null, onSelectFlight, detail = null, onSelectionFlights, dataBlockSlot = null,
+}) {
   const { stationId } = useOccStation();
   const { selection: urlSelection, selectAircraft, clear } = useMapSelection();
   const selectedHex = urlSelection?.kind === 'aircraft' ? urlSelection.id : null;
@@ -193,7 +202,7 @@ function LiveFlightMap({ flights = EMPTY, selectedFlightId = null, onSelectFligh
       weather={weather} drawnFlights={drawnFlights} selection={selection} onSelect={handleSelect} framePoints={framePoints}>
       <MapSourceStatus status={live.status} picture={live.picture} sourceState={live.sourceState} clock={live.clock}
         onRetry={live.retry} />
-      <SelectionCard target={target} detail={pageDetail} telemetry={live.telemetry}
+      <SelectionCard target={target} detail={pageDetail} telemetry={live.telemetry} slot={dataBlockSlot}
         station={live.flights?.stationAirport ?? null} stationId={stationId} onClose={() => handleSelect(null)} />
       {/* «Seguir en 3D» (CN-30): the followed aircraft's panel, while the map orbits it. */}
       <Follow3dPanel flights={live.flights} stationCode={live.flights?.stationCode || 'PUJ'} />
@@ -202,17 +211,18 @@ function LiveFlightMap({ flights = EMPTY, selectedFlightId = null, onSelectFligh
 }
 
 /**
- * The card of the live map's selection, inside the map: the data block of what the map knows, docked at the top left,
- * with «Seguir» when the map can follow (PR M6); the page's own card (`detail`) for a page flight the map does not know,
- * and while the map cannot draw (its fallback list covers the map, and the data block is one of the map's overlays).
+ * The card of the live map's selection: the data block of what the map knows, with «Seguir» when the map can follow
+ * (PR M6). With a `slot` (CN-32, the page's side panel of the chosen flight) it is the live part of that panel, rendered
+ * there through a portal so it keeps the map's context; without one it is docked at the top left of the map. The page's
+ * own card (`detail`) shows for a page flight the map does not know, and while the map cannot draw (its fallback list
+ * covers the map, and the data block is one of the map's overlays).
  */
-function SelectionCard({ target, detail, ...block }) {
+function SelectionCard({ target, detail, slot = null, ...block }) {
   const { engineStatus, follow } = useOccMap();
   if (target === null || engineStatus === 'unavailable') return detail;
-  return (
-    <FlightDataBlock target={target} style={DOCKED_BLOCK_STYLE} onFollow={follow.available ? follow.toggle : null}
-      following={follow.following} {...block} />
-  );
+  const followProps = { onFollow: follow.available ? follow.toggle : null, following: follow.following };
+  if (slot) return createPortal(<FlightDataBlock target={target} variant="embedded" {...followProps} {...block} />, slot);
+  return <FlightDataBlock target={target} style={DOCKED_BLOCK_STYLE} {...followProps} {...block} />;
 }
 
 /**
@@ -220,6 +230,7 @@ function SelectionCard({ target, detail, ...block }) {
  * (LiveFlightMap); elsewhere (isolated screens and the tests) the same map without live traffic, with the page's card
  * of its selected flight (`detail`). `onSelectionFlights({ flight, flights })` (U5) hears, inside the shell, the chosen
  * flight as the map flights know it (`null` when they do not) and the map flights themselves, after each read.
+ * `dataBlockSlot` (CN-32), an element of the page's side panel, receives the chosen flight's live data block.
  */
 export default function FlightMap({ detail = null, ...props }) {
   const channel = useOptionalOccShellChannel();

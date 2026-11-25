@@ -258,24 +258,30 @@ describe('FlightMonitoringPage', () => {
 });
 
 describe('FlightMonitoringPage layout', () => {
-  it('from 1024 px the board sits beside the map, and the inspector goes under it until 2200 px', async () => {
+  it('from 1024 px the board sits beside the map; the inspector takes its column until 1536 px, then docks at the right', async () => {
     const user = userEvent.setup();
     mockMatchMedia([]);
     render(page());
     const grid = screen.getByTestId('flight-map-stub').parentElement.parentElement;
     expect(grid.className).toBe(FLIGHT_MONITORING_LAYOUT.grid);
     expect(FLIGHT_MONITORING_LAYOUT.grid).toContain('lg:grid-cols-[24rem_minmax(0,1fr)]');
+    const boardColumn = board().parentElement;
+    expect(boardColumn.className).toBe(FLIGHT_MONITORING_LAYOUT.board);
     await user.click(stripOf('DM161'));
-    // The inspector never covers the map and never narrows it on a laptop: under the board, and in its own column at
-    // the right only from 2200 px.
+    // The inspector never covers the map and never narrows it on a laptop (CN-32): below 1536 px it takes the board's
+    // column, which folds away while it is open, and from 1536 px it docks in a column of its own at the right.
     expect(grid.className).toBe(FLIGHT_MONITORING_LAYOUT.gridWithInspector);
     expect(FLIGHT_MONITORING_LAYOUT.gridWithInspector).toContain('lg:grid-cols-[24rem_minmax(0,1fr)] ');
-    expect(FLIGHT_MONITORING_LAYOUT.gridWithInspector).toContain('min-[2200px]:grid-cols-[24rem_minmax(0,1fr)_22.5rem]');
-    expect(FLIGHT_MONITORING_LAYOUT.gridWithInspector).not.toMatch(/(?:^|\s)(?:xl|2xl|3xl):grid-cols-/);
+    expect(FLIGHT_MONITORING_LAYOUT.gridWithInspector).toContain('2xl:grid-cols-[24rem_minmax(0,1fr)_22.5rem]');
+    expect(boardColumn.className).toBe(FLIGHT_MONITORING_LAYOUT.boardWithInspector);
+    expect(FLIGHT_MONITORING_LAYOUT.boardWithInspector).toContain('lg:max-2xl:hidden');
     const inspector = screen.getByRole('complementary', { name: 'Detalle del vuelo DM161' }).parentElement;
     expect(inspector.className).toBe(FLIGHT_MONITORING_LAYOUT.inspector);
-    expect(FLIGHT_MONITORING_LAYOUT.inspector)
-      .toMatch(/lg:col-start-1 lg:row-start-2 .*min-\[2200px\]:col-start-3 min-\[2200px\]:row-start-1/);
+    expect(FLIGHT_MONITORING_LAYOUT.inspector).toMatch(/lg:col-start-1 lg:row-start-1 .*2xl:col-start-3/);
+    // The map renders the flight's live data block inside the inspector (its slot), so nothing floats over the map.
+    const slot = inspector.querySelector('[data-occ-live-slot]');
+    expect(slot).not.toBeNull();
+    expect(map.props.dataBlockSlot).toBe(slot);
   });
 
   it('below 1024 px Ver vuelos opens the board in a drawer that its veil closes', async () => {
