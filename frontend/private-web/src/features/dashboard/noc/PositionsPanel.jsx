@@ -64,14 +64,17 @@ function FoldedSummary({ figures, counts, t, language }) {
   const figure = id => (figures?.[id] ?? null);
   return (
     <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
-      <span className="inline-flex items-center gap-3">
-        {['turnarounds', 'inOperation'].map(id => (
-          <span key={id} className="whitespace-nowrap">
-            {t(`figures.${id}`)}{' '}
-            <span className="font-semibold tabular-nums text-occ-text">{figure(id) ?? '—'}</span>
-          </span>
-        ))}
-      </span>
+      {/* Docked under the strip of figures (CN-32), the band does not say them again: `figures` is null there. */}
+      {figures === null ? null : (
+        <span className="inline-flex items-center gap-3">
+          {['turnarounds', 'inOperation'].map(id => (
+            <span key={id} className="whitespace-nowrap">
+              {t(`figures.${id}`)}{' '}
+              <span className="font-semibold tabular-nums text-occ-text">{figure(id) ?? '—'}</span>
+            </span>
+          ))}
+        </span>
+      )}
       {states.length > 0 ? (
         <span aria-label={t('positions.counts')} role="list" className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
           {states.map(key => (

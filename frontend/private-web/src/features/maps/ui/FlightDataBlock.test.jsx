@@ -391,6 +391,30 @@ describe('FlightDataBlock', () => {
     expect(english.querySelector('[data-source-line]')).toHaveTextContent('Live · 4 s ago');
   });
 
+  it('embedded in a side panel that names the flight, it keeps its live part and leaves the rest to the panel (CN-32)', () => {
+    const situation = noonSituation();
+    const target = selectionTarget({ kind: 'flight', id: KEY.arrival }, situation);
+    const onFollow = vi.fn();
+    render(<FlightDataBlock target={target} telemetry={storeOf(situation)} station={STATION} stationId={TRAFFIC_STATION_ID}
+      variant="embedded" onFollow={onFollow} style={{ top: 12, left: 12 }} />);
+    // A group in the panel's flow, not a dialog docked over the map: no position, frame or background of its own.
+    const group = screen.getByRole('group', { name: 'Vuelo ZZ161' });
+    expect(group).toBe(block());
+    expect(group).toHaveAttribute('data-variant', 'embedded');
+    expect(group).not.toHaveAttribute('style');
+    expect(group.className).not.toMatch(/absolute|border|bg-occ/);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    // The panel says the flight number, closes it and links to its turnaround and its stand.
+    expect(within(group).queryByRole('heading')).not.toBeInTheDocument();
+    expect(within(group).queryByRole('button', { name: 'Cerrar' })).not.toBeInTheDocument();
+    expect(within(group).queryByRole('link')).not.toBeInTheDocument();
+    // What the map knows stays: the route and time, the source of its position and «Seguir».
+    expect(group).toHaveTextContent('Llega 11:10 · en 10 min');
+    expect(group.querySelector('[data-source-line]')).toHaveTextContent('En vivo · hace 4 s');
+    fireEvent.click(within(group).getByRole('button', { name: 'Seguir' }));
+    expect(onFollow).toHaveBeenCalledTimes(1);
+  });
+
   it('updates the age without re-rendering the map', () => {
     const situation = noonSituation();
     const telemetry = storeOf(situation);

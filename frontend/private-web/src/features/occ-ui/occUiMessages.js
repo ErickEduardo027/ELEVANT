@@ -64,6 +64,11 @@ export const occUiMessages = {
       hours: '{hours} h',
       hoursMinutes: '{hours} h {minutes} min',
     },
+    // The delay chip of a leg (OccDelayChip, occDelay.js; CN-32).
+    delay: {
+      name: '{count} min de demora',
+      legend: 'Minutos de demora',
+    },
     flightStrip: {
       arrival: 'Llegada',
       departure: 'Salida',
@@ -183,6 +188,10 @@ export const occUiMessages = {
       minutes: '{count} min',
       hours: '{hours} h',
       hoursMinutes: '{hours} h {minutes} min',
+    },
+    delay: {
+      name: '{count} min late',
+      legend: 'Minutes late',
     },
     flightStrip: {
       arrival: 'Arrival',

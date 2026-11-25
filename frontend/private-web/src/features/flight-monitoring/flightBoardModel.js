@@ -1,6 +1,7 @@
 import { normalizeStandCode } from '../../services/standCodes';
 import { bestTime, DUE_SOON_MS } from '../dashboard/noc/boardModel';
 import { matchFlight } from '../maps/core/mapSelection';
+import { delayMinutesOf } from '../occ-ui/occDelay';
 import { isInOperation } from '../occ-ui/statusVocabulary';
 
 // The board of Monitoreo de vuelos (design E.2, template B «Mapa de trabajo»): the flights of the page as flight strips
@@ -117,6 +118,8 @@ function stripOf(flight, direction, { nowMs, t }) {
     demo: flight.isDemo === true,
     // Only the map knows where it draws an aircraft (the page does not read the map flights).
     estimated: false,
+    // The minutes its best time runs past its scheduled one (CN-32, occDelay.js); null on time.
+    delayMinutes: delayMinutesOf(times),
     sortAt: sortValue(time),
     searchText: searchable([flight.flightNumber, flight.airline, flight.registration, flight.supervisor,
       arrival ? flight.origin : flight.destination, standCode].filter(Boolean).join(' ')),
@@ -170,4 +173,68 @@ export function findBoardFlight(flights, id) {
   if (wanted === '') return null;
   const legId = wanted.startsWith('l:') ? wanted.slice(2) : wanted;
   return matchFlight(Array.isArray(flights) ? flights : NO_FLIGHTS, legId);
+}
+
+/** The columns the board sorts by (CN-32), in the order of its header. */
+export const FLIGHT_BOARD_SORT_KEYS = Object.freeze(['time', 'flight', 'status', 'route', 'stand']);
+
+/** The order the board opens with: by the best time, the earliest first. */
+export const DEFAULT_FLIGHT_BOARD_SORT = Object.freeze({ key: 'time', direction: 'ascending' });
+
+// What asks for attention first when sorting by status: urgent, then attention, then the rest by their words.
+const SIGNAL_RANK = Object.freeze({ urgent: 0, attention: 1 });
+const signalRank = strip => SIGNAL_RANK[strip.status?.signal] ?? 2;
+// A strip without the value sorted by goes last, in either order.
+const compareText = (left, right) => {
+  if (left === right) return 0;
+  if (left === null || left === '') return 1;
+  if (right === null || right === '') return -1;
+  return String(left).localeCompare(String(right), undefined, { numeric: true });
+};
+
+const COMPARE = Object.freeze({
+  time: (left, right) => (left.sortAt === right.sortAt ? 0 : (left.sortAt < right.sortAt ? -1 : 1)),
+  flight: (left, right) => compareText(left.flightNumber, right.flightNumber),
+  status: (left, right) => (signalRank(left) - signalRank(right))
+    || compareText(left.status?.label ?? null, right.status?.label ?? null),
+  route: (left, right) => compareText(left.counterpartIata, right.counterpartIata),
+  stand: (left, right) => compareText(left.standCode, right.standCode),
+});
+// The strips without the value go last whatever the direction: only the comparison of two values turns.
+const MISSING = Object.freeze({
+  time: strip => !Number.isFinite(strip.sortAt),
+  flight: strip => !strip.flightNumber,
+  status: () => false,
+  route: strip => !strip.counterpartIata,
+  stand: strip => !strip.standCode,
+});
+
+/**
+ * The strips in the order of `sort` (`{ key, direction }`, FLIGHT_BOARD_SORT_KEYS and `ascending` or `descending`):
+ * by the time, the flight number, the status (urgent and attention first, then by its words), the other airport or the
+ * stand; the strips without that value last, and equal ones in the board's own order (by time). A new array; an
+ * unknown key or direction throws.
+ */
+export function sortBoard(strips, sort = DEFAULT_FLIGHT_BOARD_SORT) {
+  const { key, direction } = sort ?? DEFAULT_FLIGHT_BOARD_SORT;
+  if (!FLIGHT_BOARD_SORT_KEYS.includes(key)) throw new RangeError(`Unknown flight board sort: ${String(key)}`);
+  if (direction !== 'ascending' && direction !== 'descending') {
+    throw new RangeError(`Unknown flight board sort direction: ${String(direction)}`);
+  }
+  const list = Array.isArray(strips) ? strips : NO_FLIGHTS;
+  const turn = direction === 'descending' ? -1 : 1;
+  const order = new Map(list.map((strip, index) => [strip, index]));
+  return [...list].sort((left, right) => {
+    const missing = Number(MISSING[key](left)) - Number(MISSING[key](right));
+    if (missing !== 0) return missing;
+    return (COMPARE[key](left, right) * turn) || (order.get(left) - order.get(right));
+  });
+}
+
+/** The order after a click on the column `key`: that column ascending, or the other way when it was already sorted by. */
+export function nextBoardSort(current, key) {
+  if (current?.key === key) {
+    return Object.freeze({ key, direction: current.direction === 'ascending' ? 'descending' : 'ascending' });
+  }
+  return Object.freeze({ key, direction: 'ascending' });
 }

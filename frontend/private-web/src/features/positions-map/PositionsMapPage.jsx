@@ -35,10 +35,9 @@ import { standInputsOf } from '../maps/traffic/standInputs';
 
 const NO_POSITIONS = Object.freeze([]);
 const NO_MESSAGE = Object.freeze({ tone: '', text: '' });
-// The data block of the chosen flight or aircraft (PR M6) docks at the top left of the map, right of the page's map
-// controls: their block starts 12 px from the map's edge and is 38 px wide with its joint (N29), 46 px on a touch
-// screen. «Ubicar en el mapa» keeps the top centre.
-const DATA_BLOCK_STYLE = Object.freeze({ top: 12, left: 58 });
+// The data block of the chosen flight or aircraft (PR M6) docks at the top left corner of the map: the page's map tools
+// are in the map's control rail at the right (CN-32). «Ubicar en el mapa» keeps the top centre.
+const DATA_BLOCK_STYLE = Object.freeze({ top: 12, left: 12 });
 // The location saved for a stand, as «Ubicar en el mapa» always sent it: six decimals, about 10 cm.
 const toSixDecimals = value => Number(Number(value).toFixed(6));
 
@@ -366,6 +365,15 @@ function PositionsMapScreen({
         onSelectTraffic={live ? handleSelectTraffic : undefined}
         focusSelectedOnStart
         legendFoldKey={legendFold}
+        railTools={(
+          <MapControls
+            viewMode={viewMode}
+            onToggleViewMode={() => setViewMode(mode => (mode === '3d' ? '2d' : '3d'))}
+            onCenterPuj={() => mapRef.current?.flyToPuj()}
+            fullscreen={fullscreen}
+            onToggleFullscreen={handleToggleFullscreen}
+          />
+        )}
       >
         <MapSituationOverlays live={live} onClose={clear} blockStyle={DATA_BLOCK_STYLE} />
       </PositionMap>
@@ -388,13 +396,6 @@ function PositionsMapScreen({
           </div>
         </div>
       )}
-      <MapControls
-        viewMode={viewMode}
-        onToggleViewMode={() => setViewMode(mode => (mode === '3d' ? '2d' : '3d'))}
-        onCenterPuj={() => mapRef.current?.flyToPuj()}
-        fullscreen={fullscreen}
-        onToggleFullscreen={handleToggleFullscreen}
-      />
     </div>
   );
 

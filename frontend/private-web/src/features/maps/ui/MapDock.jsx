@@ -1,9 +1,12 @@
 import { useOccMap } from '../core/OccMapContext';
 
 /**
- * The group of map controls at the bottom centre of an OccMap's visible area (occ-map.css places it inside the
- * insets): the view selector, the legend and a screen's own map tools. A map that cannot draw shows its fallback list
- * instead, so the dock is not rendered then.
+ * The control rail of an OccMap (CN-32): one column at the right edge of the map's visible area, under MapLibre's zoom
+ * group and as wide as it (occ-map.css places it inside the insets). A screen puts its controls in it in this order,
+ * each group one slab: the view selector with 3D (ui/MapPresetSwitcher.jsx), «Seguir» (ui/MapFollowButton.jsx), the
+ * screen's own tools, the pause (ui/MapMotionControl.jsx), «Capas» (ui/MapLayersMenu.jsx) and «Leyenda»
+ * (ui/MapLegend.jsx), whose menus fly out to the left of the column. A map that cannot draw shows its fallback list
+ * instead, so the rail is not rendered then.
  */
 export default function MapDock({ children }) {
   const { engineStatus } = useOccMap();

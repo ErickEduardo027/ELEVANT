@@ -4,7 +4,7 @@ import { createRef, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resetLanguageForTests } from '../../i18n/languageStore';
 import { readSource } from '../../styles/occSourceScan';
-import OccFloatingPanel, { OCC_FLOATING_PANEL_LAYOUT } from './OccFloatingPanel';
+import OccFloatingPanel, { OCC_FLOATING_PANEL_LAYOUT, OCC_FLOATING_PANEL_ORIENTATIONS } from './OccFloatingPanel';
 import { OCC_PALETTE } from './occPalette';
 import { OCC_PANEL_FOLDS_KEY, readPanelFolded, resetPanelFoldsForTests } from './occPanelMemory';
 import { createOccShortcutHandler, isOverlayOpen } from './occShortcuts';
@@ -258,7 +258,9 @@ describe('OccFloatingPanel', () => {
   });
 
   it('is flat on --occ-panel-float with the 8 px overlay radius and no shadow or blur; the grid layout uses the panel slab', () => {
-    expect(Object.keys(OCC_FLOATING_PANEL_LAYOUT)).toEqual(['float', 'grid']);
+    expect(Object.keys(OCC_FLOATING_PANEL_LAYOUT)).toEqual(['float', 'grid', 'dock']);
+    // Docked flush against the map (CN-32): the opaque panel slab, the console draws the joint on the map's side.
+    expect(OCC_FLOATING_PANEL_LAYOUT.dock.split(' ')).toEqual(['bg-occ-panel', 'text-occ-text']);
     const float = OCC_FLOATING_PANEL_LAYOUT.float.split(' ');
     expect(float).toEqual(expect.arrayContaining(['border', 'border-occ-line', 'bg-occ-panel-float',
       'rounded-[var(--occ-radius-overlay)]', 'text-occ-text']));
@@ -312,6 +314,41 @@ describe('OccFloatingPanel', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
       expect(() => render(<OccFloatingPanel title="Sin id" />)).toThrow(TypeError);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('lays its header beside its body in a row, for a strip of figures along the map (CN-32)', () => {
+    expect(Object.keys(OCC_FLOATING_PANEL_ORIENTATIONS)).toEqual(['column', 'row']);
+    render(<OccFloatingPanel panelId="figures" title="Cifras de la jornada" layout="dock" orientation="row"><p>5</p></OccFloatingPanel>);
+    const region = screen.getByRole('region', { name: 'Cifras de la jornada' });
+    expect(region).toHaveAttribute('data-orientation', 'row');
+    expect(region).toHaveAttribute('data-layout', 'dock');
+    expect(classesOf(region)).toEqual(expect.arrayContaining(['flex-row', 'bg-occ-panel']));
+    // The joint between the header and the body is vertical, at the header's right.
+    const header = region.firstElementChild;
+    expect(classesOf(header)).toEqual(expect.arrayContaining(['border-r', 'shrink-0']));
+    expect(classesOf(header)).not.toContain('border-b');
+    expect(classesOf(region.querySelector('[data-occ-panel-body]'))).toEqual(expect.arrayContaining(['min-w-0', 'flex-1']));
+  });
+
+  it('shows a shorter word on a narrow screen and keeps the title as the name of the button (CN-32)', () => {
+    render(<OccFloatingPanel panelId="figures" title="Cifras de la jornada" shortTitle="Cifras"><p>5</p></OccFloatingPanel>);
+    const toggle = screen.getByRole('button', { name: 'Cifras de la jornada' });
+    expect(screen.getByRole('region', { name: 'Cifras de la jornada' })).toBeInTheDocument();
+    const [full, short] = toggle.querySelectorAll('span');
+    expect(full).toHaveTextContent('Cifras de la jornada');
+    expect(classesOf(full)).toContain('max-[1399.98px]:sr-only');
+    expect(short).toHaveTextContent(/^Cifras$/);
+    expect(short).toHaveAttribute('aria-hidden', 'true');
+    expect(classesOf(short)).toContain('min-[1400px]:hidden');
+  });
+
+  it('throws on an unknown orientation', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(() => render(<OccFloatingPanel panelId="x" title="X" orientation="diagonal" />)).toThrow(RangeError);
     } finally {
       consoleError.mockRestore();
     }

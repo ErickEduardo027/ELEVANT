@@ -166,7 +166,8 @@ describe('consoleMessages', () => {
     expect(es.status.noStand).toBe('Llegada sin posición asignada');
     expect(createTranslator(consoleMessages, 'es')('arrival.pill', { flight: 'ZZ9001' })).toBe('Llegada nueva: ZZ9001');
     expect(es.arrival.follow).toBe('Ver y seguir');
-    expect(Object.values(es.panels)).toEqual(['Tablero', 'Alertas', 'Cifras de la jornada', 'Posiciones', 'Inspector']);
+    expect(Object.values(es.panels)).toEqual(['Tablero', 'Alertas', 'Cifras de la jornada', 'Cifras', 'Posiciones',
+      'Inspector']);
     expect(en.panels.board).toBe('Board');
     // The notice of a release from the assignment drawer, in Planificación's words and in English as well.
     expect(es.assign.agentReleased).toBe('Agente liberado. Ya puedes asignar a otro.');

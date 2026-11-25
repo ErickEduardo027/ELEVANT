@@ -98,6 +98,38 @@ describe('FlightBoard', () => {
     expect(within(panel()).queryByRole('list', { name: 'Leyenda del tablero' })).not.toBeInTheDocument();
   });
 
+  it('its column header sorts the strips, and a second click turns the order (CN-32)', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    const header = within(panel()).getByRole('group', { name: 'Ordenar el tablero' });
+    expect(within(header).getAllByRole('button').map(button => button.textContent))
+      .toEqual(['Hora', 'Vuelo', 'Estado', 'Ruta', 'Pos.']);
+    // By time at first, the column pressed with its arrow.
+    const time = within(header).getByRole('button', { name: 'Ordenado por hora, de menor a mayor' });
+    expect(time).toHaveAttribute('aria-pressed', 'true');
+    expect(strips().map(strip => strip.dataset.occFlightStrip)).toEqual(['a1', 'a2', 'd1']);
+    await user.click(within(header).getByRole('button', { name: 'Ordenar por ruta' }));
+    expect(within(header).getByRole('button', { name: 'Ordenado por ruta, de menor a mayor' }))
+      .toHaveAttribute('aria-pressed', 'true');
+    expect(time).toHaveAttribute('aria-pressed', 'false');
+    expect(strips().map(strip => strip.dataset.occFlightStrip)).toEqual(['a1', 'a2', 'd1']);
+    await user.click(within(header).getByRole('button', { name: 'Ordenado por ruta, de menor a mayor' }));
+    // YYZ, then the two MIA in the board's own order.
+    expect(strips().map(strip => strip.dataset.occFlightStrip)).toEqual(['d1', 'a1', 'a2']);
+  });
+
+  it('a late flight carries its delay chip on its status line, and the legend says what it counts (CN-32)', () => {
+    const late = buildFlightBoard([leg({ id: 'late', flightNumber: 'ZZ555', scheduledAt: at(20), estimatedAt: at(38) })],
+      { nowMs: NOW, t: es, stationCode: 'PUJ' });
+    render(<Harness board={late} />);
+    const [strip] = strips();
+    const chip = strip.querySelector('[data-part="status"] [data-occ-delay]');
+    expect(chip).toHaveAttribute('data-occ-delay', '18');
+    expect(strip).toHaveAccessibleName(expect.stringContaining('Programado, Atención: 18 min de demora'));
+    const legend = within(panel()).getByRole('list', { name: 'Leyenda del tablero' });
+    expect(within(legend).getAllByRole('listitem').map(item => item.dataset.occLegendItem)).toEqual(['attention', 'delay']);
+  });
+
   it('searches by number, airline or registration and says Sin resultados when nothing matches', async () => {
     const user = userEvent.setup();
     render(<Harness />);

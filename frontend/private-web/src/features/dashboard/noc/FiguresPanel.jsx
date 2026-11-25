@@ -6,8 +6,9 @@ import { OccRemoteView } from '../../occ-ui/OccPanel';
 import OccStatTile, { OccStatList } from '../../occ-ui/OccStatTile';
 import { consoleMessages } from './consoleMessages';
 
-// «Cifras de la jornada» (contratos 2.5, design D.1): the six figures of the day over the top centre of the map
-// (consoleModel.js: buildFigures). A figure whose read has not answered shows «—», never a zero nobody counted; only
+// «Cifras de la jornada» (contratos 2.5, design D.1): the six figures of the day (consoleModel.js: buildFigures). Docked
+// over the map (CN-32) they are one strip along its top edge, its title at the left and the figures in a row, divided by
+// joints; in the fallback grid, a panel of tiles. A figure whose read has not answered shows «—», never a zero nobody counted; only
 // «Sin recursos» asks for attention, and only above zero («cabina oscura»: normal figures carry no hue). «En operación»
 // keeps counting an operation still open an hour after its aircraft left, and says how many are, on a line of their own
 // with the amber triangle (N30, D-N30): «1 abierta tras la salida».
@@ -39,17 +40,21 @@ export default function FiguresPanel({
 }) {
   const { t } = useTranslation(consoleMessages);
   const shown = state?.status === 'empty' ? { ...state, status: 'success' } : state;
+  const strip = layout === 'dock';
   return (
     <OccFloatingPanel ref={measureRef} panelId="figures" title={t('panels.figures')} layout={layout}
-      defaultFolded={defaultFolded} className={className}>
-      <OccRemoteView {...shown} labels={labels} timeZone={timeZone}>
+      shortTitle={strip ? t('panels.figuresShort') : undefined} orientation={strip ? 'row' : 'column'} defaultFolded={defaultFolded} className={className}>
+      <OccRemoteView {...shown} labels={labels} timeZone={timeZone} className={strip ? 'h-full' : ''}>
         <OccStatList label={t('panels.figures')}
-          className="grid grid-cols-[repeat(auto-fit,minmax(6rem,1fr))] gap-x-4 gap-y-3 px-3 py-2">
+          className={strip
+            ? 'flex h-full flex-wrap items-stretch divide-x divide-occ-line'
+            : 'grid grid-cols-[repeat(auto-fit,minmax(6rem,1fr))] gap-x-4 gap-y-3 px-3 py-2'}>
           {FIGURES.map(figure => (
             <OccStatTile key={figure.id} label={t(`figures.${figure.id}`)} hint={t(`figures.${figure.id}Hint`)}
               value={figures?.[figure.id] ?? null} tone={figure.tone} href={figure.href}
               isLowerBound={figure.id === 'toReview' && figures?.toReviewIsLowerBound === true}
-              detail={detailOf(figure, figures, t)} detailTone={figure.detailTone} />
+              detail={detailOf(figure, figures, t)} detailTone={figure.detailTone} compact={strip}
+              className={strip ? 'flex-1 basis-auto px-3 py-1 [&_dt]:whitespace-nowrap' : ''} />
           ))}
         </OccStatList>
       </OccRemoteView>

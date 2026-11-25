@@ -3,8 +3,9 @@ import { SCREEN_VIEWPORTS, openOccScreen } from './occScreen.mjs';
 import { mapReady, shoot } from '../support/map.mjs';
 import { expect, test } from '../support/test.mjs';
 
-// Monitoreo de vuelos as a work map (PR U5, design E.2 template B): the board of flight strips at the left, the maps
-// lane's map and the inspector of the chosen flight docked beside it, with a synthetic OCC session and a stubbed API
+// Monitoreo de vuelos as a work map (PR U5, design E.2 template B; CN-32): the board of flight strips at the left, the
+// maps lane's map with its control rail down its right edge and the inspector of the chosen flight docked beside it (in
+// the board's column below 1536 px, in its own column at the right from there), with a synthetic OCC session and a stubbed API
 // (fixtures/monitoringApi.mjs: createOccApi's sky and map flights, and a planning snapshot built from them). Photographed
 // for review at 1920 × 1080 and 1440 × 900, the laptop the OCC is presented on (owner decision 11): a flight chosen on the
 // board, the empty day, and the map unavailable in a browser without WebGL; and once at 2560 × 1440, where the inspector
@@ -21,8 +22,7 @@ const flightIdInUrl = page => new URL(page.url()).searchParams.get('flightId');
 // The inspector, by its name: the frame's rail is a complementary landmark too.
 const inspectors = page => page.getByRole('complementary', { name: /^Detalle del vuelo / });
 
-// The maps lane's dock (its view selector and tools, maps/ui/MapDock.jsx) in one row: the width it needs and the width
-// the map leaves it.
+// The maps lane's control rail (its view selector and tools, maps/ui/MapDock.jsx): the width it needs and the width it has.
 const dockRoom = map => map.locator('.occ-map-dock').evaluate(node => ({ needs: node.scrollWidth, has: node.clientWidth }));
 
 async function openMonitoring(page, isolation, { viewport, empty = false }) {
@@ -52,7 +52,7 @@ async function expectStripCellsApart(strip) {
 }
 
 test.describe('Monitoreo de vuelos as a work map', () => {
-  // From 2200 px a third column leaves the map the room of its dock: there the inspector docks at the right of the map.
+  // From 1536 px the inspector docks in a column of its own at the right of the map.
   test('the inspector takes its own column at the right on a wide screen (2560×1440)', async ({ page, isolation }, testInfo) => {
     const { map } = await openMonitoring(page, isolation, { viewport: { width: 2560, height: 1440 } });
     await mapReady(map);
@@ -83,7 +83,9 @@ test.describe('Monitoreo de vuelos as a work map', () => {
 
       // The demo flight, chosen on the board: the URL names its leg, the strip is pressed, the inspector opens beside
       // the map and the map shows the same flight.
-      const demo = stripOf(page, 'ZZ9001');
+      // By its test id and not through the board's region: below 1536 px the board folds away while the inspector is
+      // open (CN-32), and a hidden region has no role to find it by.
+      const demo = page.locator('[data-testid="flight-list-item"]').filter({ hasText: 'ZZ9001' });
       await expectStripCellsApart(demo);
       await demo.click();
       await expect.poll(() => flightIdInUrl(page)).toBe(arrivalLegOf(9001));
@@ -95,19 +97,27 @@ test.describe('Monitoreo de vuelos as a work map', () => {
       await expect(inspector.getByRole('link', { name: 'Ver planificación' })).toBeVisible();
       await expect(map).toHaveAttribute('data-occ-settled', 'true', { timeout: 60_000 });
 
-      // The inspector never covers the map, and the map keeps a working width at the laptop's size.
-      const [mapBox, inspectorBox, boardBox] = await Promise.all([map.boundingBox(), inspector.boundingBox(),
-        board(page).boundingBox()]);
+      // The inspector never covers the map, and the map keeps a working width at the laptop's size (CN-32): below
+      // 1536 px the inspector takes the board's column, which folds away while it is open; from 1536 px it docks at the
+      // right of the map, beside the board.
+      const [mapBox, inspectorBox] = await Promise.all([map.boundingBox(), inspector.boundingBox()]);
       expect(apart(mapBox, inspectorBox), 'the inspector beside the map').toBe(true);
-      expect(apart(mapBox, boardBox), 'the board beside the map').toBe(true);
       expect(mapBox.width).toBeGreaterThanOrEqual(700);
-      // The inspector sits under the board, so the map keeps its width; at 1440 × 900 the dock takes its compact steps.
-      expect(inspectorBox.y, 'the inspector under the board').toBeGreaterThanOrEqual(boardBox.y + boardBox.height);
+      if (viewport.width < 1536) {
+        await expect(board(page)).toBeHidden();
+        expect(inspectorBox.x + inspectorBox.width, 'the inspector left of the map').toBeLessThanOrEqual(mapBox.x);
+      } else {
+        const boardBox = await board(page).boundingBox();
+        expect(apart(mapBox, boardBox), 'the board beside the map').toBe(true);
+        expect(inspectorBox.x, 'the inspector right of the map').toBeGreaterThanOrEqual(mapBox.x + mapBox.width);
+      }
+      // The live data of the aircraft is in the inspector (its slot): no card floats over the map.
+      await expect(inspector.getByTestId('flight-data-block')).toBeVisible();
+      await expect(map.getByTestId('flight-data-block')).toHaveCount(0);
       const dock = await dockRoom(map);
       testInfo.annotations.push({ type: 'dock', description: `needs ${dock.needs}px, has ${dock.has}px` });
-      console.log(`dock at ${size}: needs ${dock.needs}px, has ${dock.has}px, map ${Math.round(mapBox.width)}px`);
-      // On a narrow map the dock drops the keys and shortens two views (occ-map.css): it fits its row at both sizes.
-      expect(dock.needs, 'the dock fits its row').toBeLessThanOrEqual(dock.has + 1);
+      console.log(`rail at ${size}: needs ${dock.needs}px, has ${dock.has}px, map ${Math.round(mapBox.width)}px`);
+      expect(dock.needs, 'the rail fits its column').toBeLessThanOrEqual(dock.has + 1);
       await shoot(page, testInfo, `u5-monitoreo-vuelo-${viewport.width}`);
     });
 

@@ -189,8 +189,9 @@ test.describe('Mapa de posiciones on the map engine', () => {
       await settled(page);
       await shoot(page, testInfo, `positions-map-ramp-close-${size.width}`);
 
-      // ZZ111 chosen through the URL (`flightId=`): its data block docks at the top left, right of the page's map
-      // controls, and says it is live where it holds short of B24, its stand, which is marked. The legend folded.
+      // ZZ111 chosen through the URL (`flightId=`): its data block docks at the top left corner (the page's map tools
+      // are in the map's control rail, CN-32), and says it is live where it holds short of B24, its stand, which is
+      // marked. The legend folded.
       await page.goto(`${PAGE}?flightId=${encodeURIComponent(arrivalKeyOf(11))}`);
       await mapReady(map);
       const block = page.getByRole('dialog', { name: 'Vuelo ZZ111' });

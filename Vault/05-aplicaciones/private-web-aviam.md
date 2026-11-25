@@ -2051,6 +2051,11 @@ tampoco.
   que son del mapa. Cada panel se pliega a una pastilla con su título, que es
   un botón, y el pliegue se recuerda en la pestaña
   ([panel flotante](../../frontend/private-web/src/features/occ-ui/OccFloatingPanel.jsx)).
+  *Posterior (CN-32, 24 de noviembre de 2026):* los paneles ya no flotan:
+  van acoplados a los bordes del mapa, con «Alertas» bajo el «Tablero», las
+  cifras en una franja arriba y el «Inspector» a la derecha desde 1536 px; los
+  controles del mapa forman una columna a la derecha (ver
+  [Monitoreo OCC más profesional](#monitoreo-occ-más-profesional-cn-32)).
   «Posiciones» abre plegada, «Cifras de la jornada» también por debajo de
   1600 px, y «Tablero» y «Alertas» por debajo de 1280 px. «Ocultar paneles»,
   bajo el mapa, deja solo el mapa (`focus=map`), y «Mostrar paneles» los
@@ -2636,7 +2641,9 @@ carril de mapas, con las mismas props.
   tablero o en el mapa, su inspector muestra sus horas, posición, avión,
   matrícula, agentes y servicios, con enlaces a Planificación y a Mapa de
   posiciones, y la tira de hitos de su operación, que sale de los vuelos que el
-  mapa ya lee. Va bajo el tablero; desde 2200 px, a la derecha del mapa. Sin
+  mapa ya lee. Va bajo el tablero; desde 2200 px, a la derecha del mapa.
+  *Posterior (CN-32):* desde 1536 px va a la derecha del mapa y, por debajo,
+  en lugar del tablero; reúne también los datos en vivo del avión. Sin
   tarjeta de conexión: un fallo de lectura deja los vuelos bajo un aviso de
   datos sin actualizar. El bloque de datos del avión lo muestra el mapa.
 - **Mapa de posiciones**
@@ -2674,10 +2681,65 @@ carril de mapas, con las mismas props.
   de 1440 px, la barra de vistas y herramientas quita las teclas y acorta
   «Aproximación» y «Aeródromo» para caber en una fila
   ([estilos del mapa](../../frontend/private-web/src/styles/occ-map.css)).
+  *Posterior (CN-32):* la barra es ahora una columna de control en el borde
+  derecho de cada mapa y siempre muestra las palabras cortas.
 
 Las capturas se revisaron en local con la API simulada de la suite visual, en
 oscuro y en claro; nada de esto acredita un despliegue ni una revisión visual en
 el VPS.
+
+## Monitoreo OCC más profesional (CN-32)
+
+Posterior al commit verificado de esta nota: describe el código de la rama
+`feat/occ-monitoreo-pro`, que esa verificación no cubre. Lo pidió el dueño en la
+[caja negra](../12-backlog/caja-negra-2026-11.md) del 24 de noviembre: nada se
+quita de Panorama, Monitoreo de vuelos ni Mapa de posiciones, todo se
+redistribuye. Las decisiones están en la nota del 24 de noviembre de 2026 sobre
+CN-32 de [ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md); no cambian la
+API, lo que leen las pantallas ni su cadencia.
+
+- **Un mismo entorno en todos los mapas**
+  ([estilos del mapa](../../frontend/private-web/src/styles/occ-map.css)). Los
+  controles van en una sola columna en el borde derecho del mapa: el zoom y,
+  debajo, un riel con las cuatro vistas y 3D, «Seguir», las herramientas de la
+  pantalla, la pausa, «Capas» y «Leyenda». «Capas» y «Leyenda» se abren a la
+  izquierda del riel, una a la vez. Abajo a la izquierda va la escala de
+  altitud sobre el crédito de los datos de aeronaves; abajo a la derecha, la
+  escala náutica; arriba al centro, solo un aviso cuando algo falla. La
+  leyenda de Monitoreo abre plegada, y mientras el mapa sigue un avión la
+  leyenda abierta se aparta y vuelve al dejar de seguir.
+- **Panorama acoplado**
+  ([disposición](../../frontend/private-web/src/features/dashboard/noc/ConsoleOverlay.jsx)).
+  Los paneles van pegados a los bordes del mapa, sin huecos: «Tablero» y, debajo,
+  «Alertas» en la columna izquierda; «Cifras de la jornada» en una franja de una
+  línea arriba; «Posiciones» abajo. El «Inspector» ocupa una columna propia a la
+  derecha desde 1536 px; en un portátil de 1366 o 1440 px se acopla bajo el
+  «Tablero» y «Alertas» se pliega mientras está abierto, así el mapa conserva
+  su ancho.
+- **Monitoreo de vuelos**
+  ([vista](../../frontend/private-web/src/features/flight-monitoring/FlightMonitoringPage.jsx)).
+  El tablero es más denso y se ordena por Hora, Vuelo, Estado, Ruta o Posición.
+  El detalle del vuelo es un panel acoplado: desde 1536 px a la derecha del mapa;
+  por debajo, en lugar del tablero, que vuelve al cerrarlo. El panel reúne lo que
+  el mapa sabe del avión («En vivo», con «Seguir»), los horarios con su demora,
+  la escala con sus hitos y los enlaces a Planificación y Mapa de posiciones;
+  ninguna tarjeta flota sobre el mapa.
+- **Mapa de posiciones.** 2D/3D, «Centrar PUJ» y pantalla completa pasan al riel
+  del mapa. El detalle de la posición usa el mismo panel acoplado, y sus rótulos
+  ya no van en mayúsculas.
+- **Demora.** Cada tira de los tableros y el detalle del vuelo muestran «+N»
+  cuando el vuelo va 5 minutos o más tarde de su hora programada, con el
+  triángulo ámbar desde 15 minutos
+  ([regla](../../frontend/private-web/src/features/occ-ui/occDelay.js)). La
+  leyenda del tablero lo explica. No cambia alertas ni pendientes.
+- **Panel acoplado común**
+  ([`MapSidePanel`](../../frontend/private-web/src/features/maps/ui/MapSidePanel.jsx)):
+  el detalle de Monitoreo y de Mapa de posiciones, y el lugar previsto para el
+  panel de un vuelo en modo seguimiento.
+
+Las capturas se revisaron en local con la API simulada de la suite visual, a
+1366×768, 1440×900 y 1920×1080, en oscuro y en claro; nada de esto acredita un
+despliegue ni una revisión visual en el VPS.
 
 ## Estado de integración
 

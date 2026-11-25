@@ -22,10 +22,10 @@ describe('AltitudeLegend', () => {
     expect(ticks[5].at).toBe(50);
   });
 
-  it('draws «ALTITUD (ft)», the gradient of the aircraft and the grey of the ground, and folds', async () => {
+  it('draws «Altitud (ft)», the gradient of the aircraft and the grey of the ground, and folds', async () => {
     renderLegend();
     const legend = screen.getByTestId('altitude-legend');
-    expect(legend).toHaveTextContent('ALTITUD (ft)');
+    expect(legend).toHaveTextContent('Altitud (ft)');
     expect(legend).toHaveTextContent('En tierra');
     const bar = legend.querySelector('[data-altitude-bar]');
     expect(bar.style.backgroundImage).toContain('linear-gradient');
@@ -33,7 +33,7 @@ describe('AltitudeLegend', () => {
     expect(screen.getByRole('img', { name: 'Escala de colores por altitud, en pies' })).toBeInTheDocument();
     expect(legend.querySelector('[data-altitude-ground]').style.backgroundColor).not.toBe('');
     expect(MAP_COLORS.dark.altitude.ground).toMatch(/^#/);
-    const button = screen.getByRole('button', { name: /ALTITUD/ });
+    const button = screen.getByRole('button', { name: /Altitud/ });
     expect(button).toHaveAttribute('aria-expanded', 'true');
     await userEvent.click(button);
     expect(button).toHaveAttribute('aria-expanded', 'false');

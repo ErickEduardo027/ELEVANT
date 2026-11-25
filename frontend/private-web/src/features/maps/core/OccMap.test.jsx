@@ -1625,11 +1625,11 @@ describe('OccMap', () => {
     const stylesheet = readSource('src/styles/occ-map.css');
     const css = stylesheet.replace(/\/\*[\s\S]*?\*\//g, '');
     const preludes = [...css.matchAll(/([^{}]+)\{/g)].map(([, prelude]) => prelude.trim());
-    // The at-rules keep MapLibre's own icons in forced colours, thin the ticks of a narrow altitude scale and (U5)
-    // tighten the dock of a narrow map in two steps.
-    expect(preludes.filter(prelude => prelude.startsWith('@'))).toEqual(['@media (forced-colors: active)',
-      '@container (max-width: 27rem)', '@container (max-width: 18rem)', '@container occ-map (max-width: 64rem)',
-      '@container occ-map (max-width: 48rem)']);
+    // The at-rules give the control rail its touch size (CN-32), keep MapLibre's own icons in forced colours, thin the
+    // ticks of a narrow altitude scale and keep the credit of a narrow map on one line.
+    expect(preludes.filter(prelude => prelude.startsWith('@'))).toEqual(['@media (pointer: coarse)',
+      '@media (forced-colors: active)', '@container (max-width: 27rem)', '@container (max-width: 18rem)',
+      '@container occ-map (max-width: 36rem)']);
     const selectors = preludes.filter(prelude => !prelude.startsWith('@')).flatMap(prelude => prelude.split(',').map(part => part.trim()));
     expect(selectors.length).toBeGreaterThan(10);
     for (const selector of selectors) expect(selector.startsWith('.occ-map'), selector).toBe(true);
