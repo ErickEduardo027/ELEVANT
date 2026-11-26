@@ -92,11 +92,14 @@ describe('the 3D chunk loader (design G1)', () => {
       'AIRCRAFT_3D_LAYER_ID', 'buildAircraftGeometry', 'createAircraft3dLayer', 'sceneLighting', 'three',
     ]);
     // The parts of three that the models and the layer use, by name.
+    // CN-30: with what the detailed aircraft adds (groups, meshes, standard and basic materials, canvas textures in
+    // sRGB, spheres for its lights with an additive glow, double-sided paint).
     expect(Object.keys(loaded.three).sort()).toEqual([
-      'BoxGeometry', 'BufferGeometry', 'Camera', 'Color', 'CylinderGeometry', 'DirectionalLight', 'DynamicDrawUsage',
-      'ExtrudeGeometry', 'Float32BufferAttribute', 'HemisphereLight', 'InstancedBufferAttribute', 'InstancedMesh',
-      'LatheGeometry', 'LineBasicMaterial', 'LineSegments', 'Matrix4', 'MeshLambertMaterial', 'Raycaster', 'Scene',
-      'Shape', 'Vector2', 'Vector3', 'WebGLRenderer', 'mergeGeometries',
+      'AdditiveBlending', 'BoxGeometry', 'BufferGeometry', 'Camera', 'CanvasTexture', 'Color', 'CylinderGeometry',
+      'DirectionalLight', 'DoubleSide', 'DynamicDrawUsage', 'ExtrudeGeometry', 'Float32BufferAttribute', 'Group',
+      'HemisphereLight', 'InstancedBufferAttribute', 'InstancedMesh', 'LatheGeometry', 'LineBasicMaterial', 'LineSegments',
+      'Matrix4', 'Mesh', 'MeshBasicMaterial', 'MeshLambertMaterial', 'MeshStandardMaterial', 'Raycaster', 'SRGBColorSpace',
+      'Scene', 'Shape', 'SphereGeometry', 'Vector2', 'Vector3', 'WebGLRenderer', 'mergeGeometries',
     ]);
     expect(Object.isFrozen(loaded.three)).toBe(true);
     expect(triangleCount(loaded.buildAircraftGeometry(loaded.three, AIRCRAFT_TYPES.A320))).toBeGreaterThanOrEqual(1500);

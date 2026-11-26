@@ -106,6 +106,9 @@ public sealed class AirTrafficConfigurationTests
     [InlineData("CenterLongitude", "-180.5", "AirTraffic:CenterLatitude and AirTraffic:CenterLongitude must be a position on Earth.")]
     [InlineData("CenterLatitude", "NaN", "AirTraffic:CenterLatitude and AirTraffic:CenterLongitude must be a position on Earth.")]
     [InlineData("StationCode", " ", "AirTraffic:StationCode is required.")]
+    [InlineData("AirfieldRadiusNm", "0", "AirTraffic:AirfieldRadiusNm must be from 1 to 25.")]
+    [InlineData("AirfieldRadiusNm", "26", "AirTraffic:AirfieldRadiusNm must be from 1 to 25.")]
+    [InlineData("AirfieldIntervalSeconds", "1", "AirTraffic:AirfieldIntervalSeconds must be at least 2.")]
     public void OutOfRangeSettingsRefuseToStart(string setting, string value, string message)
     {
         foreach (var enabled in new[] { "true", "false" })

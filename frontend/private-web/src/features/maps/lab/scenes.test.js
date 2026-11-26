@@ -42,8 +42,8 @@ describe('map lab scenes', () => {
       'airfield-wind-live', 'airfield-wind-stale', 'airfield-wind-unavailable', 'approach-demo-final', 'airfield-demo-taxiing',
       'ramp-demo-awaiting-stand', 'approach-traffic-live-estimated', 'airfield-demo-cancelled', 'approach-demo-accelerated',
       'approach-demo-route', 'airfield-departure-route', 'approach-follow-final', 'airfield-follow-taxi', 'perf-approach-feed',
-      'perf-airfield-feed', 'ramp-3d-parked',
-      'ramp-3d-selected', 'airfield-3d-final', 'ramp-3d-night',
+      'perf-airfield-feed', 'approach-live-offplan', 'airfield-3d-replay', 'ramp-3d-parked',
+      'ramp-3d-selected', 'airfield-3d-final', 'ramp-3d-night', 'airfield-3d-showcase',
     ]);
     expect(new Set(ids).size).toBe(ids.length);
     for (const scene of SCENES) {
@@ -72,7 +72,8 @@ describe('map lab scenes', () => {
       'ramp-selected', 'ramp-combined-selected', 'ramp-placing-ghost', 'region-traffic-selected',
       'approach-traffic-hex-selected', 'approach-demo-final', 'airfield-demo-taxiing', 'ramp-demo-awaiting-stand',
       'approach-traffic-live-estimated', 'airfield-demo-cancelled', 'approach-demo-accelerated', 'approach-demo-route',
-      'airfield-departure-route', 'approach-follow-final', 'airfield-follow-taxi', 'ramp-3d-selected',
+      'airfield-departure-route', 'approach-follow-final', 'airfield-follow-taxi', 'approach-live-offplan',
+      'airfield-3d-replay', 'ramp-3d-selected',
     ]);
     // The demo scenes of PR M6 choose the demo flight; the three sources of a position, the one without a signal.
     for (const id of ['approach-demo-final', 'airfield-demo-taxiing', 'ramp-demo-awaiting-stand', 'airfield-demo-cancelled',

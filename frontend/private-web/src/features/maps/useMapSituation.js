@@ -38,13 +38,34 @@ function deferToIdle(callback) {
 export { MAP_PERMISSIONS };
 
 /**
+ * CN-31: the pace of the air picture while the server reads the airfield every few seconds between its reads of the
+ * whole circle. Within the CN-19 budget: the console's minute goes from 16 to 22 requests at rest.
+ */
+export const AIRFIELD_PICTURE_POLL_MS = 5_000;
+
+const instantMs = value => (typeof value === 'number' ? value : (typeof value === 'string' ? Date.parse(value) : Number.NaN));
+
+/**
+ * Whether a live picture at the usual pace carries airfield reads (CN-31): an aircraft placed after the instant the
+ * picture describes. A read of the whole circle never places one later than its own instant, so only the server's
+ * airfield read, merged between two of them, does; the contract does not change.
+ */
+function carriesAirfieldReads(picture) {
+  if (picture?.status !== 'Live' || picture.refreshAfterSeconds !== OCC_AIR_PICTURE_LIMITS.minRefreshSeconds) return false;
+  const observedAt = instantMs(picture.observedAt);
+  if (!Number.isFinite(observedAt) || !Array.isArray(picture.aircraft)) return false;
+  return picture.aircraft.some(item => instantMs(item?.positionAt) > observedAt);
+}
+
+/**
  * The pace of the air picture: the `refreshAfterSeconds` of its last answer, never faster (10 s before the first one);
- * after failed reads, twice as long for each failure, up to a minute.
+ * every 5 s while a live picture at the usual pace carries the server's airfield reads (CN-31); after failed reads,
+ * twice as long for each failure, up to a minute.
  */
 export function airPictureDelayMs(picture, failures = 0) {
   const asked = picture?.refreshAfterSeconds;
   const base = (Number.isFinite(asked) && asked > 0 ? asked : OCC_AIR_PICTURE_LIMITS.minRefreshSeconds) * 1_000;
-  if (!(failures > 0)) return base;
+  if (!(failures > 0)) return carriesAirfieldReads(picture) ? Math.min(base, AIRFIELD_PICTURE_POLL_MS) : base;
   return Math.max(base, Math.min(base * 2 ** failures, OCC_AIR_PICTURE_LIMITS.maxRefreshSeconds * 1_000));
 }
 
@@ -254,8 +275,11 @@ export function useMapSituation({ stationId = null, enabled = true, service = oc
 
   const aviamHexes = useMemo(() => new Set(situation.aircraft
     .filter(item => item.kind === 'aviam' && item.hex !== null).map(item => item.hex)), [situation]);
+  // CN-29: while a flight or an aircraft is chosen the other trails are dimmed (the layers hide the other ELEVANT ones), so
+  // only the chosen one's route and trail read as a line.
+  const selectionActive = target !== null;
   const trails = useMemo(() => trailFeatures(trailSnapshot, { includeOther: allTrails, selectedHex: chosenHex, aviamHexes,
-    nowMs }), [allTrails, aviamHexes, chosenHex, nowMs, trailSnapshot]);
+    nowMs, selectionActive }), [allTrails, aviamHexes, chosenHex, nowMs, trailSnapshot, selectionActive]);
 
   // The chosen flight's route (PR M6, traffic/routeFeatures.js): what it flew observed (its aircraft's trail, the
   // server's track in it once read), estimated and still to fly, along the trajectory the motion store plans for it (or
@@ -275,8 +299,8 @@ export function useMapSituation({ stationId = null, enabled = true, service = oc
   }), [chosenTrack, language, motion, routeTrail, target, trailSnapshot.breakMs]);
   const route = useMemo(() => (routeInputs === null ? buildRoute() : buildRoute({ ...routeInputs, nowMs })),
     [nowMs, routeInputs]);
-  const routeAt = useCallback((tMs, aircraft) => (routeInputs === null ? buildRoute()
-    : buildRoute({ ...routeInputs, nowMs: tMs, aircraft })), [routeInputs]);
+  const routeAt = useCallback((tMs, aircraft, state = null) => (routeInputs === null ? buildRoute()
+    : buildRoute({ ...routeInputs, nowMs: tMs, aircraft, state })), [routeInputs]);
 
   // The telemetry the data block reads, outside React: every new situation goes in, and it ticks while it is watched,
   // reading each aircraft where the map draws it on the render clock.

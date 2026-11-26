@@ -12,6 +12,7 @@ import { useAirportRoutes } from '../../aviation-reference/useAirportRoutes';
 import { STATION_TIME_ZONE } from '../../admin-occ/shell/status/OccClocks';
 import { matchFlight, relatedEntities } from '../../maps/core/mapSelection';
 import OccMap from '../../maps/core/OccMap';
+import Follow3dPanel from '../../maps/ui/Follow3dPanel';
 import MapDock from '../../maps/ui/MapDock';
 import MapLayersMenu from '../../maps/ui/MapLayersMenu';
 import MapLegend from '../../maps/ui/MapLegend';
@@ -232,6 +233,11 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
   const strips = useMemo(() => (board === null ? null : firstBy([...board.arrivals, ...board.departures,
     ...board.toImport.arrivals, ...board.toImport.departures], item => item.flightKey)), [board]);
   const stripOf = useCallback(flight => strips?.get(flight?.flightKey) ?? null, [strips]);
+  // «Seguir en 3D» (CN-30): what the planning knows of the followed flight's operation, its agents and services.
+  const followOperational = useCallback(flight => {
+    const planned = planningFlightOf(flight?.turnaroundId);
+    return planned ? { agents: planned.agents ?? [], services: planned.services ?? [] } : null;
+  }, [planningFlightOf]);
 
   // On screen: the route may now tell the boot screen, as soon as the first data are here too.
   useEffect(() => { onShown?.(); }, [onShown]);
@@ -533,6 +539,7 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
       ) : null}
       <MapSourceStatus status={live.status} picture={live.picture} sourceState={live.sourceState}
         clock={live.clock} onRetry={live.retry} />
+      <Follow3dPanel flights={mapFlights} stationCode={station.stationCode || 'PUJ'} operational={followOperational} />
       {layout === 'map' && pill ? (
         <div data-occ-arrival-place="" className="pointer-events-none absolute z-20" style={ARRIVAL_PLACE}>
           {pill}
@@ -549,7 +556,7 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
       </MapDock>
     </>
   ), [focusMap, layout, live.clock, live.picture, live.retry, live.sourceState, live.status, panels, pill, showPanels,
-    t, wide]);
+    t, wide, mapFlights, station.stationCode, followOperational]);
 
   return (
     <div data-occ-console={layout}

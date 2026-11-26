@@ -20,9 +20,13 @@ export function flightRowOf(flights, flightKey) {
   return flights.find(row => row?.flightKey === flightKey) ?? null;
 }
 
-/** Where the position comes from: `demo` for a demo flight, `estimated` for an estimate, else `adsb`. */
+/**
+ * Where the position comes from: `demo` for a demo flight, `estimated` for an estimate, `reported` on its stand by the
+ * operation's BLOCK_ON (CN-31), else `adsb`.
+ */
 export function aircraftSource(item) {
   if (item?.isDemo === true) return 'demo';
+  if (item?.quality === 'reported') return 'reported';
   return item?.quality === 'estimated' ? 'estimated' : 'adsb';
 }
 

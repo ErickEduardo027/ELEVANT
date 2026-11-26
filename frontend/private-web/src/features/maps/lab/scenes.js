@@ -6,7 +6,9 @@ import { STAND_REFERENCE } from '../stands/standReference';
 import { SCENARIO_AGENTS, boardStand, boardVisit } from '../testing/mapFixtures';
 import { TRAFFIC_FLIGHT_KEY } from '../testing/trafficFixtures';
 import { createAerodromeWeather } from '../testing/weatherFixtures';
+import { SHOWCASE_SCENARIO } from './aircraftShowcaseScene';
 import { FEED_SCENARIOS, LAB_CHOSEN_HEX, TRAFFIC_SCENARIOS } from './trafficScenes';
+import { OFFPLAN_KEY, REPLAY_KEYS, replayScenarioAt } from './replayScenes';
 
 // The fixed scenes of the map lab (app/map-lab, development only): synthetic data over the internal reference
 // catalogue of Punta Cana, the same on every run, so the visual suite (tests/visual) drives and photographs each one
@@ -530,6 +532,24 @@ export const SCENES = deepFreeze([
     description: 'El vuelo demo rodando hacia la A6 entre el mismo tráfico, leído cada 10 s con 3 s de retraso.',
     view: 'airfield',
   }), traffic: FEED_SCENARIOS['perf-airfield-feed'] },
+  // CN-29: AA465 live north-west of Higüey, off its plan: the approach it still flies, smooth onto the final of 08, and
+  // the tags of the aircraft crowded at the terminals.
+  trafficScene('approach-live-offplan', {
+    title: 'Aproximación: ruta prevista de un vuelo real fuera de su plan',
+    description: 'AA465 (A321) en vivo a 3 800 ft y 261 kt al noroeste de Higüey, elegido: su ruta prevista sale de '
+      + 'donde está, con su rumbo, y se une suave a la final de la 08; diez aviones en tierra en las terminales.',
+    view: 'approach',
+    selection: { kind: 'flight', id: OFFPLAN_KEY },
+  }),
+  // CN-30 and CN-31: a real visit replayed from its fixes (one every 3 s), to follow in 3D through every phase.
+  { ...scene('airfield-3d-replay', {
+    title: 'Seguir en 3D: visita real reproducida',
+    description: 'CM893 (B738) en final de la 08, aterriza, rueda a la A6, se estaciona; CM894 hace push-back, rueda y '
+      + 'despega: posiciones de su señal cada 3 s (datos inventados). Ábrelo sin ?t= para verlo en marcha.',
+    view: 'airfield',
+    selection: { kind: 'flight', id: REPLAY_KEYS.arrival },
+    pitchMode: '3d',
+  }), traffic: replayScenarioAt(Date.parse('2026-11-13T15:00:00.000Z')) },
   // The 3D aircraft (PR M7): models of the type table on their stands and in motion, lit by the sun of the instant.
   scene3d('ramp-3d-parked', {
     title: 'Rampa en 3D: aviones en sus posiciones',
@@ -558,6 +578,14 @@ export const SCENES = deepFreeze([
     view: 'ramp',
     night: true,
   }),
+  // CN-30: the detailed models with their liveries (lab/aircraftShowcaseScene.js): choose one and come close.
+  { ...scene('airfield-3d-showcase', {
+    title: 'Aviones 3D detallados con librea',
+    description: 'Seis aviones reales detenidos sobre la pista 08/26 y uno en final corta con el tren abajo: elegido y '
+      + 'de cerca, cada uno se dibuja con su modelo detallado y los colores y el nombre de su aerolínea.',
+    view: 'airfield',
+    pitchMode: '3d',
+  }), traffic: SHOWCASE_SCENARIO, standFlights: STAND_FLIGHTS },
 ]);
 
 /** The scene with that id, or `null`. */

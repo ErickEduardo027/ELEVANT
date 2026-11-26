@@ -2459,6 +2459,82 @@ Límites: no se midió el presupuesto de cuadros en una GPU integrada; las
 capturas se revisaron en local, con WebGL por software y datos sintéticos.
 Nada de esto acredita un despliegue ni una revisión visual en el VPS.
 
+## Ruta prevista, «Seguir en 3D» y posiciones reales (CN-29 a CN-31)
+
+Posterior al commit verificado de esta nota: esta sección describe el PR de la
+caja negra del 24 de noviembre de 2026 (CN-29, CN-30 y CN-31), en revisión. Las
+decisiones, la causa del fallo de la ruta y la medición están en la
+actualización del 24 de noviembre de 2026 «CN-29 a CN-31» de
+[ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md).
+
+- **Ruta prevista de un vuelo real (CN-29).** Un avión en el aire que vuela
+  fuera de su plan ya no se une al plan con un tramo perpendicular ni dibuja
+  sus esquinas: su ruta prevista sale de donde está, con su rumbo, y entra
+  suave en la final de la pista en uso
+  ([`pathBuilder.js: interceptPath`](../../frontend/private-web/src/features/maps/kinematics/pathBuilder.js),
+  [`flightRoute.js`](../../frontend/private-web/src/features/maps/kinematics/flightRoute.js)).
+  Mientras hay un avión elegido, las estelas de los otros vuelos de AVIAM se
+  ocultan y las del otro tráfico se atenúan. En Aproximación y Aeródromo los
+  rótulos de los vuelos de AVIAM ya no se pisan entre sí (primero el elegido,
+  luego los que vuelan); en Rampa se dibujan siempre.
+- **«Seguir en 3D» (CN-30).** El bloque de datos ofrece «Seguir en 3D» junto a
+  «Seguir». La cámara gira alrededor del avión, que queda en el centro a su
+  altura
+  ([`orbitCamera.js`](../../frontend/private-web/src/features/maps/kinematics/orbitCamera.js)):
+  «Persecución» (detrás; un giro de la persona se mantiene relativo al rumbo
+  del avión), «Lateral», «Desde arriba», «Desde la torre» (posición aproximada
+  de la torre de Punta Cana) y «Órbita libre» (rumbo fijo). Arrastrar gira e
+  inclina alrededor del avión, la rueda o el pellizco acercan, y arrastrar ya
+  no deja de seguir; se deja de seguir con «Dejar de seguir», Esc o eligiendo
+  otra cosa, y la cámara vuelve a donde estaba. El panel lateral
+  ([`Follow3dPanel.jsx`](../../frontend/private-web/src/features/maps/ui/Follow3dPanel.jsx))
+  muestra la cámara (vistas, botones de girar, inclinar y acercar, también
+  manteniéndolos pulsados, «Restablecer vista» y «Girar automáticamente»), el
+  vuelo (ruta, altitud, velocidad, régimen vertical, rumbo, transpondedor,
+  distancia y llegada a Punta Cana, fase) y, para un vuelo de AVIAM, su
+  operación (código, estado, posición, horas, demora, hitos y, en la consola,
+  agentes y servicios). Está en Panorama, Monitoreo, Mapa de posiciones y el
+  laboratorio.
+- **Aviones 3D detallados.** El avión seguido (y el elegido de cerca) se dibuja
+  con un modelo propio, hecho en el navegador con las medidas reales de su
+  tipo, con la librea de su aerolínea (colores de marca y su nombre y código
+  escritos con nuestra tipografía; un espacio vacío para un logo con licencia)
+  y con la actitud de sus datos: altura sobre la pista, cabeceo, alabeo en los
+  virajes y tren a la vista cerca del suelo
+  ([`aircraftDetail.js`](../../frontend/private-web/src/features/maps/aircraft/aircraftDetail.js),
+  [`liveries.js`](../../frontend/private-web/src/features/maps/aircraft/liveries.js),
+  [`attitude.js`](../../frontend/private-web/src/features/maps/aircraft/attitude.js)).
+  Se dibuja en 3D aunque el regulador pause el 3D del resto.
+- **Posiciones reales (CN-31).** Una señal nueva del avión se mezcla en 1,5 s
+  y en tierra se prolonga como mucho 3 s. Un avión real en tierra nunca se
+  mueve por una ruta de rodaje estimada: sin señal se queda donde lo dio la
+  última, atenuado. Un vuelo de AVIAM detenido en una posición se coloca en su
+  punto de estacionamiento con su rumbo; con los calzos (BLOCK_ON) de la tablet
+  y sin señal se queda en su posición asignada, «calzos registrados por
+  AVIAM»; detenido en otra posición, se ve donde está y su rótulo dice
+  «B22≠B21». Una salida espera en su posición hasta moverse o hasta el push-back
+  de la tablet. El servidor lee además un círculo de 5 NM alrededor de Punta Cana
+  cada 3 s mientras alguien mira el mapa (solo contra adsb.fi, 0,4 peticiones
+  por segundo en total), y la web pregunta cada 5 s mientras ve esas
+  posiciones; el contrato de la API no cambia y la consola queda en 22
+  peticiones por minuto en reposo y 37 en el minuto demo, bajo el límite de
+  40.
+- **Laboratorio y pruebas.** Escenas `approach-live-offplan` (AA465 fuera de su
+  plan) y `airfield-3d-replay` (una visita real reproducida desde sus señales
+  cada 3 s, datos inventados), con
+  [`map-lab.follow3d.spec.mjs`](../../frontend/private-web/tests/visual/lab/map-lab.follow3d.spec.mjs).
+  En Chrome sin GPU (SwiftShader), los mapas siguen dentro de
+  los objetivos de CN-18 (60 y 70 cuadros por segundo en las escenas de
+  medición, sin saltos); seguir en 3D dibuja la escena inclinada en cada
+  cuadro, a unos 8 cuadros por segundo con dibujo por software, sin bloquear
+  el hilo principal.
+- **Queda pendiente.** Los modelos 3D de Flightradar24 / FlightGear (GPL-2.0)
+  no se integraron: la descarga quedó bloqueada por los permisos de la sesión,
+  son glTF 1.0 (three 0.187 lee solo glTF 2.0), añadirían unos 37 MB a la
+  imagen y la licencia copyleft requiere confirmación del dueño. La posición de
+  la torre es aproximada. Nada de esto acredita un despliegue ni una medición
+  en el VPS.
+
 ## AeroDataBox en la consola, Contratos y Superadministración (15 de noviembre de 2026)
 
 *Posterior al commit verificado.* Los datos llegan siempre por la API (`occ/aviation/*` y

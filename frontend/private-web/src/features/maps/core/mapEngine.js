@@ -313,6 +313,9 @@ export function createMapEngine({
     });
   }
 
+  // The gestures and limits «Seguir en 3D» took from MapLibre (setOrbitMode), to give back.
+  let orbitSaved = null;
+
   function listen(type, handler) {
     map.on(type, handler);
     listeners.push([type, handler]);
@@ -581,6 +584,36 @@ export function createMapEngine({
     /** `{ center: [lng, lat], zoom, bearing, pitch }`, or `null` without a map. */
     getCamera() {
       return live() ? readCamera() : null;
+    },
+
+    /**
+     * «Seguir en 3D» (CN-30): `true` hands the gestures to the orbit of follow mode (OccMap): MapLibre's own drag, rotate,
+     * zoom, double click and keys stop, the tilt may reach 85° and the centre may stand above the ground (the followed
+     * aircraft in the air); `false` gives them back as they were. Nothing without a map.
+     */
+    setOrbitMode(on) {
+      if (!live()) return;
+      const handlers = ['dragPan', 'dragRotate', 'scrollZoom', 'touchZoomRotate', 'doubleClickZoom', 'keyboard', 'boxZoom',
+        'touchPitch'];
+      if (on === true) {
+        if (orbitSaved !== null) return;
+        orbitSaved = {
+          handlers: handlers.filter(name => map[name]?.isEnabled?.() === true),
+          maxPitch: map.getMaxPitch?.() ?? null,
+          clamped: map.getCenterClampedToGround?.() ?? null,
+        };
+        for (const name of orbitSaved.handlers) map[name].disable();
+        map.setMaxPitch?.(85);
+        map.setCenterClampedToGround?.(false);
+        return;
+      }
+      if (orbitSaved === null) return;
+      const saved = orbitSaved;
+      orbitSaved = null;
+      map.jumpTo?.({ elevation: 0 });
+      map.setCenterClampedToGround?.(saved.clamped ?? true);
+      if (Number.isFinite(saved.maxPitch)) map.setMaxPitch?.(saved.maxPitch);
+      for (const name of saved.handlers) map[name]?.enable?.();
     },
 
     /** Whether a person is moving the map now (see `onUserGesture`): a move then must not take the camera from them. */

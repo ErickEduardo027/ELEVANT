@@ -1,6 +1,9 @@
-import { greatCirclePath, haversineM, measurePolyline, nearestOnPolyline, pointAlong, slicePolyline } from '../airport/geo.js';
+import {
+  greatCirclePath, haversineM, initialBearing, measurePolyline, nearestOnPolyline, pointAlong, slicePolyline,
+} from '../airport/geo.js';
 import { alongAt, trajectoryLine } from './estimator.js';
 import { TRACK_CONFIG } from './handoff.js';
+import { interceptPath } from './pathBuilder.js';
 
 // The route of the chosen flight on the OCC map (PR M6, design E5), from its trajectory and its trail: the part flown
 // as observed (the ADS-B trail, solid), the part flown as estimated (from the origin airport, or since the signal was
@@ -23,6 +26,9 @@ export const FLIGHT_ROUTE_MARKS = Object.freeze(['touchdown', 'runwayExit', 'sta
 const JOIN_M = 1;
 const MIN_LINE_M = 0.5;
 const GREAT_CIRCLE_STEP_M = 10_000;
+// CN-29: an aircraft in the air drawn farther than this from its plan's line flies its own approach (interceptPath);
+// an observed trail that starts farther than this from the plan is reached from the origin by the great circle.
+const OFF_PLAN_M = 25;
 
 const finite = value => typeof value === 'number' && Number.isFinite(value);
 const pointOf = value => (Array.isArray(value) && finite(value[0]) && finite(value[1]) ? [value[0], value[1]] : null);
@@ -54,6 +60,23 @@ function isDeparture(flight, trajectory) {
   if (direction === 'departure') return true;
   if (direction === 'arrival') return false;
   return trajectory?.kind === 'departure';
+}
+
+/**
+ * The final of an arrival's trajectory (CN-29): `{ runwayEnd: { threshold, headingTrue }, touchdownAlongM }` from its
+ * flare (the air leg before the landing roll, from the threshold) and its landing roll; `null` without a landing.
+ */
+function finalOf(trajectory) {
+  const legs = trajectory.legs;
+  const at = legs.findIndex(leg => leg.kind === 'move' && leg.phase === 'landing');
+  if (at < 0) return null;
+  const roll = legs[at];
+  const coords = roll.path.coords;
+  if (coords.length < 2) return null;
+  const headingTrue = initialBearing(coords[0], coords[coords.length - 1]);
+  const flare = legs[at - 1];
+  const threshold = flare && flare.onGround !== true && flare.path.coords.length >= 2 ? flare.path.coords[0] : coords[0];
+  return { runwayEnd: { threshold: [threshold[0], threshold[1]], headingTrue }, touchdownAlongM: roll.alongStartM };
 }
 
 /**
@@ -230,9 +253,13 @@ function waitingMarks(trajectory) {
  * - The aircraft is where the trajectory has it at `tMs` (alongAt), or at `aircraft` (`[lng, lat]`, where the map
  *   draws it: a live or coasting position) projected on its stretch. `breakMs` also breaks the trail where two points
  *   are further apart in time. Without a trajectory only the observed parts are drawn. Ids are stable between calls.
+ * - CN-29: `state` (`{ trackDeg, gsMs, onGround }`, the drawn aircraft's) lets an arrival in the air drawn more than
+ *   25 m off its plan fly its own approach (pathBuilder.js: interceptPath, smooth from its position and track onto
+ *   the final of the plan's runway), then the plan from the touchdown on; an observed trail that starts more than
+ *   25 m off the plan is reached from the origin by the great circle, never by a jog along the plan.
  */
 export function buildFlightRoute(flight, trajectory, trail, tMs, { origin = null, destination = null, aircraft = null,
-  breakMs = null } = {}) {
+  breakMs = null, state = null } = {}) {
   const flightKey = String(flight?.flightKey ?? '');
   const features = [];
   const push = feature => {
@@ -271,8 +298,12 @@ export function buildFlightRoute(flight, trajectory, trail, tMs, { origin = null
     const origin0 = pointOf(origin);
     let head = [];
     if (!departure) head = Array.isArray(originPath) && originPath.length >= 2 ? [...originPath] : (origin0 ? [origin0] : []);
-    const until = observed.first !== null ? Math.min(split, projectInWindow(line, observed.first, window).alongM) : split;
-    const before = joinPaths(joinPaths(head, sliceTo(window.fromM, until)), [observed.first ?? here]);
+    const firstOnPlan = observed.first !== null ? projectInWindow(line, observed.first, window) : null;
+    const until = firstOnPlan !== null ? Math.min(split, firstOnPlan.alongM) : split;
+    // A trail that starts away from the plan (CN-29) was not flown along it: the great circle from the origin reaches it.
+    const before = firstOnPlan !== null && firstOnPlan.distanceM > OFF_PLAN_M
+      ? joinPaths(head.length > 0 ? [head[0]] : [], [observed.first])
+      : joinPaths(joinPaths(head, sliceTo(window.fromM, until)), [observed.first ?? here]);
     push(lineFeature(flightKey, 'flownEstimated', 0, before, { labelKey: 'flownEstimated' }));
     // Flown, estimated since the last observed point: along the trajectory when the aircraft is on it and that point is
     // close enough for the hand-off to put a fix on it; otherwise straight on, as the map carries a fix.
@@ -286,6 +317,17 @@ export function buildFlightRoute(flight, trajectory, trail, tMs, { origin = null
     }
     // Still to fly: to the stand or the apron hold, or (a departure) on to its destination.
     let remaining = joinPaths([here], sliceTo(split, window.toM));
+    // An arrival in the air off its plan (CN-29: a live aircraft the controllers vector elsewhere) flies its own
+    // approach from where it is, on its track, onto the final, and then the plan from the touchdown on.
+    const final = !departure && drawn !== null && drawn.distanceM > OFF_PLAN_M && state?.onGround !== true
+      ? finalOf(trajectory) : null;
+    if (final !== null && split < final.touchdownAlongM) {
+      const approach = interceptPath({
+        from: here, trackDeg: finite(state?.trackDeg) ? state.trackDeg : null,
+        speedMs: finite(state?.gsMs) ? state.gsMs : null, runwayEnd: final.runwayEnd,
+      });
+      remaining = joinPaths([...approach.coords], sliceTo(final.touchdownAlongM, window.toM));
+    }
     const goal = pointOf(destination) ?? pointOf(trajectory.meta?.destination);
     if (departure && goal !== null) remaining = joinPaths(remaining, [goal]);
     push(lineFeature(flightKey, 'remaining', 0, remaining));

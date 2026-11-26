@@ -1,7 +1,8 @@
 import {
-  BoxGeometry, BufferGeometry, Camera, Color, CylinderGeometry, DirectionalLight, DynamicDrawUsage, ExtrudeGeometry,
-  Float32BufferAttribute, HemisphereLight, InstancedBufferAttribute, InstancedMesh, LatheGeometry, LineBasicMaterial,
-  LineSegments, Matrix4, MeshLambertMaterial, Raycaster, Scene, Shape, Vector2, Vector3, WebGLRenderer,
+  AdditiveBlending, BoxGeometry, BufferGeometry, Camera, CanvasTexture, Color, CylinderGeometry, DirectionalLight,
+  DoubleSide, DynamicDrawUsage, ExtrudeGeometry, Float32BufferAttribute, Group, HemisphereLight, InstancedBufferAttribute,
+  InstancedMesh, LatheGeometry, LineBasicMaterial, LineSegments, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial,
+  MeshStandardMaterial, Raycaster, SRGBColorSpace, Scene, Shape, SphereGeometry, Vector2, Vector3, WebGLRenderer,
 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -11,11 +12,14 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 // aircraft use; no Draco, KTX2 or workers.
 
 export { buildAircraftGeometry } from './aircraftGeometry';
+export { buildDetailedAircraft } from './aircraftDetail';
 export { AIRCRAFT_3D_LAYER_ID, createAircraft3dLayer, sceneLighting } from './aircraft3dLayer';
 
 /** The parts of three that the aircraft modules take as their `three` parameter: the models' and the layer's. */
 export const THREE_PARTS = Object.freeze({
-  BoxGeometry, BufferGeometry, Camera, Color, CylinderGeometry, DirectionalLight, DynamicDrawUsage, ExtrudeGeometry,
-  Float32BufferAttribute, HemisphereLight, InstancedBufferAttribute, InstancedMesh, LatheGeometry, LineBasicMaterial,
-  LineSegments, Matrix4, MeshLambertMaterial, Raycaster, Scene, Shape, Vector2, Vector3, WebGLRenderer, mergeGeometries,
+  AdditiveBlending, BoxGeometry, BufferGeometry, Camera, CanvasTexture, Color, CylinderGeometry, DirectionalLight,
+  DoubleSide, DynamicDrawUsage, ExtrudeGeometry, Float32BufferAttribute, Group, HemisphereLight, InstancedBufferAttribute,
+  InstancedMesh, LatheGeometry, LineBasicMaterial, LineSegments, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial,
+  MeshStandardMaterial, Raycaster, SRGBColorSpace, Scene, Shape, SphereGeometry, Vector2, Vector3, WebGLRenderer,
+  mergeGeometries,
 });

@@ -146,8 +146,69 @@ export function typeMemoSizeForTests() {
   return typeMemo.size;
 }
 
-// Column-major, as three's Matrix4.elements: T(x, y, z) · Rz(−heading) · S(1, 1, flatten).
-function writeMatrix(target, offset, { x, y, z, headingDeg, flatten }) {
+// Row-major 4 × 4 products for poseMatrix.
+function multiply(a, b) {
+  const out = new Array(16).fill(0);
+  for (let row = 0; row < 4; row += 1) {
+    for (let column = 0; column < 4; column += 1) {
+      let sum = 0;
+      for (let k = 0; k < 4; k += 1) sum += a[4 * row + k] * b[4 * k + column];
+      out[4 * row + column] = sum;
+    }
+  }
+  return out;
+}
+const translationOf = (x, y, z) => [1, 0, 0, x, 0, 1, 0, y, 0, 0, 1, z, 0, 0, 0, 1];
+const rotationX = radians => [1, 0, 0, 0, 0, Math.cos(radians), -Math.sin(radians), 0, 0, Math.sin(radians),
+  Math.cos(radians), 0, 0, 0, 0, 1];
+const rotationY = radians => [Math.cos(radians), 0, Math.sin(radians), 0, 0, 1, 0, 0, -Math.sin(radians), 0,
+  Math.cos(radians), 0, 0, 0, 0, 1];
+const rotationZ = radians => [Math.cos(radians), -Math.sin(radians), 0, 0, Math.sin(radians), Math.cos(radians), 0, 0,
+  0, 0, 1, 0, 0, 0, 0, 1];
+
+/**
+ * The matrix that stands a model (nose toward +y, wheels at z = 0) where an aircraft is (CN-30), column-major as three's
+ * Matrix4.elements: T(x, y, z) · Rz(−heading) · T(0, pivotY, 0) · Rx(pitch) · T(0, −pivotY, pivotZ) · Ry(bank) ·
+ * T(0, 0, −pivotZ) · S(scale, scale, scale · flatten). The nose pitches up about the main wheels (`pivotY`), so on a
+ * take-off the tail stays above the runway, and a right bank (positive) lowers the right wing about the fuselage's axis
+ * (`pivotZ`). Without pitch, bank or scale it is T(x, y, z) · Rz(−heading) · S(1, 1, flatten).
+ */
+export function poseMatrix({
+  x = 0, y = 0, z = 0, headingDeg = 0, pitchDeg = 0, bankDeg = 0, pivotY = 0, pivotZ = 0, scale = 1, flatten = 1,
+} = {}) {
+  const rad = value => (finite(value) ? (value * Math.PI) / 180 : 0);
+  let m = multiply(translationOf(x, y, z), rotationZ(-rad(headingDeg)));
+  if (pitchDeg !== 0 || bankDeg !== 0) {
+    m = multiply(m, translationOf(0, pivotY, 0));
+    m = multiply(m, rotationX(rad(pitchDeg)));
+    m = multiply(m, translationOf(0, -pivotY, pivotZ));
+    m = multiply(m, rotationY(rad(bankDeg)));
+    m = multiply(m, translationOf(0, 0, -pivotZ));
+  }
+  m = multiply(m, [scale, 0, 0, 0, 0, scale, 0, 0, 0, 0, scale * flatten, 0, 0, 0, 0, 1]);
+  // Row-major to column-major.
+  const out = new Float32Array(16);
+  for (let row = 0; row < 4; row += 1) {
+    for (let column = 0; column < 4; column += 1) out[4 * column + row] = m[4 * row + column];
+  }
+  return out;
+}
+
+/**
+ * Where a model pitches and banks (CN-30): over its main wheels, a little behind the middle of its length, about the
+ * axis of its fuselage (aircraft/aircraftDetail.js says the same of its detailed model).
+ */
+export function pivotOf(spec) {
+  return { y: -0.06 * spec.lengthM, z: 0.92 * spec.fuselageDiaM };
+}
+
+// Column-major, as three's Matrix4.elements: T(x, y, z) · Rz(−heading) · S(1, 1, flatten), with the attitude of
+// poseMatrix when the aircraft has one.
+function writeMatrix(target, offset, { x, y, z, headingDeg, flatten, pitchDeg = 0, bankDeg = 0, pivot = null }) {
+  if ((pitchDeg !== 0 || bankDeg !== 0) && pivot !== null) {
+    target.set(poseMatrix({ x, y, z, headingDeg, pitchDeg, bankDeg, pivotY: pivot.y, pivotZ: pivot.z, flatten }), offset);
+    return;
+  }
   const radians = (headingDeg * Math.PI) / 180;
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);
@@ -190,24 +251,29 @@ const byId = (a, b) => {
  *   aircraft in `aviam`, other traffic in `other`, shadows in `shadow`;
  * - `spec` and `approximate` come from resolveAircraftType: a type the table lacks takes its category's generic
  *   airframe under the category's own key, approximate.
+ * - CN-30: `attitudes` (`Map<id, { heightM, pitchDeg, bankDeg }>`, aircraft/attitude.js) pitch and bank an aircraft of
+ *   the traffic (poseMatrix) and set its height; its shadow stays level. `excludeId` is left out of the plan: the
+ *   aircraft the detailed model draws (core/aircraft3d.js).
  * The input is never changed; the same input gives the same plan.
  */
 export function planInstances(renderAircraft = [], parkedAircraft = [], {
   zoom, minZoom, originLngLat, fieldElevationM = 0, selectedId = null, colors = AIRCRAFT_3D_COLORS,
+  attitudes = null, excludeId = null,
 } = {}) {
   const plan = new Map();
   if (!(zoom >= minZoom)) return plan;
+  const attitudeOf = id => (attitudes instanceof Map ? attitudes.get(id) ?? null : null);
   const frame = mercatorFrame(originLngLat);
   const field = finite(fieldElevationM) ? fieldElevationM : 0;
 
   const parked = new Map();
   for (const item of list(parkedAircraft)) {
-    if (item?.id == null || !finite(item.lon) || !finite(item.lat)) continue;
+    if (item?.id == null || !finite(item.lon) || !finite(item.lat) || item.id === excludeId) continue;
     parked.set(item.id, { item, aviam: item.kind !== 'other', z: 0, onStand: true });
   }
   const placed = [...parked.values()];
   for (const item of list(renderAircraft)) {
-    if (item?.id == null || parked.has(item.id)) continue;
+    if (item?.id == null || parked.has(item.id) || item.id === excludeId) continue;
     const entry = placeable(item, { fieldElevationM: field });
     if (entry !== null) placed.push(entry);
   }
@@ -224,7 +290,12 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
     if (finite(trackDeg)) heading = trackDeg;
     else if (finite(headingDeg)) heading = headingDeg;
     const group = groups.get(key) ?? { resolved, members: [] };
-    group.members.push({ id: entry.item.id, x, y, z: entry.z, headingDeg: heading, onStand: entry.onStand === true,
+    // The attitude the controller eased for it (CN-30): its pitch, its bank and its height over the field.
+    const attitude = entry.onStand === true ? null : attitudeOf(entry.item.id);
+    const z = finite(attitude?.heightM) ? attitude.heightM : entry.z;
+    group.members.push({ id: entry.item.id, x, y, z, headingDeg: heading, onStand: entry.onStand === true,
+      pitchDeg: finite(attitude?.pitchDeg) ? attitude.pitchDeg : 0, bankDeg: finite(attitude?.bankDeg) ? attitude.bankDeg : 0,
+      pivot: pivotOf(resolved.spec),
       colour: entry.item.id === selectedId ? colors.selected : colors[entry.aviam ? 'aviam' : 'other'] });
     groups.set(key, group);
   }
@@ -242,7 +313,8 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
     const drops = [];
     members.forEach((member, index) => {
       writeMatrix(matrices, 16 * index, { ...member, flatten: 1 });
-      writeMatrix(matrices, 16 * (aircraftCount + index), { ...member, z: SHADOW.heightM, flatten: SHADOW.flatten });
+      writeMatrix(matrices, 16 * (aircraftCount + index), { ...member, z: SHADOW.heightM, flatten: SHADOW.flatten,
+        pitchDeg: 0, bankDeg: 0 });
       instanceColors.set(member.colour, 3 * index);
       instanceColors.set(colors.shadow, 3 * (aircraftCount + index));
       ids[index] = member.id;

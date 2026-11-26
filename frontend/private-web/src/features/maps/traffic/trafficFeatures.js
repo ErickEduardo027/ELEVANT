@@ -104,6 +104,15 @@ function tagLines(item, type, { t, language }) {
   };
 }
 
+// The stand words of an ELEVANT tag: the stand an arrival goes to; parked at another one than it was given (CN-31),
+// «B3≠A5» (where it is, then where it was assigned), for an arrival or a departure.
+function standTag(item, aviam, departure) {
+  if (!aviam) return '';
+  const mismatch = item.standMismatch;
+  if (mismatch && filled(mismatch.actual) && filled(mismatch.assigned)) return `${mismatch.actual}≠${mismatch.assigned}`;
+  return departure ? '' : (filled(item.standCode) ?? '');
+}
+
 // The opacity of an aircraft in hundredths, so a fade writes a hundred steps at most; 1 when it says none.
 const opacityOf = item => (finite(item.opacity) ? Math.round(Math.min(1, Math.max(0, item.opacity)) * 100) / 100 : 1);
 
@@ -153,7 +162,9 @@ function featureOf(item, { selectedId, focusId, labelsOn, language, t, parked, m
       tag1,
       suffix,
       tag2,
-      tagStand: aviam && !departure ? (filled(item.standCode) ?? '') : '',
+      // CN-31: parked at another stand than its assigned one, the tag says where it is and where it should be.
+      tagStand: standTag(item, aviam, departure),
+      standMismatch: aviam && item.standMismatch != null,
       // How much of it shows (PR M6): 1, or less while it fades out (a cancelled demo, traffic that lost its signal).
       opacity: opacityOf(item),
       // Parked in the stand that shows it (PR M6): its symbol gives way to the stand's footprint or glyph.
@@ -175,7 +186,8 @@ function featureOf(item, { selectedId, focusId, labelsOn, language, t, parked, m
  * - `tag1` the flight number (other traffic: callsign, registration or address), `suffix` «est.», or for a stale
  *   position «Sin actualizar desde las 14:02» with the station's time of its last position (it stays the same until a
  *   new position comes), `tag2` type, altitude in hundreds of feet (GND on the ground) and knots (none while standing
- *   on the ground), `tagStand` the stand an arriving flight goes to;
+ *   on the ground), `tagStand` the stand an arriving flight goes to (CN-31: «B3≠A5» while it stands at another
+ *   stand than its assigned one, `standMismatch` then true);
  * - `forceTag`: the tag is always on (ELEVANT flights, the chosen aircraft, the one under the pointer); `showTag`:
  *   it is on, also for the rest of the traffic while all labels are (`labelsOn`, «Etiquetas de todo el tráfico»);
  * - `opacity`: the aircraft's own (PR M6, the motion store), in hundredths: 1, or less while it fades out; the layers

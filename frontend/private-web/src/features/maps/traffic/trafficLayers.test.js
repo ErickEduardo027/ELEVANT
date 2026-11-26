@@ -9,7 +9,9 @@ import { createAirPicture, createEstimates, createMapFlights, TRAFFIC_NOON } fro
 import { ROUTE_PARTS } from './routeFeatures';
 import { buildSituation, toFlightsModel, toPictureModel } from './situationModel';
 import { ROUTE_SOURCE, TRAFFIC_SOURCE, TRAILS_SOURCE, trafficFeatures } from './trafficFeatures';
-import { ROUTE_LAYER_IDS, ROUTE_STYLE, TRAFFIC_GROUPS, TRAFFIC_LAYER_IDS, trafficOverlay } from './trafficLayers';
+import {
+  ROUTE_LAYER_IDS, ROUTE_STYLE, TAG_DECLUTTER_UNTIL_ZOOM, TRAFFIC_GROUPS, TRAFFIC_LAYER_IDS, trafficOverlay,
+} from './trafficLayers';
 
 const NOON = Date.parse(TRAFFIC_NOON);
 
@@ -282,6 +284,23 @@ describe('traffic layers (design E1 and E3)', () => {
     // The forced tag of other traffic is placed after the rest of its layer, and so drawn above it.
     expect(evaluate(other, 'layout', 'symbol-sort-key', { ...stale, forceTag: true }))
       .toBeGreaterThan(evaluate(other, 'layout', 'symbol-sort-key', stale));
+  });
+
+  it('the ELEVANT tags declutter below the ramp zoom, the chosen one first, and are always on from it (CN-29)', () => {
+    const tags = layerOf('occ-traffic-tags');
+    const parsed = createPropertyExpression(tags.layout['text-overlap'], 'text-overlap', latest.layout_symbol['text-overlap']);
+    expect(parsed.result).toBe('success');
+    const overlapAt = zoom => parsed.value.evaluate({ zoom }, { type: 1, properties: {} });
+    expect(overlapAt(10)).toBe('never');
+    expect(overlapAt(TAG_DECLUTTER_UNTIL_ZOOM - 0.1)).toBe('never');
+    expect(overlapAt(TAG_DECLUTTER_UNTIL_ZOOM)).toBe('always');
+    expect(tags.layout['text-allow-overlap']).toBeUndefined();
+    const key = (properties, zoom) => evaluate(tags, 'layout', 'symbol-sort-key', properties, zoom);
+    // Placed first (lower key): the chosen aircraft, then the air, then the ground.
+    expect(key({ selected: true, ground: true }, 12)).toBeLessThan(key({ ground: false }, 12));
+    expect(key({ ground: false }, 12)).toBeLessThan(key({ ground: true }, 12));
+    // From the ramp on, the chosen one is drawn on top (a higher key).
+    expect(key({ selected: true }, 16)).toBeGreaterThan(key({ ground: true }, 16));
   });
 
   it('an ELEVANT aircraft parked in the stand that shows it gives way to the stand, unless chosen, and keeps its marks', () => {

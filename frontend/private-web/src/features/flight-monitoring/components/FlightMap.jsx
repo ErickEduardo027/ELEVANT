@@ -12,6 +12,7 @@ import { mapMessages } from '../../maps/mapMessages';
 import { STAND_REFERENCE } from '../../maps/stands/standReference';
 import { isDrawn } from '../../maps/traffic/trafficFeatures';
 import FlightDataBlock from '../../maps/ui/FlightDataBlock';
+import Follow3dPanel from '../../maps/ui/Follow3dPanel';
 import MapDock from '../../maps/ui/MapDock';
 import MapFollowButton from '../../maps/ui/MapFollowButton';
 import MapLayersMenu from '../../maps/ui/MapLayersMenu';
@@ -203,6 +204,8 @@ function LiveFlightMap({
         onRetry={live.retry} />
       <SelectionCard target={target} detail={pageDetail} telemetry={live.telemetry} slot={dataBlockSlot}
         station={live.flights?.stationAirport ?? null} stationId={stationId} onClose={() => handleSelect(null)} />
+      {/* «Seguir en 3D» (CN-30): the followed aircraft's panel, while the map orbits it. */}
+      <Follow3dPanel flights={live.flights} stationCode={live.flights?.stationCode || 'PUJ'} />
     </FlightMapView>
   );
 }

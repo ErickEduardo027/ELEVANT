@@ -335,12 +335,12 @@ const totalMs = legs => legs.reduce((sum, leg) => sum + legDurationS(leg), 0) * 
  * noise, smoothing.js), or with no speed at all. Such a fix starts nothing by estimate (Decision F-1: only a recorded
  * off-block or a fix that shows it moving does).
  */
-function isStoppedOnGround(fix) {
+export function isStoppedOnGround(fix) {
   return fix.onGround === true && !(Number.isFinite(fix.gsMs) && fix.gsMs >= HEADING_RATES.holdBelowMs);
 }
 
 /** Whether `point` (`[lng, lat]`) lies inside the box of the layout's stand `stand`. */
-function isInStand(stand, point) {
+export function isInStand(stand, point) {
   return Array.isArray(stand?.polygon) && stand.polygon.length >= 4 && pointInPolygon(point, stand.polygon);
 }
 

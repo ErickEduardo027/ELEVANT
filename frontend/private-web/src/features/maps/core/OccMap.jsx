@@ -17,6 +17,10 @@ import { airfieldFeatures } from '../airport/airfieldFeatures';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { haversineM } from '../airport/geo';
 import { followCamera, needsReframe, stepCamera } from '../kinematics/followCamera';
+import {
+  ORBIT, angleDiffDeg, createOrbit, orbitAdvance, orbitAuto, orbitDrag, orbitRotate, orbitTarget, orbitTilt, orbitWheel,
+  orbitZoom, stepOrbitCamera,
+} from '../kinematics/orbitCamera';
 import { mapMessages } from '../mapMessages';
 import { ghostFeatures, placedLocation, placingGhost } from '../stands/placing';
 import {
@@ -207,6 +211,103 @@ const FOLLOW_SETTLED = Object.freeze({ px: 0.5, zoom: 0.01, pitch: 0.1 });
 const FOLLOW_OFF = Object.freeze({
   on: false, key: null, engage: false, transition: false, zoomFrozen: false, pitchFrozen: false, converged: true,
 });
+// «Seguir en 3D» (CN-30, kinematics/orbitCamera.js): the camera flies in to the orbit over FOLLOW_3D_ENTRY_MS and back
+// to where it was over FOLLOW_3D_RESTORE_MS; the follow panel reads the followed aircraft at most every
+// FOLLOW_3D_SUBJECT_MS; in 3D the route of the followed aircraft is rewritten at most every FOLLOW_3D_ROUTE_MS.
+const FOLLOW_3D_ENTRY_MS = 1_400;
+const FOLLOW_3D_RESTORE_MS = 1_000;
+const FOLLOW_3D_SUBJECT_MS = 500;
+const FOLLOW_3D_ROUTE_MS = 100;
+const NO_HOLD = Object.freeze({ rotate: 0, tilt: 0, zoom: 0 });
+const FOLLOW_3D_OFF = Object.freeze({ on: false, orbit: null, hold: NO_HOLD, camera: null, saved: null, entry: null });
+
+// The orbit's gestures on the map's element (CN-30): a drag (any button) turns and tilts, two pointers turn, pinch and
+// tilt, the wheel zooms. `changeOrbit(change)` applies them. Returns the function that removes them.
+function attachOrbitGestures(element, changeOrbit) {
+  const pointers = new Map();
+  let pair = null;
+  const pairOf = () => {
+    const [a, b] = [...pointers.values()];
+    return { angle: Math.atan2(b.y - a.y, b.x - a.x), distance: Math.hypot(b.x - a.x, b.y - a.y), y: (a.y + b.y) / 2 };
+  };
+  const down = event => {
+    if (event.pointerType === 'mouse' && event.button !== 0 && event.button !== 2) return;
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    pair = pointers.size === 2 ? pairOf() : null;
+  };
+  const move = event => {
+    const last = pointers.get(event.pointerId);
+    if (!last) return;
+    const dx = event.clientX - last.x;
+    const dy = event.clientY - last.y;
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pointers.size === 1) {
+      if (dx !== 0 || dy !== 0) changeOrbit(orbit => orbitDrag(orbit, dx, dy));
+      return;
+    }
+    if (pointers.size !== 2 || pair === null) return;
+    const next = pairOf();
+    const turn = ((next.angle - pair.angle) * 180) / Math.PI;
+    const zoomBy = pair.distance > 0 && next.distance > 0 ? Math.log2(next.distance / pair.distance) : 0;
+    const tiltBy = next.y - pair.y;
+    pair = next;
+    changeOrbit(orbit => orbitZoom(orbitTilt(orbitRotate(orbit, -turn), -tiltBy * ORBIT.tiltDegPerPx), zoomBy));
+  };
+  const up = event => {
+    pointers.delete(event.pointerId);
+    pair = pointers.size === 2 ? pairOf() : null;
+  };
+  const wheel = event => {
+    event.preventDefault();
+    let scale = 1;
+    if (event.deltaMode === 1) scale = 16;
+    else if (event.deltaMode === 2) scale = 400;
+    changeOrbit(orbit => orbitWheel(orbit, event.deltaY * scale));
+  };
+  const menu = event => event.preventDefault();
+  const listeners = [['pointerdown', down], ['pointermove', move], ['pointerup', up], ['pointercancel', up],
+    ['pointerleave', up], ['contextmenu', menu]];
+  for (const [type, listener] of listeners) element.addEventListener(type, listener);
+  element.addEventListener('wheel', wheel, { passive: false });
+  return () => {
+    for (const [type, listener] of listeners) element.removeEventListener(type, listener);
+    element.removeEventListener('wheel', wheel);
+  };
+}
+
+// A tiny external store (CN-30): the follow panel reads the followed aircraft from it without rendering the map.
+function createSubjectStore() {
+  let value = null;
+  const listeners = new Set();
+  return Object.freeze({
+    get: () => value,
+    set(next) {
+      if (next === value) return;
+      value = next;
+      listeners.forEach(listener => listener());
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  });
+}
+
+const smoothstep = u => (u <= 0 ? 0 : (u >= 1 ? 1 : u * u * (3 - 2 * u)));
+
+// The camera of the fly-in to the orbit (CN-30) at `u` (0 to 1, eased): from where the camera was to the orbit's camera,
+// the bearing the short way and the centre from the ground to the aircraft's height.
+function entryCamera(from, to, u) {
+  const w = smoothstep(u);
+  const lerp = (a, b) => a + (b - a) * w;
+  return {
+    center: [lerp(from.center[0], to.center[0]), lerp(from.center[1], to.center[1])],
+    zoom: lerp(from.zoom, to.zoom),
+    pitch: lerp(from.pitch ?? 0, to.pitch),
+    bearing: (from.bearing ?? 0) + angleDiffDeg(from.bearing ?? 0, to.bearing) * w,
+    elevation: lerp(0, to.elevation),
+  };
+}
 
 const lngLatArray = center => {
   if (Array.isArray(center)) return [center[0], center[1]];
@@ -546,6 +647,10 @@ const OccMapView = forwardRef(function OccMapView({
   const canFollow = followAvailable && followedId !== null;
   const followingNow = followAvailable && urlFollow === true;
   const [followNotice, setFollowNotice] = useState(null);
+  // «Seguir en 3D» (CN-30): what its panel shows of the orbit (`{ view, auto }`, null while off), and the aircraft it
+  // follows, read by the panel from its own store.
+  const [follow3dUi, setFollow3dUi] = useState(null);
+  const [followSubject] = useState(createSubjectStore);
   // Where each stand is drawn, and what the stand layers draw at the map's minute: the countdowns change on the
   // minute, and a re-read of the same positions builds the same features.
   const attached = useMemo(() => attachStandGeometry(stands, layout), [stands, layout]);
@@ -680,14 +785,35 @@ const OccMapView = forwardRef(function OccMapView({
 
   // Follow mode ends (PR M6): at once for the frames, then in the URL; `notice` says so to the person who moved the
   // camera away («Dejaste de seguir a … Pulsa Seguir para volver.»).
-  const stopFollowing = useCallback(({ notice = false } = {}) => {
+  // «Seguir en 3D» ends (CN-30): the gestures go back to MapLibre and, when `restore`, the camera flies back to where it
+  // was before it started; a view or a stand asked for takes the camera instead.
+  const endFollow3d = useCallback(({ restore = false } = {}) => {
+    const applied = appliedRef.current;
+    const f3 = applied.follow3d;
+    if (!f3?.on) return;
+    const saved = f3.saved;
+    applied.follow3d = { ...FOLLOW_3D_OFF };
+    const engine = engineRef.current;
+    engine?.setOrbitMode(false);
+    // The next write plans no followed aircraft: its detailed model goes.
+    applied.loop?.wake();
+    if (restore && saved && engine?.map) {
+      engine.easeTo({ center: saved.center, zoom: saved.zoom, bearing: saved.bearing ?? 0, pitch: saved.pitch ?? 0,
+        duration: FOLLOW_3D_RESTORE_MS, essential: false });
+    }
+    followSubject.set(null);
+    setFollow3dUi(null);
+  }, [followSubject]);
+
+  const stopFollowing = useCallback(({ notice = false, restore = false } = {}) => {
     const applied = appliedRef.current;
     const state = applied.follow;
     const wasOn = state?.on === true;
+    endFollow3d({ restore });
     if (state) Object.assign(state, { on: false, engage: false, transition: false });
     if (notice && wasOn) setFollowNotice({ name: followedName(applied.chosen) });
     if (latest.current?.urlFollow) latest.current.setFollow(false);
-  }, []);
+  }, [endFollow3d]);
 
   // The camera that frames `bounds` in the area the insets leave free, plus `extra` pixels on every side.
   const cameraFor = useCallback((bounds, extra = 0) => {
@@ -828,7 +954,9 @@ const OccMapView = forwardRef(function OccMapView({
     const minZoom = store.get().thresholds?.polygons;
     applied.reached3d = Number.isFinite(zoom) && Number.isFinite(minZoom) && zoom >= minZoom;
     const parked = applied.drawsStands ? parkedFromStands(latest.current.attached, drawn, applied.parkedIds ?? NO_IDS) : EMPTY;
-    return controller.plan({ aircraft: drawn, parked, zoom, minZoom, selectedId });
+    // «Seguir en 3D» (CN-30): the followed aircraft gets its detailed model at any zoom, even with the 3D off or paused.
+    const followedId = applied.follow3d?.on ? selectedId : null;
+    return controller.plan({ aircraft: drawn, parked, zoom, minZoom, selectedId, followedId });
   }, [store]);
 
   // The aircraft of a write where they are drawn at `t` (CN-18): those in or around the area in sight
@@ -841,7 +969,9 @@ const OccMapView = forwardRef(function OccMapView({
     const relevant = item => zone === null || isInBounds([item.lon, item.lat], zone);
     const viewKey = cameraKey(engine.getCamera());
     const last = applied.sampledById;
-    const full = last === null || aircraft !== applied.sampledFrom || viewKey !== applied.trafficViewKey
+    // In «Seguir en 3D» the camera moves every frame (CN-30): that alone samples no more than the area around it.
+    const moved = viewKey !== applied.trafficViewKey && applied.follow3d?.on !== true;
+    const full = last === null || aircraft !== applied.sampledFrom || moved
       || !Number.isFinite(applied.fullSampleAt) || t < applied.fullSampleAt || t - applied.fullSampleAt >= FULL_SAMPLE_MS;
     let result;
     if (full) {
@@ -887,7 +1017,9 @@ const OccMapView = forwardRef(function OccMapView({
       const t = Number.isFinite(tMs) ? tMs : applied.loop.now();
       drawn = sampleTraffic(motion, aircraft, t, engine, inset).filter(Boolean);
       applied.trafficWrittenAt = t;
-      applied.trafficIntervalMs = writeIntervalFor(engine, drawn, inset);
+      // «Seguir en 3D» (CN-30): the followed aircraft and its camera move every frame, so the traffic is written every
+      // frame (at that zoom only a few aircraft are in or around the area in sight).
+      applied.trafficIntervalMs = applied.follow3d?.on ? 0 : writeIntervalFor(engine, drawn, inset);
       // Only what moves in or around the area in sight keeps the frames going (CN-18).
       applied.trafficMoving = motion.isAnimating?.(t) === true;
     }
@@ -947,11 +1079,14 @@ const OccMapView = forwardRef(function OccMapView({
       const airfield = store.get().thresholds?.airfield;
       const everyFrame = Number.isFinite(airfield) && zoom >= airfield;
       if (!everyFrame && tMs - last.at < ROUTE_FRAME_MS) return;
+      if (applied.follow3d?.on && tMs - last.at < FOLLOW_3D_ROUTE_MS) return;
     }
     applied.routeFrame = { id: item.id, at: tMs, point };
     // What the source holds is no longer what the props brought: their next route is written again.
     applied.route = null;
-    engine.setData(ROUTE_SOURCE, current.routeAt(tMs, point) ?? EMPTY_COLLECTION);
+    // CN-29: with its track, speed and ground flag, so an arrival off its plan flies its own approach.
+    const state = { trackDeg: item.trackDeg ?? null, gsMs: item.gsMs ?? null, onGround: item.onGround === true };
+    engine.setData(ROUTE_SOURCE, current.routeAt(tMs, point, state) ?? EMPTY_COLLECTION);
   }, [store]);
 
   // The traffic drawn in `bounds` (the area the insets leave in sight), for the legend and the credit: where the last
@@ -1351,6 +1486,51 @@ const OccMapView = forwardRef(function OccMapView({
     return true;
   }, [moveCamera]);
 
+  // «Seguir en 3D», one frame (CN-30, kinematics/orbitCamera.js): what the person holds and the automatic turn move the
+  // orbit by the frame's time; the camera flies in from where it was, then eases every frame onto the orbit round the
+  // aircraft where this frame's write drew it (the pivot, at its height above the field), so it never jitters or jumps;
+  // under reduced motion it is put there at once and nothing turns by itself. The panel reads the aircraft twice a
+  // second.
+  const follow3dFrame = useCallback((tMs, { dtMs = 0, reduced = false, item }) => {
+    const engine = engineRef.current;
+    const applied = appliedRef.current;
+    const f3 = applied.follow3d;
+    const dtS = Math.max(0, dtMs) / 1_000;
+    if (!reduced) f3.orbit = orbitAdvance(f3.orbit, dtS, f3.hold);
+    const fieldElevationM = (latest.current?.layout?.meta?.elevationFt ?? 0) * METRES_PER_FOOT;
+    // The 3D model moves with the camera every frame, and the camera pivots at the height the model is drawn at
+    // (aircraft/attitude.js: never under the runway).
+    const controller = applied.aircraft3d;
+    controller?.poseFollowed?.(item);
+    const pose = controller?.followedPose?.() ?? null;
+    const heightM = pose?.id === item.id && Number.isFinite(pose.heightM) ? pose.heightM : null;
+    const target = orbitTarget(f3.orbit, item, { fieldElevationM, heightM });
+    if (target === null) return;
+    let next;
+    if (f3.entry !== null && !reduced) {
+      if (!Number.isFinite(f3.entry.startMs)) f3.entry.startMs = tMs;
+      const u = (tMs - f3.entry.startMs) / FOLLOW_3D_ENTRY_MS;
+      next = entryCamera(f3.entry.from, target, u);
+      if (u >= 1) f3.entry = null;
+    } else {
+      f3.entry = null;
+      next = reduced || f3.camera === null ? target : stepOrbitCamera(f3.camera, target, dtS);
+    }
+    f3.camera = next;
+    applied.followMoving = true;
+    applied.followFrameAt = tMs;
+    try {
+      engine.jumpTo({ center: next.center, zoom: next.zoom, pitch: next.pitch, bearing: next.bearing,
+        elevation: next.elevation });
+    } finally {
+      applied.followMoving = false;
+    }
+    if (!Number.isFinite(f3.subjectAt) || tMs - f3.subjectAt >= FOLLOW_3D_SUBJECT_MS || tMs < f3.subjectAt) {
+      f3.subjectAt = tMs;
+      followSubject.set(Object.freeze({ item, atMs: tMs, orbit: f3.orbit }));
+    }
+  }, [followSubject]);
+
   // Follow mode, one frame (PR M6, design A6): the camera framing the chosen aircraft where this frame's write drew it
   // and its next objective (kinematics/followCamera.js, the targets of the motion store), the zoom or tilt a person set
   // kept. Engaging is one move of the map's own (instant under reduced motion), whose end gives the camera to the frames;
@@ -1365,6 +1545,11 @@ const OccMapView = forwardRef(function OccMapView({
     if (!engine?.map || !state?.on || !item || engine.isInteracting()) return;
     const current = engine.getCamera();
     if (!current) return;
+    // «Seguir en 3D» (CN-30): the orbit round the aircraft instead of the framing.
+    if (applied.follow3d?.on) {
+      follow3dFrame(tMs, { dtMs, reduced, item });
+      return;
+    }
     const { traffic: now, padding: inset, pitchMode: mode } = latest.current;
     const targets = now?.motion?.followTargets?.(item.flightKey ?? null) ?? { airport: PUJ_ARP };
     const framing = followCamera({ aircraft: item, phase: item.phase ?? null, targets, mode3d: mode === '3d' });
@@ -1409,12 +1594,14 @@ const OccMapView = forwardRef(function OccMapView({
     const next = dtMs > 0 ? stepCamera(current, target, dtMs / 1_000) : target;
     jump(next);
     state.converged = settledAt(next, target);
-  }, []);
+  }, [follow3dFrame]);
 
   // Whether follow mode still has the camera to move: while it engages or has not reached the aircraft's framing.
   const followAnimating = useCallback(() => {
     const applied = appliedRef.current;
     const state = applied.follow;
+    // In «Seguir en 3D» (CN-30) the camera moves with the aircraft every frame.
+    if (state?.on === true && applied.chosen !== null && applied.follow3d?.on) return true;
     return state?.on === true && applied.chosen !== null && (state.engage || state.transition || !state.converged);
   }, []);
 
@@ -1484,7 +1671,7 @@ const OccMapView = forwardRef(function OccMapView({
       fullSampleAt: null });
     // The chosen aircraft as the last write drew it, its route as the frames last wrote it, and follow mode (PR M6).
     Object.assign(appliedRef.current, { chosen: null, routeFrame: null, follow: { ...FOLLOW_OFF }, followMoving: false,
-      followFrameAt: null, followOnScreenAt: null });
+      followFrameAt: null, followOnScreenAt: null, follow3d: { ...FOLLOW_3D_OFF } });
     const motionState = () => ({ available: true, paused: motionClock.isPaused?.() === true,
       pausedAt: motionClock.pausedAt?.() ?? null, dataAt: latest.current?.traffic?.motion?.dataAt?.() ?? null });
     store.set({ motion: loop ? motionState() : MOTION_OFF });
@@ -1603,6 +1790,11 @@ const OccMapView = forwardRef(function OccMapView({
       pointer.event = null;
       stopFrames?.();
       stopFollowFrames?.();
+      // «Seguir en 3D» (CN-30) does not outlive its engine (a theme change re-creates the map).
+      if (appliedRef.current.follow3d?.on) {
+        appliedRef.current.follow3d = { ...FOLLOW_3D_OFF };
+        setFollow3dUi(null);
+      }
       stopClock?.();
       reduced?.removeEventListener?.('change', onReducedMotion);
       loop?.dispose();
@@ -1804,13 +1996,14 @@ const OccMapView = forwardRef(function OccMapView({
     if (!state) return;
     if (!followingNow) {
       Object.assign(state, { on: false, engage: false, transition: false });
+      endFollow3d({ restore: false });
       return;
     }
     if (state.on && state.key === selectionKey) return;
     Object.assign(state, { ...FOLLOW_OFF, on: true, key: selectionKey, engage: true, converged: false });
     setFollowNotice(null);
     applied.loop?.wake();
-  }, [followingNow, selectionKey]);
+  }, [followingNow, selectionKey, endFollow3d]);
 
   // A selection that no longer names an aircraft (cleared, or a stand chosen) leaves nothing to follow.
   const lastSelectionRef = useRef(undefined);
@@ -1818,9 +2011,14 @@ const OccMapView = forwardRef(function OccMapView({
     const previous = lastSelectionRef.current;
     lastSelectionRef.current = selectionKey;
     if (previous === undefined || previous === selectionKey) return;
+    // Another aircraft chosen ends «Seguir en 3D» (CN-30): the camera flies back and nothing is followed.
+    if (appliedRef.current.follow3d?.on) {
+      stopFollowing({ notice: false, restore: true });
+      return;
+    }
     const kind = latest.current?.selection?.kind ?? null;
     if (latest.current?.urlFollow && kind !== 'flight' && kind !== 'aircraft') latest.current.setFollow(false);
-  }, [selectionKey]);
+  }, [selectionKey, stopFollowing]);
 
   // «Dejaste de seguir a …» stays a few seconds.
   useEffect(() => {
@@ -1846,6 +2044,8 @@ const OccMapView = forwardRef(function OccMapView({
   const view3d = useMemo(() => Object.freeze({
     available: toggles3d && snapshot.engineStatus !== 'unavailable', on: pitchMode === '3d', toggle: toggle3d,
     status: view3dState.status, notice: view3dState.notice, resume: resume3d,
+    // CN-30: the followed aircraft's own 3D («Seguir en 3D»): off, loading, ready or failed.
+    follow: view3dState.follow ?? 'off',
   }), [toggles3d, snapshot.engineStatus, pitchMode, toggle3d, view3dState, resume3d]);
   useLayoutEffect(() => {
     latest.current.view3d = view3d;
@@ -1858,9 +2058,66 @@ const OccMapView = forwardRef(function OccMapView({
     if (info.following) stopFollowing({ notice: false });
     else if (info.canFollow) latest.current.setFollow(true);
   }, [stopFollowing]);
+  // «Seguir en 3D» (CN-30): starts on the chosen aircraft the map draws (following it, in the URL too), with the camera
+  // of «Persecución» flown in from where it was, the 3D aircraft on for it whatever the 2D/3D choice, and MapLibre's own
+  // gestures handed to the orbit; «Dejar de seguir», Esc or another aircraft chosen end it and fly the camera back.
+  const startFollow3d = useCallback(() => {
+    const engine = engineRef.current;
+    const applied = appliedRef.current;
+    const info = latest.current?.followInfo;
+    if (!engine?.map || !applied.follow3d || applied.follow3d.on || !(info?.canFollow || info?.following)) return;
+    const camera = engine.getCamera();
+    if (!camera) return;
+    applied.follow3d = {
+      ...FOLLOW_3D_OFF, on: true, saved: camera, entry: { from: camera, startMs: null },
+      orbit: createOrbit('chase', { trackDeg: applied.chosen?.trackDeg ?? camera.bearing ?? 0 }), subjectAt: null,
+    };
+    engine.setOrbitMode(true);
+    if (!latest.current.urlFollow) latest.current.setFollow(true);
+    setFollowNotice(null);
+    setFollow3dUi({ view: 'chase', auto: false });
+    applied.loop?.wake();
+  }, []);
+  const stopFollow3d = useCallback(() => {
+    stopFollowing({ notice: false, restore: true });
+  }, [stopFollowing]);
+  // A change of the orbit from the panel or a gesture: `change(orbit)` gives the next one.
+  const changeOrbit = useCallback(change => {
+    const applied = appliedRef.current;
+    const f3 = applied.follow3d;
+    if (!f3?.on || !f3.orbit) return;
+    const next = change(f3.orbit);
+    if (next === f3.orbit) return;
+    f3.orbit = next;
+    setFollow3dUi(ui => (ui && (ui.view !== next.view || ui.auto !== next.auto) ? { view: next.view, auto: next.auto } : ui));
+    applied.loop?.wake();
+  }, []);
+  const follow3d = useMemo(() => Object.freeze({
+    on: follow3dUi !== null,
+    view: follow3dUi?.view ?? null,
+    auto: follow3dUi?.auto === true,
+    subject: followSubject,
+    start: startFollow3d,
+    stop: stopFollow3d,
+    setView: view => changeOrbit(orbit => createOrbit(view, {
+      trackDeg: appliedRef.current.chosen?.trackDeg ?? 0, auto: orbit.auto })),
+    rotate: sign => changeOrbit(orbit => orbitRotate(orbit, Math.sign(sign) * ORBIT.rotateStepDeg)),
+    tilt: sign => changeOrbit(orbit => orbitTilt(orbit, Math.sign(sign) * ORBIT.tiltStepDeg)),
+    zoom: sign => changeOrbit(orbit => orbitZoom(orbit, Math.sign(sign) * ORBIT.zoomStep)),
+    // Press and hold: `kind` 'rotate', 'tilt' or 'zoom' turns at its rate while `sign` is -1 or 1, and stops with 0.
+    hold: (kind, sign) => {
+      const f3 = appliedRef.current.follow3d;
+      if (!f3?.on || !(kind in NO_HOLD)) return;
+      f3.hold = { ...f3.hold, [kind]: Math.sign(sign) || 0 };
+      appliedRef.current.loop?.wake();
+    },
+    reset: () => changeOrbit(orbit => createOrbit(orbit.view === 'orbit' ? 'chase' : orbit.view, {
+      trackDeg: appliedRef.current.chosen?.trackDeg ?? 0 })),
+    setAuto: on => changeOrbit(orbit => orbitAuto(orbit, on)),
+  }), [follow3dUi, followSubject, startFollow3d, stopFollow3d, changeOrbit]);
   const followInfo = useMemo(() => Object.freeze({
-    available: followAvailable, following: followingNow, canFollow, toggle: toggleFollow,
-  }), [followAvailable, followingNow, canFollow, toggleFollow]);
+    available: followAvailable, following: followingNow, canFollow, toggle: toggleFollow, three: follow3d,
+  }), [followAvailable, followingNow, canFollow, toggleFollow, follow3d]);
   useLayoutEffect(() => {
     latest.current.followInfo = followInfo;
   });
@@ -1974,6 +2231,14 @@ const OccMapView = forwardRef(function OccMapView({
   useEffect(() => {
     appliedRef.current.aircraft3d?.setFollowing(followingNow);
   }, [followingNow]);
+  // The orbit's gestures (CN-30) while «Seguir en 3D» has them: a drag (any button) turns the camera round the aircraft
+  // and tilts it, two fingers turn, pinch and tilt it, the wheel brings it closer. A click without a drag still chooses.
+  const follow3dOn = follow3dUi !== null;
+  useEffect(() => {
+    const element = engineRef.current?.container;
+    if (!follow3dOn || !element) return undefined;
+    return attachOrbitGestures(element, changeOrbit);
+  }, [follow3dOn, changeOrbit]);
 
   useEffect(() => {
     const engine = engineRef.current;
@@ -2075,6 +2340,8 @@ const OccMapView = forwardRef(function OccMapView({
         // An open layers menu closes first (PR M5); then Esc stops the placing of a stand (PR M4); the selection waits
         // for the next Esc.
         if (latest.current?.layersMenuOpen) return () => latest.current.setLayersMenuOpen(false);
+        // «Seguir en 3D» (CN-30): Esc stops following and flies the camera back.
+        if (appliedRef.current.follow3d?.on) return () => latest.current.followInfo?.three?.stop();
         const { selection: current, onSelect: select, placing: placingStandNow, onCancelPlacing: cancel } = latest.current ?? {};
         if (placingStandNow && cancel) return () => cancel();
         return current && select ? () => select(null) : undefined;

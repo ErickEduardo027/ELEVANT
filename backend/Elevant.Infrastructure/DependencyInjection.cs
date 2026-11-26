@@ -255,9 +255,18 @@ public static class DependencyInjection
             throw new InvalidOperationException("AirTraffic:IdleAfterSeconds must be at least AirTraffic:IntervalSeconds.");
         if (options.TrailMinutes is < 1 or > AirTrafficSettings.MaxTrailMinutes)
             throw new InvalidOperationException("AirTraffic:TrailMinutes must be from 1 to 180.");
+        if (options.AirfieldRadiusNm is < 1 or > AirTrafficSettings.MaxAirfieldRadiusNm)
+            throw new InvalidOperationException("AirTraffic:AirfieldRadiusNm must be from 1 to 25.");
+        if (options.AirfieldIntervalSeconds < AirTrafficSettings.MinimumAirfieldInterval.TotalSeconds)
+            throw new InvalidOperationException("AirTraffic:AirfieldIntervalSeconds must be at least 2.");
         return new AirTrafficSettings(options.Enabled, options.StationCode.Trim().ToUpperInvariant(), options.CenterLatitude,
             options.CenterLongitude, options.RadiusNm, TimeSpan.FromSeconds(options.IntervalSeconds),
-            TimeSpan.FromSeconds(options.IdleAfterSeconds), TimeSpan.FromMinutes(options.TrailMinutes));
+            TimeSpan.FromSeconds(options.IdleAfterSeconds), TimeSpan.FromMinutes(options.TrailMinutes))
+        {
+            AirfieldReadsEnabled = options.AirfieldReadsEnabled,
+            AirfieldRadiusNm = options.AirfieldRadiusNm,
+            AirfieldInterval = TimeSpan.FromSeconds(options.AirfieldIntervalSeconds),
+        };
     }
 
     /// <summary>

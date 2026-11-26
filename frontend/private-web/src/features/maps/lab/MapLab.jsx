@@ -16,6 +16,7 @@ import { createMotionStore } from '../traffic/motionStore';
 import { createTelemetryStore } from '../traffic/telemetryStore';
 import { windPoint } from '../traffic/weatherLayers';
 import FlightDataBlock from '../ui/FlightDataBlock';
+import Follow3dPanel from '../ui/Follow3dPanel';
 import MapDock from '../ui/MapDock';
 import MapFollowButton from '../ui/MapFollowButton';
 import MapLayersMenu from '../ui/MapLayersMenu';
@@ -169,8 +170,13 @@ function LabScene({ scene, basemap, frozenAt, governed = false }) {
       timers.forEach(clearTimeout);
     };
   }, [feed, feedOffset, renderClock]);
-  const scenario = useMemo(() => (feedAt === null || !scene.traffic ? scene.traffic
-    : feedScenarioAt(scene.traffic, feedAt)), [feedAt, scene.traffic]);
+  // A replayed visit (CN-31) frozen with `?t=` reads its fixes of that instant.
+  const scenario = useMemo(() => {
+    if (!scene.traffic) return scene.traffic;
+    if (feedAt === null) return scene.traffic.replay === true && frozenAt !== null
+      ? feedScenarioAt(scene.traffic, frozenAt) : scene.traffic;
+    return feedScenarioAt(scene.traffic, feedAt);
+  }, [feedAt, frozenAt, scene.traffic]);
   // The traffic of a traffic scene (PR M5, lab/trafficScenes.js), built at the frozen clock for the URL's selection:
   // the lab never polls (a feed scene reads its synthetic feed). Every trail is there; the map shows the other
   // traffic's only when the layers menu asks.
@@ -250,6 +256,16 @@ function LabScene({ scene, basemap, frozenAt, governed = false }) {
         const drawn = item ? motion.sampleOne(item.id, renderClock.now(), item) : null;
         return drawn ? [drawn.lon, drawn.lat] : null;
       },
+      // What the motion draws of an aircraft now (CN-31: on the ground, parked on its stand), or null.
+      sampleAt: id => {
+        const item = traffic?.map.aircraft.find(entry => entry.id === id);
+        const drawn = item ? motion.sampleOne(item.id, renderClock.now(), item) : null;
+        return drawn ? JSON.parse(JSON.stringify(drawn)) : null;
+      },
+      // The instants of the phases of a replayed visit (CN-31, lab/replayScenes.js: REPLAY_PHASES), or null.
+      replayPhases: () => (scene.traffic?.phases ? { ...scene.traffic.phases } : null),
+      // The chosen flight's route the scene draws (CN-29), a FeatureCollection, or null.
+      route: () => (traffic?.map.route ? JSON.parse(JSON.stringify(traffic.map.route)) : null),
       placing: () => (placingRef.current ? JSON.parse(JSON.stringify(placingRef.current)) : null),
       // Where the map's last traffic write drew an aircraft, as `[lng, lat]`, or null (the motion measurements, CN-18).
       drawnAt: id => mapRef.current?.drawnPosition?.(id) ?? null,
@@ -262,7 +278,7 @@ function LabScene({ scene, basemap, frozenAt, governed = false }) {
     return () => {
       if (window.__occMapLab === lab) delete window.__occMapLab;
     };
-  }, [scene.id, scene.stands, scene.weather, reread, traffic, motion, renderClock]);
+  }, [scene.id, scene.stands, scene.weather, scene.traffic, reread, traffic, motion, renderClock]);
 
   // Read once when the map starts, like every option of the engine.
   const [mapOptions] = useState(() => ({
@@ -324,6 +340,7 @@ function LabScene({ scene, basemap, frozenAt, governed = false }) {
             <LabDataBlock target={traffic.target} telemetry={telemetry} station={traffic.stationAirport} onClose={clear}
               style={DOCKED_BLOCK_STYLE} />
           )}
+          {traffic && <Follow3dPanel flights={traffic.flights ?? null} />}
           {scene.layersMenu && <OpenLayersMenu />}
           <MapDock>
             <MapLayersMenu />

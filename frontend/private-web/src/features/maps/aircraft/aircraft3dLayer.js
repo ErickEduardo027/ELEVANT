@@ -1,7 +1,8 @@
 import { OCC_PALETTE } from '../../occ-ui/occPalette';
 import { CIVIL_TWILIGHT_DEG, dayPhase } from '../traffic/solar';
+import { buildDetailedAircraft, nextBlinkInMs } from './aircraftDetail';
 import { buildAircraftGeometry, triangleCount } from './aircraftGeometry';
-import { linearRgb, mercatorFrame } from './instancePlan';
+import { SHADOW, linearRgb, mercatorFrame, poseMatrix } from './instancePlan';
 
 // The 3D aircraft as one MapLibre custom layer (design G1, G3 and G4): three draws the instance plan
 // (aircraft/instancePlan.js) on the map's own canvas and WebGL context, in the depth buffer the terminals' extrusions
@@ -68,6 +69,33 @@ const PALETTE_TOKENS = Object.freeze([DAY_LIGHT.sky, DAY_LIGHT.ground, DAY_LIGHT
 const MIN_LINE_VERTICES = 64;
 const EMPTY_PLAN = new Map();
 const NO_IDS = Object.freeze([]);
+
+// The detailed aircraft (CN-30): its propellers turn at this speed while it moves or its beacon is on, and its ground
+// shadow is a dark veil of its instanced model.
+const PROPELLER_RPM = 1200;
+const DETAIL_SHADOW = Object.freeze({ colour: '#0b0f14', opacity: 0.42 });
+
+// A canvas for the detailed aircraft's textures where the page has a document; none in Node.
+const documentCanvas = (width, height) => {
+  if (typeof document === 'undefined' || typeof document.createElement !== 'function') return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  return canvas;
+};
+
+// A licensed logo of a livery (aircraft/liveries.js: logoTexture), from the application's own origin only.
+const loadSameOriginImage = url => new Promise((resolve, reject) => {
+  if (typeof Image !== 'function' || typeof url !== 'string' || !url.startsWith('/') || url.startsWith('//')) {
+    reject(new Error('A livery logo is a path of the application.'));
+    return;
+  }
+  const image = new Image();
+  image.decoding = 'async';
+  image.onload = () => resolve(image);
+  image.onerror = () => reject(new Error(`The livery logo ${url} did not load.`));
+  image.src = url;
+});
 
 const toRadians = degrees => (degrees * Math.PI) / 180;
 const finite = value => typeof value === 'number' && Number.isFinite(value);
@@ -188,7 +216,8 @@ function sameSun(a, b) {
 export function createAircraft3dLayer({
   three, originLngLat, getInstances, palette = OCC_PALETTE, getSun = () => null, onFailedChange, minModelPx = 0,
   createRenderer = ({ canvas, context }) => new three.WebGLRenderer({ canvas, context, antialias: true }),
-  buildGeometry = buildAircraftGeometry, now = () => performance.now(),
+  buildGeometry = buildAircraftGeometry, now = () => performance.now(), buildDetail = buildDetailedAircraft,
+  createCanvas = documentCanvas, loadImage = loadSameOriginImage,
 } = {}) {
   if (three == null) throw new TypeError('The 3D aircraft layer needs the parts of three');
   if (typeof getInstances !== 'function') throw new TypeError('The 3D aircraft layer needs getInstances()');
@@ -227,6 +256,18 @@ export function createAircraft3dLayer({
   let failed = false;
   // The floor in metres the matrices were last written with (0: none).
   let floorM = 0;
+  // CN-30: the detailed aircraft, in a scene of its own drawn in the local frame of its own position (so it stands
+  // exactly at any distance from the ARP): `{ key, model, shadow, idleSince }`, its lights, its camera and the timer of
+  // the next blink of its lights.
+  let detailScene = null;
+  let detailCamera = null;
+  let detailHemisphere = null;
+  let detailSun = null;
+  let detailHeld = null;
+  let detailDrawn = null;
+  let blinkTimer = null;
+  let night = true;
+  const logos = new Map();
 
   function buildScene() {
     scene = new three.Scene();
@@ -242,6 +283,12 @@ export function createAircraft3dLayer({
     lines.matrixAutoUpdate = false;
     lines.visible = quality.dropLines;
     scene.add(hemisphere, sunLight, lines);
+    detailScene = new three.Scene();
+    detailCamera = new three.Camera();
+    detailHemisphere = new three.HemisphereLight();
+    detailHemisphere.position.set(0, 0, 1);
+    detailSun = new three.DirectionalLight();
+    detailScene.add(detailHemisphere, detailSun);
     copied = false;
     appliedSun = undefined;
   }
@@ -301,8 +348,7 @@ export function createAircraft3dLayer({
   }
 
   // Copies the plan into the meshes when its revision changed; answers whether it did.
-  function syncInstances(time) {
-    const answer = getInstances();
+  function syncInstances(time, answer) {
     const nextRevision = answer?.revision;
     if (copied && Object.is(nextRevision, revision)) return false;
     copied = true;
@@ -389,6 +435,88 @@ export function createAircraft3dLayer({
         meshes.delete(key);
       }
     }
+    if (detailHeld?.idleSince != null && time - detailHeld.idleSince >= UNUSED_MESH_MS) disposeDetail();
+  }
+
+  function disposeDetail() {
+    if (detailHeld === null) return;
+    detailHeld.model.dispose();
+    detailHeld.shadow.removeFromParent();
+    detailHeld.shadow.geometry.dispose();
+    detailHeld.shadow.material.dispose();
+    detailHeld = null;
+  }
+
+  // The detailed aircraft's model for `detail` (built once per type, livery and registration), with its logo once it
+  // loads.
+  function detailModel(detail, time) {
+    if (detailHeld !== null && detailHeld.key === detail.key) return detailHeld;
+    disposeDetail();
+    const model = buildDetail(three, detail.spec, {
+      code: detail.code, livery: detail.livery, registration: detail.registration, createCanvas, night,
+      logo: logos.get(detail.livery.logoTexture) ?? null,
+    });
+    model.object.matrixAutoUpdate = false;
+    const shadow = new three.Mesh(buildGeometry(three, detail.spec), new three.MeshBasicMaterial({
+      color: DETAIL_SHADOW.colour, transparent: true, opacity: DETAIL_SHADOW.opacity, depthWrite: false,
+    }));
+    shadow.matrixAutoUpdate = false;
+    shadow.frustumCulled = false;
+    detailScene.add(model.object, shadow);
+    detailHeld = { key: detail.key, model, shadow, idleSince: null, builtAt: time };
+    const url = detail.livery.logoTexture;
+    if (typeof url === 'string' && url !== '' && !logos.has(url)) {
+      logos.set(url, null);
+      loadImage(url).then(image => {
+        logos.set(url, image);
+        if (detailHeld?.model.refreshLogo(image)) map?.triggerRepaint();
+      }, () => {});
+    }
+    return detailHeld;
+  }
+
+  // Poses and draws the detailed aircraft of the plan, if any, in its own frame; schedules the next blink.
+  function renderDetail(detail, mainMatrix, target, time) {
+    detailDrawn = null;
+    if (detail == null || detailScene === null) {
+      if (detailHeld !== null) {
+        detailHeld.model.object.visible = false;
+        detailHeld.shadow.visible = false;
+        detailHeld.idleSince ??= time;
+      }
+      return;
+    }
+    const held = detailModel(detail, time);
+    held.idleSince = null;
+    const frame = mercatorFrame([detail.lon, detail.lat]);
+    detailCamera.projectionMatrix.fromArray(mainMatrix).multiply(new three.Matrix4().fromArray(frame.matrix));
+    detailCamera.projectionMatrixInverse.copy(detailCamera.projectionMatrix).invert();
+    // The floor of the zoom (minModelPx) applies to it as to the traffic: never a speck at a far zoom.
+    const length = detail.spec.lengthM;
+    const scale = floorM > 0 && !detail.onStand ? Math.min(MAX_MODEL_SCALE, Math.max(1, floorM / length)) : 1;
+    held.model.object.matrix.fromArray(poseMatrix({
+      z: detail.heightM, headingDeg: detail.headingDeg, pitchDeg: detail.pitchDeg, bankDeg: detail.bankDeg,
+      pivotY: held.model.pivot.y, pivotZ: held.model.pivot.z, scale,
+    }));
+    held.model.object.matrixWorldNeedsUpdate = true;
+    held.model.object.visible = true;
+    held.shadow.matrix.fromArray(poseMatrix({ z: SHADOW.heightM, headingDeg: detail.headingDeg, scale,
+      flatten: SHADOW.flatten }));
+    held.shadow.matrixWorldNeedsUpdate = true;
+    held.shadow.visible = quality.shadows;
+    const moving = detail.gsMs > 0.5 || detail.lights?.beacon === true;
+    held.model.setState({ gearDown: detail.gearDown, lights: detail.lights ?? {}, timeMs: time, night,
+      propellerRpm: moving ? PROPELLER_RPM : 0 });
+    renderer.render(detailScene, detailCamera);
+    detailDrawn = held;
+    const wait = nextBlinkInMs(time, detail.lights ?? {});
+    if (Number.isFinite(wait) && blinkTimer === null) {
+      blinkTimer = setTimeout(() => {
+        blinkTimer = null;
+        if (!removed) map?.triggerRepaint();
+      }, wait);
+    }
+    if (target === null) return;
   }
 
   function syncLighting() {
@@ -404,6 +532,14 @@ export function createAircraft3dLayer({
     sunLight.intensity = lighting.directional.intensity;
     // A directional light shines from its position toward its target, which stays at the origin.
     sunLight.position.set(...lighting.directional.direction);
+    // The detailed aircraft's scene has the same light; its halos glow brighter by night.
+    detailHemisphere.color.copy(hemisphere.color);
+    detailHemisphere.groundColor.copy(hemisphere.groundColor);
+    detailHemisphere.intensity = hemisphere.intensity;
+    detailSun.color.copy(sunLight.color);
+    detailSun.intensity = sunLight.intensity;
+    detailSun.position.copy(sunLight.position);
+    night = lighting.phase !== 'day';
   }
 
   function replaceRenderer(nextContext) {
@@ -493,7 +629,8 @@ export function createAircraft3dLayer({
       camera.projectionMatrix.copy(projection);
       camera.projectionMatrixInverse.copy(projection).invert();
       const time = now();
-      syncInstances(time);
+      const answer = getInstances();
+      syncInstances(time, answer);
       syncFloor();
       retireIdle(time);
       syncLighting();
@@ -502,6 +639,7 @@ export function createAircraft3dLayer({
       renderer.resetState();
       renderer.setViewport(0, 0, target.drawingBufferWidth, target.drawingBufferHeight);
       renderer.render(scene, camera);
+      renderDetail(answer?.detail ?? null, mainMatrix, target, time);
       drawn = true;
     },
 
@@ -511,6 +649,17 @@ export function createAircraft3dLayer({
       stopListening();
       for (const held of meshes.values()) disposeHeld(held);
       meshes.clear();
+      disposeDetail();
+      detailDrawn = null;
+      if (blinkTimer !== null) {
+        clearTimeout(blinkTimer);
+        blinkTimer = null;
+      }
+      detailScene?.clear();
+      detailScene = null;
+      detailCamera = null;
+      detailHemisphere = null;
+      detailSun = null;
       if (scene !== null) {
         lines.geometry.dispose();
         lineMaterial.dispose();
@@ -551,6 +700,19 @@ export function createAircraft3dLayer({
       near.set(ndcX, ndcY, -1).applyMatrix4(camera.projectionMatrixInverse);
       far.set(ndcX, ndcY, 1).applyMatrix4(camera.projectionMatrixInverse).sub(near);
       if (![near.x, near.y, near.z, far.x, far.y, far.z].every(Number.isFinite) || far.lengthSq() === 0) return null;
+      // The detailed aircraft first, in its own frame (its lights and halos are no aircraft).
+      if (detailDrawn !== null && detailCamera !== null) {
+        const detailNear = new three.Vector3(ndcX, ndcY, -1).applyMatrix4(detailCamera.projectionMatrixInverse);
+        const detailFar = new three.Vector3(ndcX, ndcY, 1).applyMatrix4(detailCamera.projectionMatrixInverse).sub(detailNear);
+        if ([detailNear.x, detailNear.y, detailNear.z, detailFar.x, detailFar.y, detailFar.z].every(Number.isFinite)
+          && detailFar.lengthSq() > 0) {
+          raycaster.set(detailNear, detailFar.normalize());
+          const hit = raycaster.intersectObject(detailDrawn.model.object, true)
+            .find(item => item.object.visible && item.object.name !== 'light' && item.object.name !== 'halo');
+          const id = getInstances()?.detail?.id;
+          if (hit && id != null) return { kind: 'aircraft', id };
+        }
+      }
       raycaster.set(near, far.normalize());
       const targets = [...meshes.values()].filter(held => held.mesh.count > 0).map(held => held.mesh);
       for (const hit of raycaster.intersectObjects(targets, false)) {
@@ -579,7 +741,24 @@ export function createAircraft3dLayer({
         if (held.mesh.count > 0) drawCalls += 1;
       }
       if (lines !== null && lines.visible && lines.geometry.drawRange.count > 0) drawCalls += 1;
-      return { meshes: meshes.size, instances, triangles, drawCalls, lost, failed };
+      // The detailed aircraft (CN-30): what of it is on screen.
+      let detail = null;
+      if (detailDrawn !== null) {
+        let detailTriangles = 0;
+        let detailCalls = 0;
+        detailDrawn.model.object.traverseVisible(node => {
+          if (!node.isMesh) return;
+          const index = node.geometry.getIndex();
+          detailTriangles += (index === null ? node.geometry.getAttribute('position').count : index.count) / 3;
+          detailCalls += 1;
+        });
+        if (detailDrawn.shadow.visible) detailCalls += 1;
+        triangles += detailTriangles;
+        drawCalls += detailCalls;
+        detail = { key: detailDrawn.key, triangles: detailTriangles, drawCalls: detailCalls,
+          textured: detailDrawn.model.textured };
+      }
+      return { meshes: meshes.size, instances, triangles, drawCalls, lost, failed, ...(detail === null ? {} : { detail }) };
     },
   };
 }

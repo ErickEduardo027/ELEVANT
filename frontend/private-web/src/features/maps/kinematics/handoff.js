@@ -9,14 +9,16 @@ import { normalizeDeg } from './units.js';
 // in progress and the part of its trail it is on. Where it is drawn is derived from the time, never stored:
 // - LIVE, a fix up to 15 s old: dead reckoning from the fix (its speed along its track, its height at its vertical
 //   rate);
-// - COAST, up to 60 s in the air and 20 s on the ground: an ELEVANT flight advances along its planned path,
+// - CN-31: on the ground a fix is carried on 3 s at most and then held: a real aircraft is never moved along an
+//   estimated taxi route; once its fix ages it stays where it was reported (dimmed by its age) until it is dropped;
+// - COAST, up to 60 s in the air: an ELEVANT flight advances along its planned path,
 //   re-anchored where the fix projects on it, at the fix's speed; other traffic goes straight («Sin señal desde hace
 //   N s»);
 // - ESTIMATE, older: an ELEVANT flight follows the trajectory rebuilt from its last fix (the track store rebuilds it
 //   when needsReplan says so and hands it over as a plan); other traffic fades out and is dropped at 120 s.
 // A track without a fix (a demo flight, an ELEVANT flight without ADS-B) is an estimate from its plan alone. Each
-// change of mode is eased over the blend time, so nothing jumps at 15 or 60 s. A new fix or a new plan blends from
-// where the aircraft is drawn over 6 s, or snaps with a brief fade and a new trail part when the gap is more than 2 NM
+// change of mode is eased over the blend time, so nothing jumps at 15 or 60 s. A new plan blends from where the
+// aircraft is drawn over 6 s and a new fix over 1.5 s (CN-31), or snaps with a brief fade and a new trail part when the gap is more than 2 NM
 // in the air or 150 m on the ground. The limits widen when the feed is slower than usual (`refreshAfterSeconds`).
 // CN-18: an aircraft turning between its last two fixes is carried on along the arc of that turn (at most TURN.maxDegS
 // for TURN.horizonS, then straight), so a new fix in a turn does not pull it back; a new plan of a flight drawn from its
@@ -25,12 +27,18 @@ import { normalizeDeg } from './units.js';
 // SI units inside (metres, m/s, epoch milliseconds; seconds for ages and windows), degrees true, `[lng, lat]`. Pure:
 // explicit '.js' imports, no clock, no randomness, no JSON; every track and every render is frozen.
 
-/** The age limits (s), the blend, the snap distances (m) and the fade after a snap (s) of the hand-off. */
+/**
+ * The age limits (s), the blends, the snap distances (m) and the fade after a snap (s) of the hand-off. CN-31: a new fix
+ * blends in over `fixBlendS` (the mode changes and the plans keep `blendS`), and on the ground a fix is carried on at
+ * most `groundReckonMaxS`: a real aircraft is drawn where it was reported, never along an estimated taxi route.
+ */
 export const TRACK_CONFIG = Object.freeze({
   liveMaxAgeS: 15,
   coastMaxAgeS: 60,
   groundCoastMaxAgeS: 20,
   blendS: 6,
+  fixBlendS: 1.5,
+  groundReckonMaxS: 3,
   snapAirM: 3704,
   snapGroundM: 150,
   dropOtherAfterS: 120,
@@ -151,7 +159,8 @@ function alongArc(state, dt, turnDegS) {
  * one), its height at its vertical rate.
  */
 function deadReckon(state, dtS) {
-  const dt = Math.max(0, dtS);
+  // CN-31: on the ground a fix is carried on a few seconds at most, then held where that leaves it.
+  const dt = state.onGround === true ? Math.min(Math.max(0, dtS), TRACK_CONFIG.groundReckonMaxS) : Math.max(0, dtS);
   const turning = dt > 0 && isMoving(state) && finite(state.turnDegS) && state.turnDegS !== 0;
   let trackDeg = orNull(state.trackDeg);
   let lon = state.lon;
@@ -388,6 +397,31 @@ function baseOf(track, tMs, config) {
     return state;
   };
   if (mode === 'live') return { state: live(), mode, quality: 'live', ageS, statusKey: null, opacity: 1, timeScale: 1 };
+  // CN-31: a real aircraft last reported on the ground stays where it was reported (carried on a few seconds at most):
+  // no taxi route is estimated for it. Other traffic fades out from the end of the coast to its drop, as before; an
+  // ELEVANT flight holds until its fix is dropped (the operation's milestones then place it, motionStore.js).
+  if (fix.onGround) {
+    // A plan rebuilt from this fix (the store keeps only a stopped fix in its stand: parked there, or leaving it at its
+    // recorded PUSHBACK) places it: still where it was reported until that milestone, then the estimate.
+    if (track.kind === 'aviam' && mode === 'estimate' && planIsCurrent(track)) {
+      const estimate = estimateOf(track, tMs, ageS, config);
+      if (estimate === null) return null;
+      const moving = finite(estimate.state.gsMs) && estimate.state.gsMs > 0;
+      return { ...estimate, mode, ageS, quality: moving ? estimate.quality : 'coasted' };
+    }
+    // A rebuild from this fix that found it gone (an arrival's stand after its PUSHBACK: the departure has the
+    // aircraft) places it nowhere; one the store skipped to hold it (`hold`) keeps it where it was reported.
+    if (track.kind === 'aviam' && mode === 'estimate' && track.plan?.trajectory === null
+      && track.plan.anchorFixAt === fix.positionAt && track.plan.hold !== true) return null;
+    const start = coastLimitS(fix, config);
+    const end = config.dropOtherAfterS;
+    let opacity = 1;
+    if (track.kind !== 'aviam') {
+      if (ageS >= end) return null;
+      opacity = ageS <= start ? 1 : (end > start ? clamp01(1 - (ageS - start) / (end - start)) : 0);
+    }
+    return { state: live(), mode, quality: 'coasted', ageS, statusKey: 'noSignal', opacity, timeScale: 1 };
+  }
   // The coast, eased in from the live dead reckoning over the blend time after the live limit.
   const coasted = () => {
     const along = coastOnPlan(track, ageS, config) ?? deadReckon(fix, ageS);
@@ -512,7 +546,7 @@ function samePlace(a, b) {
  * the position, and of its opacity only when that changes (a cancelled demo read late fades in from where it was
  * drawn); otherwise a blend from the drawn state. A fade-in under way goes on.
  */
-function handOver(prev, next, { drawn, target, targetOpacity = 1, atMs, limitM, config, planOnly = false }) {
+function handOver(prev, next, { drawn, target, targetOpacity = 1, atMs, limitM, config, planOnly = false, blendS = null }) {
   if (drawn === null) {
     const comesBack = prev.lastFix !== null || planTrajectory(prev) !== null;
     return Object.freeze({
@@ -533,7 +567,7 @@ function handOver(prev, next, { drawn, target, targetOpacity = 1, atMs, limitM, 
     }
     return Object.freeze({ ...next, blend: null, trailEpoch: prev.trailEpoch + 1, snapAtMs: atMs });
   }
-  const durationMs = config.blendS * 1000;
+  const durationMs = (finite(blendS) ? blendS : config.blendS) * 1000;
   if (samePlace(drawn.state, target)) {
     if (Math.abs(drawn.opacity - targetOpacity) <= SAME_OPACITY) return Object.freeze({ ...next, blend: null });
     return Object.freeze({
@@ -556,7 +590,9 @@ function onFix(prev, event, config) {
   const next = { ...prev, lastFix: fix, dropped: false };
   // Where the new fix puts the aircraft now: the fix carried straight on to `atMs`.
   const target = deadReckon(fix, (atMs - fix.positionAt) / 1000);
-  return handOver(prev, next, { drawn, target, atMs, limitM: snapLimitM(fix.onGround, config), config });
+  return handOver(prev, next, {
+    drawn, target, atMs, limitM: snapLimitM(fix.onGround, config), config, blendS: config.fixBlendS ?? config.blendS,
+  });
 }
 
 function onPlan(prev, event, config) {
@@ -569,7 +605,7 @@ function onPlan(prev, event, config) {
   }
   // A plan without a trajectory but with its fix records a rebuild that found no route, so it is not asked again.
   const plan = trajectory !== null || anchorFixAt !== null
-    ? Object.freeze({ trajectory, atMs: event.atMs, anchorFixAt }) : null;
+    ? Object.freeze({ trajectory, atMs: event.atMs, anchorFixAt, ...(event.hold === true ? { hold: true } : {}) }) : null;
   const drawn = drawnOf(prev, event.atMs, config);
   const next = { ...prev, plan, dropped: false };
   const goal = drawnOf(Object.freeze({ ...next, blend: null }), event.atMs, config);
@@ -583,6 +619,9 @@ function onPlan(prev, event, config) {
 function shouldDrop(track, tMs, config) {
   const ageS = ageOf(track, tMs);
   if (track.kind !== 'aviam') return ageS === null || ageS >= config.dropOtherAfterS;
+  // CN-31: an ELEVANT flight last reported on the ground (parked, on blocks with its transponder off) stays there while
+  // the picture keeps its fix.
+  if (track.lastFix?.onGround === true) return false;
   const trajectory = planTrajectory(track);
   const planned = trajectory !== null && !(tMs > trajectory.endMs);
   return !planned && (ageS === null || ageS >= config.dropAviamAfterS);

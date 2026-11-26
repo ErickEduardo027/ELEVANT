@@ -54,6 +54,15 @@ public sealed class FailoverAirTrafficProvider : IAirTrafficProvider, IDisposabl
         }
     }
 
+    /// <summary>CN-31: whether the active network may be read every few seconds for the airfield.</summary>
+    public bool AllowsFrequentReads
+    {
+        get
+        {
+            lock (_gate) return _chain[_active].AllowsFrequentReads;
+        }
+    }
+
     /// <summary>The networks in the order they are tried.</summary>
     internal IReadOnlyList<IAirTrafficProvider> Chain => _chain;
 

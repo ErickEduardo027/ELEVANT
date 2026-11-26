@@ -24,7 +24,7 @@ describe('the traffic scenes of the map lab', () => {
       'approach-traffic-estimated-stale', 'region-traffic-selected', 'approach-traffic-hex-selected', 'region-layers-menu',
       'approach-demo-final', 'airfield-demo-taxiing', 'ramp-demo-awaiting-stand', 'approach-traffic-live-estimated',
       'airfield-demo-cancelled', 'approach-demo-accelerated', 'approach-demo-route', 'airfield-departure-route',
-      'approach-follow-final', 'airfield-follow-taxi']);
+      'approach-follow-final', 'airfield-follow-taxi', 'approach-live-offplan']);
     for (const [id, scenario] of Object.entries(TRAFFIC_SCENARIOS)) {
       expect(scenario.at, id).toBe(TRAFFIC_NOON);
       expect(isOccAirPicture(scenario.picture, TRAFFIC_STATION_ID, 'short'), `${id} picture`).toBe(true);
@@ -41,7 +41,8 @@ describe('the traffic scenes of the map lab', () => {
     const reused = { 'ramp-3d-parked': 'airfield-demo-taxiing', 'ramp-3d-selected': 'airfield-demo-taxiing',
       'airfield-3d-final': 'approach-demo-final' };
     // The feed scenes of the motion measurements (CN-18) have scenarios of their own (FEED_SCENARIOS).
-    expect(SCENES.filter(scene => scene.traffic && scene.weather === undefined && !reused[scene.id] && !scene.traffic.feed)
+    expect(SCENES.filter(scene => scene.traffic && scene.weather === undefined && !reused[scene.id] && !scene.traffic.feed
+      && !scene.traffic.showcase)
       .map(scene => scene.id))
       .toEqual(Object.keys(TRAFFIC_SCENARIOS));
     expect(SCENES.filter(scene => scene.traffic && scene.weather !== undefined).map(scene => scene.id))

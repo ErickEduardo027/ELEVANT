@@ -207,6 +207,9 @@ function flightFields(flight) {
     phase: flight?.phase ?? null,
     flightNumber: flight?.flightNumber ?? null,
     counterpartIata: flight?.counterpart?.iataCode ?? null,
+    // The airline's designators (CN-30: the livery of its 3D model; other traffic takes it from its callsign).
+    airlineIcao: text(flight?.airline?.icaoCode),
+    airlineIata: text(flight?.airline?.iataCode),
     standCode: standCodeOf(flight),
     // What the flight knows of its aircraft, for its silhouette (aircraft/types.js: resolveAircraftType).
     model: text(flight?.aircraft?.model),

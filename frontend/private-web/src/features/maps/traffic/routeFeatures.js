@@ -108,6 +108,13 @@ function labelOf(labelKey, language) {
   return message ? createTranslator(kinematicsMessages, language)(message) : null;
 }
 
+// The motion state the route reads of an aircraft (CN-29): `{ trackDeg, gsMs, onGround }`, or null.
+function stateOf(item) {
+  if (!item || typeof item !== 'object') return null;
+  return { trackDeg: finite(item.trackDeg) ? item.trackDeg : null, gsMs: finite(item.gsMs) ? item.gsMs : null,
+    onGround: item.onGround === true };
+}
+
 /**
  * The route of a selection target (traffic/situationModel.js: selectionTarget) as the route source's data, a
  * FeatureCollection (kinematics/flightRoute.js: buildFlightRoute).
@@ -120,6 +127,8 @@ function labelOf(labelKey, language) {
  *   route), else where the target has it; the split between flown and still to fly follows it. `nowMs`: the server's
  *   time. A flight the map does not draw (merely scheduled, Decision F-1) shows its planned route still to fly, all of
  *   it, or all of it flown once its journey is over.
+ * - `state`: the drawn aircraft's `{ trackDeg, gsMs, onGround }` (CN-29; OccMap passes it with `aircraft`), else the
+ *   target's: an arrival in the air off its plan flies its own approach (kinematics/flightRoute.js).
  * - `language`: the words of the marks' labels (`label`: «Posición por asignar» at an apron hold).
  * Each feature carries `{ id, flightKey, part, hex, … }` (`hex` the aircraft's ADS-B address, '' without one, so the
  * trails drawn beside the route can give way to its observed part), ids stable between calls; a mark its `mark` and,
@@ -127,7 +136,7 @@ function labelOf(labelKey, language) {
  */
 export function buildRoute({
   target = null, segments = [], track = null, trajectory = null, nowMs = null, breakMs = null, aircraft = null,
-  language = 'es',
+  state = null, language = 'es',
 } = {}) {
   const flight = target?.flight ?? null;
   const drawn = target?.aircraft ?? null;
@@ -145,6 +154,9 @@ export function buildRoute({
     destination: departure ? pointOfAirport(flight?.counterpart) : null,
     aircraft: drawnAt,
     breakMs,
+    // CN-29: the drawn aircraft's track, speed and whether it is on the ground, so an arrival off its plan flies its own
+    // approach; where the map passes no state, the target's own.
+    state: stateOf(state) ?? (isPoint(aircraft) ? null : stateOf(drawn)),
   });
   if (route.features.length === 0) return EMPTY;
   const hex = text(drawn?.hex)?.toLowerCase() ?? '';
