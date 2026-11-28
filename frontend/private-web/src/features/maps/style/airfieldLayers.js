@@ -75,7 +75,7 @@ const EXTRUSION_PAINT = Object.freeze({
 });
 
 function airfieldLayer(id, type, filter, {
-  layout, paint, pick, slot = AIRFIELD_SLOT, source = AIRFIELD_SOURCE,
+  layout, paint, pick, slot = AIRFIELD_SLOT, source = AIRFIELD_SOURCE, minThreshold,
 } = {}) {
   return {
     slot,
@@ -85,7 +85,11 @@ function airfieldLayer(id, type, filter, {
     filter,
     ...(layout ? { layout } : {}),
     paint,
-    metadata: { ...FROM_AIRFIELD, ...(pick ? { 'occ:pick': pick, 'occ:pickId': 'id' } : {}) },
+    metadata: {
+      ...FROM_AIRFIELD,
+      ...(minThreshold ? { 'occ:minThreshold': minThreshold } : {}),
+      ...(pick ? { 'occ:pick': pick, 'occ:pickId': 'id' } : {}),
+    },
   };
 }
 
@@ -118,8 +122,11 @@ const extrusionLayers = () => [
     slot: AIRFIELD_EXTRUSION_SLOT,
     paint: { 'fill-extrusion-color': occColor('line-strong'), ...EXTRUSION_PAINT },
   }),
+  // From the zoom where the stand codes show (M9 visual review, 27 de noviembre de 2026): at Aeródromo the terminals
+  // are too small for their name and height, which piled up over the stands.
   structureLayer('occ-airfield-building-label', 'symbol', ['all', IS_POLYGON, kindIs('building')], {
     slot: AIRFIELD_EXTRUSION_SLOT,
+    minThreshold: 'codes',
     layout: {
       'text-field': ['concat', ['coalesce', ['get', 'name'], ''], '\n', ['coalesce', ['get', 'heightLabel'], '']],
       'text-font': fonts('regular'),

@@ -242,7 +242,10 @@ describe('airport structures in 3D (M9)', () => {
     for (const id of AIRFIELD_STRUCTURE_LAYER_IDS) {
       const layer = structureLayer(id);
       expect(layer.source, id).toBe(AIRFIELD_STRUCTURES_SOURCE);
-      expect(layer.metadata, id).toMatchObject({ 'occ:group': AIRFIELD_GROUP, 'occ:minThreshold': 'airfield' });
+      // The terminals' names and heights wait for the zoom of the stand codes (visual review of 2026-11-27): at
+      // Aeródromo they piled up over the stands.
+      const from = id === 'occ-airfield-building-label' ? 'codes' : 'airfield';
+      expect(layer.metadata, id).toMatchObject({ 'occ:group': AIRFIELD_GROUP, 'occ:minThreshold': from });
       expect(layer.metadata, id).not.toHaveProperty('occ:pick');
     }
   });
@@ -329,7 +332,10 @@ describe('airport structures in 3D (M9)', () => {
     engine.applyThresholds(thresholds);
     const ranges = Object.fromEntries(map.zoomRangeCalls.map(call => [call.id, [call.minzoom, call.maxzoom]]));
     expect(ranges['building-3d']).toEqual([13, thresholds.airfield]);
-    for (const id of AIRFIELD_STRUCTURE_LAYER_IDS) expect(ranges[id], id).toEqual([thresholds.airfield, 24]);
+    for (const id of AIRFIELD_STRUCTURE_LAYER_IDS) {
+      const from = id === 'occ-airfield-building-label' ? thresholds.codes : thresholds.airfield;
+      expect(ranges[id], id).toEqual([from, 24]);
+    }
   });
 
   it('tells the legend of the structures on screen; a raised terminal stands in for its footprint', () => {
