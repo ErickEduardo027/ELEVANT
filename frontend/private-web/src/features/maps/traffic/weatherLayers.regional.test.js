@@ -276,6 +276,23 @@ describe('regional weather: on screen and in the layers menu', () => {
     expect(loopSpanWords(null)).toBeNull();
   });
 
+  // Hotfix of 2026-11-28: the legend lists only the loop frames shown, as the layers menu does.
+  it('keeps out of the legend the loop frames whose tiles failed, and the loop when every frame failed', () => {
+    const frames = loopFrames({ band: 'geocolor', latestTime: LATEST_GOES });
+    // The latest frame failed: the span ends at the frame before it.
+    const lastMissing = frames.map((frame, index) => ({ ...frame, missing: index === frames.length - 1 }));
+    const some = weatherOnScreen({ rasters: { loop: true }, loop: { band: 'geocolor', frames: lastMissing, demo: false } });
+    expect(some.kinds).toEqual(['loopGeocolor']);
+    expect(some.imagery.loopGeocolor).toEqual({ from: frames[0].time, time: frames.at(-2).time, precision: 'loop',
+      demo: false });
+    expect(loopSpanWords(some.imagery.loopGeocolor)).toBe('De las 10:00 a las 10:40');
+    // Every frame failed: the loop is not drawn, so the legend does not list it.
+    const allMissing = frames.map(frame => ({ ...frame, missing: true }));
+    const none = weatherOnScreen({ rasters: { loop: true }, loop: { band: 'geocolor', frames: allMissing, demo: false } });
+    expect(none.kinds).toEqual([]);
+    expect(none.imagery).toEqual({});
+  });
+
   it('says under a regional key that is on why the map shows nothing of it, or the span of its loop', () => {
     const layers = { 'weather.loop': true, 'weather.radar': true, 'weather.stations': true, 'weather.sigmet': true };
     const ready = {

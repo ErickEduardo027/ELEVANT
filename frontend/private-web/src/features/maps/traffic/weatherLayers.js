@@ -423,10 +423,13 @@ export function weatherOnScreen({ wind = [], rasters = {}, imagery = null, loop 
   }
   const span = (frames, extra) => Object.freeze({ from: frames[0].time, time: frames.at(-1).time, precision: 'loop',
     ...extra });
-  if (rasters?.loop === true && Array.isArray(loop?.frames) && loop.frames.length > 0) {
+  // Only the loop frames shown: a frame whose tiles failed (hotfix of 2026-11-28) is neither drawn nor in the span, and
+  // a loop with every frame failed is not on screen.
+  const loopShown = Array.isArray(loop?.frames) ? loop.frames.filter(frame => frame?.missing !== true) : [];
+  if (rasters?.loop === true && loopShown.length > 0) {
     const kind = loop.band === 'geocolor' ? 'loopGeocolor' : 'loopIr';
     kinds.push(kind);
-    images[kind] = span(loop.frames, { demo: loop.demo === true });
+    images[kind] = span(loopShown, { demo: loop.demo === true });
   }
   if (rasters?.radar === true && Array.isArray(radar?.frames) && radar.frames.length > 0) {
     kinds.push('radar');

@@ -3219,16 +3219,22 @@ describe('OccMap weather (PR M8)', () => {
       wind: { status: 'loading', data: null }, radar: read(createRadarFrames()), demo: false };
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     render(<OccMap defaultView="region" frozenAt={afternoon} weather={weatherAt()} regionWeather={regionWeather}
-      satelliteService={service} layerOverrides={{ 'weather.loop': true, 'weather.goes': false }} />);
+      satelliteService={service} layerOverrides={{ 'weather.loop': true, 'weather.goes': false }}><ReferenceProbe /></OccMap>);
     const map = fake.state.liveMaps().at(-1);
     loadStyle(map);
     await settle();
     await settle();
+    // The legend lists the loop with the span of the frames it shows (ADR-0044: the legend matches the map).
+    const legendLoop = () => {
+      act(() => fake.state.emit(map, 'idle'));
+      return referenceProbe().imagery?.loopGeocolor ?? null;
+    };
     const opacities = () => Array.from({ length: 6 }, (_, index) =>
       map.layers.find(layer => layer.id === `occ-weather-loop-${index}-image`).paint['raster-opacity']);
     const shown = () => opacities().findIndex(value => value > 0);
     // The frozen clock holds the latest frame. MapLibre reloads each source given new tiles (its content source data).
     expect(shown()).toBe(5);
+    expect(legendLoop()).toMatchObject({ from: '2026-11-28T15:20:00Z', time: '2026-11-28T16:20:00Z' });
     for (let index = 0; index < 6; index += 1) {
       act(() => fake.state.emit(map, 'sourcedata', { sourceId: `occ-weather-loop-${index}`, sourceDataType: 'content' }));
     }
@@ -3241,6 +3247,7 @@ describe('OccMap weather (PR M8)', () => {
     expect(shown()).toBe(4);
     expect(opacities().filter(value => value > 0)).toHaveLength(1);
     expect(error).not.toHaveBeenCalled();
+    expect(legendLoop()).toMatchObject({ from: '2026-11-28T15:20:00Z', time: '2026-11-28T16:10:00Z' });
 
     // A 404, which MapLibre 6.16 keeps quiet: the frame's tiles stay `errored`, and the loop's next tick finds them.
     fake.state.setTileStates(map, 'occ-weather-loop-4', ['errored', 'errored']);
@@ -3253,6 +3260,9 @@ describe('OccMap weather (PR M8)', () => {
     await act(() => new Promise(resolve => { setTimeout(resolve, 350); }));
     await settle();
     expect(opacities()).toEqual([0, 0, 0, 0, 0, 0]);
+    // Nothing of the loop is drawn: the legend does not list it.
+    expect(legendLoop()).toBeNull();
+    expect(referenceProbe().kinds).not.toContain('loopGeocolor');
     // No new tiles and no new read: the budget is the same.
     expect(map.calls.filter(call => call.method === 'setTiles')).toHaveLength(tilesCalls);
     expect(service.calls).toHaveLength(reads);
