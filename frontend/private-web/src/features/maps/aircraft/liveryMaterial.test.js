@@ -12,6 +12,7 @@ import {
   liveryZone, nacelleSection, paintLiveryAtlas, sliceModel, tintLogo,
 } from './liveryMaterial';
 import { linearRgb } from './instancePlan';
+import { nacelles } from './silhouette';
 import { AIRCRAFT_TYPES } from './types';
 
 // The liveries of the 3D models (PR M5): zones read from a model's own coordinates against its type's dimensions, the
@@ -194,6 +195,59 @@ describe('liveryFrame and the zones of the vendored models', () => {
     expect(skin.length).toBeGreaterThan(5);
     const engineShare = skin.filter(point => liveryZone(point, frame) === 6).length / skin.length;
     expect(engineShare).toBeGreaterThan(0.9);
+  }, 30_000);
+
+  // QA of 2026-11-28: Wingo's lime and Avianca's white marks vanished on an accent of their colour, and a swept leading
+  // edge cut the mark's top corner.
+  it.each(['A21N', 'B738', 'B789', 'CRJ9', 'AT76'])('sets the %s fin\'s mark above the accent and inside the fin', async icao => {
+    const model = await loadModel(icao, 'l2');
+    const positions = positionsOf(model);
+    const index = indexOf(model);
+    const frame = liveryFrame(positions, AIRCRAFT_TYPES[icao], index);
+    const { fin } = frame;
+    const half = { y: fin.markWidthM / 2, z: (fin.markWidthM * LIVERY_ATLAS.rowHeight) / LIVERY_ATLAS.markWidth / 2 };
+    expect(fin.markWidthM).toBeGreaterThan(0.25 * fin.rootChordM);
+    expect(fin.markZM - half.z).toBeGreaterThanOrEqual(fin.rootZM + LIVERY_BANDS.accentV * (fin.topZM - fin.rootZM) - 1e-6);
+    expect(fin.markZM + half.z).toBeLessThan(fin.topZM);
+    for (const z of [fin.markZM - half.z, fin.markZM + half.z]) {
+      const ys = sliceModel(positions, index, 2, z)
+        .filter(([x, y]) => Math.abs(x) < 0.5 * frame.halfWidthM && y < fin.aftYM + 3 * fin.rootChordM).map(([, y]) => y);
+      expect(Math.min(...ys), `${icao} aft edge at ${z.toFixed(2)} m`).toBeLessThan(fin.markYM - half.y);
+      expect(Math.max(...ys), `${icao} leading edge at ${z.toFixed(2)} m`).toBeGreaterThan(fin.markYM + half.y);
+      for (const y of [fin.markYM - half.y, fin.markYM + half.y]) expect(liveryZone([0.1, y, z], frame)).toBe(4);
+    }
+  }, 60_000);
+
+  // QA of 2026-11-28: the A330's intakes stand ~3 m ahead of silhouette.js's nacelle and took the wing's grey.
+  it('paints the A330\'s nacelle from its intake back, where the model has it', async () => {
+    const model = await loadModel('A332', 'l2');
+    const positions = positionsOf(model);
+    const spec = AIRCRAFT_TYPES.A332;
+    const frame = liveryFrame(positions, spec, indexOf(model));
+    const [engine] = frame.engines;
+    const [nacelle] = nacelles(spec);
+    expect(engine.y1M).toBeGreaterThan(nacelle.frontY + 1);
+    expect(engine.y1M - engine.y0M).toBeLessThan(2 * (nacelle.frontY - nacelle.backY));
+    const intake = pointsOf(positions, ([x, y, z]) => Math.abs(Math.abs(x) - engine.x) < 0.3 && y > engine.y1M - 2.5
+      && y < engine.y1M && z < engine.z - 0.4 * engine.reachM);
+    expect(intake.length).toBeGreaterThan(3);
+    expect(intake.filter(point => liveryZone(point, frame) === 6)).toHaveLength(intake.length);
+  }, 30_000);
+
+  // QA of 2026-11-28: the reach of the CRJ900's rear pods painted the fuselage beside them in the engine colour.
+  it('paints the CRJ900\'s rear pods in the engine colour and not the fuselage beside them', async () => {
+    const model = await loadModel('CRJ9', 'l2');
+    const positions = positionsOf(model);
+    const frame = liveryFrame(positions, AIRCRAFT_TYPES.CRJ9, indexOf(model));
+    const [engine] = frame.engines;
+    const near = ([, y, z]) => y > engine.y0M && y < engine.y1M && Math.abs(z - engine.z) < engine.reachM;
+    const side = pointsOf(positions, point => near(point) && Math.abs(point[0]) < frame.halfWidthM);
+    expect(side.length).toBeGreaterThan(5);
+    expect(side.filter(point => liveryZone(point, frame) === 6)).toEqual([]);
+    const outer = pointsOf(positions, point => near(point) && Math.abs(point[0]) > engine.x + 0.3
+      && Math.hypot(Math.abs(point[0]) - engine.x, point[2] - engine.z) < engine.reachM);
+    expect(outer.length).toBeGreaterThan(5);
+    expect(outer.filter(point => liveryZone(point, frame) === 6).length / outer.length).toBeGreaterThan(0.9);
   }, 30_000);
 
   it('finds two nacelles a side on a four-engined type only, and the rear pods of a T-tail jet', () => {

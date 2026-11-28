@@ -142,6 +142,25 @@ export function nacelleSection(slice, nacelle, { zLow = -Infinity, zHigh = Infin
   return best === null ? null : { x: best.x, z: best.z, width: best.width };
 }
 
+/**
+ * How far a nacelle found by its cross-section (nacelleSection: `{ x, z, width }`) runs along the model (QA of
+ * 2026-11-28: the A330's nacelles reach well ahead of where silhouette.js draws them, and their intake took the wing's
+ * grey): `[aft, fore]` where the horizontal plane through its axis cuts its walls, within half its length of
+ * silhouette.js's, or null when the cut does not look like that nacelle.
+ */
+export function nacelleLength(slice, nacelle, { x, z, width }) {
+  const span = nacelle.frontY - nacelle.backY;
+  const ys = slice(2, z)
+    .filter(([px, py]) => Math.abs(Math.abs(px) - x) < 0.6 * width && py > nacelle.backY - 0.5 * span
+      && py < nacelle.frontY + 0.5 * span)
+    .map(point => point[1]);
+  if (ys.length < 4) return null;
+  const aft = Math.min(...ys);
+  const fore = Math.max(...ys);
+  if (fore - aft < 0.6 * span || fore < nacelle.backY || aft > nacelle.frontY) return null;
+  return [aft, fore];
+}
+
 const median = values => {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted.length === 0 ? Number.NaN : sorted[Math.floor(sorted.length / 2)];
@@ -209,8 +228,7 @@ export function liveryFrame(positions, spec, index = null) {
     return ys.length >= 2 ? [Math.min(...ys), Math.max(...ys)] : null;
   };
   const root = chordAt(finRoot + 0.05 * finHeight) ?? [yMin, yMin + 0.16 * L];
-  const markZ = finRoot + 0.55 * finHeight;
-  const middle = chordAt(markZ) ?? [root[0] + 0.3 * (root[1] - root[0]), root[1]];
+  const mark = finMark(chordAt, root, finRoot, finHeight);
   // The name above the windows, ahead of the wing.
   const nameHeight = Math.min(NAME_PLACE.heightC * radius, NAME_PLACE.maxHeightM);
   const nameLength = Math.min((LIVERY_ATLAS.nameWidth / LIVERY_ATLAS.rowHeight) * nameHeight, NAME_PLACE.maxLength * length);
@@ -223,8 +241,9 @@ export function liveryFrame(positions, spec, index = null) {
     const z = section?.z ?? (nacelle.mount === 'rear' ? axisZ + 0.5 * radius : axisZ - radius);
     const width = section?.width ?? dia;
     const margin = LIVERY_BANDS.engineMargin * dia;
-    engines.push({ x, z, reachM: LIVERY_BANDS.engineReach * width, y0M: nacelle.backY - margin,
-      y1M: nacelle.frontY + margin });
+    const along = section === null ? null : nacelleLength(slice, nacelle, { x, z, width });
+    engines.push({ x, z, reachM: LIVERY_BANDS.engineReach * width, y0M: (along?.[0] ?? nacelle.backY) - margin,
+      y1M: (along?.[1] ?? nacelle.frontY) + margin });
   }
   return Object.freeze({
     halfLengthM: length / 2,
@@ -233,13 +252,44 @@ export function liveryFrame(positions, spec, index = null) {
     radiusM: radius,
     halfWidthM: halfWidth,
     fin: Object.freeze({
-      rootZM: finRoot, topZM: finTop, aftYM: root[0], rootChordM: root[1] - root[0], markYM: (middle[0] + middle[1]) / 2,
-      markZM: markZ, markWidthM: 0.9 * (middle[1] - middle[0]),
+      rootZM: finRoot, topZM: finTop, aftYM: root[0], rootChordM: root[1] - root[0], markYM: mark.y, markZM: mark.z,
+      markWidthM: mark.width,
     }),
     name: Object.freeze({ y0M: yMin + NAME_PLACE.start * length, lengthM: nameLength,
       z0M: axisZ + NAME_PLACE.bottomC * radius, heightM: nameHeight }),
     engines: Object.freeze(engines.slice(0, MAX_ENGINES).map(Object.freeze)),
   });
+}
+
+/** The fin's mark: this share of the fin's chord wide, clear of the accent and of the tip by these shares of its height. */
+export const MARK_PLACE = Object.freeze({ chord: 0.9, accentGap: 0.03, tipGap: 0.06 });
+
+/**
+ * Where the fin's mark stands (QA of 2026-11-28): above the accent, so a mark in the colour of the accent (Wingo's lime,
+ * Avianca's white) does not vanish on it, and inside the fin's chord at both its bottom and its top, so the swept
+ * leading edge does not cut it. `chordAt(z)` the fin's `[aft, fore]` at a height, or null. Answers `{ y, z, width }`.
+ */
+function finMark(chordAt, root, finRoot, finHeight) {
+  const ratio = LIVERY_ATLAS.rowHeight / LIVERY_ATLAS.markWidth;
+  const low = finRoot + (LIVERY_BANDS.accentV + MARK_PLACE.accentGap) * finHeight;
+  const high = finRoot + (1 - MARK_PLACE.tipGap) * finHeight;
+  const fallback = height => {
+    const v = (height - finRoot) / finHeight;
+    return [root[0] + 0.3 * v * (root[1] - root[0]), root[1] - 0.45 * v * (root[1] - root[0])];
+  };
+  const chord = height => chordAt(height) ?? fallback(height);
+  let fit = chord((low + high) / 2);
+  let width = MARK_PLACE.chord * (fit[1] - fit[0]);
+  for (let step = 0; step < 3; step += 1) {
+    const half = Math.min((width * ratio) / 2, (high - low) / 2);
+    const bottom = chord(low);
+    const top = chord(low + 2 * half);
+    fit = [Math.max(bottom[0], top[0]), Math.min(bottom[1], top[1])];
+    width = Math.max(0, MARK_PLACE.chord * (fit[1] - fit[0]));
+    // The mark keeps the atlas's proportions: no taller than the room between the accent and the tip.
+    width = Math.min(width, (high - low) / ratio);
+  }
+  return { y: (fit[0] + fit[1]) / 2, z: low + (width * ratio) / 2, width };
 }
 
 /** How many nacelles (per side) the material reads: four-engined types have two. */
@@ -251,7 +301,8 @@ export const MAX_ENGINES = 2;
  */
 export function liveryZone([x, y, z], frame) {
   const ax = Math.abs(x);
-  for (const engine of frame.engines) {
+  // Only outside the fuselage's width: the rear pods' reach must not paint the fuselage beside them (QA 2026-11-28).
+  for (const engine of ax > LIVERY_BANDS.outside * frame.halfWidthM ? frame.engines : []) {
     const dx = ax - engine.x;
     const dz = z - engine.z;
     if (y >= engine.y0M && y <= engine.y1M && dx * dx + dz * dz < engine.reachM * engine.reachM) return 6;
@@ -329,7 +380,8 @@ float liveryZone(vec3 p) {
     vec4 e = liveryEngines[i];
     vec2 ey = liveryEngineY[i];
     vec2 d = vec2(ax - e.x, p.z - e.y);
-    if (e.z > 0.0 && p.y >= ey.x && p.y <= ey.y && dot(d, d) < e.z * e.z) return 6.0;
+    if (e.z > 0.0 && ax > ${f(LIVERY_BANDS.outside)} * liveryBody.w && p.y >= ey.x && p.y <= ey.y
+      && dot(d, d) < e.z * e.z) return 6.0;
   }
   if (ax > ${f(LIVERY_BANDS.outside)} * liveryBody.w) return 7.0;
   float t = (p.y - liveryBody.x) / liveryBody.y - 1.0;
