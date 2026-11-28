@@ -563,8 +563,9 @@ describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
     loadStyle(map);
     await flush();
     const dock = screen.getByTestId('map-preset-switcher').parentElement;
-    const names = within(dock).getAllByRole('button').map(button => button.textContent.trim());
-    expect(names.indexOf('Seguir en 3D')).toBe(names.indexOf('Seguir') + 1);
+    const rail = within(dock).getAllByRole('button');
+    expect(rail.indexOf(within(dock).getByRole('button', { name: 'Seguir en 3D' })))
+      .toBe(rail.indexOf(within(dock).getByRole('button', { name: 'Seguir' })) + 1);
     expect(within(dock).getByRole('button', { name: 'Seguir en 3D' })).toBeEnabled();
   });
 

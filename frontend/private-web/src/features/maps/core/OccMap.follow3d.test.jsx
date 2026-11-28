@@ -211,7 +211,7 @@ describe('OccMap double click on an aircraft (M4)', () => {
   const under = (map, features) => fake.state.setRenderedFeatures(map,
     (_geometry, options) => features.filter(feature => options.layers.includes(feature.layer.id)));
 
-  it('chooses the aircraft and starts «Seguir en 3D» without MapLibre's zoom; on empty map it zooms as always', () => {
+  it('chooses the aircraft and starts «Seguir en 3D» without the zoom of MapLibre; on empty map it zooms as always', () => {
     const onSelect = vi.fn();
     const { map, rerender, seconds } = renderFollow3d({ selection: null, onSelect });
     // On empty map the double click is MapLibre's: one level in, nothing chosen, nothing followed.

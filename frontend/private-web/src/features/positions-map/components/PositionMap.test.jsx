@@ -402,8 +402,9 @@ describe('PositionMap with the live traffic (PR M6)', () => {
     });
     loadStyle(map);
     const dock = screen.getByTestId('map-preset-switcher').parentElement;
-    const buttons = within(dock).getAllByRole('button').map(button => button.textContent.trim());
-    expect(buttons.indexOf('Seguir en 3D')).toBe(buttons.indexOf('Seguir') + 1);
+    const rail = within(dock).getAllByRole('button');
+    expect(rail.indexOf(within(dock).getByRole('button', { name: 'Seguir en 3D' })))
+      .toBe(rail.indexOf(within(dock).getByRole('button', { name: 'Seguir' })) + 1);
     expect(within(dock).getByRole('button', { name: 'Seguir en 3D' })).toHaveAttribute('aria-pressed', 'false');
   });
 
