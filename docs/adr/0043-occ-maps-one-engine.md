@@ -1181,6 +1181,6 @@ En las dos escenas con lectura en vivo, los tres aviones vigilados se redibujan 
 - La capa y el controlador, con el `three` real y un renderizador inyectado: el regulador no baja con escrituras a 4, 7, 10 y 15 Hz con la cámara quieta, y sí baja con cuadros lentos continuos.
 - `OccMap` en jsdom: como mucho 5 escrituras en 2 s con la capa animada, con el avión moviéndose en cada cuadro entre ellas; «Seguir en 3D» con 3 escrituras por segundo como mucho y la cámara en cada cuadro; el rótulo del demo junto a su silueta entre escrituras; Ctrl+Alt+F.
 - Las pruebas que fijan el ritmo de CN-18 sin la capa animada no cambian; las de `fadeDuration` pasan a 150.
-- Las tres pruebas del laboratorio (`map-lab.aircraft3d`, `map-lab.fluency` y `map-lab.follow3d`) corren con SwiftShader como comprobación de humo.
+- Las tres pruebas del laboratorio (`map-lab.aircraft3d`, `map-lab.fluency` y `map-lab.follow3d`) pasan con SwiftShader como comprobación de humo (16 pruebas, el 28 de noviembre de 2026; allí dibujan de 5,6 a 7,1 cuadros por segundo, cifras que no miden el presupuesto).
 
 Nada de esto acredita un despliegue ni una revisión visual en el VPS.
