@@ -2817,6 +2817,45 @@ Las capturas se revisaron en local con la API simulada de la suite visual, a
 1366×768, 1440×900 y 1920×1080, en oscuro y en claro; nada de esto acredita un
 despliegue ni una revisión visual en el VPS.
 
+## Mapa de posiciones fijado en PUJ y aeropuerto en 3D (M9)
+
+Posterior al commit verificado de esta nota: describe el código de la rama
+`feat/occ-posiciones-puj-3d`, que esa verificación no cubre. Las decisiones están
+en la nota del 27 de noviembre de 2026 de
+[ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md). No cambian la API, lo que
+lee la pantalla ni su cadencia. Planificación, la consola y Monitoreo no cambian.
+
+- **Cámara fijada sobre el aeródromo**
+  ([mapa de posiciones](../../frontend/private-web/src/features/positions-map/components/PositionMap.jsx),
+  [cámaras](../../frontend/private-web/src/features/maps/core/cameraPresets.js)).
+  - La pantalla abre en 3D sobre «Aeródromo», centrada en el punto de referencia
+    de MDPC.
+  - La cámara no sale del plano del aeropuerto más 3 km, con zoom mínimo 13.
+  - El riel ofrece solo Aeródromo y Rampa: Región y Aproximación no están en
+    esta pantalla, sus teclas no hacen nada y la URL no las abre.
+  - D cambia 2D/3D y L abre «Capas». «Centrar PUJ» vuelve a la vista centrada.
+- **Estructuras estimadas**
+  ([datos](../../frontend/private-web/src/features/maps/airport/data/mdpc.structures.json),
+  [geometría](../../frontend/private-web/src/features/maps/airport/structures.js)).
+  - Las terminales se elevan a una altura estimada y rotulada («15 m est.»).
+  - Los fingers de B20 a B26 son procedurales, sobre la Terminal B.
+  - Las calles de rodaje tienen pavimento con un ancho estimado de 23 m.
+  - Todo está marcado como estimación, sin fuente del AIP ni de cartas, y la
+    leyenda lo dice con «est.».
+  - No hay huellas de FBO ni de hangar en el plano, así que no se dibujan.
+- **Aviones estacionados con librea**
+  ([plan 3D](../../frontend/private-web/src/features/maps/aircraft/instancePlan.js)).
+  - En esta pantalla, los aviones 3D llevan los colores aproximados de su
+    aerolínea por zonas (fuselaje, panza, cola, motores y alas).
+  - El otro tráfico en tierra a menos de 4 km del aeródromo se dibuja en 3D
+    mientras el regulador mantiene la calidad completa.
+
+Las capturas se revisaron en local con la API simulada de la suite visual
+(`positions-map.airport3d.spec.mjs`, Chrome con SwiftShader), a 1366×768 y
+1920×1080, en oscuro y en claro. Falta el zoom 22 al seguir un avión, el aviso
+de marcas de las libreas y una medición con GPU real. Nada de esto acredita un
+despliegue ni una revisión visual en el VPS.
+
 ## Estado de integración
 
 | Capa | Actual | Límite |
