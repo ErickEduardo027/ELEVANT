@@ -17,6 +17,10 @@ import { resolveAircraftType } from './types';
 /** Only aircraft this close to the ARP are drawn in 3D (design G1): the airfield and its approaches. */
 export const AIRCRAFT_3D_RADIUS_NM = 6;
 
+// Note of 2026-11-27 (M9, approved plan): on Mapa de posiciones only, contracts 2.4 give way twice. Its 3D aircraft wear
+// their airlines' liveries (brand colours of aircraft/liveries.js, the chosen one still in the accent), and other
+// traffic on the ground near the field is drawn in 3D too, while the governor is at full quality. Every other map keeps
+// the monochrome aircraft and its ground traffic in 2D: both are options of planInstances, off by default.
 /**
  * With the liveries on (M9, Mapa de posiciones), other traffic on the ground this close to the ARP is drawn in 3D too:
  * the airfield, its aprons and its taxiways, not an aircraft parked at a field nearby.
