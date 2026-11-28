@@ -37,6 +37,9 @@ function deferToIdle(callback) {
 
 export { MAP_PERMISSIONS };
 
+// The reads the motion store has taken before the first one (PR M2).
+const NO_READS = Object.freeze({ picture: null, flights: null });
+
 /**
  * CN-31: the pace of the air picture while the server reads the airfield every few seconds between its reads of the
  * whole circle. Within the CN-19 budget: the console's minute goes from 16 to 22 requests at rest.
@@ -108,6 +111,7 @@ function situationStatus({ reading, access, granted, picture, flights, situation
   const flightsDone = ANSWERED.has(flights.status) || FAILED.has(flights.status);
   if (!pictureDone || !flightsDone) return 'loading';
   if (FAILED.has(flights.status)) return 'error';
+  if (situation === null) return 'loading';
   const drawn = situation.aircraft.some(item => !item.hiddenInStand);
   return drawn || situation.flights.length > 0 ? 'success' : 'empty';
 }
@@ -233,16 +237,23 @@ export function useMapSituation({ stationId = null, enabled = true, service = oc
   // The situation at the newest server instant known: the last answer's, or the next instant something changes without
   // a new read (a live aircraft turning stale, a demo flight appearing, landing, parking or leaving). Every read goes
   // into the motion store first, whose estimates the situation draws; ingesting the same reads again does nothing.
+  // PR M2 (2026-11-28): the store takes a read in an effect after the render that brought it, never inside a render (a
+  // demo flight's trajectories take some 15 ms to build), and the situation is drawn from the reads it has taken.
   const [tickAt, setTickAt] = useState(0);
   const picture = pictureRead.data;
   const flights = flightsRead.data;
-  const nowMs = Math.max(picture?.serverTime ?? 0, flights?.serverTime ?? 0, tickAt);
-  const estimated = useMemo(() => {
+  const [ingested, setIngested] = useState(NO_READS);
+  useEffect(() => {
+    if (ingested.picture === picture && ingested.flights === flights) return;
     motion.ingest({ picture, flights });
-    return { estimates: motion.estimatesAt(nowMs), changeAt: motion.nextChangeAt(nowMs) };
-  }, [flights, motion, nowMs, picture]);
-  const situation = useMemo(() => buildSituation({ picture, flights, nowMs, estimates: estimated.estimates,
-    estimatesChangeAt: estimated.changeAt }), [estimated, flights, nowMs, picture]);
+    setIngested({ picture, flights });
+  }, [flights, ingested, motion, picture]);
+  const caughtUp = ingested.picture === picture && ingested.flights === flights;
+  const nowMs = Math.max(ingested.picture?.serverTime ?? 0, ingested.flights?.serverTime ?? 0, tickAt);
+  const estimated = useMemo(() => ({ estimates: motion.estimatesAt(nowMs), changeAt: motion.nextChangeAt(nowMs),
+    reads: ingested }), [ingested, motion, nowMs]);
+  const situation = useMemo(() => buildSituation({ picture: estimated.reads.picture, flights: estimated.reads.flights,
+    nowMs, estimates: estimated.estimates, estimatesChangeAt: estimated.changeAt }), [estimated, nowMs]);
   useEffect(() => {
     const due = situation.changesAt;
     if (due === null) return undefined;
@@ -310,8 +321,10 @@ export function useMapSituation({ stationId = null, enabled = true, service = oc
     telemetry.set(situation);
   }, [situation, telemetry]);
 
+  // Until the store has taken the first reads, the situation has nothing of them yet: still loading.
+  const firstReads = !caughtUp && ingested === NO_READS;
   const status = situationStatus({ reading, access, granted: granted !== null, picture: pictureRead,
-    flights: flightsRead, situation });
+    flights: flightsRead, situation: firstReads ? null : situation });
 
   // The air traffic in the shell's source list, with the tags of what the map draws.
   const channel = useOptionalOccShellChannel();

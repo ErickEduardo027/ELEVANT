@@ -297,6 +297,25 @@ export function trafficDiff(previousById, nextFeatures = []) {
 /** Whether a diff changes anything. */
 export const isEmptyDiff = diff => diff.add.length === 0 && diff.update.length === 0 && diff.remove.length === 0;
 
+/**
+ * Whether two pieces of GeoJSON-like data (plain objects, arrays and primitives) say the same, as their JSON would: keys
+ * whose value is undefined do not count. It stops at the first difference, so a source whose features did not change
+ * (the trails, the route) is known without a JSON string of all of them on every read (PR M2).
+ */
+export function sameData(a, b) {
+  if (a === b) return true;
+  if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) {
+    if (a.length !== b.length) return false;
+    for (let index = 0; index < a.length; index += 1) if (!sameData(a[index], b[index])) return false;
+    return true;
+  }
+  const keys = Object.keys(a).filter(key => a[key] !== undefined);
+  if (keys.length !== Object.keys(b).filter(key => b[key] !== undefined).length) return false;
+  return keys.every(key => Object.hasOwn(b, key) && sameData(a[key], b[key]));
+}
+
 // The layers-menu groups shown by default: the trails of all the traffic only once it is turned on (design E7).
 const HIDDEN_BY_DEFAULT = new Set(['traffic.trails', 'traffic.labels']);
 const visibleGroup = (groups, group) => (HIDDEN_BY_DEFAULT.has(group) ? groups?.[group] === true : groups?.[group] !== false);

@@ -332,9 +332,11 @@ export function createMapEngine({
       renderWorldCopies: false,
       canvasContextAttributes: { antialias: true },
       validateStyle: process.env.NODE_ENV !== 'production',
-      // No symbol fade (CN-18): the traffic is written several times a second, and every fade after a placement kept
-      // MapLibre repainting without a pause.
-      fadeDuration: 0,
+      // PR M2 (2026-11-28): a 150 ms symbol fade. With 0 (CN-18), every frame MapLibre draws starts and finishes a full
+      // placement of every label; with a fade the placement runs again at most once per fade, in slices of a few
+      // milliseconds, so the frames the animated traffic draws continuously cost no placement. The traffic itself is
+      // never written every frame (CN-18), and while the 3D layer animates it, twice a second (core/OccMap.jsx).
+      fadeDuration: 150,
       interactive,
       ...cameraOptions(camera),
       ...mapOptions,

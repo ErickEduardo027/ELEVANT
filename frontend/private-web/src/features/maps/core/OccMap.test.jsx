@@ -869,9 +869,9 @@ describe('OccMap', () => {
     expect(map.options.fadeDuration).toBe(300);
     expect(map.options.locale).toMatchObject({ 'Map.Title': 'Mapa del OCC', 'NavigationControl.ZoomIn': 'Acercar' });
     cleanup();
-    // Without them the engine keeps its own: no symbol fade (CN-18).
+    // Without them the engine keeps its own: a 150 ms symbol fade (PR M2; it was none from CN-18).
     render(<OccMap stands={STANDS} />);
-    expect(fake.state.liveMaps().at(-1).options.fadeDuration).toBe(0);
+    expect(fake.state.liveMaps().at(-1).options.fadeDuration).toBe(150);
   });
 
   it('answers no pixel without a map', async () => {

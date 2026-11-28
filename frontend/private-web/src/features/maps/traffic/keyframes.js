@@ -185,6 +185,17 @@ export function interpolate(store, tMs, { include = null } = {}) {
   return out;
 }
 
+/**
+ * The aircraft `id` of `store` where it is drawn at `tMs`, as `interpolate` answers it, or null when the store holds no
+ * pair for it («Seguir en 3D»: the followed aircraft each frame, without interpolating the rest).
+ */
+export function interpolateOne(store, id, tMs) {
+  const pair = store?.byId?.get(id);
+  if (pair === undefined) return null;
+  const { velocity: _velocity, ...state } = evaluate(pair, tMs);
+  return Object.freeze({ id, ...state, epoch: pair.epoch });
+}
+
 /** Whether a frame at `tMs` still moves anything: an instant inside a pair whose states differ. */
 export function keyframesMoving(store, tMs) {
   for (const pair of store?.byId?.values?.() ?? []) {

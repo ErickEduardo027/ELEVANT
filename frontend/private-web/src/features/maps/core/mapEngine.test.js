@@ -79,7 +79,8 @@ describe('map engine', () => {
       renderWorldCopies: false,
       canvasContextAttributes: { antialias: true },
       validateStyle: true,
-      fadeDuration: 0,
+      // PR M2: a 150 ms fade, so the frames drawn continuously do not each pay a full placement of the labels.
+      fadeDuration: 150,
       interactive: true,
       center: [-68.3634, 18.5674],
       zoom: 15,

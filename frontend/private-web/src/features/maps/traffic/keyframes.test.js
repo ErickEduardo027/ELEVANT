@@ -4,7 +4,9 @@ import { TRACK_CONFIG } from '../kinematics/handoff';
 import {
   createAirPicture, createDemoBlock, createDemoFlights, TRAFFIC_FLIGHT_KEY as KEY, TRAFFIC_NOON,
 } from '../testing/trafficFixtures';
-import { HOLD_AFTER_MS, createKeyframes, interpolate, keyframesMoving, writeKeyframes } from './keyframes';
+import {
+  HOLD_AFTER_MS, createKeyframes, interpolate, interpolateOne, keyframesMoving, writeKeyframes,
+} from './keyframes';
 import { createMotionStore } from './motionStore';
 import { buildSituation, toFlightsModel, toPictureModel } from './situationModel';
 
@@ -78,6 +80,15 @@ describe('traffic keyframes (PR M2)', () => {
       const [b] = other.store.sample([other.item], write);
       expect(a).toEqual(b);
     }
+  });
+
+  it('interpolateOne answers one aircraft as interpolate does, and null for one without a pair', () => {
+    const keyframes = createKeyframes();
+    writeKeyframes(keyframes, { t0Ms: 0, t1Ms: 500, from: [state(...PUJ, { trackDeg: 90 })],
+      ahead: [state(PUJ[0] + 0.001, PUJ[1], { trackDeg: 90 })] });
+    for (const t of [0, 125, 250, 500, 800]) expect(interpolateOne(keyframes, 'a', t)).toEqual(interpolate(keyframes, t).get('a'));
+    expect(interpolateOne(keyframes, 'gone', 250)).toBeNull();
+    expect(interpolateOne(null, 'a', 250)).toBeNull();
   });
 
   it('turns the short way across north: 359° to 1° passes 0°', () => {
