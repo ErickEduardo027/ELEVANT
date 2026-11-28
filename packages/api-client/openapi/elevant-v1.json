@@ -31784,6 +31784,314 @@
         ]
       }
     },
+    "/api/v1/occ/weather/region": {
+      "get": {
+        "tags": [
+          "OccWeather"
+        ],
+        "summary": "The METAR (raw text, basics, ceiling and the service's flight category) and the TAF (raw text and validity) of every\nairport of the region around the station's airport, nearest first, which the API reads for the whole region at\nonce and keeps a few minutes. Only Punta Cana has a region: the 32 airports the maps draw in Región. The state of\nthe region (`Live`, `Stale`, `Unavailable`, `Disabled`) with its reason, when to ask again and\nthe credit of the weather service come in the 200; a station outside the reader's scope, or whose airport has no\nregion, is not found.",
+        "operationId": "GetOccRegionWeather",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccRegionWeatherResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/weather/sigmets": {
+      "get": {
+        "tags": [
+          "OccWeather"
+        ],
+        "summary": "The international SIGMETs whose area touches the region around the station's airport and are still valid, from\naviationweather.gov, which the API reads once for the region and keeps ten minutes. Their state, reason, when to ask\nagain and the credit come in the 200; a station outside the reader's scope, or whose airport has no region, is not\nfound.",
+        "operationId": "GetOccRegionSigmets",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccSigmetsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/weather/wind": {
+      "get": {
+        "tags": [
+          "OccWeather"
+        ],
+        "summary": "The wind 10 m above the ground on a coarse grid over the region around the station's airport, from Open-Meteo,\nwhich the API reads for the whole grid at once and keeps an hour. Its state, reason, when to ask again and the\ncredit come in the 200; a station outside the reader's scope, or whose airport has no region, is not found.",
+        "operationId": "GetOccRegionWind",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccWindGridResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/weather/radar": {
+      "get": {
+        "tags": [
+          "OccWeather"
+        ],
+        "summary": "The latest radar scans over the region around the station's airport (San Juan's NEXRAD through the Iowa\nEnvironmental Mesonet), as tile addresses the screens load themselves; the API keeps the index five minutes. Its\nstate, reason, when to ask again and the credit come in the 200; a station outside the reader's scope, or whose\nairport has no region, is not found.",
+        "operationId": "GetOccRegionRadar",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccRadarFramesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/chat/conversations": {
       "get": {
         "tags": [
@@ -54439,6 +54747,78 @@
         },
         "additionalProperties": false
       },
+      "OccRadarFrameResponse": {
+        "required": [
+          "tileUrlTemplate",
+          "time"
+        ],
+        "type": "object",
+        "properties": {
+          "time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "tileUrlTemplate": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccRadarFramesResponse": {
+        "required": [
+          "credit",
+          "frames",
+          "maxZoom",
+          "refreshAfterSeconds",
+          "serverTime",
+          "stationId",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "refreshAfterSeconds": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "credit": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccRegionWeatherCreditResponse"
+              }
+            ]
+          },
+          "provider": {
+            "type": "string",
+            "nullable": true
+          },
+          "maxZoom": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "frames": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccRadarFrameResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "OccReadyContractResponse": {
         "required": [
           "airlineId",
@@ -54550,6 +54930,202 @@
             "items": {
               "$ref": "#/components/schemas/OccReadyContractResponse"
             }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccRegionMetarResponse": {
+        "required": [
+          "observedAt",
+          "raw"
+        ],
+        "type": "object",
+        "properties": {
+          "raw": {
+            "type": "string"
+          },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "windDirectionDegrees": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "windSpeedKnots": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "windGustKnots": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "visibilityStatuteMiles": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "ceilingFeet": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "flightCategory": {
+            "type": "string",
+            "nullable": true
+          },
+          "temperatureCelsius": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "dewpointCelsius": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "altimeterHectopascals": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccRegionTafResponse": {
+        "required": [
+          "issuedAt",
+          "raw",
+          "validFrom",
+          "validTo"
+        ],
+        "type": "object",
+        "properties": {
+          "raw": {
+            "type": "string"
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "validFrom": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "validTo": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccRegionWeatherCreditResponse": {
+        "required": [
+          "name",
+          "url"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccRegionWeatherResponse": {
+        "required": [
+          "credit",
+          "refreshAfterSeconds",
+          "serverTime",
+          "stationId",
+          "stations",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "refreshAfterSeconds": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "credit": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccRegionWeatherCreditResponse"
+              }
+            ]
+          },
+          "stations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccRegionWeatherStationResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccRegionWeatherStationResponse": {
+        "required": [
+          "icao",
+          "latitude",
+          "longitude"
+        ],
+        "type": "object",
+        "properties": {
+          "icao": {
+            "type": "string"
+          },
+          "iata": {
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "latitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "longitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "metar": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccRegionMetarResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "taf": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccRegionTafResponse"
+              }
+            ],
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -55544,6 +56120,111 @@
         },
         "additionalProperties": false
       },
+      "OccSigmetResponse": {
+        "required": [
+          "hazard",
+          "id",
+          "polygon",
+          "raw",
+          "validFrom",
+          "validTo"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "firId": {
+            "type": "string",
+            "nullable": true
+          },
+          "hazard": {
+            "type": "string"
+          },
+          "qualifier": {
+            "type": "string",
+            "nullable": true
+          },
+          "validFrom": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "validTo": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "baseFeet": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "topFeet": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "raw": {
+            "type": "string"
+          },
+          "polygon": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "double"
+              }
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccSigmetsResponse": {
+        "required": [
+          "credit",
+          "refreshAfterSeconds",
+          "serverTime",
+          "sigmets",
+          "stationId",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "refreshAfterSeconds": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "credit": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccRegionWeatherCreditResponse"
+              }
+            ]
+          },
+          "sigmets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccSigmetResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "OccStandConstraintResponse": {
         "required": [
           "affectedStandCode",
@@ -55933,6 +56614,131 @@
           },
           "homeUrl": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccWindGridAreaResponse": {
+        "required": [
+          "columns",
+          "latMax",
+          "latMin",
+          "lonMax",
+          "lonMin",
+          "points",
+          "rows"
+        ],
+        "type": "object",
+        "properties": {
+          "lonMin": {
+            "type": "number",
+            "format": "double"
+          },
+          "lonMax": {
+            "type": "number",
+            "format": "double"
+          },
+          "latMin": {
+            "type": "number",
+            "format": "double"
+          },
+          "latMax": {
+            "type": "number",
+            "format": "double"
+          },
+          "columns": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "rows": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccWindPointResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccWindGridResponse": {
+        "required": [
+          "credit",
+          "grid",
+          "refreshAfterSeconds",
+          "serverTime",
+          "stationId",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "refreshAfterSeconds": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "credit": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccRegionWeatherCreditResponse"
+              }
+            ]
+          },
+          "validAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "grid": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccWindGridAreaResponse"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccWindPointResponse": {
+        "required": [
+          "directionDegrees",
+          "latitude",
+          "longitude",
+          "speedKnots"
+        ],
+        "type": "object",
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "longitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "speedKnots": {
+            "type": "number",
+            "format": "double"
+          },
+          "directionDegrees": {
+            "type": "integer",
+            "format": "int32"
           }
         },
         "additionalProperties": false
