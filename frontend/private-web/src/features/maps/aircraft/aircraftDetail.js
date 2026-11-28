@@ -763,6 +763,15 @@ export function nextBlinkInMs(timeMs, { beacon = false, strobes = false } = {}) 
 // ------------------------------------------------------------------------------------------------------------- model
 
 /**
+ * The key of a detailed aircraft's plain material in a cache of shared materials (buildDetailedAircraft: `materials`):
+ * its kind and its options, the same for the same part of the same livery, whatever the aircraft.
+ */
+export function detailMaterialKey(options, basic = false) {
+  const entries = Object.entries(options ?? {}).sort(([a], [b]) => (a < b ? -1 : Number(a > b)));
+  return `detail:${basic ? 'basic' : 'standard'}:${JSON.stringify(entries)}`;
+}
+
+/**
  * The detailed model of one aircraft: `{ object, gear, lights, propellers, pivot, triangles, drawCalls, textured,
  * setState, refreshLogo, dispose }`.
  * - `spec` from aircraft/types.js, `code` its designator (its wingtip, wheels and propeller blades), `livery` from
@@ -775,10 +784,13 @@ export function nextBlinkInMs(timeMs, { beacon = false, strobes = false } = {}) 
  *   lights at `timeMs` and turns the propellers.
  * - PR M5: `airframe` `{ meshes, dispose, refreshLogo }` (aircraft/modelAircraft.js) is the type's 3D model in its
  *   livery, drawn instead of the procedural airframe; the gear (the model has none) and the lights stay the app's own.
+ * - HOTFIX-3D: `materials(key, make)` answers the shared material of a key (detailMaterialKey), made by `make()` the
+ *   first time: the materials without a texture of their own come from it and dispose() leaves them to their cache.
  * A family without a tube (helicopters, light singles, the dart) is its instanced model in the livery's colour.
  */
 export function buildDetailedAircraft(three, spec, {
   code = null, livery, registration = null, createCanvas = null, logo = null, night = false, airframe = null,
+  materials = null,
 } = {}) {
   if (!(spec?.lengthM > 0) || !(spec?.spanM > 0) || !(spec?.fuselageDiaM > 0)) {
     throw new RangeError('A detailed aircraft needs the dimensions of its type');
@@ -786,11 +798,16 @@ export function buildDetailedAircraft(three, spec, {
   const object = new three.Group();
   object.name = 'detailed-aircraft';
   const geometries = [];
-  const materials = [];
+  const owned = [];
   const textures = [];
+  // A material without a texture of its own comes from the caller's cache when it gives one (`materials`), so a
+  // detailed aircraft built again (another aircraft followed, its L2 model loaded) makes no new material and three keeps
+  // its programs; a textured one (the painted fuselage and fin) is its own, freed with the model.
   const material = (options, { basic = false } = {}) => {
-    const made = basic ? new three.MeshBasicMaterial(options) : new three.MeshStandardMaterial(options);
-    materials.push(made);
+    const make = () => (basic ? new three.MeshBasicMaterial(options) : new three.MeshStandardMaterial(options));
+    if (typeof materials === 'function' && options.map == null) return materials(detailMaterialKey(options, basic), make);
+    const made = make();
+    owned.push(made);
     return made;
   };
   const add = (parent, geometry, mat, name) => {
@@ -882,7 +899,7 @@ export function buildDetailedAircraft(three, spec, {
         const blades = PROPELLER_BLADES[code] ?? 4;
         const discRadius = 0.145 * spec.spanM / 2;
         const propeller = new three.Mesh(propellerGeometry(three, { blades, radius: discRadius }),
-          materials.find(item => item.name === 'propeller') ?? Object.assign(material({ color: '#22262b', roughness: 0.6,
+          owned.find(item => item.name === 'propeller') ?? Object.assign(material({ color: '#22262b', roughness: 0.6,
             metalness: 0.3 }), { name: 'propeller' }));
         geometries.push(propeller.geometry);
         propeller.position.set(made.hub.x, made.hub.y, made.hub.z);
@@ -1023,7 +1040,7 @@ export function buildDetailedAircraft(three, spec, {
         object.removeFromParent();
         airframe?.dispose?.();
         for (const geometry of new Set(geometries)) geometry.dispose();
-        for (const item of materials) item.dispose();
+        for (const item of owned) item.dispose();
         for (const texture of textures) texture.dispose();
       },
     };

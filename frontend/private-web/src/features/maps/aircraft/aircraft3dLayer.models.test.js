@@ -179,7 +179,8 @@ describe('the 3D layer\'s levels of detail (PR M5)', () => {
     frame();
     expect(meshesOf(layer).find(mesh => mesh.name === 'A320')).toBe(l1);
 
-    // Inside the hysteresis band it keeps L1; below it, back to the procedural model, the L1 mesh and material freed.
+    // Inside the hysteresis band it keeps L1; below it, back to the procedural model, the L1 mesh freed. HOTFIX-3D: its
+    // livery material is the type's, kept (and its program with it) for the next time it draws at L1.
     map.zoom = zoomFor(((1 + L1_HYSTERESIS) / 2) * L1_MIN_PX);
     frame();
     expect(meshesOf(layer).find(mesh => mesh.name === 'A320')).toBe(l1);
@@ -187,7 +188,7 @@ describe('the 3D layer\'s levels of detail (PR M5)', () => {
     const freed = disposals(l1.geometry, l1.material, shadow.geometry);
     map.zoom = zoomFor(0.8 * L1_MIN_PX);
     frame();
-    expect(freed.size).toBe(3);
+    expect(freed).toEqual(new Set([l1.geometry, shadow.geometry]));
     const [back] = meshesOf(layer);
     expect(meshesOf(layer)).toHaveLength(1);
     expect(back.material.isMeshLambertMaterial).toBe(true);
@@ -196,6 +197,13 @@ describe('the 3D layer\'s levels of detail (PR M5)', () => {
     map.zoom = zoomFor(((1 + L1_HYSTERESIS) / 2) * L1_MIN_PX);
     frame();
     expect(meshesOf(layer)).toEqual([back]);
+    // Up close again: a new mesh, the same livery material.
+    map.zoom = zoomFor(80);
+    frame();
+    expect(meshesOf(layer).find(mesh => mesh.name === 'A320').material).toBe(l1.material);
+    // The layer removed, its shared materials go with it.
+    layer.onRemove();
+    expect(freed.has(l1.material)).toBe(true);
   });
 
   it('draws the shadows of a type at L1 from its procedural model, in a mesh of their own', () => {
