@@ -120,7 +120,7 @@ const NO_IDS = Object.freeze(new Set());
 const idsOf = value => (value instanceof Set ? value : NO_IDS);
 
 /** One feature of the traffic source; see trafficFeatures for its properties. */
-function featureOf(item, { selectedId, focusId, labelsOn, language, t, parked, models }) {
+function featureOf(item, { selectedId, focusId, labelsOn, language, t, parked, models, animatedSet }) {
   const aviam = item.kind === 'aviam';
   const departure = aviam && item.direction === 'Departure';
   const ground = item.onGround === true;
@@ -171,6 +171,8 @@ function featureOf(item, { selectedId, focusId, labelsOn, language, t, parked, m
       parkedOnStand: aviam && parked.has(item.id),
       // Drawn as a 3D model (PR M7): its 2D silhouette gives way; its tag, rings and plates stay.
       model3d: models.has(item.id),
+      // Animated by the same layer (PR M2): it draws its dashed ring and «Demo» plate too, so they move with it.
+      animated: animatedSet.has(item.id),
     },
     geometry: { type: 'Point', coordinates: [item.lon, item.lat] },
   };
@@ -196,21 +198,25 @@ function featureOf(item, { selectedId, focusId, labelsOn, language, t, parked, m
  *   scale or as its glyph; the layers then leave its symbol and tag to the stand, except as the chosen aircraft, and
  *   keep its estimated ring and «Demo» plate;
  * - `model3d` (PR M7): an aircraft of `modelIds` (a Set of ids), drawn by the 3D layer (core/aircraft3d.js); the layers
- *   then leave out its silhouette, the chosen one's too, and keep its tag, its rings and its plate.
+ *   then leave out its silhouette, the chosen one's too, and keep its tag, its rings and its plate;
+ * - `animated` (PR M2): an aircraft of `animatedIds` (a Set of ids), which the animated layer draws every frame (its
+ *   silhouette or its model, also in `modelIds`); the layers then leave it its dashed ring and «Demo» plate too.
  * Options: `selection` (`{ kind, id }`), `focusId` (the aircraft under the pointer), `labelsOn`, `language`,
- * `parkedIds`, `modelIds`.
+ * `parkedIds`, `modelIds`, `animatedIds`.
  */
 export function trafficFeatures(aircraft = [], {
   selection = null, focusId = null, labelsOn = false, language = 'es', parkedIds = null, modelIds = null,
+  animatedIds = null,
 } = {}) {
   const list = (Array.isArray(aircraft) ? aircraft : []).filter(isDrawn);
   const selectedId = selectedAircraftId(list, selection);
   const t = createTranslator(mapMessages, language);
   const parked = idsOf(parkedIds);
   const models = idsOf(modelIds);
+  const animatedSet = idsOf(animatedIds);
   return {
     type: 'FeatureCollection',
-    features: list.map(item => featureOf(item, { selectedId, focusId, labelsOn, language, t, parked, models })),
+    features: list.map(item => featureOf(item, { selectedId, focusId, labelsOn, language, t, parked, models, animatedSet })),
   };
 }
 

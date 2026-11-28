@@ -126,6 +126,32 @@ export function altitudeColourExpression(theme = 'dark') {
     ['interpolate', ['linear'], ['get', 'altFt'], ...scale.flat()]];
 }
 
+const channelsOf = hex => [1, 3, 5].map(start => Number.parseInt(hex.slice(start, start + 2), 16));
+const hexOf = channels => `#${channels.map(value => Math.round(value).toString(16).padStart(2, '0')).join('')}`;
+
+/**
+ * The altitude colour of an aircraft as `#rrggbb`, what altitudeColourExpression paints for the same `ground` and
+ * `altFt` (traffic/trafficFeatures.js: altitudeFeet): the ground's grey, the neutral grey below 0 (unknown), else the
+ * scale interpolated linearly in RGB between its stops and held past its ends. The animated traffic layer (PR M2)
+ * tints its silhouettes with it.
+ */
+export function altitudeColour(theme = 'dark', { ground = false, altFt = -1 } = {}) {
+  const { stops: scale, ground: groundColour, unknown } = mapColorsFor(theme).altitude;
+  if (ground === true) return groundColour;
+  if (!(typeof altFt === 'number' && Number.isFinite(altFt)) || altFt < 0) return unknown;
+  if (altFt <= scale[0][0]) return scale[0][1];
+  for (let index = 1; index < scale.length; index += 1) {
+    const [feet, colour] = scale[index];
+    if (altFt > feet) continue;
+    const [lowFeet, lowColour] = scale[index - 1];
+    const share = (altFt - lowFeet) / (feet - lowFeet);
+    const low = channelsOf(lowColour);
+    const high = channelsOf(colour);
+    return hexOf(low.map((value, channel) => value + (high[channel] - value) * share));
+  }
+  return scale.at(-1)[1];
+}
+
 /** The CSS gradient of the altitude scale, left (ground) to right (40 000 ft), with each stop at its share. */
 export function altitudeGradient(theme = 'dark', positions = null) {
   const { stops: scale } = mapColorsFor(theme).altitude;

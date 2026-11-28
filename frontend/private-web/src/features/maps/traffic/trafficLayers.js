@@ -2,7 +2,9 @@ import { occColor } from '../../occ-ui/occPalette';
 import { TAGS } from '../../occ-ui/statusVocabulary';
 import { altitudeColourExpression, mapColorsFor } from '../style/mapColors';
 import { FONT_STACKS } from '../style/occStyle';
-import { DEMO_PLATE_IMAGE, ESTIMATED_RING_IMAGE, ROUTE_MARK_IMAGE, TAG_GLYPHS } from '../style/trafficImages';
+import {
+  DEMO_PLATE_CENTRE_PX, DEMO_PLATE_IMAGE, ESTIMATED_RING_IMAGE, ROUTE_MARK_IMAGE, TAG_GLYPHS,
+} from '../style/trafficImages';
 import { ROUTE_SOURCE, TRAFFIC_SOURCE, TRAILS_SOURCE } from './trafficFeatures';
 
 // The traffic of the OCC maps as one overlay for buildOccStyle (design E1, contracts 2.4), fed by OccMap: the aircraft
@@ -47,8 +49,13 @@ const OTHER = ['==', get('kind'), 'other'];
 // whatever is estimated or simulated carries its mark on screen).
 const NOT_PARKED = isNot('parkedOnStand');
 // An aircraft the 3D layer draws (PR M7, core/aircraft3d.js) leaves out its 2D silhouette, the chosen one's too; its tag,
-// its rings and its «Demo» plate stay, so it keeps its words and marks over the model.
+// its rings and its «Demo» plate stay, so it keeps its words and marks over the model. PR M2: the same layer animates
+// every aircraft (`animated`, its silhouette or its model each frame), and then draws its dashed ring and «Demo» plate
+// too, so they move with it; its tags and the chosen one's ring stay here. Other traffic shares one symbol for its icon
+// and its tag, so there only the icon goes: its tag stays while it is chosen or under the pointer.
 const NOT_3D = isNot('model3d');
+const NOT_ANIMATED = isNot('animated');
+const OTHER_ICON = ['case', is('model3d'), '', get('icon')];
 // A stale position is dimmed to half; an aircraft fading out (PR M6: a cancelled demo, traffic that lost its signal)
 // carries its own opacity, which multiplies it, so the icon, its ring, its tag and its plate fade together.
 const DIMMED = ['*', ['case', is('stale'), 0.5, 1], ['coalesce', get('opacity'), 1]];
@@ -128,7 +135,7 @@ const tagLayout = (size, extra = {}) => ({
 // Other traffic: its icon, and its tag while it is chosen or under the pointer, placed after the rest of its layer so
 // it keeps off the icons around it and draws above them.
 const otherLayout = () => ({
-  ...iconLayout(),
+  ...iconLayout({ 'icon-image': OTHER_ICON }),
   ...tagLayout(11, {
     'text-field': ['case', is('forceTag'), OTHER_TAG, NO_TAG],
     'text-allow-overlap': true,
@@ -144,7 +151,7 @@ const tagPaint = colour => ({
 });
 
 // The «Demo» plate under the aircraft: its centre below the silhouette, further for larger ones (`radius`).
-const PLATE_CENTRE_PX = Object.freeze([[0, 22], [12, 25], [14, 27], [16, 29], [18, 31]]);
+const PLATE_CENTRE_PX = DEMO_PLATE_CENTRE_PX;
 const PLATE_TEXT_SIZE = 11;
 const plateOffset = toUnit => ['step', get('radius'), ['literal', [0, toUnit(PLATE_CENTRE_PX[0][1])]],
   ...PLATE_CENTRE_PX.slice(1).flatMap(([radius, centre]) => [radius, ['literal', [0, toUnit(centre)]]])];
@@ -282,7 +289,7 @@ export function trafficOverlay({ theme = 'dark' } = {}) {
         id: 'occ-traffic-other-ground',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: ['all', OTHER, is('ground'), NOT_3D],
+        filter: ['all', OTHER, is('ground')],
         layout: otherLayout(),
         paint: { ...altitudePaint(theme, 1), ...tagPaint(occColor('muted')) },
         metadata: { 'occ:group': TRAFFIC_GROUPS.other, 'occ:pick': 'aircraft', 'occ:pickId': 'hex',
@@ -293,7 +300,7 @@ export function trafficOverlay({ theme = 'dark' } = {}) {
         id: 'occ-traffic-other',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: ['all', OTHER, isNot('ground'), NOT_3D],
+        filter: ['all', OTHER, isNot('ground')],
         layout: otherLayout(),
         paint: { ...altitudePaint(theme, 1), ...tagPaint(occColor('muted')) },
         metadata: { 'occ:group': TRAFFIC_GROUPS.other, 'occ:pick': 'aircraft', 'occ:pickId': 'hex' },
@@ -325,7 +332,7 @@ export function trafficOverlay({ theme = 'dark' } = {}) {
         id: 'occ-traffic-estimated-ring',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: is('estimated'),
+        filter: ['all', is('estimated'), NOT_ANIMATED],
         layout: {
           'icon-image': ESTIMATED_RING_IMAGE,
           'icon-size': get('scale'),
@@ -362,7 +369,7 @@ export function trafficOverlay({ theme = 'dark' } = {}) {
         id: 'occ-traffic-demo-plate',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: is('demo'),
+        filter: ['all', is('demo'), NOT_ANIMATED],
         layout: {
           'icon-image': DEMO_PLATE_IMAGE,
           'icon-anchor': 'center',

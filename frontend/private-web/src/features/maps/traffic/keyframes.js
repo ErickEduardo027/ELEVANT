@@ -169,11 +169,16 @@ export function writeKeyframes(store, { t0Ms, t1Ms, from, ahead = null, config =
 
 /**
  * Every aircraft of `store` where it is drawn at `tMs`: a Map id → `{ id, lon, lat, altM, gsMs, trackDeg, onGround,
- * opacity, epoch }`. The motion store is not asked: this is what each frame between two writes draws.
+ * opacity, epoch }`. The motion store is not asked: this is what each frame between two writes draws. `include([lon,
+ * lat])`, when given, keeps only the pairs whose either end it accepts (the animated layer: the area in sight and its
+ * margin), so a frame works out no aircraft nobody sees.
  */
-export function interpolate(store, tMs) {
+export function interpolate(store, tMs, { include = null } = {}) {
   const out = new Map();
   for (const [id, pair] of store?.byId ?? []) {
+    if (typeof include === 'function' && !include([pair.k0.lon, pair.k0.lat]) && !include([pair.k1.lon, pair.k1.lat])) {
+      continue;
+    }
     const { velocity: _velocity, ...state } = evaluate(pair, tMs);
     out.set(id, Object.freeze({ id, ...state, epoch: pair.epoch }));
   }

@@ -3,6 +3,7 @@ import { CIVIL_TWILIGHT_DEG, dayPhase } from '../traffic/solar';
 import { buildDetailedAircraft, nextBlinkInMs } from './aircraftDetail';
 import { buildAircraftGeometry, triangleCount } from './aircraftGeometry';
 import { SHADOW, linearRgb, mercatorFrame, poseMatrix } from './instancePlan';
+import { createTrafficSprites } from './trafficSprites';
 
 // The 3D aircraft as one MapLibre custom layer (design G1, G3 and G4): three draws the instance plan
 // (aircraft/instancePlan.js) on the map's own canvas and WebGL context, in the depth buffer the terminals' extrusions
@@ -26,6 +27,10 @@ import { SHADOW, linearRgb, mercatorFrame, poseMatrix } from './instancePlan';
 // - Failure: when three cannot build its renderer on the map's context (in onAdd or on a restored context), the layer
 //   warns once, draws and picks nothing and reports itself failed (stats().failed and onFailedChange), so that the map
 //   shows its 2D aircraft again (design G4: if 3D fails, 2D); the next onAdd or restored context tries again.
+// - Animated traffic (PR M2): an answer with `sprites` (instancePlan.js: planSprites) draws them too, the flat
+//   silhouettes, dashed rings and «Demo» plates of aircraft/trafficSprites.js, sized in pixels at the zoom of every frame
+//   and picked on the CPU. The map then writes a new answer each frame an aircraft moves. Sprites that cannot be built
+//   (no 2D canvas for their atlas) say so once (onSpritesFailedChange) and the map keeps its GeoJSON icons.
 //
 // `three` is a parameter (aircraft/aircraft3dChunk.js: THREE_PARTS), so this module imports neither three nor
 // maplibre-gl. It names three's renderer, so only the 3D chunk may import it (scripts/verify-map-chunks.mjs).
@@ -201,6 +206,8 @@ function sameSun(a, b) {
  * - `minModelPx` (PR M7): the size floor of the traffic's models in CSS pixels (MAX_MODEL_SCALE), 0 for none;
  * - `onFailedChange(failed)` hears every change of `stats().failed`, after the lifecycle call that made it, so that a
  *   map that hides its 2D aircraft under the 3D ones shows them again while the layer has failed;
+ * - PR M2: `getInstances()` may also answer `sprites` (planSprites), drawn over the models; `theme` colours the atlas's
+ *   «Demo» plate and `onSpritesFailedChange(failed)` hears when the sprites cannot be built;
  * - `createRenderer({ canvas, context })`, `buildGeometry(three, spec)` and `now()` (milliseconds, monotonic) are
  *   for tests.
  *
@@ -217,7 +224,8 @@ export function createAircraft3dLayer({
   three, originLngLat, getInstances, palette = OCC_PALETTE, getSun = () => null, onFailedChange, minModelPx = 0,
   createRenderer = ({ canvas, context }) => new three.WebGLRenderer({ canvas, context, antialias: true }),
   buildGeometry = buildAircraftGeometry, now = () => performance.now(), buildDetail = buildDetailedAircraft,
-  createCanvas = documentCanvas, loadImage = loadSameOriginImage,
+  createCanvas = documentCanvas, loadImage = loadSameOriginImage, theme = 'dark', onSpritesFailedChange,
+  createSprites = createTrafficSprites,
 } = {}) {
   if (three == null) throw new TypeError('The 3D aircraft layer needs the parts of three');
   if (typeof getInstances !== 'function') throw new TypeError('The 3D aircraft layer needs getInstances()');
@@ -268,6 +276,9 @@ export function createAircraft3dLayer({
   let blinkTimer = null;
   let night = true;
   const logos = new Map();
+  // PR M2: the sprites of the animated traffic, built at their first answer; whether they could not be.
+  let sprites = null;
+  let spritesFailed = false;
 
   function buildScene() {
     scene = new three.Scene();
@@ -347,12 +358,32 @@ export function createAircraft3dLayer({
     lines.geometry.setDrawRange(0, vertices);
   }
 
+  // The sprites of an answer (PR M2), built the first time there are any.
+  function syncSprites(answer) {
+    const next = answer?.sprites ?? null;
+    if (sprites === null && (next === null || !(next.count > 0) || spritesFailed)) return;
+    if (sprites === null) {
+      try {
+        sprites = createSprites({ three, createCanvas, theme });
+        scene.add(sprites.object);
+      } catch (error) {
+        sprites = null;
+        spritesFailed = true;
+        console.warn('The animated traffic could not be drawn; the map keeps its 2D icons.', error);
+        onSpritesFailedChange?.(true);
+        return;
+      }
+    }
+    sprites.sync(next);
+  }
+
   // Copies the plan into the meshes when its revision changed; answers whether it did.
   function syncInstances(time, answer) {
     const nextRevision = answer?.revision;
     if (copied && Object.is(nextRevision, revision)) return false;
     copied = true;
     revision = nextRevision;
+    syncSprites(answer);
     const plan = answer?.plan instanceof Map ? answer.plan : EMPTY_PLAN;
     const segments = [];
     for (const [key, entry] of plan) {
@@ -417,11 +448,14 @@ export function createAircraft3dLayer({
     held.mesh.boundingBox = null;
   }
 
-  // The floor of the zoom on screen: every mesh again when it moved more than FLOOR_STEP.
+  // The floor of the zoom on screen: every mesh again when it moved more than FLOOR_STEP. The sprites (PR M2) take the
+  // metres of a pixel at every frame's zoom.
   function syncFloor() {
-    if (!(minModelPx > 0) || typeof map?.getZoom !== 'function') return;
+    if (typeof map?.getZoom !== 'function') return;
     const zoom = map.getZoom();
     if (!finite(zoom)) return;
+    sprites?.setMetresPerPx((METRES_PER_PIXEL_Z0 * originCos) / 2 ** zoom);
+    if (!(minModelPx > 0)) return;
     const next = minModelPx * (METRES_PER_PIXEL_Z0 * originCos) / 2 ** zoom;
     if (floorM > 0 && Math.abs(next - floorM) <= FLOOR_STEP * floorM) return;
     floorM = next;
@@ -660,6 +694,8 @@ export function createAircraft3dLayer({
       detailCamera = null;
       detailHemisphere = null;
       detailSun = null;
+      sprites?.dispose();
+      sprites = null;
       if (scene !== null) {
         lines.geometry.dispose();
         lineMaterial.dispose();
@@ -719,7 +755,13 @@ export function createAircraft3dLayer({
         const id = meshes.get(hit.object.userData.key)?.ids[hit.instanceId];
         if (id != null) return { kind: 'aircraft', id };
       }
-      return null;
+      // The sprites (PR M2), on the CPU: the silhouette whose centre is nearest the pointer, within its size.
+      const spriteId = sprites?.pick(x, y, (px, py, pz) => {
+        const clip = near.set(px, py, pz).applyMatrix4(camera.projectionMatrix);
+        if (![clip.x, clip.y].every(Number.isFinite)) return null;
+        return { x: ((clip.x + 1) / 2) * width, y: ((1 - clip.y) / 2) * height };
+      }) ?? null;
+      return spriteId === null ? null : { kind: 'aircraft', id: spriteId };
     },
 
     setQuality({ shadows, dropLines } = {}) {
@@ -741,6 +783,9 @@ export function createAircraft3dLayer({
         if (held.mesh.count > 0) drawCalls += 1;
       }
       if (lines !== null && lines.visible && lines.geometry.drawRange.count > 0) drawCalls += 1;
+      // The sprites of the animated traffic (PR M2): one draw call for all of them.
+      const spriteCount = sprites?.stats().count ?? 0;
+      if (spriteCount > 0) drawCalls += 1;
       // The detailed aircraft (CN-30): what of it is on screen.
       let detail = null;
       if (detailDrawn !== null) {
@@ -758,7 +803,9 @@ export function createAircraft3dLayer({
         detail = { key: detailDrawn.key, triangles: detailTriangles, drawCalls: detailCalls,
           textured: detailDrawn.model.textured };
       }
-      return { meshes: meshes.size, instances, triangles, drawCalls, lost, failed, ...(detail === null ? {} : { detail }) };
+      return { meshes: meshes.size, instances, triangles, drawCalls, lost, failed,
+        ...(sprites === null && !spritesFailed ? {} : { sprites: spriteCount, spritesFailed }),
+        ...(detail === null ? {} : { detail }) };
     },
   };
 }
