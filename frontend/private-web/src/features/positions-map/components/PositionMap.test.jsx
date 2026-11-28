@@ -382,6 +382,8 @@ describe('PositionMap with the live traffic (PR M6)', () => {
     const dock = screen.getByTestId('map-preset-switcher').parentElement;
     expect(within(dock).getByRole('button', { name: 'Seguir' })).toHaveAttribute('aria-keyshortcuts', 'S');
     expect(within(dock).getByRole('button', { name: 'Pausar movimiento' })).toBeInTheDocument();
+    // M4: «Seguir en 3D» only where the page opts in (Mapa de posiciones); Planificación keeps its rail.
+    expect(within(dock).queryByRole('button', { name: 'Seguir en 3D' })).not.toBeInTheDocument();
 
     // A click on an aircraft is the screen's traffic selection; a click on a stand still picks the stand.
     await click(map, [{ layer: { id: 'occ-traffic-aviam' }, properties: { id: `f:${TRAFFIC_FLIGHT_KEY.arrival}`, flightKey: TRAFFIC_FLIGHT_KEY.arrival } }]);
@@ -391,6 +393,18 @@ describe('PositionMap with the live traffic (PR M6)', () => {
     await click(map, [standFeature('A2')]);
     expect(onSelectPosition).toHaveBeenLastCalledWith('A2');
     expect(onSelectTraffic).toHaveBeenCalledTimes(2);
+  });
+
+  it('with follow3dButton the rail has «Seguir en 3D» under «Seguir», ready for the chosen aircraft (M4)', () => {
+    const { map } = renderPositions({
+      traffic: liveTraffic(), trafficSelection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.arrival }, onSelectTraffic: vi.fn(),
+      follow3dButton: true,
+    });
+    loadStyle(map);
+    const dock = screen.getByTestId('map-preset-switcher').parentElement;
+    const buttons = within(dock).getAllByRole('button').map(button => button.textContent.trim());
+    expect(buttons.indexOf('Seguir en 3D')).toBe(buttons.indexOf('Seguir') + 1);
+    expect(within(dock).getByRole('button', { name: 'Seguir en 3D' })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('without traffic it is the map it always was: no traffic overlay, no «Seguir», no pause', () => {

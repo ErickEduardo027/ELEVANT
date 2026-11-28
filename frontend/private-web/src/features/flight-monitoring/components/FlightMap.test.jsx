@@ -558,6 +558,16 @@ describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
     }
   });
 
+  it('with follow3dButton (Monitoreo de vuelos) the rail has «Seguir en 3D» right under «Seguir» (M4)', async () => {
+    const { map } = renderLive({ selectedFlightId: arrivalRow.legId, follow3dButton: true });
+    loadStyle(map);
+    await flush();
+    const dock = screen.getByTestId('map-preset-switcher').parentElement;
+    const names = within(dock).getAllByRole('button').map(button => button.textContent.trim());
+    expect(names.indexOf('Seguir en 3D')).toBe(names.indexOf('Seguir') + 1);
+    expect(within(dock).getByRole('button', { name: 'Seguir en 3D' })).toBeEnabled();
+  });
+
   it('shows the data block of the selected flight', async () => {
     const onSelectFlight = vi.fn();
     const { map, rerender } = renderLive({ selectedFlightId: arrivalRow.legId, onSelectFlight });
@@ -584,6 +594,9 @@ describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
     expect(within(block).getByRole('button', { name: 'Seguir' })).toHaveAttribute('aria-pressed', 'false');
     expect(within(screen.getByTestId('map-preset-switcher').parentElement).getByRole('button', { name: 'Seguir' }))
       .toHaveAttribute('aria-keyshortcuts', 'S');
+    // M4: without the page's opt-in the rail has no «Seguir en 3D»; the block keeps its own.
+    expect(within(screen.getByTestId('map-preset-switcher').parentElement)
+      .queryByRole('button', { name: 'Seguir en 3D' })).not.toBeInTheDocument();
     // The age counts up on its own between two reads of the picture.
     await flush(2_000);
     expect(sourceLine()).toHaveTextContent('En vivo · hace 6 s');
