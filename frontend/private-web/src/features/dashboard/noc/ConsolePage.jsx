@@ -19,6 +19,8 @@ import MapLegend from '../../maps/ui/MapLegend';
 import MapMotionControl from '../../maps/ui/MapMotionControl';
 import MapPresetSwitcher from '../../maps/ui/MapPresetSwitcher';
 import MapSourceStatus from '../../maps/ui/MapSourceStatus';
+import { sameInsets } from '../../maps/ui/stageInsets';
+import { useStageInsets } from '../../maps/ui/useStageInsets';
 import { routesOverlay } from '../../maps/style/routeLayers';
 import { useOptionalTheme } from '../../shell/useTheme';
 import { useMediaQuery } from '../../../hooks/useMediaQuery';
@@ -34,10 +36,9 @@ import ConsoleAssignDrawer from './ConsoleAssignDrawer';
 import {
   REVEAL_MARGIN_PX, aimKeyOf, aimVerdict, freeAreaOf, inFreeArea, revealOf, selectionKeyOf, standGeometryOf,
 } from './consoleCamera';
-import { sameInsets } from './consoleInsets';
 import { consoleMessages } from './consoleMessages';
 import { buildFigures } from './consoleModel';
-import ConsoleOverlay, { CONSOLE_OVERLAY_LAYOUT } from './ConsoleOverlay';
+import ConsoleOverlay, { CONSOLE_OVERLAY_LAYOUT, CONSOLE_PANEL_EDGES } from './ConsoleOverlay';
 import { CONSOLE_ACTION } from './consoleStyles';
 import EngineStatusProbe from './EngineStatusProbe';
 import FiguresPanel from './FiguresPanel';
@@ -48,7 +49,6 @@ import PositionsPanel from './PositionsPanel';
 import ProvenanceLine from './ProvenanceLine';
 import { flightsByTurnaroundOf } from './standTimeline';
 import { useConsoleClock } from './useConsoleClock';
-import { useConsoleInsets } from './useConsoleInsets';
 import WeatherPill from './WeatherPill';
 
 // The OCC console, Panorama (contratos 2.5, owner decision 15; CN-32): the full-bleed map under the status bar, opening
@@ -159,7 +159,9 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
 
   const layout = engineStatus === 'unavailable' ? 'grid' : 'map';
   const focusMap = selection.focus === 'map';
-  const { insets, rootRef, measure, measured } = useConsoleInsets({ enabled: layout === 'map' && !focusMap });
+  const { insets, rootRef, measure, measured } = useStageInsets({
+    edges: CONSOLE_PANEL_EDGES, enabled: layout === 'map' && !focusMap,
+  });
   const { planning, positions, reviewQueue, readiness, notices } = data;
   const { selection: chosen, selectFlight, selectStand, selectAircraft, clear, setFocus, setFollow, setView } = selection;
 
@@ -245,7 +247,7 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
   // The camera and the panels (contratos 2.5; consoleCamera.js). The panels take room from the map, and when that room
   // changes the map's padding changes with it, which MapLibre applies as a jump that also stops a move under way: what
   // sat near the edge of a panel can end up under it. So the console moves the camera only once the panels are measured
-  // (useConsoleInsets: `measured`):
+  // (useStageInsets: `measured`):
   // - a move it asks for when something is chosen on the console or on the map (an aim) goes once the URL has that
   //   selection, so the inspector that opens with a first selection, beside a folded «Alertas», already counts. A
   //   strip, a turnaround or a pending item flies to its flight, else to its stand; a click on the map or a bar of the

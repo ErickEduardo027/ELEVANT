@@ -19,9 +19,10 @@ import { OccShellProvider } from './shell/OccShellProvider';
 // (src/styles/occ-legacy-bridge.css); quitarlo lo apaga entero.
 // OccShellProvider tiene el único observador de cambios de la pestaña y lee los
 // avisos una vez para todo el marco: AppShell no lee avisos ni pinta toasts aquí.
-// La consola (Panorama) es un mapa a pantalla completa: `main` la llena sin
-// margen ni desplazamiento (`mainVariant: 'fill'`); los demás módulos desplazan
-// su contenido como siempre.
+// Las tres pantallas de mapa (Panorama, Monitoreo de vuelos y Mapa de
+// posiciones) son mapas a pantalla completa con sus paneles flotando dentro
+// (M1, 2026-11-27): `main` las llena sin margen ni desplazamiento
+// (`mainVariant: 'fill'`); los demás módulos desplazan su contenido como siempre.
 const OCC_FRAME = {
   department: 'occ',
   rootAttributes: { 'data-occ-bridge': '' },
@@ -30,8 +31,14 @@ const OCC_FRAME = {
   rootClassName: 'bg-occ-canvas text-occ-text',
   mainVariant: 'scroll',
 };
-const OCC_CONSOLE_FRAME = { ...OCC_FRAME, mainVariant: 'fill' };
+const OCC_MAP_FRAME = { ...OCC_FRAME, mainVariant: 'fill' };
 export const OCC_CONSOLE_PATH = `${ADMIN_OCC_BASE_PATH}/dashboard`;
+/** Las rutas de las pantallas de mapa, exactas: una subruta desplaza su contenido. */
+export const OCC_MAP_PATHS = Object.freeze([
+  OCC_CONSOLE_PATH,
+  `${ADMIN_OCC_BASE_PATH}/flight-monitoring`,
+  `${ADMIN_OCC_BASE_PATH}/positions-map`,
+]);
 
 export default function AdminOccLayout({ user = CURRENT_USER_MOCK, onLogout, children }) {
   const { forceState, setForceState } = useAdminOccPreview();
@@ -51,7 +58,7 @@ export default function AdminOccLayout({ user = CURRENT_USER_MOCK, onLogout, chi
           onLogout={onLogout}
           notificationsPath={`${ADMIN_OCC_BASE_PATH}/notifications`}
           notificationsEnabled={false}
-          frameProps={pathname === OCC_CONSOLE_PATH ? OCC_CONSOLE_FRAME : OCC_FRAME}
+          frameProps={OCC_MAP_PATHS.includes(pathname) ? OCC_MAP_FRAME : OCC_FRAME}
         >{empty ? <NoModulesNotice /> : permitted ? children : null}</AppShell>
       </OccShellProvider>
       {process.env.NODE_ENV === 'development' && (

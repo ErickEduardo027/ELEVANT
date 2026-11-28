@@ -1,5 +1,7 @@
 'use client';
 
+import { STAGE_SIDE_EDGE } from '../../maps/ui/stageInsets';
+
 // Where the console's panels go (contratos 2.5, owner decision 15; CN-32 «Monitoreo OCC más profesional»). Over the map
 // (`float`) the panels are docked flush against its edges, on the opaque panel slab with a 1 px joint where they meet
 // the map, like the panes of an operations console:
@@ -10,11 +12,23 @@
 //   figures and the band, the place a flight panel of follow mode takes too; below 1536 px it docks in the left column
 //   under «Tablero» and «Alertas» fold away while it is open (as Mapa de posiciones folds its list), so the map keeps
 //   its width on a 1366 px laptop.
-// The map's control rail (maps/ui/MapDock.jsx, placed by occ-map.css) runs down the right edge of the area the panels
-// leave, inside the insets. A folded panel shrinks to its pill against its edge. In the fallback (`grid`), when the map
-// engine cannot draw: the same panels as a plain grid beside the map's list. The panels are children of OccMap but
-// never of MapLibre's container, so the band's arrows never move the map. The classes are pure, so a test can read what
-// jsdom does not lay out.
+// The map's control column (its zoom group and maps/ui/MapDock.jsx, placed by occ-map.css) stays at the true right edge
+// of the map (M1): the panels are to leave it its reserve (--occ-map-rail-reserve). A folded panel shrinks to its pill
+// against its edge. In the fallback (`grid`), when the map engine cannot draw: the same panels as a plain grid beside
+// the map's list. The panels are children of OccMap but never of MapLibre's container, so the band's arrows never move
+// the map. The classes are pure, so a test can read what jsdom does not lay out.
+
+/**
+ * The edge of the map each panel of the console takes room from (maps/ui/stageInsets.js, measured by useStageInsets):
+ * the panels of the columns take it from the side they sit at (STAGE_SIDE_EDGE, resolved by where their middle falls).
+ */
+export const CONSOLE_PANEL_EDGES = Object.freeze({
+  board: STAGE_SIDE_EDGE,
+  figures: 'top',
+  alerts: STAGE_SIDE_EDGE,
+  inspector: STAGE_SIDE_EDGE,
+  positions: 'bottom',
+});
 
 // The joint of a docked pane on the side that meets the map, and the rounded corner of a pill that sticks out of it.
 const LEFT_PANE = 'pointer-events-auto border-r border-occ-line';

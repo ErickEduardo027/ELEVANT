@@ -8,29 +8,39 @@ import { occUiMessages } from './occUiMessages';
 import { SIGNALS } from './statusVocabulary';
 
 /**
- * Where the stack sits (design D27): fixed to the top right of the screen, 8 px under the 48 px status bar, so it never
- * covers the clocks or the alert count, which live in the bar. `className` is literal so that Tailwind generates it:
- * `top-14` is 3.5 rem (56 px) and `right-4` 1 rem (16 px). Above the drawers and dialogs (`z-toast`).
+ * The room a full-screen OCC map keeps at the right edge of the screen for its control column, its zoom buttons over
+ * its rail (M1: the 12 px gap, the 5.5 rem rail and 12 px more; --occ-map-rail-reserve of styles/occ-map.css). No toast
+ * covers it, on any OCC screen: a stack sits left of it, so it is in the same place on every screen.
+ */
+export const OCC_MAP_COLUMN_RESERVE_PX = 112;
+
+/**
+ * Where the stack sits (design D27; M1): fixed under the 48 px status bar, 8 px below it, so it never covers the clocks
+ * or the alert count, which live in the bar; and left of the control column of a full-screen map
+ * (OCC_MAP_COLUMN_RESERVE_PX from the right edge), so it never covers its zoom buttons or its rail. `className` is
+ * literal so that Tailwind generates it: `top-14` is 3.5 rem (56 px) and `right-28` 7 rem (112 px); the stack keeps
+ * 1 rem clear at the left of a narrow screen. Above the drawers and dialogs (`z-toast`).
  */
 export const OCC_TOAST_PLACEMENT = Object.freeze({
   statusBarPx: 48,
   topPx: 56,
-  rightPx: 16,
-  className: 'fixed right-4 top-14 z-toast flex w-[min(24rem,calc(100vw_-_2rem))] flex-col gap-2',
+  rightPx: OCC_MAP_COLUMN_RESERVE_PX,
+  className: 'fixed right-28 top-14 z-toast flex w-[min(24rem,calc(100vw_-_8rem))] flex-col gap-2',
 });
 
 /**
  * The places a stack can take. `statusBar` (the default) is OCC_TOAST_PLACEMENT, where the frame's own stack sits.
- * `workArea` is for a screen's own toasts (Monitoreo de vuelos): fixed to the bottom right of the work area, 24 px from
- * the bottom and from the right, the margin of the frame's content, so they never pile onto the frame's stack under the
- * status bar. Literal classes, so that Tailwind generates them: `bottom-6` and `right-6` are 1.5 rem (24 px).
+ * `workArea` is for a screen's own toasts (Monitoreo de vuelos, Mapa de posiciones): fixed to the bottom of the work
+ * area, 24 px from the bottom, so they never pile onto the frame's stack under the status bar, and left of the map's
+ * control column like it (M1), so they never cover the foot of its rail. Literal classes, so that Tailwind generates
+ * them: `bottom-6` is 1.5 rem (24 px) and `right-28` 7 rem (112 px).
  */
 export const OCC_TOAST_PLACEMENTS = Object.freeze({
   statusBar: OCC_TOAST_PLACEMENT,
   workArea: Object.freeze({
     bottomPx: 24,
-    rightPx: 24,
-    className: 'fixed bottom-6 right-6 z-toast flex w-[min(24rem,calc(100vw_-_3rem))] flex-col gap-2',
+    rightPx: OCC_MAP_COLUMN_RESERVE_PX,
+    className: 'fixed bottom-6 right-28 z-toast flex w-[min(24rem,calc(100vw_-_8rem))] flex-col gap-2',
   }),
 });
 
@@ -71,7 +81,8 @@ function ToastWords({ toast, priority, language }) {
  * (`{ label, onClick }`, «Abrir» or «Ver») runs and then closes the toast, like «Cerrar notificación» (`onDismiss(id)`).
  * An urgent toast is an `alert`, the rest are `status`: a toast never takes focus. It decides nothing about when a
  * toast shows or goes (shell/occToastQueue.js does). `placement` is a key of OCC_TOAST_PLACEMENTS: `statusBar` (default)
- * under the status bar, or `workArea` at the bottom right of the work area; an unknown placement throws.
+ * under the status bar, or `workArea` at the bottom of the work area, both left of a map's control column; an unknown
+ * placement throws.
  */
 export default function OccToastStack({ toasts = [], onDismiss, placement = 'statusBar', className = '' }) {
   const { t, language } = useTranslation(occUiMessages);

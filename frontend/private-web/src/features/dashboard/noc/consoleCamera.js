@@ -6,11 +6,11 @@ import { isDrawn } from '../../maps/traffic/trafficFeatures';
 
 // What the console does with the camera around its panels (contratos 2.5). Pure: ConsolePage.jsx measures and moves.
 //
-// The panels take room from the map (consoleInsets.js), and when that room changes the map's padding changes with it,
-// which MapLibre applies as a jump that also stops a camera move under way: what sat near the edge of a panel can end
-// up under it. So the console makes its own moves for a selection only once the URL has that selection and the panels
-// are measured for it (an aim: `aimKeyOf`, `aimVerdict`), and when the room changes with something chosen it brings
-// what is chosen back into the area the panels leave in sight (`freeAreaOf`, `inFreeArea`, `revealOf`).
+// The panels take room from the map (maps/ui/stageInsets.js), and when that room changes the map's padding changes with
+// it, which MapLibre applies as a jump that also stops a camera move under way: what sat near the edge of a panel can
+// end up under it. So the console makes its own moves for a selection only once the URL has that selection and the
+// panels are measured for it (an aim: `aimKeyOf`, `aimVerdict`), and when the room changes with something chosen it
+// brings what is chosen back into the area the panels leave in sight (`freeAreaOf`, `inFreeArea`, `revealOf`).
 
 /**
  * How far inside the area in sight what is chosen has to be, in pixels: the selection ring of an aircraft (18 px and

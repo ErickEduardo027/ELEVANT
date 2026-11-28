@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import ConsoleOverlay, { CONSOLE_OVERLAY_LAYOUT } from './ConsoleOverlay';
+import ConsoleOverlay, { CONSOLE_OVERLAY_LAYOUT, CONSOLE_PANEL_EDGES } from './ConsoleOverlay';
 
 afterEach(cleanup);
 
@@ -54,5 +54,12 @@ describe('ConsoleOverlay (CN-32)', () => {
     render(<ConsoleOverlay layout="grid" wide {...panels} />);
     expect(parentOf('alerts')).toBe(parentOf('inspector'));
     expect(parentOf('board').className).toBe(CONSOLE_OVERLAY_LAYOUT.grid.lists);
+  });
+
+  it('names the edge of the map each of its panels takes room from (maps/ui/stageInsets.js)', () => {
+    // The panels of the columns take room from the side they sit at (CN-32); the figures and the band from theirs.
+    expect(CONSOLE_PANEL_EDGES).toEqual({ board: 'side', figures: 'top', alerts: 'side', inspector: 'side',
+      positions: 'bottom' });
+    expect(Object.isFrozen(CONSOLE_PANEL_EDGES)).toBe(true);
   });
 });

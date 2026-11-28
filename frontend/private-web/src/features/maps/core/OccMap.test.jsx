@@ -1601,6 +1601,8 @@ describe('OccMap', () => {
       'src/features/maps/ui/FlightDataBlock.jsx', 'src/features/maps/ui/MapLayersMenu.jsx',
       // PR M6: the pause control and the follow button.
       'src/features/maps/ui/MapMotionControl.jsx', 'src/features/maps/ui/MapFollowButton.jsx',
+      // CN-30, flat since M1: the panel of «Seguir en 3D».
+      'src/features/maps/ui/Follow3dPanel.jsx',
     ];
     const tokens = new Set(Object.keys(tailwindConfig.theme.extend.colors.occ));
     for (const file of files) {
@@ -1642,6 +1644,49 @@ describe('OccMap', () => {
     // The root of the component is the scope of the stylesheet.
     renderMap();
     expect(screen.getByTestId('occ-map')).toHaveClass('occ-map');
+  });
+
+  it('keeps the control column at the true right edge of the map and the right slot left of it (M1)', () => {
+    const css = readSource('src/styles/occ-map.css').replace(/\/\*[\s\S]*?\*\//g, '');
+    // The innermost rules in their order, the narrow map's included: each selector with its declarations.
+    const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, prelude, body]) => ({
+      selector: prelude.trim(),
+      declarations: Object.fromEntries(body.split(';').map(text => text.trim()).filter(Boolean).map(text => {
+        const colon = text.indexOf(':');
+        return [text.slice(0, colon).trim(), text.slice(colon + 1).trim().replace(/\s+/g, ' ')];
+      })),
+    }));
+    const all = selector => rules.filter(rule => rule.selector === selector).map(rule => rule.declarations);
+    const [root] = all('.occ-map');
+    // The column keeps a reserve at the right edge: its gap, the rail and the gap to a panel floating at its left. What
+    // the map shows ends at the column, or further in at such a panel, whose right inset holds the reserve.
+    expect(root['--occ-map-rail-reserve']).toBe('calc(var(--occ-map-rail) + 2 * var(--occ-map-gap))');
+    expect(root['--occ-map-clear-right'])
+      .toBe('max(var(--occ-map-inset-right, 0px), calc(var(--occ-map-rail) + var(--occ-map-gap)))');
+    // The zoom group and the rail never move with the insets: the column stays where it is whatever the panels report,
+    // and only the area in sight reads the right inset, through --occ-map-clear-right.
+    expect(all('.occ-map .maplibregl-ctrl-top-right')).toEqual([{ top: '0', right: '0' }]);
+    const [dock] = all('.occ-map .occ-map-dock');
+    expect(dock).toMatchObject({ top: 'calc(var(--occ-map-gap) + var(--occ-map-zoom-height) + 8px)',
+      right: 'var(--occ-map-gap)', bottom: 'var(--occ-map-gap)' });
+    expect(Object.values(dock).join(' ')).not.toMatch(/--occ-map-inset/);
+    expect(rules.filter(rule => Object.values(rule.declarations).some(value => value.includes('--occ-map-inset-right')))
+      .map(rule => rule.selector)).toEqual(['.occ-map']);
+    // The scale and the credits sit left of the column, or of a panel left of it.
+    expect(all('.occ-map .maplibregl-ctrl-bottom-right')[0].right).toBe('var(--occ-map-clear-right)');
+    // «Seguir en 3D» takes the right slot: left of the column, inside the top and bottom insets; over the screen's
+    // panels and under the rail, whose menus open over it. On a narrow map it is a sheet along the bottom, still left of
+    // the column.
+    const [follow, narrowFollow] = all('.occ-map .occ-map-follow-panel');
+    expect(follow).toMatchObject({ right: 'var(--occ-map-rail-reserve)',
+      top: 'calc(var(--occ-map-inset-top, 0px) + var(--occ-map-gap))',
+      bottom: 'calc(var(--occ-map-inset-bottom, 0px) + var(--occ-map-gap))' });
+    expect(Number(follow['z-index'])).toBeGreaterThan(10);
+    expect(Number(follow['z-index'])).toBeLessThan(Number(dock['z-index']));
+    expect(narrowFollow).toEqual({ top: 'auto', left: 'var(--occ-map-gap)', width: 'auto', 'max-height': '55%' });
+    // Folded, its header stays at the top of the slot, or at the bottom of a narrow map.
+    expect(all('.occ-map .occ-map-follow-panel[data-open="false"]')).toEqual([{ bottom: 'auto' },
+      { bottom: 'calc(var(--occ-map-inset-bottom, 0px) + var(--occ-map-gap))' }]);
   });
 });
 // The traffic of PR M5 at the lab's noon: the synthetic air picture and map flights, the demo arrival estimated on

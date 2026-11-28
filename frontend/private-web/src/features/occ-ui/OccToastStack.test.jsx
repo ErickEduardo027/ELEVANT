@@ -4,7 +4,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import tailwindConfig from '../../../tailwind.config.js';
 import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
-import OccToastStack, { OCC_TOAST_PLACEMENT, OCC_TOAST_PLACEMENTS, OccToastAnnouncer } from './OccToastStack';
+import { readSource } from '../../styles/occSourceScan';
+import OccToastStack, {
+  OCC_MAP_COLUMN_RESERVE_PX, OCC_TOAST_PLACEMENT, OCC_TOAST_PLACEMENTS, OccToastAnnouncer,
+} from './OccToastStack';
 
 const TOASTS = [
   { id: 'notice:a', priority: 'urgent', message: 'Incidencia reportada en rampa', code: 'OP-0412' },
@@ -20,6 +23,9 @@ const classesOf = element => element.className.split(/\s+/);
 // A Tailwind spacing class in px: one step of the default scale is 0.25 rem, 4 px.
 const spacingPx = (classes, prefix) => Number(new RegExp(`^${prefix}-(\\d+)$`).exec(classes.find(name => name
   .startsWith(`${prefix}-`)) ?? '')?.[1]) * 4;
+// What styles/occ-map.css declares for a full-screen map's control column, comments left out.
+const MAP_CSS = readSource('src/styles/occ-map.css').replace(/\/\*[\s\S]*?\*\//g, '');
+const declared = name => new RegExp(`(?:^|[\\s;{])${name}:\\s*([^;]+);`).exec(MAP_CSS)?.[1].trim() ?? null;
 
 afterEach(() => {
   cleanup();
@@ -94,7 +100,7 @@ describe('OccToastStack', () => {
     const root = container.querySelector('[data-occ-toasts]');
     const classes = classesOf(root);
     expect(classes).toEqual(expect.arrayContaining(OCC_TOAST_PLACEMENT.className.split(' ')));
-    // Fixed to the screen's top right: 56 px from the top, 8 px under the 48 px bar, and 16 px from the right.
+    // Fixed to the screen's top right: 56 px from the top, 8 px under the 48 px bar, and left of a map's control column.
     expect(classes).toContain('fixed');
     expect(spacingPx(classes, 'top')).toBe(OCC_TOAST_PLACEMENT.topPx);
     expect(spacingPx(classes, 'right')).toBe(OCC_TOAST_PLACEMENT.rightPx);
@@ -106,7 +112,26 @@ describe('OccToastStack', () => {
     for (const layer of ['nav', 'overlay', 'drawer', 'modal']) expect(Number(zIndex.toast)).toBeGreaterThan(Number(zIndex[layer]));
   });
 
-  it('placement workArea sits at the bottom right; the default stays under the status bar', () => {
+  it('never covers the zoom buttons or the rail of a full-screen map, whatever its place (M1)', () => {
+    // The column a full-screen map keeps at the true right edge of the screen (occ-map.css): 12 px from the edge, the
+    // 5.5 rem rail, then 12 px more.
+    expect(declared('--occ-map-gap')).toBe('12px');
+    expect(declared('--occ-map-rail')).toBe('5.5rem');
+    expect(declared('--occ-map-rail-reserve')).toBe('calc(var(--occ-map-rail) + 2 * var(--occ-map-gap))');
+    expect(OCC_MAP_COLUMN_RESERVE_PX).toBe(12 + 5.5 * 16 + 12);
+    for (const [name, place] of Object.entries(OCC_TOAST_PLACEMENTS)) {
+      const view = render(stack({ placement: name }));
+      const classes = classesOf(document.querySelector('[data-occ-toasts]'));
+      // Fixed to the screen, whose right edge is the map's: as far from it as the column reaches.
+      expect(place.rightPx, name).toBe(OCC_MAP_COLUMN_RESERVE_PX);
+      expect(spacingPx(classes, 'right'), name).toBe(OCC_MAP_COLUMN_RESERVE_PX);
+      // On a narrow screen it keeps 1 rem clear at the left: its width gives way, never its place.
+      expect(classes, name).toContain('w-[min(24rem,calc(100vw_-_8rem))]');
+      view.unmount();
+    }
+  });
+
+  it('placement workArea sits at the bottom, left of the map\'s column; the default stays under the status bar', () => {
     const view = render(stack());
     const statusBar = document.querySelector('[data-occ-toasts]');
     expect(statusBar).toHaveAttribute('data-placement', 'statusBar');
@@ -118,8 +143,8 @@ describe('OccToastStack', () => {
     const classes = classesOf(workArea);
     expect(workArea).toHaveAttribute('data-placement', 'workArea');
     expect(classes).toEqual(expect.arrayContaining(OCC_TOAST_PLACEMENTS.workArea.className.split(' ')));
-    // Fixed 24 px from the bottom and the right of the screen, the margin of the frame's content: away from the stack
-    // under the status bar, with nothing at the top.
+    // Fixed 24 px from the bottom of the screen and left of the map's control column: away from the stack under the
+    // status bar, with nothing at the top.
     expect(classes).toContain('fixed');
     expect(spacingPx(classes, 'bottom')).toBe(OCC_TOAST_PLACEMENTS.workArea.bottomPx);
     expect(spacingPx(classes, 'right')).toBe(OCC_TOAST_PLACEMENTS.workArea.rightPx);

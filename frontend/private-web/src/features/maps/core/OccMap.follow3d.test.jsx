@@ -147,6 +147,27 @@ describe('OccMap «Seguir en 3D» (CN-30)', () => {
     expect(haversineM(map.getCenter().toArray(), aircraftAt().geometry.coordinates)).toBeLessThan(0.5);
   });
 
+  it('takes the right slot occ-map.css gives it, left of the control column, flat, and folds to its header (M1)', () => {
+    const { seconds, root } = renderFollow3d();
+    act(() => { screen.getByRole('button', { name: 'start' }).click(); });
+    seconds(1);
+    const panel = screen.getByTestId('follow-3d-panel');
+    // Inside the map's root, the scope of occ-map.css, which places it (.occ-map-follow-panel): no place of its own, no
+    // shadow and no blur.
+    expect(root.contains(panel)).toBe(true);
+    expect(panel).toHaveClass('occ-map-follow-panel', 'bg-occ-panel-float', 'rounded-[var(--occ-radius-overlay)]');
+    expect(panel.className).not.toMatch(/(?:^|\s)(?:absolute|fixed|inset-\S+|top-\S+|right-\S+|bottom-\S+|left-\S+|z-\S+|w-\d+)(?=\s|$)/);
+    expect(panel.className).not.toMatch(/shadow|blur|backdrop/);
+    expect(panel).toHaveAttribute('data-open', 'true');
+    // Folded, only its header stays (occ-map.css lifts its foot by `data-open`); unfolded again, its body comes back.
+    act(() => { screen.getByRole('button', { name: 'Plegar el panel' }).click(); });
+    expect(panel).toHaveAttribute('data-open', 'false');
+    expect(screen.queryByRole('radio', { name: 'Persecución' })).not.toBeInTheDocument();
+    act(() => { screen.getByRole('button', { name: 'Desplegar el panel' }).click(); });
+    expect(panel).toHaveAttribute('data-open', 'true');
+    expect(screen.getByRole('radio', { name: 'Persecución' })).toBeInTheDocument();
+  });
+
   it('turns, tilts and zooms from the panel and by a drag without ending follow mode', () => {
     const { map, seconds } = renderFollow3d();
     act(() => { screen.getByRole('button', { name: 'start' }).click(); });

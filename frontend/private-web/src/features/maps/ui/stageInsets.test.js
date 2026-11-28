@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import {
-  CONSOLE_INSET_GAP_PX, CONSOLE_PANEL_EDGES, MIN_VISIBLE_MAP_PX, insetsFromPanels, sameInsets,
-} from './consoleInsets';
+import { readSource } from '../../../styles/occSourceScan';
+import { MIN_VISIBLE_MAP_PX, STAGE_INSET_GAP_PX, insetsFromPanels, sameInsets } from './stageInsets';
 
 // A map of 1400 × 800 px whose box starts 240 px from the left of the window and 48 px from its top (under the status
 // bar, right of the rail), as the console's map sits at 1920 × 1080 with the rail open. Rects as getBoundingClientRect
 // gives them: window coordinates.
 const ROOT = Object.freeze({ left: 240, top: 48, right: 1640, bottom: 848 });
 const rect = (left, top, width, height) => ({ left, top, right: left + width, bottom: top + height, width, height });
+
+// What occ-map.css declares for the map's control column, comments left out.
+const MAP_CSS = readSource('src/styles/occ-map.css').replace(/\/\*[\s\S]*?\*\//g, '');
+const declared = name => new RegExp(`(?:^|[\\s;{])${name}:\\s*([^;]+);`).exec(MAP_CSS)?.[1].trim() ?? null;
+const ROOT_FONT_PX = 16;
 
 describe('insetsFromPanels', () => {
   it('open side panels give their width, the bottom panel its height and the top panel its height', () => {
@@ -23,10 +27,10 @@ describe('insetsFromPanels', () => {
       { side: 'bottom', rect: rect(252, 676, 1376, 160), folded: false },
     ];
     expect(insetsFromPanels(ROOT, panels)).toEqual({
-      left: 12 + 448 + CONSOLE_INSET_GAP_PX,
-      right: 12 + 384 + CONSOLE_INSET_GAP_PX,
-      top: 12 + 80 + CONSOLE_INSET_GAP_PX,
-      bottom: 12 + 160 + CONSOLE_INSET_GAP_PX,
+      left: 12 + 448 + STAGE_INSET_GAP_PX,
+      right: 12 + 384 + STAGE_INSET_GAP_PX,
+      top: 12 + 80 + STAGE_INSET_GAP_PX,
+      bottom: 12 + 160 + STAGE_INSET_GAP_PX,
     });
   });
 
@@ -46,6 +50,8 @@ describe('insetsFromPanels', () => {
       { side: 'left', rect: rect(0, 60, 200, 300), folded: false },
       { side: 'middle', rect: rect(600, 300, 200, 200), folded: false },
       { side: 'right', rect: null, folded: false },
+      // A panel the screen's edges map names no edge for.
+      { side: undefined, rect: rect(252, 60, 448, 500), folded: false },
       null,
     ];
     expect(insetsFromPanels(ROOT, panels)).toEqual({ top: 0, right: 0, bottom: 0, left: 0 });
@@ -74,12 +80,6 @@ describe('insetsFromPanels', () => {
     expect(insets.top).toBe(insets.bottom);
   });
 
-  it('names an edge for every floating panel of the console', () => {
-    // The panels of the columns take room from the side they are docked at (CN-32).
-    expect(CONSOLE_PANEL_EDGES).toEqual({ board: 'side', figures: 'top', alerts: 'side', inspector: 'side',
-      positions: 'bottom' });
-  });
-
   it('a panel of a column takes room from the side its middle is on, and a pill from the nearer of top and bottom (CN-32)', () => {
     const map = { left: 0, top: 0, right: 1000, bottom: 600 };
     // The inspector docked under the board at the left (below 1536 px), then in its own column at the right.
@@ -92,6 +92,25 @@ describe('insetsFromPanels', () => {
       .toEqual({ top: 0, right: 0, bottom: 48, left: 0 });
     expect(insetsFromPanels(map, [{ side: 'side', folded: true, rect: { left: 0, top: 0, right: 150, bottom: 40 } }]))
       .toEqual({ top: 48, right: 0, bottom: 0, left: 0 });
+  });
+
+  it('a panel floating left of the control column takes its width, the column\'s reserve and the gap (M1)', () => {
+    // The control column stays at the true right edge of the map (occ-map.css): 12 px from it, the 5.5 rem rail, then
+    // 12 px more to a panel floating at its left, which sits that reserve away from the edge.
+    expect(declared('--occ-map-gap')).toBe('12px');
+    expect(declared('--occ-map-rail')).toBe('5.5rem');
+    expect(declared('--occ-map-rail-reserve')).toBe('calc(var(--occ-map-rail) + 2 * var(--occ-map-gap))');
+    const reserve = 5.5 * ROOT_FONT_PX + 2 * 12;
+    expect(reserve).toBe(112);
+    // An inspector 352 px wide in the right slot, 12 px in from the top and the bottom of the map: the camera centres
+    // in the area left of both the panel and the column.
+    const inspector = { side: 'side', rect: rect(ROOT.right - reserve - 352, ROOT.top + 12, 352, 776), folded: false };
+    expect(insetsFromPanels(ROOT, [inspector])).toEqual({
+      top: 0, right: 352 + reserve + STAGE_INSET_GAP_PX, bottom: 0, left: 0,
+    });
+    // Folded to its pill at the top of the slot, it takes height and no width: the map keeps its whole width.
+    const pill = { ...inspector, rect: rect(ROOT.right - reserve - 140, ROOT.top + 12, 140, 40), folded: true };
+    expect(insetsFromPanels(ROOT, [pill])).toEqual({ top: 12 + 40 + STAGE_INSET_GAP_PX, right: 0, bottom: 0, left: 0 });
   });
 });
 
