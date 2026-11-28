@@ -363,6 +363,10 @@ export const mapMessages = {
       label: 'Seguir',
       stopped: 'Dejaste de seguir a {id}. Pulsa Seguir para volver.',
       label3d: 'Seguir en 3D',
+      // M4: the rail's «Seguir en 3D» (ui/MapFollow3dButton.jsx), whose title says the double click does the same.
+      title3d: 'Seguir en 3D el avión elegido. También con doble clic sobre un avión.',
+      stop3d: 'Dejar de seguir en 3D y volver a la vista anterior.',
+      choose3d: 'Elige un avión del mapa para seguirlo en 3D, o haz doble clic sobre él.',
     },
     // «Seguir en 3D» (CN-30, ui/Follow3dPanel.jsx): the panel of the followed aircraft, its camera and its operation.
     follow3d: {
@@ -834,6 +838,9 @@ export const mapMessages = {
       label: 'Follow',
       stopped: 'You stopped following {id}. Press Follow to resume.',
       label3d: 'Follow in 3D',
+      title3d: 'Follow the chosen aircraft in 3D. A double click on an aircraft does the same.',
+      stop3d: 'Stop following in 3D and go back to the previous view.',
+      choose3d: 'Choose an aircraft on the map to follow it in 3D, or double-click it.',
     },
     follow3d: {
       panel: '3D follow of {id}',

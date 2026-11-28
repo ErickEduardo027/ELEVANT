@@ -14,6 +14,7 @@ import { matchFlight, relatedEntities } from '../../maps/core/mapSelection';
 import OccMap from '../../maps/core/OccMap';
 import Follow3dPanel from '../../maps/ui/Follow3dPanel';
 import MapDock from '../../maps/ui/MapDock';
+import MapFollow3dButton from '../../maps/ui/MapFollow3dButton';
 import MapLayersMenu from '../../maps/ui/MapLayersMenu';
 import MapLegend from '../../maps/ui/MapLegend';
 import MapMotionControl from '../../maps/ui/MapMotionControl';
@@ -545,10 +546,11 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
           {pill}
         </div>
       ) : null}
-      {/* The control rail (CN-32): the views and 3D, the pause, «Capas» and «Leyenda». «Seguir» is the S key, «Ver y
-          seguir» and the inspector's flight. */}
+      {/* The control rail (CN-32): the views and 3D, «Seguir en 3D» (M4, also a double click on an aircraft), the
+          pause, «Capas» and «Leyenda». «Seguir» is the S key, «Ver y seguir» and the inspector's flight. */}
       <MapDock>
         <MapPresetSwitcher />
+        <MapFollow3dButton />
         <MapMotionControl compact />
         <MapLayersMenu />
         {/* Folded at first: the console's map is the ramp beside the panels, and the legend opens over it. */}

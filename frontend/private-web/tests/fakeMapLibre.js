@@ -16,7 +16,8 @@
 // - `setFilter` replaces a layer's filter (a missing layer throws), and a context loss keeps it, as MapLibre 6.16 does.
 // Camera moves are applied at once and fire their events synchronously: movestart, zoomstart, rotatestart and
 // pitchstart for what changes, moveend. A person's gesture is `emit(map, 'dragstart', { originalEvent })` and the like,
-// ended with `emit(map, 'moveend', { originalEvent })`.
+// ended with `emit(map, 'moveend', { originalEvent })`. A double click is `doubleClick(map, { point, lngLat })`: the
+// `dblclick` listeners first, then MapLibre's double-click zoom unless one of them prevented it.
 //
 // Engine tests create one fake per test and inject `module`. Component tests share one fake through vi.mock:
 //   vi.mock('maplibre-gl', async () => (await import('<path>/tests/fakeMapLibre.js')).sharedFakeMapLibre().module);
@@ -918,6 +919,18 @@ function addHelpers(state) {
     emit(map, type, payload = {}) {
       if (type === 'style.load' && !map.styleLoaded && !map.contextLost) map._installStyle(map.pendingStyle);
       map._fire(type, payload);
+    },
+
+    // A person's double click (M4): MapLibre 6.16 fires `dblclick` on the map first, and its double-click zoom runs only
+    // when no listener called `preventDefault()` and the handler is on (in orbit mode it is off): one zoom level in,
+    // around the point. Answers whether the default was prevented.
+    doubleClick(map, payload = {}) {
+      let prevented = false;
+      map._fire('dblclick', { ...payload, preventDefault() { prevented = true; }, get defaultPrevented() { return prevented; } });
+      if (!prevented && map.doubleClickZoom.isEnabled()) {
+        map.easeTo({ zoom: map.getZoom() + 1, originalEvent: payload.originalEvent ?? { type: 'dblclick' } });
+      }
+      return prevented;
     },
 
     // What queryRenderedFeatures answers: `resolver(geometry, options)` returns the features.

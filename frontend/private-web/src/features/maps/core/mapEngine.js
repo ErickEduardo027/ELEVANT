@@ -79,6 +79,9 @@ const stateKey = (source, id) => `${source}\u0000${typeof id}:${String(id)}`;
  *   `idle` event): what renderedFeatures answers is then final, as the tiles of a new zoom have loaded.
  * @param {() => void} [options.onResize] after MapLibre has resized the map to its container (the fitted zooms change).
  * @param {(event: object) => void} [options.onClick] `{ point, lngLat, hit }`, `hit` as pickAt answers.
+ * @param {(event: object) => void} [options.onDoubleClick] the same for a double click (M4, «Seguir en 3D»), with
+ *   `preventDefault()`: called, MapLibre's own double-click zoom does nothing (MapLibre 6.16 skips its handler for a
+ *   `dblclick` whose default was prevented); not called, the map zooms in as always.
  * @param {(event: object|null) => void} [options.onPointerMove] the same while the pointer moves, `null` when it
  *   leaves; its `hit` is picked when first read, so a caller that reads it once per frame picks once per frame.
  * @param {(gesture: { kind: 'pan'|'zoom'|'rotate'|'pitch' }) => void} [options.onUserGesture] when a person starts to
@@ -87,7 +90,7 @@ const stateKey = (source, id) => `${source}\u0000${typeof id}:${String(id)}`;
  */
 export function createMapEngine({
   maplibre, host, style, camera, interactive = true, attribution, imageResolver, mapOptions,
-  onStatus, onCamera, onIdle, onResize, onClick, onPointerMove, onUserGesture,
+  onStatus, onCamera, onIdle, onResize, onClick, onDoubleClick, onPointerMove, onUserGesture,
 } = {}) {
   if (!maplibre) throw new TypeError('createMapEngine needs the maplibre-gl module');
   if (!host?.ownerDocument) throw new TypeError('createMapEngine needs a host element');
@@ -404,6 +407,9 @@ export function createMapEngine({
     if (onIdle) listen('idle', () => onIdle());
     if (onResize) listen('resize', () => onResize());
     if (onClick) listen('click', event => onClick(pointerEvent(event)));
+    if (onDoubleClick) {
+      listen('dblclick', event => onDoubleClick({ ...pointerEvent(event), preventDefault: () => event.preventDefault?.() }));
+    }
     if (onPointerMove) {
       listen('mousemove', event => onPointerMove(pointerMoveEvent(event)));
       listen('mouseout', () => onPointerMove(null));

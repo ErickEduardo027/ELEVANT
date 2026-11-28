@@ -212,7 +212,8 @@ export default function FlightMonitoringPage({
               // The same props as before: every flight of the page, so a click on the map finds any of them; the
               // inspector replaces the page's card (`detail`).
               <FlightMap flights={flights} selectedFlightId={mapSelectedId} onSelectFlight={selectFromMap} theme={theme}
-                detail={null} onSelectionFlights={hearMapChoice} dataBlockSlot={inspector ? liveSlot : null} />
+                detail={null} onSelectionFlights={hearMapChoice} dataBlockSlot={inspector ? liveSlot : null}
+                follow3dButton />
             ) : (
               <div role="status"
                 className="absolute inset-0 flex items-center justify-center rounded-md border border-occ-line bg-occ-panel p-8 text-center text-sm text-occ-muted">

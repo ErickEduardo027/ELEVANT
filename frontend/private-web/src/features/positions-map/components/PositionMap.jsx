@@ -4,6 +4,7 @@ import OccMap from '../../maps/core/OccMap';
 import { mapMessages } from '../../maps/mapMessages';
 import { STAND_REFERENCE } from '../../maps/stands/standReference';
 import MapDock from '../../maps/ui/MapDock';
+import MapFollow3dButton from '../../maps/ui/MapFollow3dButton';
 import MapFollowButton from '../../maps/ui/MapFollowButton';
 import MapLegend from '../../maps/ui/MapLegend';
 import MapMotionControl from '../../maps/ui/MapMotionControl';
@@ -32,12 +33,13 @@ const EMPTY = Object.freeze([]);
 // `focusSelectedOnStart` (U5): a stand the page opens with (a `stand=` link) is brought to the centre once the map is
 // ready, as a row of the list does; it starts with the legend folded. `legendFoldKey` folds the legend when it changes.
 // `railTools` (CN-32) are the screen's own map tools, such as Mapa de posiciones' 2D/3D, «Centrar PUJ» and full screen:
-// they go in the map's control rail, after «Seguir» and before the pause.
+// they go in the map's control rail, after «Seguir» and before the pause. `follow3dButton` (M4) adds «Seguir en 3D» under
+// «Seguir» (Mapa de posiciones opts in; Planificación does not).
 const PositionMap = forwardRef(function PositionMap({
   positions = EMPTY, selectedPositionId = null, onSelectPosition, viewMode = '2d', initialCamera, onCameraChange,
   allowBuildingExtrusion = false, dashboardLabels = false, onMapClick, placing = false, placingCode = null,
   pendingLocation = null, onCancelPlacing, weather, traffic, trafficSelection = null, onSelectTraffic,
-  focusSelectedOnStart = false, legendFoldKey = null, railTools = null, children,
+  focusSelectedOnStart = false, legendFoldKey = null, railTools = null, follow3dButton = false, children,
 }, ref) {
   const { t } = useTranslation(positionsMapMessages);
   const { t: tMap } = useTranslation(mapMessages);
@@ -113,6 +115,7 @@ const PositionMap = forwardRef(function PositionMap({
       <MapDock>
         <MapPresetSwitcher />
         <MapFollowButton />
+        {follow3dButton ? <MapFollow3dButton /> : null}
         {railTools}
         <MapMotionControl />
         {/* A stand a link opens with is brought to the centre: the legend starts folded so it does not cover it. */}

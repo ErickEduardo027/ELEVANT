@@ -364,6 +364,7 @@ function PositionsMapScreen({
         trafficSelection={trafficSelection}
         onSelectTraffic={live ? handleSelectTraffic : undefined}
         focusSelectedOnStart
+        follow3dButton
         legendFoldKey={legendFold}
         railTools={(
           <MapControls

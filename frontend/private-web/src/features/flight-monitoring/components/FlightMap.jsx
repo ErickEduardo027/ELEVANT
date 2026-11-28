@@ -14,6 +14,7 @@ import { isDrawn } from '../../maps/traffic/trafficFeatures';
 import FlightDataBlock from '../../maps/ui/FlightDataBlock';
 import Follow3dPanel from '../../maps/ui/Follow3dPanel';
 import MapDock from '../../maps/ui/MapDock';
+import MapFollow3dButton from '../../maps/ui/MapFollow3dButton';
 import MapFollowButton from '../../maps/ui/MapFollowButton';
 import MapLayersMenu from '../../maps/ui/MapLayersMenu';
 import MapLegend from '../../maps/ui/MapLegend';
@@ -41,10 +42,11 @@ const findFlight = (flights, id) => (id == null ? null : flights.find(flight => 
 // PUJ». Inside the OCC shell it also draws the live traffic, the data block of the chosen aircraft, the layers menu and
 // (PR M6) follow mode, «Seguir» beside the view selector (LiveFlightMap). `detail` is the page's own card of its selected
 // flight: the plain map shows it, the live map only for a flight it does not know. `theme` is accepted and ignored: the
-// OCC maps follow the shell theme on their own (OccMap).
+// OCC maps follow the shell theme on their own (OccMap). `follow3dButton` (M4) adds «Seguir en 3D» under «Seguir» in the
+// rail (Monitoreo de vuelos opts in).
 function FlightMapView({
   flights = EMPTY, selectedFlightId = null, onSelectFlight, traffic, weather, drawnFlights, selection: chosen,
-  onSelect, framePoints = EMPTY, children,
+  onSelect, framePoints = EMPTY, follow3dButton = false, children,
 }) {
   const { t } = useTranslation(flightMonitoringMessages);
   const { t: tMap } = useTranslation(mapMessages);
@@ -108,6 +110,7 @@ function FlightMapView({
       <MapDock>
         <MapPresetSwitcher />
         <MapFollowButton />
+        {follow3dButton ? <MapFollow3dButton /> : null}
         <div className={RAIL_TOOL_ROW}>
           <button type="button" onClick={resetView} title={t('map.resetView')} aria-label={t('map.resetView')}
             className={RAIL_ICON_TOOL}>
@@ -144,6 +147,7 @@ function FlightMapView({
  */
 function LiveFlightMap({
   flights = EMPTY, selectedFlightId = null, onSelectFlight, detail = null, onSelectionFlights, dataBlockSlot = null,
+  follow3dButton = false,
 }) {
   const { stationId } = useOccStation();
   const { selection: urlSelection, selectAircraft, clear } = useMapSelection();
@@ -199,7 +203,8 @@ function LiveFlightMap({
   const pageDetail = selectedFlightId != null && live.status !== 'loading' ? detail : null;
   return (
     <FlightMapView flights={flights} selectedFlightId={selectedFlightId} onSelectFlight={onSelectFlight} traffic={traffic}
-      weather={weather} drawnFlights={drawnFlights} selection={selection} onSelect={handleSelect} framePoints={framePoints}>
+      weather={weather} drawnFlights={drawnFlights} selection={selection} onSelect={handleSelect} framePoints={framePoints}
+      follow3dButton={follow3dButton}>
       <MapSourceStatus status={live.status} picture={live.picture} sourceState={live.sourceState} clock={live.clock}
         onRetry={live.retry} />
       <SelectionCard target={target} detail={pageDetail} telemetry={live.telemetry} slot={dataBlockSlot}
