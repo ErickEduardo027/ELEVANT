@@ -18,8 +18,9 @@ const frames = new WeakMap();
 export function modelFrame(model, spec) {
   let frame = frames.get(model);
   if (frame === undefined) {
-    const body = model.parts.find(part => part.name === 'body')?.geometry ?? model.geometry;
-    frame = liveryFrame(body.getAttribute('position').array, spec);
+    // Every part of the model: the L1 model is one primitive already, and in L2 the intakes are dark parts.
+    const body = model.geometry;
+    frame = liveryFrame(body.getAttribute('position').array, spec, body.getIndex()?.array ?? null);
     frames.set(model, frame);
   }
   return frame;

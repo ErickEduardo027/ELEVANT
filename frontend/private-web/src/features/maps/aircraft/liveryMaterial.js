@@ -84,14 +84,79 @@ export function liveryPaletteData(rows = LIVERY_ROWS) {
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 
 /**
- * The frame the zones are measured in, from a model's positions (a flat `[x, y, z, …]` array in the models' frame,
- * without its gear) and its type's dimensions (aircraft/types.js): `{ halfLengthM, yMinM, axisZM, radiusM,
- * halfWidthM, fin: { rootZM, topZM, aftYM, rootChordM, markYM, markZM, markWidthM }, name: { y0M, lengthM, z0M,
- * heightM }, engines: [{ x, z, reachM, y0M, y1M }] }`. The fuselage is read in a section ahead of the wing, the fin
- * above the crown at the rear, each nacelle's height from the lowest point near the axis silhouette.js gives it; what
- * the model lacks is taken from the dimensions.
+ * The points where a model's surface crosses the plane `axis` (0 x, 1 y, 2 z) = `value`: `[x, y, z]` on each edge of
+ * each triangle that crosses it. `positions` a flat `[x, y, z, …]` array, `index` its triangles (or null: every three
+ * positions one triangle). A sparse mesh (a long constant section, a fin of two edges) is read where it is, not only
+ * at its vertices. Pure.
  */
-export function liveryFrame(positions, spec) {
+export function sliceModel(positions, index, axis, value) {
+  const points = [];
+  const count = index ? index.length : Math.floor((positions?.length ?? 0) / 3);
+  const corner = (k, c) => positions[3 * (index ? index[k] : k) + c];
+  for (let t = 0; t + 2 < count; t += 3) {
+    for (let e = 0; e < 3; e += 1) {
+      const a = t + e;
+      const b = t + ((e + 1) % 3);
+      const va = corner(a, axis) - value;
+      const vb = corner(b, axis) - value;
+      if ((va < 0 && vb < 0) || (va > 0 && vb > 0) || va === vb) continue;
+      const s = va / (va - vb);
+      points.push([0, 1, 2].map(c => corner(a, c) + s * (corner(b, c) - corner(a, c))));
+    }
+  }
+  return points;
+}
+
+/**
+ * A nacelle's cross-section in a model, `{ x, z, width }` (its axis's distance from the centreline, its height and its
+ * width), or null when no cut finds one. The model is cut across at a few places along the nacelle silhouette.js
+ * gives (`{ x, frontY, backY, diameterM }`), the points near its side split into bands of height, and the band whose
+ * width and height come closest to its diameter wins: a wing or a pylon in the same cut is thin or narrow. A band
+ * that runs on into its pylon takes its height from its bottom. `slice(axis, value)` cuts the model (sliceModel).
+ */
+export function nacelleSection(slice, nacelle, { zLow = -Infinity, zHigh = Infinity } = {}) {
+  const dia = nacelle.diameterM;
+  let best = null;
+  for (const share of [0.6, 0.75, 0.9]) {
+    const points = slice(1, nacelle.backY + share * (nacelle.frontY - nacelle.backY))
+      .filter(([x, , z]) => Math.abs(Math.abs(x) - nacelle.x) < 0.75 * dia && z > zLow && z < zHigh)
+      .sort((a, b) => a[2] - b[2]);
+    let start = 0;
+    for (let at = 1; at <= points.length; at += 1) {
+      if (at < points.length && points[at][2] - points[at - 1][2] < 0.2 * dia) continue;
+      const band = points.slice(start, at);
+      start = at;
+      if (band.length < 6) continue;
+      const xs = band.map(([x]) => Math.abs(x));
+      const bottom = band[0][2];
+      const height = band[band.length - 1][2] - bottom;
+      const width = Math.max(...xs) - Math.min(...xs);
+      const score = Math.abs(width - dia) + Math.max(0, dia - height);
+      if (width < 0.5 * dia || height < 0.5 * dia || (best !== null && score >= best.score)) continue;
+      // The lower half of the band is the nacelle's own, below its pylon.
+      const lower = band.filter(point => point[2] < bottom + 0.55 * dia).map(([x]) => Math.abs(x));
+      const lowerWidth = clamp(Math.max(...lower) - Math.min(...lower), 0.6 * dia, 1.4 * dia);
+      best = { score, x: (Math.max(...lower) + Math.min(...lower)) / 2, z: bottom + lowerWidth / 2, width: lowerWidth };
+    }
+  }
+  return best === null ? null : { x: best.x, z: best.z, width: best.width };
+}
+
+const median = values => {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted.length === 0 ? Number.NaN : sorted[Math.floor(sorted.length / 2)];
+};
+
+/**
+ * The frame the zones are measured in, from a model's positions (a flat `[x, y, z, …]` array in the models' frame,
+ * without its gear), its triangles (`index`, or null for unindexed positions) and its type's dimensions
+ * (aircraft/types.js): `{ halfLengthM, yMinM, axisZM, radiusM, halfWidthM, fin: { rootZM, topZM, aftYM, rootChordM,
+ * markYM, markZM, markWidthM }, name: { y0M, lengthM, z0M, heightM }, engines: [{ x, z, reachM, y0M, y1M }] }`. The
+ * model is cut by planes (sliceModel), so a sparse mesh reads as well as a dense one: the fuselage in sections ahead of
+ * the wing, the fin's chords near its root and at its middle, each nacelle across its intake where silhouette.js
+ * places it; what the model lacks is taken from the dimensions.
+ */
+export function liveryFrame(positions, spec, index = null) {
   const L = spec.lengthM;
   const D = spec.fuselageDiaM;
   const count = Math.floor((positions?.length ?? 0) / 3);
@@ -110,18 +175,19 @@ export function liveryFrame(positions, spec) {
   }
   const length = yMax - yMin;
   const at = share => yMin + share * length;
-  // The fuselage in a section behind the cockpit and ahead of the wing and the intakes.
-  let belly = Infinity;
-  let crown = -Infinity;
-  let halfWidth = 0;
-  for (let i = 0; i < count; i += 1) {
-    const [x, y, z] = [positions[3 * i], positions[3 * i + 1], positions[3 * i + 2]];
-    if (y < at(0.66) || y > at(0.8) || Math.abs(x) > 0.75 * D) continue;
-    belly = Math.min(belly, z);
-    crown = Math.max(crown, z);
-    halfWidth = Math.max(halfWidth, Math.abs(x));
-  }
-  if (!Number.isFinite(belly) || crown - belly < 0.3 * D) {
+  const slice = (axis, value) => (count > 0 ? sliceModel(positions, index, axis, value) : []);
+  // The fuselage in sections behind the cockpit and ahead of the wing and the intakes: the median of their bellies,
+  // crowns and half widths.
+  const sections = [0.68, 0.72, 0.76, 0.8].map(share => {
+    const near = slice(1, at(share)).filter(([x]) => Math.abs(x) < 0.75 * D);
+    if (near.length < 6) return null;
+    const zs = near.map(point => point[2]);
+    return { belly: Math.min(...zs), crown: Math.max(...zs), halfWidth: Math.max(...near.map(([x]) => Math.abs(x))) };
+  }).filter(section => section !== null && section.crown - section.belly > 0.5 * D);
+  let belly = median(sections.map(section => section.belly));
+  let crown = median(sections.map(section => section.crown));
+  let halfWidth = median(sections.map(section => section.halfWidth));
+  if (!Number.isFinite(belly)) {
     belly = zMin + 0.3 * D;
     crown = belly + 1.04 * D;
     halfWidth = D / 2;
@@ -137,36 +203,27 @@ export function liveryFrame(positions, spec) {
   }
   if (!(finTop > finRoot + 0.5)) finTop = Math.max(finRoot + 1, spec.heightM);
   const finHeight = finTop - finRoot;
-  const extentAt = (z0, z1) => {
-    let low = Infinity;
-    let high = -Infinity;
-    for (let i = 0; i < count; i += 1) {
-      const [x, y, z] = [positions[3 * i], positions[3 * i + 1], positions[3 * i + 2]];
-      if (z < z0 || z > z1 || Math.abs(x) > 0.5 * halfWidth || y > at(0.35)) continue;
-      low = Math.min(low, y);
-      high = Math.max(high, y);
-    }
-    return Number.isFinite(low) ? [low, high] : null;
+  // The fin's chord at a height: where the plane z = height cuts it.
+  const chordAt = height => {
+    const ys = slice(2, height).filter(([x, y]) => Math.abs(x) < 0.5 * halfWidth && y < at(0.35)).map(point => point[1]);
+    return ys.length >= 2 ? [Math.min(...ys), Math.max(...ys)] : null;
   };
-  const root = extentAt(finRoot, finRoot + 0.2 * finHeight) ?? [yMin, yMin + 0.16 * L];
+  const root = chordAt(finRoot + 0.05 * finHeight) ?? [yMin, yMin + 0.16 * L];
   const markZ = finRoot + 0.55 * finHeight;
-  const middle = extentAt(markZ - 0.06 * finHeight, markZ + 0.06 * finHeight) ?? [root[0] + 0.3 * (root[1] - root[0]), root[1]];
+  const middle = chordAt(markZ) ?? [root[0] + 0.3 * (root[1] - root[0]), root[1]];
   // The name above the windows, ahead of the wing.
   const nameHeight = Math.min(NAME_PLACE.heightC * radius, NAME_PLACE.maxHeightM);
   const nameLength = Math.min((LIVERY_ATLAS.nameWidth / LIVERY_ATLAS.rowHeight) * nameHeight, NAME_PLACE.maxLength * length);
-  // The nacelles: each one's height from the lowest point of the model around its axis.
+  // The nacelles: each one where silhouette.js places it, found in the model by its cross-section (nacelleSection).
   const engines = [];
   for (const nacelle of nacelles(spec) ?? []) {
     const dia = nacelle.diameterM;
-    let bottom = Infinity;
-    for (let i = 0; i < count; i += 1) {
-      const [x, y, z] = [positions[3 * i], positions[3 * i + 1], positions[3 * i + 2]];
-      if (Math.abs(Math.abs(x) - nacelle.x) > 0.45 * dia || y < nacelle.backY || y > nacelle.frontY) continue;
-      bottom = Math.min(bottom, z);
-    }
-    const z = Number.isFinite(bottom) ? bottom + dia / 2 : axisZ - radius;
+    const section = nacelleSection(slice, nacelle, { zLow: zMin - 0.5, zHigh: axisZ + 2 * radius });
+    const x = section?.x ?? nacelle.x;
+    const z = section?.z ?? (nacelle.mount === 'rear' ? axisZ + 0.5 * radius : axisZ - radius);
+    const width = section?.width ?? dia;
     const margin = LIVERY_BANDS.engineMargin * dia;
-    engines.push({ x: nacelle.x, z, reachM: LIVERY_BANDS.engineReach * dia, y0M: nacelle.backY - margin,
+    engines.push({ x, z, reachM: LIVERY_BANDS.engineReach * width, y0M: nacelle.backY - margin,
       y1M: nacelle.frontY + margin });
   }
   return Object.freeze({
