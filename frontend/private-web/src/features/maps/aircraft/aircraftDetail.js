@@ -20,8 +20,8 @@ import { fuselageHalfWidth, fuselageProfile, nacelles, tailplanePlanform, wingPl
 /** The wingtip of each type: its kind and its height as a share of the span (types.js holds the span with it). */
 export const WINGTIPS = Object.freeze({
   A319: 'sharklet', A320: 'sharklet', A321: 'sharklet', A20N: 'sharklet', A21N: 'sharklet', A339: 'sharklet',
-  A359: 'sharklet', B737: 'blended', B738: 'blended', B752: 'blended', B763: 'blended', B38M: 'split', B39M: 'split',
-  B772: 'raked', B77W: 'raked', B788: 'raked', B789: 'raked', A332: 'small', A333: 'small', B744: 'small',
+  A359: 'sharklet', B737: 'blended', B738: 'blended', B739: 'blended', B752: 'blended', B763: 'blended', B38M: 'split',
+  B39M: 'split', B772: 'raked', B77W: 'raked', B788: 'raked', B789: 'raked', A332: 'small', A333: 'small', B744: 'small',
   A388: 'small', E190: 'small', E195: 'small', CRJ9: 'small', CL35: 'small', GLF5: 'small', BCS3: 'none',
   AT76: 'none', DH8D: 'none', B350: 'small', B190: 'none',
 });

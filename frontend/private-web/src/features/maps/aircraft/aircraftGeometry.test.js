@@ -57,7 +57,7 @@ describe('procedural aircraft geometry (design G2)', () => {
   it('every type of the table and every category builds within 1 500 to 3 000 triangles', () => {
     expect(TRIANGLE_BUDGET).toEqual({ min: 1500, max: 3000 });
     expect(Object.isFrozen(TRIANGLE_BUDGET)).toBe(true);
-    expect(MODELS.size).toBe(43);
+    expect(MODELS.size).toBe(44);
     for (const [name, geometry] of MODELS) {
       const triangles = triangleCount(geometry);
       expect(Number.isInteger(triangles), name).toBe(true);

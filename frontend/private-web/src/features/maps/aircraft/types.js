@@ -40,7 +40,7 @@ const spec = (family, iconCategory, lengthM, spanM, heightM, fuselageDiaM, wingS
 });
 
 /**
- * The thirty-four types of the plan by ICAO designator: `{ family, iconCategory, lengthM, spanM, heightM, fuselageDiaM,
+ * The thirty-five types of the plan by ICAO designator: `{ family, iconCategory, lengthM, spanM, heightM, fuselageDiaM,
  * wingSweepDeg, engines, engineDiaM }`. The span is the largest one in plan view (winglets and sharklets included); a
  * helicopter's span is its main rotor's diameter and its length runs from the forward blade tip to the tail.
  */
@@ -52,6 +52,8 @@ export const AIRCRAFT_TYPES = deepFreeze({
   A21N: spec('twinUnderwing', 'narrow', 44.51, 35.8, 11.76, 3.95, 25, 2, 2.3), // Airbus AC A321 (A321neo)
   B737: spec('twinUnderwing', 'narrow', 33.63, 35.79, 12.55, 3.76, 25, 2, 1.9), // Boeing APD 737-700, winglets
   B738: spec('twinUnderwing', 'narrow', 39.47, 35.79, 12.55, 3.76, 25, 2, 1.9), // Boeing APD 737-800, winglets
+  // Boeing APD 737-900ER, winglets (row added 2026-11-27 for the 3D model of PR M5).
+  B739: spec('twinUnderwing', 'narrow', 42.11, 35.79, 12.55, 3.76, 25, 2, 1.9),
   B38M: spec('twinUnderwing', 'narrow', 39.52, 35.92, 12.29, 3.76, 25, 2, 2.1), // Boeing APD 737 MAX 8
   B39M: spec('twinUnderwing', 'narrow', 42.16, 35.92, 12.29, 3.76, 25, 2, 2.1), // Boeing APD 737 MAX 9
   // Boeing APD 757-200, basic wing (41.1 m with the blended winglets: unconfirmed).
@@ -111,6 +113,7 @@ export const CATEGORY_FALLBACKS = deepFreeze({
 const MODEL_ALIASES = Object.freeze([
   [/(?<!\d)737[\s-]*MAX[\s-]*8(?!\d)|(?<!\d)737-8(?!\d)/, 'B38M'],
   [/(?<!\d)737[\s-]*MAX[\s-]*9(?!\d)|(?<!\d)737-9(?!\d)/, 'B39M'],
+  [/(?<!\d)737[\s-]*900(?!\d)/, 'B739'],
   [/(?<!\d)737[\s-]*800(?!\d)/, 'B738'],
   [/(?<!\d)737[\s-]*700(?!\d)/, 'B737'],
   [/(?<!\d)321[\s-]*NEO\b/, 'A21N'],
