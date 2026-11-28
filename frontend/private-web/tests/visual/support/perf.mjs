@@ -53,7 +53,7 @@ export async function gpuReport(page, testInfo) {
  * For `seconds`, the frames MapLibre draws and where each drew the aircraft of `ids` (`{ key: id }`):
  * `{ seconds, renderFps, rafFps, p50Ms, p95Ms, overBudgetShare, maxFrameGapMs, longTasks, blockedMsPerMin, tbtMsPerMin,
  * aircraft: { key: { updatesPerS, steps, maxStepPx, p99StepPx, medianStepPx, backward } } }`. An update is a drawn frame
- * that moved the aircraft on screen; a step its distance in pixels; a pull-back a step against the way it flew. Only
+ * that moved the aircraft on screen (by any amount over 1e-4 px); a step its distance in pixels; a pull-back a step against the way it flew. Only
  * positions inside the map count.
  */
 export function measureFrames(page, seconds, ids = {}) {
@@ -85,7 +85,8 @@ export function measureFrames(page, seconds, ids = {}) {
           const dx = point.x - track.last.x;
           const dy = point.y - track.last.y;
           const step = Math.hypot(dx, dy);
-          if (step > 0.01) {
+          // Any move counts: at the approach's zoom an aircraft crosses less than a hundredth of a pixel a frame.
+          if (step > 1e-4) {
             track.steps.push(step);
             if (track.dir !== null && (dx * track.dir.x + dy * track.dir.y) / step < -0.5 && step > 0.5) track.backward += 1;
             track.dir = { x: dx / step, y: dy / step };
