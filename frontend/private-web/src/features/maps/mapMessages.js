@@ -278,7 +278,7 @@ export const mapMessages = {
     // Every map shows it, also those that draw no stand (Monitoreo) or a view that hides them (region, approach), so it
     // does not name what is drawn.
     basemap: {
-      degraded: 'No se pudo cargar el mapa base. Los datos de ELEVANT siguen en el mapa.',
+      degraded: 'No se pudo cargar el mapa base; reintentando… Los datos de ELEVANT siguen en el mapa.',
     },
     unavailable: {
       title: 'El mapa no está disponible',
@@ -883,7 +883,7 @@ export const mapMessages = {
       reference: 'Internal reference, not verified',
     },
     basemap: {
-      degraded: 'The base map could not be loaded. ELEVANT data is still on the map.',
+      degraded: 'The base map could not be loaded; retrying… ELEVANT data is still on the map.',
     },
     unavailable: {
       title: 'The map is not available',

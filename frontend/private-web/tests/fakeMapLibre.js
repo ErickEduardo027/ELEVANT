@@ -13,6 +13,11 @@
 //   properties that come with it;
 // - a raster source has `setTiles` (a list of URL templates, anything else throws) and `serialize`, and a context loss
 //   rebuilds it with the tiles it was last given, as MapLibre 6.16 does;
+// - a vector source has `setUrl` (a string, anything else throws), `setTiles` and `serialize`, as MapLibre 6.16's
+//   VectorTileSource: each call is recorded and kept in the options it serializes;
+// - `refreshTiles(sourceId, tileIds)` asks again for the given tiles of a source, as MapLibre 6.16's map.refreshTiles:
+//   it throws for a missing source and, stricter than MapLibre, for an ID that is not `{ x, y, z }` integers; each call
+//   is recorded;
 // - `setFilter` replaces a layer's filter (a missing layer throws), and a context loss keeps it, as MapLibre 6.16 does.
 // Camera moves are applied at once and fire their events synchronously: movestart, zoomstart, rotatestart and
 // pitchstart for what changes, moveend. A person's gesture is `emit(map, 'dragstart', { originalEvent })` and the like,
@@ -248,6 +253,32 @@ function rasterMethods(map, id, spec) {
   };
 }
 
+// What a vector source adds, as MapLibre 6.16's VectorTileSource: setUrl asks for the TileJSON again and setTiles takes
+// a list of URL templates; both reload the source and are kept in the options it serializes.
+function vectorMethods(map, id, spec) {
+  return {
+    setUrlCalls: [],
+    setTilesCalls: [],
+    setUrl(url) {
+      if (typeof url !== 'string') throw new TypeError(`setUrl of ${id} takes a TileJSON URL, not ${JSON.stringify(url)}`);
+      map._record('setUrl', [id, url]);
+      this.setUrlCalls.push(url);
+      this.spec = { ...this.spec, url };
+      return this;
+    },
+    setTiles(tiles) {
+      if (!Array.isArray(tiles)) throw new TypeError(`setTiles of ${id} takes a list of tile URLs, not ${JSON.stringify(tiles)}`);
+      map._record('setTiles', [id, tiles]);
+      this.setTilesCalls.push(tiles);
+      this.spec = { ...this.spec, tiles: [...tiles] };
+      return this;
+    },
+    serialize() {
+      return clone(this.spec);
+    },
+  };
+}
+
 // What a source keeps of itself in a snapshot of the style: its options, and its data when it is GeoJSON.
 const sourceSnapshot = source => (source.type === 'geojson' ? { ...source.spec, data: source.data } : { ...source.spec });
 
@@ -302,7 +333,8 @@ function createModule(state) {
         return Promise.resolve(this.expansionZoom);
       },
     };
-    return spec.type === 'raster' ? Object.assign(source, rasterMethods(map, id, spec)) : source;
+    if (spec.type === 'raster') return Object.assign(source, rasterMethods(map, id, spec));
+    return spec.type === 'vector' ? Object.assign(source, vectorMethods(map, id, spec)) : source;
   }
 
   const normalizeLayer = layer => ({ ...layer, layout: { ...layer.layout }, paint: { ...layer.paint } });
@@ -565,6 +597,20 @@ function createModule(state) {
 
     getSource(id) {
       return this._readStyle() ? this.sources.get(id) : undefined;
+    }
+
+    // As MapLibre 6.16: the given tiles of a source are asked for again (all of them without a list); nothing else moves.
+    refreshTiles(sourceId, tileIds) {
+      if (this.removed) throw new Error('The map was removed.');
+      if (this.contextLost) throw new TypeError("Cannot read properties of null (reading 'tileManagers')");
+      if (!this.sources.has(sourceId)) {
+        throw new Error(`There is no tile manager with ID "${sourceId}", cannot refresh tile`);
+      }
+      const isId = id => ['x', 'y', 'z'].every(key => Number.isInteger(id?.[key]));
+      if (tileIds !== undefined && !(Array.isArray(tileIds) && tileIds.every(isId))) {
+        throw new TypeError(`refreshTiles of ${sourceId} takes { x, y, z } tile IDs, not ${JSON.stringify(tileIds)}`);
+      }
+      this._record('refreshTiles', [sourceId, tileIds === undefined ? undefined : clone(tileIds)]);
     }
 
     removeSource(id) {

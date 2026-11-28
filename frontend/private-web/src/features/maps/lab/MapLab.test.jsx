@@ -209,7 +209,7 @@ describe('MapLab', () => {
 
     loadStyle(map);
     act(() => fake.state.emit(map, 'error', { sourceId: 'openmaptiles', error: new Error('The map lab cut the base map.') }));
-    expect(screen.getByRole('status')).toHaveTextContent('No se pudo cargar el mapa base.');
+    expect(screen.getByRole('status')).toHaveTextContent('No se pudo cargar el mapa base; reintentando…');
     unmount();
     expect(fnCalls('removeProtocol')[0].args).toEqual(['occ-lab-cut']);
     expect(fake.state.protocols.size).toBe(0);
