@@ -16,13 +16,14 @@ import { SIGNALS } from '../../occ-ui/statusVocabulary';
 import { legTimes } from '../flightBoardModel';
 import { flightMonitoringMessages } from '../flightMonitoringMessages';
 
-// The inspector of Monitoreo de vuelos (design E.2, template B; CN-32): the chosen flight in the screen's docked side
-// panel (maps/ui/MapSidePanel.jsx), beside the map and never over it, so it covers no aircraft and the map needs no
-// inset. It is a landmark (`aside`), not a dialog: no veil, no focus trap, and the map keeps its keys. One panel for the
-// whole flight, top to bottom:
+// The inspector of Monitoreo de vuelos (design E.2; M1, «pantalla completa con paneles flotantes»): the chosen flight
+// in the screen's side panel (maps/ui/MapSidePanel.jsx), floating over the full-screen map at its right, left of the
+// control column (`floating`): the page measures it into the map's insets, so the camera keeps the flight clear of it.
+// Where there is no map (another station), it sits in the page's grid (`framed`). It is a landmark (`aside`), not a
+// dialog: no veil, no focus trap, and the map keeps its keys. One panel for the whole flight, top to bottom:
 // - «En vivo», what the map knows of the aircraft: the map's data block, which the map renders in this panel's slot
 //   (`liveSlotRef`, components/FlightMap.jsx: its route and time, altitude, speed and heading, stand and runway, the
-//   source of its position and «Seguir»), so no card floats over the map; the section shows only while it holds it;
+//   source of its position and «Seguir»), so the flight has one card; the section shows only while it holds it;
 // - «Horarios», its three times from the planning snapshot with its delay (occ-ui/occDelay.js);
 // - its stand, agents, aircraft, registration and services; the milestone strip of its operation, from the map
 //   flights FlightMap hands the page (onSelectionFlights);
@@ -75,10 +76,12 @@ const agentsText = (count, t) => (count === 1 ? t('inspector.agentsOne') : t('in
  * (flightBoardModel.js: its direction, its stand and its status); `stationId` is kept in the links; `timeZone` is the
  * station's; `onClose()` clears the selection («Cerrar detalle»). `milestones` (`{ status, phases }`,
  * dashboard/noc/milestoneModel.js: inspectorMilestones) draws the milestone strip of its operation. `liveSlotRef` (a
- * callback ref) receives the element the map renders the flight's live data block into.
+ * callback ref) receives the element the map renders the flight's live data block into. `variant` is MapSidePanel's
+ * (`floating` over the map, `framed` in a grid) and `ref` goes on the panel, so the page measures it.
  */
 export default function FlightInspector({
-  flight, strip, stationId = null, timeZone, onClose, milestones = null, liveSlotRef = null, className = '',
+  ref, flight, strip, stationId = null, timeZone, onClose, milestones = null, liveSlotRef = null, variant = 'framed',
+  className = '',
 }) {
   const { t, language, locale } = useTranslation(flightMonitoringMessages);
   if (!flight || !strip) return null;
@@ -92,8 +95,10 @@ export default function FlightInspector({
 
   return (
     <MapSidePanel
+      ref={ref}
       label={t('inspector.label', { flight: strip.flightNumber })}
       data-occ-inspector="flight"
+      variant={variant}
       className={className}
       title={(
         <>
