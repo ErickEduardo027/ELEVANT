@@ -392,6 +392,18 @@ export function createMapEngine({
     if (map.getSource(source)) map.setFeatureState({ source, id }, state);
   }
 
+  // The tiles MapLibre holds of a source that `matches` (failedTiles, heldTiles): 0 without a map or a style, for a
+  // source it does not have, and for a raster source given new tiles that it has not reloaded yet. No request.
+  function countTiles(sourceId, matches) {
+    if (!live() || reloadingRaster.has(sourceId)) return 0;
+    const managers = map.style?.tileManagers ?? map.style?.sourceCaches ?? null;
+    const manager = managers?.[sourceId];
+    if (typeof manager?.getIds !== 'function' || typeof manager.getTileByID !== 'function') return 0;
+    let count = 0;
+    for (const id of manager.getIds()) if (matches(manager.getTileByID(id))) count += 1;
+    return count;
+  }
+
   // A raster source takes `tiles` only when it does not have them already: MapLibre reloads a source on every setTiles.
   function applyRasterTiles(sourceId, tiles) {
     const source = map.getSource(sourceId);
@@ -770,13 +782,15 @@ export function createMapEngine({
      * that it has not reloaded yet. It reads what MapLibre holds: no request.
      */
     failedTiles(sourceId) {
-      if (!live() || reloadingRaster.has(sourceId)) return 0;
-      const managers = map.style?.tileManagers ?? map.style?.sourceCaches ?? null;
-      const manager = managers?.[sourceId];
-      if (typeof manager?.getIds !== 'function' || typeof manager.getTileByID !== 'function') return 0;
-      let failed = 0;
-      for (const id of manager.getIds()) if (manager.getTileByID(id)?.state === 'errored') failed += 1;
-      return failed;
+      return countTiles(sourceId, tile => tile?.state === 'errored');
+    },
+
+    /**
+     * How many tiles MapLibre holds of the source `sourceId`, in any state (hotfix of 2026-11-28, HOTFIX-GOES-2: the
+     * loop skips a satellite frame only when most of them failed), read the same guarded way as `failedTiles`.
+     */
+    heldTiles(sourceId) {
+      return countTiles(sourceId, () => true);
     },
 
     /** Applies a GeoJSONSourceDiff; the promise settles when MapLibre has taken it (or at once without a map). */

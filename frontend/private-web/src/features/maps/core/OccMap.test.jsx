@@ -2873,6 +2873,12 @@ function ReferenceProbe() {
   return <pre data-testid="reference-probe">{JSON.stringify(referencesOnScreen)}</pre>;
 }
 const referenceProbe = () => JSON.parse(screen.getByTestId('reference-probe').textContent);
+// What the layers menu says under each weather key (HOTFIX-GOES-2: the loop with no frame left is unavailable).
+function LayerNotesProbe() {
+  const { layers } = useOccMap();
+  return <pre data-testid="layer-notes-probe">{JSON.stringify(layers?.notes ?? null)}</pre>;
+}
+const layerNotesProbe = () => JSON.parse(screen.getByTestId('layer-notes-probe').textContent);
 const inUseOf = map => map.getSource('occ-reference-ourairports').data.features
   .filter(item => item.properties.kind === 'centrelineLabel').map(item => item.properties.label);
 // The layer that draws each kind of reference, as queryRenderedFeatures names it.
@@ -3219,7 +3225,8 @@ describe('OccMap weather (PR M8)', () => {
       wind: { status: 'loading', data: null }, radar: read(createRadarFrames()), demo: false };
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     render(<OccMap defaultView="region" frozenAt={afternoon} weather={weatherAt()} regionWeather={regionWeather}
-      satelliteService={service} layerOverrides={{ 'weather.loop': true, 'weather.goes': false }}><ReferenceProbe /></OccMap>);
+      satelliteService={service} layerOverrides={{ 'weather.loop': true, 'weather.goes': false }}>
+      <ReferenceProbe /><LayerNotesProbe /></OccMap>);
     const map = fake.state.liveMaps().at(-1);
     loadStyle(map);
     await settle();
@@ -3241,26 +3248,33 @@ describe('OccMap weather (PR M8)', () => {
     const tilesCalls = map.calls.filter(call => call.method === 'setTiles').length;
     const reads = service.calls.length;
 
-    // The latest frame's source fires `error` for a tile: the frame before it shows instead, and nothing is logged.
-    act(() => fake.state.emit(map, 'error', { sourceId: 'occ-weather-loop-5', tile: {}, error: new Error('Not Found') }));
+    // The latest frame's source fires `error` for one of its tiles (HOTFIX-GOES-2: a flaky network): handled, not
+    // logged, and the frame keeps showing with a gap, since that tile is 1 of the 12 it holds.
+    const tiles = (failed, held) => [...Array(held - failed).fill('loaded'), ...Array(failed).fill('errored')];
+    fake.state.setTileStates(map, 'occ-weather-loop-5', tiles(1, 12));
+    act(() => fake.state.emit(map, 'error', { sourceId: 'occ-weather-loop-5', tile: {}, error: new Error('Failed to fetch') }));
+    await act(() => new Promise(resolve => { setTimeout(resolve, 350); }));
+    await settle();
+    expect(shown()).toBe(5);
+    expect(error).not.toHaveBeenCalled();
+    expect(legendLoop()).toMatchObject({ from: '2026-11-28T15:20:00Z', time: '2026-11-28T16:20:00Z' });
+
+    // A 404 on every tile of the frame, which MapLibre 6.16 keeps quiet: the tiles stay `errored`, the loop's next tick
+    // finds them and the frame before it shows instead.
+    fake.state.setTileStates(map, 'occ-weather-loop-5', tiles(12, 12));
+    await act(() => new Promise(resolve => { setTimeout(resolve, 350); }));
     await settle();
     expect(shown()).toBe(4);
     expect(opacities().filter(value => value > 0)).toHaveLength(1);
-    expect(error).not.toHaveBeenCalled();
     expect(legendLoop()).toMatchObject({ from: '2026-11-28T15:20:00Z', time: '2026-11-28T16:10:00Z' });
 
-    // A 404, which MapLibre 6.16 keeps quiet: the frame's tiles stay `errored`, and the loop's next tick finds them.
-    fake.state.setTileStates(map, 'occ-weather-loop-4', ['errored', 'errored']);
-    await act(() => new Promise(resolve => { setTimeout(resolve, 350); }));
-    await settle();
-    expect(shown()).toBe(3);
-
     // Every frame failing: the loop holds nothing.
-    for (const index of [0, 1, 2, 3]) fake.state.setTileStates(map, `occ-weather-loop-${index}`, ['errored']);
+    for (const index of [0, 1, 2, 3, 4]) fake.state.setTileStates(map, `occ-weather-loop-${index}`, ['errored']);
     await act(() => new Promise(resolve => { setTimeout(resolve, 350); }));
     await settle();
     expect(opacities()).toEqual([0, 0, 0, 0, 0, 0]);
-    // Nothing of the loop is drawn: the legend does not list it.
+    // Nothing of the loop is drawn: the layers menu says so and the legend does not list it.
+    expect(layerNotesProbe()?.['weather.loop']).toBe('No hay imagen en este momento.');
     expect(legendLoop()).toBeNull();
     expect(referenceProbe().kinds).not.toContain('loopGeocolor');
     // No new tiles and no new read: the budget is the same.

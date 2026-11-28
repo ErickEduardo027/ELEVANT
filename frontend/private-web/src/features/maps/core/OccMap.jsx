@@ -2049,12 +2049,19 @@ const OccMapView = forwardRef(function OccMapView({
     store.set({ layerKeys: availableLayerKeys({ layers: overlays.flatMap(overlay => overlay.layers ?? []) }) });
     // A loop frame whose tiles failed (hotfix of 2026-11-28, step 2): marked at the tiles this engine pinned it to, so
     // the loop skips it; an error of any other source is the engine's to log.
-    const markLoopFrame = sourceId => {
+    const pinnedLoopFrame = sourceId => {
       const pinned = appliedRef.current.regional?.tiles;
-      if (!isLoopFrameSource(sourceId) || typeof pinned?.[sourceId] !== 'string') return false;
+      return isLoopFrameSource(sourceId) && typeof pinned?.[sourceId] === 'string' ? pinned : null;
+    };
+    const markLoopFrame = sourceId => {
+      const pinned = pinnedLoopFrame(sourceId);
+      if (pinned === null) return false;
       setLoopMissing(marks => markLoopFrameMissing(marks, pinned, sourceId));
       return true;
     };
+    // An error event of a loop frame's tile (HOTFIX-GOES-2) is handled, not logged, and marks nothing by itself: MapLibre
+    // leaves that tile `errored`, so the loop's tick counts it and skips the frame only when most of its tiles failed.
+    const loopFrameError = sourceId => pinnedLoopFrame(sourceId) !== null;
     const engine = createMapEngine({
       maplibre,
       host: hostRef.current,
@@ -2082,7 +2089,7 @@ const OccMapView = forwardRef(function OccMapView({
       onDoubleClick: event => handleDoubleClick(with3dHit(event)),
       onPointerMove: event => handlePointer(with3dHit(event)),
       onUserGesture: handleGesture,
-      onSourceError: ({ sourceId }) => markLoopFrame(sourceId),
+      onSourceError: ({ sourceId }) => loopFrameError(sourceId),
     });
     engineRef.current = engine;
     // The 3D aircraft of this engine (PR M7): fed by the writes of its traffic on its one frame loop, lit by the sun at

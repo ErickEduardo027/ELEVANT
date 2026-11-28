@@ -7,8 +7,8 @@ import {
   WEATHER_GROUPS, loopLayerId, loopSourceId, radarLayerId, radarSourceId, weatherLayerNotes,
 } from '../traffic/weatherLayers';
 import {
-  applyRegionalDrawing, createRegionalApplied, isLoopFrameSource, markLoopFrameMissing, radarCredit, regionalDrawing,
-  regionalLoop, regionalOpacities, startRegionalLoop, withPinnedRegional,
+  LOOP_FRAME_FAILED_SHARE, applyRegionalDrawing, createRegionalApplied, isLoopFrameSource, markLoopFrameMissing,
+  radarCredit, regionalDrawing, regionalLoop, regionalOpacities, startRegionalLoop, withPinnedRegional,
 } from './regionalWeather';
 
 const NOON = Date.parse(WEATHER_NOON);
@@ -248,6 +248,30 @@ describe('the regional weather of an OCC map (lane M7)', () => {
       onFrameFailed.mockClear();
       startRegionalLoop(engine, { getDrawing: () => marked, onFrameFailed, setTimer: () => 1, clearTimer: vi.fn() });
       expect(onFrameFailed).not.toHaveBeenCalled();
+    });
+
+    // HOTFIX-GOES-2: a flaky network loses a tile here and there; only most of a frame's tiles failing skips it.
+    it('skips a frame only when most of the tiles it holds failed; an engine without heldTiles keeps any failure', () => {
+      expect(LOOP_FRAME_FAILED_SHARE).toBe(0.5);
+      const { drawing } = pinnedDrawing();
+      const failedOf = { [loopSourceId(1)]: 1, [loopSourceId(2)]: 6, [loopSourceId(3)]: 12, [loopSourceId(4)]: 5 };
+      const engine = { ...fakeEngine(), failedTiles: vi.fn(source => failedOf[source] ?? 0),
+        heldTiles: vi.fn(source => (source in failedOf ? 12 : 0)) };
+      const onFrameFailed = vi.fn();
+      const loop = startRegionalLoop(engine, { getDrawing: () => drawing, onFrameFailed,
+        setTimer: () => 1, clearTimer: vi.fn() });
+      // 1 of 12 and 5 of 12 leave a gap only; 6 of 12 and all 12 skip the frame. A frame with no failure is not counted.
+      expect(onFrameFailed.mock.calls.map(([source]) => source)).toEqual([loopSourceId(2), loopSourceId(3)]);
+      expect(engine.heldTiles).toHaveBeenCalledTimes(4);
+      expect(engine.setRasterTiles).not.toHaveBeenCalled();
+      expect(engine.setData).not.toHaveBeenCalled();
+      loop.stop();
+      // Without heldTiles the loop keeps the rule of step 2: one failed tile skips the frame.
+      const { heldTiles: _held, ...older } = engine;
+      onFrameFailed.mockClear();
+      startRegionalLoop(older, { getDrawing: () => drawing, onFrameFailed, setTimer: () => 1, clearTimer: vi.fn() });
+      expect(onFrameFailed.mock.calls.map(([source]) => source))
+        .toEqual([loopSourceId(1), loopSourceId(2), loopSourceId(3), loopSourceId(4)]);
     });
   });
 

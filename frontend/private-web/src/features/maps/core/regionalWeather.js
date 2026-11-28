@@ -179,14 +179,31 @@ export function regionalOpacities(drawing, elapsedMs, { still = false } = {}) {
 }
 
 /**
+ * The share of the tiles a loop frame holds that must have failed for the loop to skip it (hotfix of 2026-11-28,
+ * HOTFIX-GOES-2): most of them fail when GIBS has no image at that instant; a tile lost to a flaky network leaves only
+ * a gap in that frame.
+ */
+export const LOOP_FRAME_FAILED_SHARE = 0.5;
+
+// Whether the loop frame `sourceId` failed: some of its tiles failed and they are at least LOOP_FRAME_FAILED_SHARE of
+// the tiles it holds. An engine without `heldTiles` keeps the rule of step 2 (any failed tile).
+function loopFrameFailed(engine, sourceId) {
+  const failed = engine.failedTiles(sourceId);
+  if (!(failed > 0)) return false;
+  if (typeof engine.heldTiles !== 'function') return true;
+  return failed >= engine.heldTiles(sourceId) * LOOP_FRAME_FAILED_SHARE;
+}
+
+/**
  * Runs the loop of one engine: every REGIONAL_TICK_MS it sets the opacity of each frame layer that changed for the
  * drawing `getDrawing()` returns (the same value again changes nothing), held on the latest frame while `isStill()`
  * and paused while the tab is hidden. Returns the function that stops it; `rewrite()` on the returned object writes
  * every opacity again on the next tick (a new drawing, a context loss).
  *
  * Each tick it also asks the engine whether a loop frame not yet `missing` holds tiles that failed
- * (`engine.failedTiles`; MapLibre 6.16 keeps a 404 quiet, without an `error` event) and then calls
- * `onFrameFailed(sourceId)` (hotfix of 2026-11-28, step 2). It reads what MapLibre already holds: no request, no write.
+ * (`engine.failedTiles`; MapLibre 6.16 keeps a 404 quiet, without an `error` event, and puts a tile lost to the network
+ * in `errored` too) and, when they are at least LOOP_FRAME_FAILED_SHARE of the tiles it holds (`engine.heldTiles`),
+ * calls `onFrameFailed(sourceId)` (hotfix of 2026-11-28, step 2 and HOTFIX-GOES-2). It reads what MapLibre already holds: no request, no write.
  */
 export function startRegionalLoop(engine, { getDrawing, isStill = () => false, now = () => Date.now(),
   onFrameFailed = null, setTimer = (callback, ms) => setInterval(callback, ms),
@@ -199,7 +216,7 @@ export function startRegionalLoop(engine, { getDrawing, isStill = () => false, n
     if (!drawing) return;
     if (typeof onFrameFailed === 'function' && typeof engine.failedTiles === 'function') {
       for (const frame of drawing.loop.frames) {
-        if (frame.missing !== true && engine.failedTiles(frame.source) > 0) onFrameFailed(frame.source);
+        if (frame.missing !== true && loopFrameFailed(engine, frame.source)) onFrameFailed(frame.source);
       }
     }
     const next = regionalOpacities(drawing, now() - started, { still: isStill() });
