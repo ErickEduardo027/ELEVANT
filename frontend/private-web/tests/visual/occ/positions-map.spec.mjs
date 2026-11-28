@@ -125,10 +125,11 @@ test.describe('Mapa de posiciones on the map engine', () => {
     const canvas = await container.locator('canvas.maplibregl-canvas').elementHandle();
     expect(isolation.count('tilejson')).toBe(1);
 
-    // The page re-reads the board when its window gets the focus back (as on its poll and on occ_planning).
+    // The page re-reads the board when the browser is back online (useOccScreenRefresh, as on its safety poll and on
+    // occ_planning). Since CN-19 the OCC screens keep no focus listener of their own (contracts 2.7).
     for (let read = 1; read <= 2; read += 1) {
       const reads = api.reads;
-      await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+      await page.evaluate(() => window.dispatchEvent(new Event('online')));
       await expect.poll(() => api.reads).toBeGreaterThan(reads);
     }
     await expect(page.getByTestId('positions-map-skeleton')).toHaveCount(0);

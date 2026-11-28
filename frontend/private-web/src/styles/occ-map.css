@@ -237,8 +237,9 @@
 
 /* A menu of the rail («Capas», «Leyenda»): it flies out to the left of the column, over a panel floating there, from
    the top of the zoom group, or from under the panels floating along the top of the map (M1: Mapa de posiciones' bar,
-   Panorama's figures), so a legend open at the start never covers the screen's own bar, down to the bottom of the
-   column at most, and scrolls when what it lists is longer. */
+   Panorama's figures), so a legend open at the start never covers the screen's own bar, down to the panels floating
+   along the bottom (the stand band, Panorama's band and status bar) at most, so it never covers their controls either
+   (INT, 2026-11-28), and scrolls when what it lists is longer. */
 .occ-map .occ-map-flyout {
   position: absolute;
   z-index: 1;
@@ -246,7 +247,7 @@
     - 8px);
   right: calc(100% + 8px);
   max-height: calc(100% + var(--occ-map-zoom-height) + 8px + var(--occ-map-gap)
-    - max(var(--occ-map-gap), var(--occ-map-inset-top, 0px)));
+    - max(var(--occ-map-gap), var(--occ-map-inset-top, 0px)) - var(--occ-map-inset-bottom, 0px));
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-color: var(--occ-line-strong) transparent;
