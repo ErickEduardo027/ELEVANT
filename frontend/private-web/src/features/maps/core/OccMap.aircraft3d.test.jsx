@@ -6,12 +6,17 @@ import { OCC_PALETTES } from '../../occ-ui/occPalette';
 import { ThemeProvider, useTheme } from '../../shell/useTheme';
 import { linearRgb } from '../aircraft/instancePlan';
 import { destinationPoint } from '../airport/geo';
-import { createAirPicture, createEstimates, createMapFlights, TRAFFIC_NOON, TRAFFIC_SOURCE } from '../testing/trafficFixtures';
+import {
+  createAirPicture, createDemoBlock, createDemoFlights, createEstimates, createMapFlights, TRAFFIC_FLIGHT_KEY, TRAFFIC_NOON,
+  TRAFFIC_SOURCE,
+} from '../testing/trafficFixtures';
+import { createMotionStore } from '../traffic/motionStore';
 import { buildSituation, toFlightsModel, toPictureModel } from '../traffic/situationModel';
 import MapDock from '../ui/MapDock';
 import MapPresetSwitcher from '../ui/MapPresetSwitcher';
 import { MODE_3D_STORAGE_KEY } from './aircraft3d';
 import { PUJ_ARP } from './cameraPresets';
+import { createRenderClock } from './frameLoop';
 import OccMap from './OccMap';
 
 // The 3D aircraft wired into OccMap (PR M7), on the fake MapLibre and the real 3D layer with an injected renderer:
@@ -19,7 +24,7 @@ import OccMap from './OccMap';
 // loader, so no test reaches the network or a GPU.
 vi.mock('maplibre-gl', async () => (await import('../../../../tests/fakeMapLibre.js')).sharedFakeMapLibre().module);
 
-const hoisted = vi.hoisted(() => ({ layers: [], renderers: [], failRenderer: false, failLoad: false }));
+const hoisted = vi.hoisted(() => ({ layers: [], renderers: [], failRenderer: false, failLoad: false, createCanvas: null }));
 vi.mock('../aircraft/loadAircraft3d', async () => {
   const chunk = await import('../aircraft/aircraft3dChunk');
   const renderer = () => {
@@ -33,7 +38,8 @@ vi.mock('../aircraft/loadAircraft3d', async () => {
       three: chunk.THREE_PARTS, buildAircraftGeometry: chunk.buildAircraftGeometry, sceneLighting: chunk.sceneLighting,
       AIRCRAFT_3D_LAYER_ID: chunk.AIRCRAFT_3D_LAYER_ID,
       createAircraft3dLayer: options => {
-        const layer = chunk.createAircraft3dLayer({ ...options, createRenderer: renderer });
+        const layer = chunk.createAircraft3dLayer({ ...options, createRenderer: renderer,
+          ...(hoisted.createCanvas ? { createCanvas: hoisted.createCanvas } : {}) });
         hoisted.layers.push({ layer, options });
         return layer;
       },
@@ -42,6 +48,17 @@ vi.mock('../aircraft/loadAircraft3d', async () => {
 });
 
 const fake = sharedFakeMapLibre();
+// A canvas whose 2D context draws nothing (jsdom has none): the atlas of the animated traffic (PR M2) is built on it.
+function fakeCanvas(width, height) {
+  const context = new Proxy({}, {
+    get: (target, key) => (key in target ? target[key] : () => {}),
+    set: (target, key, value) => {
+      target[key] = value;
+      return true;
+    },
+  });
+  return { width, height, getContext: type => (type === '2d' ? context : null) };
+}
 const PAGE = '/admin-occ/console?stationId=s-1';
 const LAYER_ID = 'occ-aircraft-3d';
 
@@ -108,6 +125,7 @@ beforeEach(() => {
   hoisted.renderers.length = 0;
   hoisted.failRenderer = false;
   hoisted.failLoad = false;
+  hoisted.createCanvas = null;
   window.localStorage.clear();
   window.history.replaceState({}, '', PAGE);
   // A browser that draws WebGL2 (jsdom does not): the 3D is on by default there.
@@ -290,5 +308,131 @@ describe('OccMap 3D aircraft (PR M7)', () => {
     const colours = [...plan.values()].flatMap(entry => [...entry.colors]);
     const lightAviam = linearRgb(OCC_PALETTES.light['--occ-panel']);
     expect(colours.some((value, index) => index % 3 === 0 && Math.abs(value - lightAviam[0]) < 1e-6)).toBe(true);
+  });
+});
+
+// PR M2: the traffic of a motion store, animated by the layer every frame from the keyframes of the writes.
+describe('OccMap animated traffic (PR M2)', () => {
+  const NOON = Date.parse(TRAFFIC_NOON);
+  const DEMO_ID = `f:${TRAFFIC_FLIGHT_KEY.demoArrival}`;
+
+  // The demo flight on final at noon and nothing else, on a render clock whose server time the test moves.
+  function demoTraffic() {
+    const server = { at: NOON, now() { return this.at; } };
+    const clock = createRenderClock({ clock: server });
+    const motion = createMotionStore({ clock });
+    const block = createDemoBlock({ appearAt: NOON - 240_000 });
+    const response = createDemoFlights(block);
+    const flights = { ...response, flights: response.flights.filter(row => row.isDemo) };
+    const picture = toPictureModel(createAirPicture({ status: 'Disabled' }));
+    const flightsModel = toFlightsModel(flights);
+    motion.ingest({ picture, flights: flightsModel });
+    const situation = buildSituation({ picture, flights: flightsModel, nowMs: NOON, estimates: motion.estimatesAt(NOON),
+      estimatesChangeAt: motion.nextChangeAt(NOON) });
+    return { server, traffic: { aircraft: situation.aircraft, trails: null, route: null, source: TRAFFIC_SOURCE, motion } };
+  }
+
+  // Animation frames the test runs by hand.
+  function controlledFrames() {
+    const frames = new Map();
+    let next = 1;
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => {
+      const handle = next++;
+      frames.set(handle, callback);
+      return handle;
+    });
+    vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(handle => { frames.delete(handle); });
+    return {
+      pending: () => frames.size,
+      run: () => {
+        const due = [...frames.values()];
+        frames.clear();
+        act(() => due.forEach(callback => callback(0)));
+        return due.length;
+      },
+    };
+  }
+
+  const repaints = map => map.calls.filter(call => call.method === 'triggerRepaint').length;
+  const spriteXY = (sprites, id) => {
+    const index = sprites.ids.indexOf(id);
+    return index < 0 ? null : [sprites.matrices[16 * index + 12], sprites.matrices[16 * index + 13]];
+  };
+  const renderOnce = layer => layer.render({ drawingBufferWidth: 200, drawingBufferHeight: 100 },
+    { defaultProjectionData: { mainMatrix: Float64Array.from({ length: 16 }, (_, index) => (index % 5 === 0 ? 1 : 0)) } });
+
+  it('draws every aircraft in the layer between the writes, repaints only while one moves, and hides its icons', async () => {
+    hoisted.createCanvas = fakeCanvas;
+    vi.stubGlobal('Path2D', class Path2D {});
+    window.localStorage.setItem(MODE_3D_STORAGE_KEY, '2d');
+    const frames = controlledFrames();
+    const { server, traffic } = demoTraffic();
+    render(<OccMap defaultView="approach" traffic={traffic} mapOptions={{ fadeDuration: 0 }} />);
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    await settle();
+    // 2D, and the 3D chunk loaded for the animation: the layer is on the map.
+    expect(map.layerIds()).toContain(LAYER_ID);
+    server.at += 500;
+    frames.run();
+    const feature = trafficProperties(map).get(DEMO_ID);
+    // Its icon, its dashed ring and its «Demo» plate are the layer's now; its tag stays in the GeoJSON.
+    expect(feature).toMatchObject({ model3d: true, animated: true, demo: true });
+    const { getInstances } = hoisted.layers.at(-1).options;
+    const first = getInstances();
+    expect(first.plan.size).toBe(0);
+    expect(spriteXY(first.sprites, DEMO_ID)).not.toBeNull();
+    // The plate travels with it.
+    expect([...first.sprites.ids].filter(id => id === null).length).toBeGreaterThan(0);
+
+    // Every frame while it moves repaints the map once and draws it further along, without a write in between.
+    const writes = map.getSource('occ-traffic').updateDataCalls.length;
+    const before = repaints(map);
+    server.at += 100;
+    frames.run();
+    const later = getInstances();
+    expect(repaints(map)).toBe(before + 1);
+    expect(map.getSource('occ-traffic').updateDataCalls).toHaveLength(writes);
+    expect(later.revision).toBeGreaterThan(first.revision);
+    expect(spriteXY(later.sprites, DEMO_ID)).not.toEqual(spriteXY(first.sprites, DEMO_ID));
+    renderOnce(hoisted.layers.at(-1).layer);
+    expect(map.layers.find(item => item.id === LAYER_ID).stats()).toMatchObject({ sprites: first.sprites.count });
+
+    // An hour later it waits at its apron hold: the frames stop and the map rests.
+    server.at = NOON + 3_600_000;
+    frames.run();
+    frames.run();
+    expect(frames.pending()).toBe(0);
+    const resting = repaints(map);
+    expect(getInstances()).toBe(getInstances());
+    expect(repaints(map)).toBe(resting);
+  });
+
+  it('keeps the GeoJSON icons when the layer cannot build its sprites, and without motion', async () => {
+    hoisted.createCanvas = () => null;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    window.localStorage.setItem(MODE_3D_STORAGE_KEY, '2d');
+    const frames = controlledFrames();
+    const { server, traffic } = demoTraffic();
+    render(<OccMap defaultView="approach" traffic={traffic} mapOptions={{ fadeDuration: 0 }} />);
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    await settle();
+    server.at += 500;
+    frames.run();
+    expect(trafficProperties(map).get(DEMO_ID)).toMatchObject({ animated: true });
+    // The first frame cannot build the atlas: the layer goes and the next write gives the icons back.
+    renderOnce(hoisted.layers.at(-1).layer);
+    await settle();
+    expect(warn).toHaveBeenCalled();
+    expect(map.layerIds()).not.toContain(LAYER_ID);
+    expect(trafficProperties(map).get(DEMO_ID)).toMatchObject({ model3d: false, animated: false });
+    cleanup();
+
+    // Traffic without motion has no frame loop: nothing to animate, the 2D map loads no 3D.
+    const still = renderConsole();
+    loadStyle(still.map);
+    await settle();
+    expect(still.map.layerIds()).not.toContain(LAYER_ID);
   });
 });
