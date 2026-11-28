@@ -288,11 +288,63 @@ public static class DependencyInjection
         {
             services.AddSingleton<IAerodromeWeatherSource, DisabledAerodromeWeatherSource>();
             services.AddSingleton<IRegionWeatherSource, DisabledRegionWeatherSource>();
+            services.AddSingleton<IRegionSigmetSource, DisabledRegionSigmetSource>();
+        }
+        else
+        {
+            services.AddSingleton<IAerodromeWeatherSource>(provider => new AviationWeatherSource(
+                AviationWeatherSource.CreateHttpClient(), baseUrl, provider.GetRequiredService<TimeProvider>()));
+            services.AddSingleton<IRegionWeatherSource>(provider => new AviationWeatherRegionSource(
+                AviationWeatherSource.CreateHttpClient(), baseUrl, provider.GetRequiredService<TimeProvider>()));
+            // Plan M6: the region's SIGMETs come from the same service, under the same switch.
+            services.AddSingleton<IRegionSigmetSource>(provider => new AviationWeatherSigmetSource(
+                AviationWeatherSigmetSource.CreateHttpClient(), baseUrl, provider.GetRequiredService<TimeProvider>()));
+        }
+        AddRegionWind(services, configuration);
+        AddRegionRadar(services, configuration);
+    }
+
+    /// <summary>
+    /// Plan M6: the wind grid of the OCC's region (<c>occ/weather/wind</c>), from Open-Meteo. <c>OpenMeteo:Enabled</c> is
+    /// off by default and only Development turns it on: the free tier is for non-commercial use, Production needs the
+    /// commercial plan first. Off, the source is <see cref="DisabledRegionWindSource"/> and nothing is ever called.
+    /// <c>OpenMeteo:BaseUrl</c> is checked on every start, also while it is off. On, the source is built when it is first
+    /// resolved and calls the service only when someone reads the wind.
+    /// </summary>
+    private static void AddRegionWind(IServiceCollection services, IConfiguration configuration)
+    {
+        var options = configuration.GetSection(Integrations.OpenMeteo.OpenMeteoOptions.SectionName)
+            .Get<Integrations.OpenMeteo.OpenMeteoOptions>() ?? new();
+        var baseUrl = AviationWeatherSource.DataApiAddress(options.BaseUrl) ??
+            throw new InvalidOperationException("OpenMeteo:BaseUrl must be an absolute https address.");
+        if (!options.Enabled)
+        {
+            services.AddSingleton<IRegionWindSource, DisabledRegionWindSource>();
             return;
         }
-        services.AddSingleton<IAerodromeWeatherSource>(provider => new AviationWeatherSource(
+        services.AddSingleton<IRegionWindSource>(provider => new Integrations.OpenMeteo.OpenMeteoWindSource(
             AviationWeatherSource.CreateHttpClient(), baseUrl, provider.GetRequiredService<TimeProvider>()));
-        services.AddSingleton<IRegionWeatherSource>(provider => new AviationWeatherRegionSource(
+    }
+
+    /// <summary>
+    /// Plan M6: the radar frames of the OCC's region (<c>occ/weather/radar</c>), San Juan's NEXRAD through the Iowa
+    /// Environmental Mesonet. <c>WeatherRadar:Enabled</c> is off by default and only Development turns it on. Off, the
+    /// source is <see cref="DisabledRegionRadarSource"/> and nothing is ever called. <c>WeatherRadar:BaseUrl</c> is checked
+    /// on every start, also while it is off. On, the source is built when it is first resolved and calls the service only
+    /// when someone reads the radar.
+    /// </summary>
+    private static void AddRegionRadar(IServiceCollection services, IConfiguration configuration)
+    {
+        var options = configuration.GetSection(Integrations.WeatherRadar.WeatherRadarOptions.SectionName)
+            .Get<Integrations.WeatherRadar.WeatherRadarOptions>() ?? new();
+        var baseUrl = AviationWeatherSource.DataApiAddress(options.BaseUrl) ??
+            throw new InvalidOperationException("WeatherRadar:BaseUrl must be an absolute https address.");
+        if (!options.Enabled)
+        {
+            services.AddSingleton<IRegionRadarSource, DisabledRegionRadarSource>();
+            return;
+        }
+        services.AddSingleton<IRegionRadarSource>(provider => new Integrations.WeatherRadar.IemRadarSource(
             AviationWeatherSource.CreateHttpClient(), baseUrl, provider.GetRequiredService<TimeProvider>()));
     }
 }

@@ -62,4 +62,17 @@ public static class RegionWeatherStations
     /// </summary>
     public static IReadOnlyList<RegionWeatherStation>? Around(string? icaoCode) =>
         string.Equals(icaoCode, PuntaCanaIcao, StringComparison.Ordinal) ? AroundPuntaCana : null;
+
+    /// <summary>
+    /// The box the layers of Punta Cana's region cover (SIGMETs, wind and radar: <c>occ/weather/sigmets</c>,
+    /// <c>occ/weather/wind</c> and <c>occ/weather/radar</c>): 12°N to 24°N and 76°W to 60°W, the Greater Antilles from
+    /// Jamaica's east to the Leeward Islands, every airport of the region inside it. San Juan's NEXRAD (TJUA) covers it
+    /// around Puerto Rico, Punta Cana at its edge.
+    /// </summary>
+    public static Elevant.Application.Abstractions.Operations.RegionWeatherArea PuntaCanaArea { get; } =
+        new(-76, -60, 12, 24, "TJUA");
+
+    /// <summary>The box of the region around the airport whose ICAO code is <paramref name="icaoCode"/>, as <see cref="Around"/> reads it.</summary>
+    public static Elevant.Application.Abstractions.Operations.RegionWeatherArea? AreaAround(string? icaoCode) =>
+        string.Equals(icaoCode, PuntaCanaIcao, StringComparison.Ordinal) ? PuntaCanaArea : null;
 }

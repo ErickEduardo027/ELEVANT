@@ -15,7 +15,8 @@ namespace Elevant.Api.Controllers;
 
 /// <summary>
 /// The weather of a station's airport for the OCC (ADR-0043, contracts 1.4): its METAR and its TAF from aviationweather.gov,
-/// and since plan M6 those of every airport of the region around it, for the same readers as the OCC map (AVIAM internal
+/// and since plan M6 those of every airport of the region around it with the region's SIGMETs, wind grid and radar frames
+/// (<c>region</c>, <c>sigmets</c>, <c>wind</c>, <c>radar</c>), for the same readers as the OCC map (AVIAM internal
 /// staff with the station in scope and any of the map permissions: dashboard, flight monitoring, positions map or
 /// planning). Nothing here writes. The state of the weather travels in the 200; every refusal carries a stable code and a
 /// Spanish title the screens never show: <c>invalid_weather_query</c> (400), <c>forbidden</c> (403) and
@@ -27,8 +28,8 @@ namespace Elevant.Api.Controllers;
 [PrivateResponse]
 [OccWeatherProblemDetails]
 [Route("api/v{version:apiVersion}/occ/weather")]
-public sealed class OccWeatherController(GetOccAerodromeWeatherHandler weather, GetOccRegionWeatherHandler region)
-    : ControllerBase
+public sealed class OccWeatherController(GetOccAerodromeWeatherHandler weather, GetOccRegionWeatherHandler region,
+    GetOccRegionWeatherLayersHandler layers) : ControllerBase
 {
     /// <summary>
     /// The METAR (decoded basics and raw text) and the TAF (raw text and periods) of the station's airport, which the API
@@ -80,6 +81,87 @@ public sealed class OccWeatherController(GetOccAerodromeWeatherHandler weather, 
             data.RefreshAfterSeconds, new OccRegionWeatherCreditResponse(data.Credit.Name, data.Credit.HomeUrl),
             data.Stations.Select(RegionStation).ToArray()));
     }
+
+    /// <summary>
+    /// The international SIGMETs whose area touches the region around the station's airport and are still valid, from
+    /// aviationweather.gov, which the API reads once for the region and keeps ten minutes. Their state, reason, when to ask
+    /// again and the credit come in the 200; a station outside the reader's scope, or whose airport has no region, is not
+    /// found.
+    /// </summary>
+    [HttpGet("sigmets", Name = "GetOccRegionSigmets")]
+    [ProducesResponseType<OccSigmetsResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    public async Task<ActionResult<OccSigmetsResponse>> GetRegionSigmets([FromQuery, BindRequired] Guid stationId,
+        CancellationToken cancellationToken)
+    {
+        if (!TryAccount(out var accountId)) return OccWeatherProblems.Unauthenticated(this);
+        var result = await layers.SigmetsAsync(accountId, stationId, cancellationToken);
+        if (result.Failure is { } failure) return OccWeatherProblems.Of(this, failure);
+
+        var data = result.Value!;
+        return Ok(new OccSigmetsResponse(data.StationId, data.Status, data.Reason, data.ServerTime, data.RefreshAfterSeconds,
+            Credit(data.Credit), data.Sigmets.Select(sigmet => new OccSigmetResponse(sigmet.Id, sigmet.FirId, sigmet.Hazard,
+                sigmet.Qualifier, sigmet.ValidFrom, sigmet.ValidTo, sigmet.BaseFeet, sigmet.TopFeet, sigmet.Raw,
+                sigmet.Polygon.Select(point => (IReadOnlyList<double>)[point.Longitude, point.Latitude]).ToArray()))
+                .ToArray()));
+    }
+
+    /// <summary>
+    /// The wind 10 m above the ground on a coarse grid over the region around the station's airport, from Open-Meteo,
+    /// which the API reads for the whole grid at once and keeps an hour. Its state, reason, when to ask again and the
+    /// credit come in the 200; a station outside the reader's scope, or whose airport has no region, is not found.
+    /// </summary>
+    [HttpGet("wind", Name = "GetOccRegionWind")]
+    [ProducesResponseType<OccWindGridResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    public async Task<ActionResult<OccWindGridResponse>> GetRegionWind([FromQuery, BindRequired] Guid stationId,
+        CancellationToken cancellationToken)
+    {
+        if (!TryAccount(out var accountId)) return OccWeatherProblems.Unauthenticated(this);
+        var result = await layers.WindAsync(accountId, stationId, cancellationToken);
+        if (result.Failure is { } failure) return OccWeatherProblems.Of(this, failure);
+
+        var data = result.Value!;
+        var grid = data.Grid;
+        return Ok(new OccWindGridResponse(data.StationId, data.Status, data.Reason, data.ServerTime, data.RefreshAfterSeconds,
+            Credit(data.Credit), data.ValidAt, new OccWindGridAreaResponse(grid.Area.LongitudeMin, grid.Area.LongitudeMax,
+                grid.Area.LatitudeMin, grid.Area.LatitudeMax, grid.Columns, grid.Rows,
+                grid.Points.Select(point => new OccWindPointResponse(point.Latitude, point.Longitude, point.SpeedKnots,
+                    point.DirectionDegrees)).ToArray())));
+    }
+
+    /// <summary>
+    /// The latest radar scans over the region around the station's airport (San Juan's NEXRAD through the Iowa
+    /// Environmental Mesonet), as tile addresses the screens load themselves; the API keeps the index five minutes. Its
+    /// state, reason, when to ask again and the credit come in the 200; a station outside the reader's scope, or whose
+    /// airport has no region, is not found.
+    /// </summary>
+    [HttpGet("radar", Name = "GetOccRegionRadar")]
+    [ProducesResponseType<OccRadarFramesResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    public async Task<ActionResult<OccRadarFramesResponse>> GetRegionRadar([FromQuery, BindRequired] Guid stationId,
+        CancellationToken cancellationToken)
+    {
+        if (!TryAccount(out var accountId)) return OccWeatherProblems.Unauthenticated(this);
+        var result = await layers.RadarAsync(accountId, stationId, cancellationToken);
+        if (result.Failure is { } failure) return OccWeatherProblems.Of(this, failure);
+
+        var data = result.Value!;
+        return Ok(new OccRadarFramesResponse(data.StationId, data.Status, data.Reason, data.ServerTime,
+            data.RefreshAfterSeconds, Credit(data.Credit), data.Provider, data.MaxZoom,
+            data.Frames.Select(frame => new OccRadarFrameResponse(frame.Time, frame.TileUrlTemplate)).ToArray()));
+    }
+
+    private static OccRegionWeatherCreditResponse Credit(AerodromeWeatherAttribution credit) => new(credit.Name, credit.HomeUrl);
 
     private static OccRegionWeatherStationResponse RegionStation(OccRegionStationWeather item) => new(
         item.Station.IcaoCode, item.Station.IataCode, item.Station.Name, item.Station.Latitude, item.Station.Longitude,

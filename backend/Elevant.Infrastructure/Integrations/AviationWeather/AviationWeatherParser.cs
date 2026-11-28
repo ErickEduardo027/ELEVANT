@@ -286,7 +286,7 @@ public static class AviationWeatherParser
         Text(item, property) is { } text && text.Length <= maxLength ? text : null;
 
     /// <summary>An instant given as Unix seconds or as an ISO 8601 text, in UTC; null when it is neither.</summary>
-    private static DateTimeOffset? Instant(JsonElement item, string property)
+    internal static DateTimeOffset? Instant(JsonElement item, string property)
     {
         if (!item.TryGetProperty(property, out var value)) return null;
         if (Number(value) is { } seconds)
@@ -301,23 +301,23 @@ public static class AviationWeatherParser
     }
 
     /// <summary>The text of a property, trimmed; null when it is missing, not a text or blank.</summary>
-    private static string? Text(JsonElement item, string property) =>
+    internal static string? Text(JsonElement item, string property) =>
         item.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String &&
         value.GetString()?.Trim() is { Length: > 0 } text
             ? text
             : null;
 
-    private static double? Number(JsonElement item, string property) =>
+    internal static double? Number(JsonElement item, string property) =>
         item.TryGetProperty(property, out var value) ? Number(value) : null;
 
     /// <summary>A finite number; null for anything else.</summary>
-    private static double? Number(JsonElement value) =>
+    internal static double? Number(JsonElement value) =>
         value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number) && double.IsFinite(number)
             ? number
             : null;
 
     /// <summary>The value rounded to a whole number when it is from <paramref name="minimum"/> to <paramref name="maximum"/>.</summary>
-    private static int? Whole(double? value, int minimum, int maximum) =>
+    internal static int? Whole(double? value, int minimum, int maximum) =>
         value is { } number && number >= minimum && number <= maximum
             ? (int)Math.Round(number, MidpointRounding.AwayFromZero)
             : null;

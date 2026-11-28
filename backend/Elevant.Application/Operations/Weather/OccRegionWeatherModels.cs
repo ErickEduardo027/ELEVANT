@@ -19,3 +19,37 @@ public sealed record OccRegionWeatherData(Guid StationId, string Status, string?
 /// </summary>
 public sealed record OccRegionStationWeather(RegionWeatherStation Station, AerodromeMetar? Metar, int? CeilingFeet,
     AerodromeTaf? Taf);
+
+/// <summary>
+/// The international SIGMETs over the region around a station's airport as the OCC reads them (plan M6), with the state,
+/// reason, pace and credit of <see cref="OccRegionWeatherData"/>. <paramref name="Sigmets"/> holds those that touch the
+/// region's box and are still valid at <paramref name="ServerTime"/>, ordered by the end of their validity; an empty list
+/// with a live state means there are none.
+/// </summary>
+public sealed record OccRegionSigmetsData(Guid StationId, string Status, string? Reason, DateTimeOffset ServerTime,
+    int RefreshAfterSeconds, AerodromeWeatherAttribution Credit, IReadOnlyList<RegionSigmet> Sigmets);
+
+/// <summary>
+/// The wind grid over the region around a station's airport as the OCC reads it (plan M6), with the state, reason, pace and
+/// credit of <see cref="OccRegionWeatherData"/>. <paramref name="Grid"/> always has the region's box and shape; its points
+/// and <paramref name="ValidAt"/> only when the service gave them.
+/// </summary>
+public sealed record OccRegionWindData(Guid StationId, string Status, string? Reason, DateTimeOffset ServerTime,
+    int RefreshAfterSeconds, AerodromeWeatherAttribution Credit, DateTimeOffset? ValidAt, RegionWindGrid Grid);
+
+/// <summary>
+/// The radar frames over the region around a station's airport as the OCC reads them (plan M6), with the state, reason,
+/// pace and credit of <see cref="OccRegionWeatherData"/>. <paramref name="Provider"/> is null, and
+/// <paramref name="Frames"/> empty, when there is nothing to draw.
+/// </summary>
+public sealed record OccRegionRadarData(Guid StationId, string Status, string? Reason, DateTimeOffset ServerTime,
+    int RefreshAfterSeconds, AerodromeWeatherAttribution Credit, string? Provider, int MaxZoom,
+    IReadOnlyList<RegionRadarFrame> Frames);
+
+/// <summary>The shape of a region's wind grid (plan M6): 10 points west to east by 8 south to north, 80 in one request.</summary>
+public static class RegionWindGridShape
+{
+    public const int Columns = 10;
+
+    public const int Rows = 8;
+}
