@@ -410,6 +410,240 @@ public sealed class OccWeatherEndpointsTests(ElevantApiFactory factory) : IClass
         Assert.Equal(32, region.Requests[0].Count);
     }
 
+    private static readonly string[] LayerPaths = ["sigmets", "wind", "radar"];
+
+    private static readonly string[] LayerHead = ["stationId", "status", "reason", "serverTime", "refreshAfterSeconds",
+        "credit"];
+
+    /// <summary>Plan M6: the SIGMETs, wind and radar reads validate and scope the station as the region's METARs do.</summary>
+    [Fact]
+    public async Task TheLayerReadsValidateAndScopeTheStation()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var airports = new Airports();
+        var layers = new StubLayers();
+        var replaced = new Layers(layers, layers, layers);
+
+        await using (var application = Application(Reader(MapPermissions), airports, layers: replaced))
+        {
+            using var client = Authorized(application);
+            foreach (var path in LayerPaths)
+            {
+                foreach (var query in new[] { "", "?stationId=", "?stationId=PUJ", $"?stationId={Guid.Empty}" })
+                {
+                    using var response = await client.GetAsync($"/api/v1/occ/weather/{path}{query}", ct);
+                    Assert.True(await StatusCodeAndTitleAsync(response) == (HttpStatusCode.BadRequest,
+                        "invalid_weather_query", InvalidTitle), path + query);
+                }
+                foreach (var station in new[] { Elsewhere, SantoDomingo })
+                {
+                    using var response = await client.GetAsync($"/api/v1/occ/weather/{path}?stationId={station}", ct);
+                    Assert.Equal((HttpStatusCode.NotFound, "not_found", NotFoundTitle), await StatusCodeAndTitleAsync(response));
+                    Assert.Contains("no-store", response.Headers.CacheControl?.ToString(), StringComparison.Ordinal);
+                }
+            }
+            Assert.Equal([SantoDomingo, SantoDomingo, SantoDomingo], airports.Requests);
+            Assert.Equal(0, layers.Reads);
+        }
+
+        // Another Operations permission alone: 403 forbidden.
+        await using (var application = Application(Reader("operations.review.read"), airports, layers: replaced))
+        {
+            using var client = Authorized(application);
+            foreach (var path in LayerPaths)
+            {
+                using var response = await client.GetAsync($"/api/v1/occ/weather/{path}?stationId={PuntaCana}", ct);
+                Assert.Equal((HttpStatusCode.Forbidden, "forbidden", ForbiddenTitle), await StatusCodeAndTitleAsync(response));
+            }
+        }
+        Assert.Equal(0, layers.Reads);
+    }
+
+    /// <summary>
+    /// Plan M6: each layer read answers its state in its 200 with exactly the names of its contract: Disabled while its
+    /// switch is off (as Testing leaves them), Unavailable with provider_error when the real source's every request fails
+    /// at once (never the network), and its values when live.
+    /// </summary>
+    [Fact]
+    public async Task TheLayerReadsAnswerWithExactlyTheNamesOfTheirContracts()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        await using (var application = Application(Reader("operations.planning.read"), new Airports()))
+        {
+            using var client = Authorized(application);
+            using (var sigmets = await LayerAsync(client, "sigmets", ct))
+            {
+                Assert.Equal([.. LayerHead, "sigmets"], Names(sigmets.RootElement));
+                AssertLayer(sigmets.RootElement, "Disabled", "not_configured", 900, "NOAA Aviation Weather Center",
+                    "https://aviationweather.gov");
+                Assert.Equal(0, sigmets.RootElement.GetProperty("sigmets").GetArrayLength());
+            }
+            using (var wind = await LayerAsync(client, "wind", ct))
+            {
+                Assert.Equal([.. LayerHead, "validAt", "grid"], Names(wind.RootElement));
+                AssertLayer(wind.RootElement, "Disabled", "not_configured", 3600, "Open-Meteo", "https://open-meteo.com");
+                var grid = wind.RootElement.GetProperty("grid");
+                Assert.Equal(["lonMin", "lonMax", "latMin", "latMax", "columns", "rows", "points"], Names(grid));
+                Assert.Equal((-76d, -60d, 12d, 24d, 10, 8, 0), (grid.GetProperty("lonMin").GetDouble(),
+                    grid.GetProperty("lonMax").GetDouble(), grid.GetProperty("latMin").GetDouble(),
+                    grid.GetProperty("latMax").GetDouble(), grid.GetProperty("columns").GetInt32(),
+                    grid.GetProperty("rows").GetInt32(), grid.GetProperty("points").GetArrayLength()));
+                Assert.Equal(JsonValueKind.Null, wind.RootElement.GetProperty("validAt").ValueKind);
+            }
+            using (var radar = await LayerAsync(client, "radar", ct))
+            {
+                Assert.Equal([.. LayerHead, "provider", "maxZoom", "frames"], Names(radar.RootElement));
+                AssertLayer(radar.RootElement, "Disabled", "not_configured", 900, "Iowa Environmental Mesonet",
+                    "https://mesonet.agron.iastate.edu");
+                Assert.Equal((JsonValueKind.Null, 0, 0), (radar.RootElement.GetProperty("provider").ValueKind,
+                    radar.RootElement.GetProperty("maxZoom").GetInt32(),
+                    radar.RootElement.GetProperty("frames").GetArrayLength()));
+            }
+        }
+
+        // The real sources whose every request fails at once: one request each, then Unavailable with provider_error.
+        var transport = new FailingTransport();
+        using (var failingSigmets = new AviationWeatherSigmetSource(new HttpClient(transport),
+                   new Uri("https://aviationweather.gov/api/data/"), TimeProvider.System))
+        using (var failingWind = new Elevant.Infrastructure.Integrations.OpenMeteo.OpenMeteoWindSource(
+                   new HttpClient(transport), new Uri("https://api.open-meteo.com/v1/"), TimeProvider.System))
+        using (var failingRadar = new Elevant.Infrastructure.Integrations.WeatherRadar.IemRadarSource(
+                   new HttpClient(transport), new Uri("https://mesonet.agron.iastate.edu/"), TimeProvider.System))
+        await using (var application = Application(Reader("operations.dashboard.read"), new Airports(),
+                         layers: new Layers(failingSigmets, failingWind, failingRadar)))
+        {
+            using var client = Authorized(application);
+            foreach (var path in LayerPaths)
+            {
+                using var document = await LayerAsync(client, path, ct);
+                Assert.Equal(("Unavailable", "provider_error"), (document.RootElement.GetProperty("status").GetString(),
+                    document.RootElement.GetProperty("reason").GetString()));
+            }
+        }
+        var sent = transport.Requests;
+        Assert.Equal(3, sent.Count);
+        Assert.Contains("https://aviationweather.gov/api/data/isigmet?format=json", sent);
+        Assert.Single(sent, uri => uri.StartsWith("https://api.open-meteo.com/v1/forecast?latitude=", StringComparison.Ordinal));
+        Assert.Single(sent, uri => uri.StartsWith(
+            "https://mesonet.agron.iastate.edu/json/radar.py?operation=list&product=N0B&radar=JUA&", StringComparison.Ordinal));
+
+        // Live layers: every level with exactly the names of its contract.
+        var layers = new StubLayers();
+        await using (var application = Application(Reader("operations.dashboard.read"), new Airports(),
+                         layers: new Layers(layers, layers, layers)))
+        {
+            using var client = Authorized(application);
+            using (var sigmets = await LayerAsync(client, "sigmets", ct))
+            {
+                AssertLayer(sigmets.RootElement, "Live", null, 600, "NOAA Aviation Weather Center",
+                    "https://aviationweather.gov");
+                var sigmet = Assert.Single(sigmets.RootElement.GetProperty("sigmets").EnumerateArray());
+                Assert.Equal(["id", "firId", "hazard", "qualifier", "validFrom", "validTo", "baseFeet", "topFeet", "raw",
+                    "polygon"], Names(sigmet));
+                Assert.Equal(("TJZS-A3-202611131500", "TJZS", "TS", "EMBD", JsonValueKind.Null, 45000),
+                    (sigmet.GetProperty("id").GetString(), sigmet.GetProperty("firId").GetString(),
+                        sigmet.GetProperty("hazard").GetString(), sigmet.GetProperty("qualifier").GetString(),
+                        sigmet.GetProperty("baseFeet").ValueKind, sigmet.GetProperty("topFeet").GetInt32()));
+                // Longitude first, as GeoJSON takes it.
+                Assert.Equal([[-67.5, 18.5], [-66.0, 19.5], [-65.0, 18.0], [-67.5, 18.5]],
+                    sigmet.GetProperty("polygon").EnumerateArray()
+                        .Select(point => point.EnumerateArray().Select(value => value.GetDouble()).ToArray()).ToArray());
+            }
+            using (var wind = await LayerAsync(client, "wind", ct))
+            {
+                AssertLayer(wind.RootElement, "Live", null, 3600, "Open-Meteo", "https://open-meteo.com");
+                var point = Assert.Single(wind.RootElement.GetProperty("grid").GetProperty("points").EnumerateArray());
+                Assert.Equal(["latitude", "longitude", "speedKnots", "directionDegrees"], Names(point));
+                Assert.Equal((18.5, -68.4, 12.5, 90), (point.GetProperty("latitude").GetDouble(),
+                    point.GetProperty("longitude").GetDouble(), point.GetProperty("speedKnots").GetDouble(),
+                    point.GetProperty("directionDegrees").GetInt32()));
+                Assert.Equal(JsonValueKind.String, wind.RootElement.GetProperty("validAt").ValueKind);
+            }
+            using (var radar = await LayerAsync(client, "radar", ct))
+            {
+                AssertLayer(radar.RootElement, "Live", null, 300, "Iowa Environmental Mesonet",
+                    "https://mesonet.agron.iastate.edu");
+                Assert.Equal(("iem-tjua", 10), (radar.RootElement.GetProperty("provider").GetString(),
+                    radar.RootElement.GetProperty("maxZoom").GetInt32()));
+                var frame = Assert.Single(radar.RootElement.GetProperty("frames").EnumerateArray());
+                Assert.Equal(["time", "tileUrlTemplate"], Names(frame));
+                Assert.Equal("https://mesonet.agron.iastate.edu/c/tile.py/1.0.0/ridge::JUA-N0B-202611131500/{z}/{x}/{y}.png",
+                    frame.GetProperty("tileUrlTemplate").GetString());
+            }
+        }
+        Assert.Equal(3, layers.Reads);
+    }
+
+    private static async Task<JsonDocument> LayerAsync(HttpClient client, string path, CancellationToken ct)
+    {
+        using var response = await client.GetAsync($"/api/v1/occ/weather/{path}?stationId={PuntaCana}", ct);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("no-store", response.Headers.CacheControl?.ToString(), StringComparison.Ordinal);
+        return await JsonAsync(response);
+    }
+
+    private static void AssertLayer(JsonElement root, string status, string? reason, int refreshAfterSeconds,
+        string creditName, string creditUrl)
+    {
+        Assert.Equal((PuntaCana.ToString("D"), status, reason, refreshAfterSeconds),
+            (root.GetProperty("stationId").GetString(), root.GetProperty("status").GetString(),
+                root.GetProperty("reason").ValueKind == JsonValueKind.Null ? null : root.GetProperty("reason").GetString(),
+                root.GetProperty("refreshAfterSeconds").GetInt32()));
+        var credit = root.GetProperty("credit");
+        Assert.Equal(["name", "url"], Names(credit));
+        Assert.Equal((creditName, creditUrl), (credit.GetProperty("name").GetString(), credit.GetProperty("url").GetString()));
+    }
+
+    /// <summary>The sources of the region's layers a test puts in the host's place (plan M6); null keeps the host's.</summary>
+    private sealed record Layers(IRegionSigmetSource? Sigmets, IRegionWindSource? Wind, IRegionRadarSource? Radar);
+
+    /// <summary>
+    /// The three layer sources at once, live by the host's clock: a SIGMET valid for another hour, one point of wind valid
+    /// a quarter of an hour ago and one radar scan of four minutes ago. Every read is counted.
+    /// </summary>
+    private sealed class StubLayers : IRegionSigmetSource, IRegionWindSource, IRegionRadarSource
+    {
+        private int _reads;
+
+        public int Reads => Volatile.Read(ref _reads);
+
+        Task<RegionWeatherLayer<IReadOnlyList<RegionSigmet>>?> IRegionSigmetSource.ReadAsync(RegionWeatherArea area,
+            CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _reads);
+            var now = DateTimeOffset.UtcNow;
+            IReadOnlyList<RegionSigmet> sigmets =
+            [
+                new("TJZS-A3-202611131500", "TJZS", "TS", "EMBD", now.AddHours(-1), now.AddHours(1), null, 45000,
+                    "TJZS SIGMET A3 VALID 131500/131900 TJSJ- EMBD TS TOP FL450",
+                    [new(-67.5, 18.5), new(-66.0, 19.5), new(-65.0, 18.0), new(-67.5, 18.5)]),
+            ];
+            return Task.FromResult<RegionWeatherLayer<IReadOnlyList<RegionSigmet>>?>(new(sigmets, false, null, null));
+        }
+
+        Task<RegionWeatherLayer<RegionWindGrid>?> IRegionWindSource.ReadAsync(RegionWeatherArea area,
+            CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _reads);
+            var grid = new RegionWindGrid(DateTimeOffset.UtcNow.AddMinutes(-15), area, 10, 8,
+                [new RegionWindPoint(18.5, -68.4, 12.5, 90)]);
+            return Task.FromResult<RegionWeatherLayer<RegionWindGrid>?>(new(grid, false, null, null));
+        }
+
+        Task<RegionWeatherLayer<RegionRadarFrames>?> IRegionRadarSource.ReadAsync(RegionWeatherArea area,
+            CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _reads);
+            var frames = new RegionRadarFrames("iem-tjua", 10,
+            [
+                new RegionRadarFrame(DateTimeOffset.UtcNow.AddMinutes(-4),
+                    "https://mesonet.agron.iastate.edu/c/tile.py/1.0.0/ridge::JUA-N0B-202611131500/{z}/{x}/{y}.png"),
+            ]);
+            return Task.FromResult<RegionWeatherLayer<RegionRadarFrames>?>(new(frames, false, null, null));
+        }
+    }
+
     private static readonly string[] RegionNames = ["stationId", "status", "reason", "serverTime", "refreshAfterSeconds",
         "credit", "stations"];
 
@@ -516,13 +750,16 @@ public sealed class OccWeatherEndpointsTests(ElevantApiFactory factory) : IClass
     /// keeps its own: AviationWeather off, as the Testing settings leave it.
     /// </summary>
     private WebApplicationFactory<Program> Application(ActorContext? actor, Airports airports,
-        IAerodromeWeatherSource? weather = null, IRegionWeatherSource? region = null) =>
+        IAerodromeWeatherSource? weather = null, IRegionWeatherSource? region = null, Layers? layers = null) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
             Replace<IActorContextResolver>(services, new Actors(actor));
             Replace<IOccStationAirportStore>(services, airports);
             if (weather is not null) Replace(services, weather);
             if (region is not null) Replace(services, region);
+            if (layers?.Sigmets is { } sigmets) Replace(services, sigmets);
+            if (layers?.Wind is { } wind) Replace(services, wind);
+            if (layers?.Radar is { } radar) Replace(services, radar);
         }));
 
     /// <summary>AVIAM internal staff of Operations with the given permissions, Punta Cana and Santo Domingo in scope.</summary>
