@@ -113,6 +113,35 @@ function standTag(item, aviam, departure) {
   return departure ? '' : (filled(item.standCode) ?? '');
 }
 
+const translators = new Map();
+const translatorFor = language => {
+  let t = translators.get(language);
+  if (t === undefined) {
+    t = createTranslator(mapMessages, language);
+    translators.set(language, t);
+  }
+  return t;
+};
+
+/**
+ * The words of an aircraft's tag, as the GeoJSON tags write them (PR M2: the animated layer draws them in its own
+ * atlas, aircraft/labelAtlas.js): `{ aviam, dir, tag1, suffix, tag2, tagStand }`, `dir` `arr` or `dep` for an ELEVANT
+ * flight and '' for other traffic; see trafficFeatures for the rest.
+ */
+export function tagTextOf(item, { language = 'es' } = {}) {
+  const aviam = item?.kind === 'aviam';
+  const departure = aviam && item.direction === 'Departure';
+  const type = resolveAircraftType({ typeIcao: item.typeIcao, model: item.model, sizeCategory: item.sizeCategory,
+    emitterCategory: item.emitterCategory });
+  const { tag1, suffix, tag2 } = tagLines(item, type, { t: translatorFor(language), language });
+  return { aviam, dir: aviam ? (departure ? 'dep' : 'arr') : '', tag1, suffix, tag2,
+    tagStand: standTag(item, aviam, departure) };
+}
+
+/** Half an aircraft's silhouette as drawn, in pixels, at its drawn `scale`: its ring, plate and tag keep clear of it. */
+export const drawnRadius = (iconCategory, scale) => Math.round(
+  ((AIRCRAFT_ICON_SIZES[iconCategory] - 2 * AIRCRAFT_ICON_INSET) / 2) * scale * 10) / 10;
+
 // The opacity of an aircraft in hundredths, so a fade writes a hundred steps at most; 1 when it says none.
 const opacityOf = item => (finite(item.opacity) ? Math.round(Math.min(1, Math.max(0, item.opacity)) * 100) / 100 : 1);
 
@@ -120,7 +149,7 @@ const NO_IDS = Object.freeze(new Set());
 const idsOf = value => (value instanceof Set ? value : NO_IDS);
 
 /** One feature of the traffic source; see trafficFeatures for its properties. */
-function featureOf(item, { selectedId, focusId, labelsOn, language, t, parked, models }) {
+function featureOf(item, { selectedId, focusId, labelsOn, language, t, parked, models, animatedSet }) {
   const aviam = item.kind === 'aviam';
   const departure = aviam && item.direction === 'Departure';
   const ground = item.onGround === true;
@@ -146,7 +175,7 @@ function featureOf(item, { selectedId, focusId, labelsOn, language, t, parked, m
       icon: aircraftImage(type.iconCategory, { hollow: departure }),
       scale,
       // Half the silhouette as drawn, in pixels: the ring, the plate and the tag keep clear of it.
-      radius: Math.round(((AIRCRAFT_ICON_SIZES[type.iconCategory] - 2 * AIRCRAFT_ICON_INSET) / 2) * scale * 10) / 10,
+      radius: drawnRadius(type.iconCategory, scale),
       // An aircraft without a known heading points north: no direction is made up for it.
       trk: finite(item.trackDeg) ? Math.round(item.trackDeg * 10) / 10 : 0,
       quality: item.quality,
@@ -171,6 +200,8 @@ function featureOf(item, { selectedId, focusId, labelsOn, language, t, parked, m
       parkedOnStand: aviam && parked.has(item.id),
       // Drawn as a 3D model (PR M7): its 2D silhouette gives way; its tag, rings and plates stay.
       model3d: models.has(item.id),
+      // Animated by the same layer (PR M2): it draws its dashed ring and «Demo» plate too, so they move with it.
+      animated: animatedSet.has(item.id),
     },
     geometry: { type: 'Point', coordinates: [item.lon, item.lat] },
   };
@@ -196,21 +227,25 @@ function featureOf(item, { selectedId, focusId, labelsOn, language, t, parked, m
  *   scale or as its glyph; the layers then leave its symbol and tag to the stand, except as the chosen aircraft, and
  *   keep its estimated ring and «Demo» plate;
  * - `model3d` (PR M7): an aircraft of `modelIds` (a Set of ids), drawn by the 3D layer (core/aircraft3d.js); the layers
- *   then leave out its silhouette, the chosen one's too, and keep its tag, its rings and its plate.
+ *   then leave out its silhouette, the chosen one's too, and keep its tag, its rings and its plate;
+ * - `animated` (PR M2): an aircraft of `animatedIds` (a Set of ids), which the animated layer draws every frame (its
+ *   silhouette or its model, also in `modelIds`); the layers then leave it its dashed ring and «Demo» plate too.
  * Options: `selection` (`{ kind, id }`), `focusId` (the aircraft under the pointer), `labelsOn`, `language`,
- * `parkedIds`, `modelIds`.
+ * `parkedIds`, `modelIds`, `animatedIds`.
  */
 export function trafficFeatures(aircraft = [], {
   selection = null, focusId = null, labelsOn = false, language = 'es', parkedIds = null, modelIds = null,
+  animatedIds = null,
 } = {}) {
   const list = (Array.isArray(aircraft) ? aircraft : []).filter(isDrawn);
   const selectedId = selectedAircraftId(list, selection);
   const t = createTranslator(mapMessages, language);
   const parked = idsOf(parkedIds);
   const models = idsOf(modelIds);
+  const animatedSet = idsOf(animatedIds);
   return {
     type: 'FeatureCollection',
-    features: list.map(item => featureOf(item, { selectedId, focusId, labelsOn, language, t, parked, models })),
+    features: list.map(item => featureOf(item, { selectedId, focusId, labelsOn, language, t, parked, models, animatedSet })),
   };
 }
 
@@ -261,6 +296,25 @@ export function trafficDiff(previousById, nextFeatures = []) {
 
 /** Whether a diff changes anything. */
 export const isEmptyDiff = diff => diff.add.length === 0 && diff.update.length === 0 && diff.remove.length === 0;
+
+/**
+ * Whether two pieces of GeoJSON-like data (plain objects, arrays and primitives) say the same, as their JSON would: keys
+ * whose value is undefined do not count. It stops at the first difference, so a source whose features did not change
+ * (the trails, the route) is known without a JSON string of all of them on every read (PR M2).
+ */
+export function sameData(a, b) {
+  if (a === b) return true;
+  if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) {
+    if (a.length !== b.length) return false;
+    for (let index = 0; index < a.length; index += 1) if (!sameData(a[index], b[index])) return false;
+    return true;
+  }
+  const keys = Object.keys(a).filter(key => a[key] !== undefined);
+  if (keys.length !== Object.keys(b).filter(key => b[key] !== undefined).length) return false;
+  return keys.every(key => Object.hasOwn(b, key) && sameData(a[key], b[key]));
+}
 
 // The layers-menu groups shown by default: the trails of all the traffic only once it is turned on (design E7).
 const HIDDEN_BY_DEFAULT = new Set(['traffic.trails', 'traffic.labels']);

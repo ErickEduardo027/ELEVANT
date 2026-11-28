@@ -204,7 +204,8 @@ function trajectoryInstants(trajectory) {
  *   by default): each one the store knows takes
  *   its track's render (position, height, speed, heading, phase, mode, ageS, statusKey, opacity, timeScale and, where a
  *   plan places it, quality 'estimated'), `null` when its track draws nothing then; one it does not know is as given.
- *   `sampleOne(id, tMs, aircraft)` does it for one.
+ *   `sampleOne(id, tMs, aircraft)` does it for one. `sampleAhead(sampled, tMs)` says where the aircraft of a sample
+ *   are drawn at a later instant without changing anything (the traffic layer's keyframes, traffic/keyframes.js).
  * - `isAnimating(tMs)`: whether anything drawn moves; `nextChangeAt(tMs)`: the next instant after `tMs` when what it
  *   estimates changes (an appearance, a touchdown, an on-block, an off-block, a fade, an ELEVANT flight's fix losing its
  *   signal or its coast), or `null`.
@@ -631,10 +632,11 @@ export function createMotionStore({
 
   // Where an ELEVANT aircraft stands parked (STAND_PARKING), or null: `{ lon, lat, trackDeg, code, mismatch, reported,
   // easing }`.
-  function parkingOf(item, render, tMs) {
+  // With `peek` (sampleAhead) it reads the parking state and changes nothing.
+  function parkingOf(item, render, tMs, { peek = false } = {}) {
     const stopped = render.onGround === true && !(finite(render.gsMs) && render.gsMs >= HEADING_RATES.holdBelowMs);
     if (item.kind !== 'aviam' || !stopped) {
-      parking.delete(item.id);
+      if (!peek) parking.delete(item.id);
       return null;
     }
     const row = flightsByKey.get(item.flightKey) ?? null;
@@ -645,13 +647,13 @@ export function createMotionStore({
     // Its signal gone after the BLOCK_ON on its assigned stand: it is there (the tablet said so).
     if (stand === null && onBlocks && assigned !== null && render.quality !== 'live' && render.mode !== 'live') stand = assigned;
     if (stand === null) {
-      parking.delete(item.id);
+      if (!peek) parking.delete(item.id);
       return null;
     }
     let state = parking.get(item.id);
     if (!state || state.code !== stand.code || tMs < state.sinceMs) {
       state = { code: stand.code, sinceMs: tMs, from: { lon: render.lon, lat: render.lat, trackDeg: render.trackDeg } };
-      parking.set(item.id, state);
+      if (!peek) parking.set(item.id, state);
     }
     const u = Math.min(1, Math.max(0, (tMs - state.sinceMs) / STAND_PARKING.easeMs));
     const w = u * u * (3 - 2 * u);
@@ -684,14 +686,18 @@ export function createMotionStore({
 
   // The heading a frame draws (displayHeading): turned from the last frame's no faster than a real aircraft, except
   // where a plan places it (the tangent of its path), after a snap or after a gap between frames.
-  function smoothedHeading(id, render, tMs) {
-    const previous = headings.get(id) ?? null;
+  function headingAfter(previous, render, tMs) {
     const usable = previous !== null && previous.epoch === render.trailEpoch && tMs >= previous.tMs
       && tMs - previous.tMs <= HEADING_GAP_MS;
     const deg = displayHeading({
       prevDeg: usable ? previous.deg : null, trackDeg: render.trackDeg, gsMs: render.gsMs, onGround: render.onGround,
       dtS: usable ? (tMs - previous.tMs) / 1000 : 0, estimated: render.quality === 'estimated',
     });
+    return { usable, deg };
+  }
+  function smoothedHeading(id, render, tMs) {
+    const previous = headings.get(id) ?? null;
+    const { usable, deg } = headingAfter(previous, render, tMs);
     if (finite(deg)) {
       // The drawn turn rate, smoothed (STAND_PARKING.turnTauS): the 3D layer banks the aircraft by it.
       let turn = 0;
@@ -718,6 +724,40 @@ export function createMotionStore({
     });
     lastSample = { tMs, moving, ids: new Set(list.map(item => item?.id)) };
     return result;
+  }
+
+  // Where the aircraft of a frame's sample (`sampled`, sample's answer) are drawn at a later `tMs`, changing nothing:
+  // no tick, no rebuild, no heading or parking state kept (PR M2: the traffic layer's keyframes). Each one the store
+  // knows takes `{ id, lon, lat, altM, gsMs, trackDeg, onGround, opacity, trailEpoch }`, its heading turned from the
+  // one the last frame drew no faster than sample would; `null` when its track draws nothing then; one it does not know
+  // stays as given.
+  function sampleAhead(sampled, tMs) {
+    const list = Array.isArray(sampled) ? sampled : [];
+    return list.map(item => {
+      if (item == null) return null;
+      const track = tracks.get(item.id);
+      if (!track) return item;
+      const render = renderTrack(track, tMs, config);
+      if (render === null) return null;
+      const parked = parkingOf(item, render, tMs, { peek: true });
+      let trackDeg;
+      if (parked !== null) trackDeg = parked.trackDeg;
+      else {
+        const { deg } = headingAfter(headings.get(item.id) ?? null, render, tMs);
+        trackDeg = finite(deg) ? deg : render.trackDeg;
+      }
+      return Object.freeze({
+        id: item.id,
+        lon: parked?.lon ?? render.lon,
+        lat: parked?.lat ?? render.lat,
+        altM: render.altM,
+        gsMs: render.gsMs,
+        trackDeg,
+        onGround: render.onGround,
+        opacity: render.opacity,
+        trailEpoch: render.trailEpoch,
+      });
+    });
   }
 
   function sampleOne(id, tMs, aircraft = null) {
@@ -823,6 +863,7 @@ export function createMotionStore({
     ingest,
     estimatesAt,
     sample,
+    sampleAhead,
     sampleOne,
     isAnimating,
     nextChangeAt,

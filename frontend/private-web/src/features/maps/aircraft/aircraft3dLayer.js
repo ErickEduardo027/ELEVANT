@@ -5,6 +5,8 @@ import { buildAircraftGeometry, triangleCount, withLiveryZones } from './aircraf
 import { contactDisc, contactShadowMatrix, contactShadowSize, contactShadowStrength } from './contactShadow';
 import { LIVERY_ZONES } from './liveries';
 import { SHADOW, linearRgb, mercatorFrame, poseMatrix } from './instancePlan';
+import { createTrafficLabels } from './trafficLabels';
+import { createTrafficSprites } from './trafficSprites';
 
 // The 3D aircraft as one MapLibre custom layer (design G1, G3 and G4): three draws the instance plan
 // (aircraft/instancePlan.js) on the map's own canvas and WebGL context, in the depth buffer the terminals' extrusions
@@ -34,6 +36,12 @@ import { SHADOW, linearRgb, mercatorFrame, poseMatrix } from './instancePlan';
 // - Failure: when three cannot build its renderer on the map's context (in onAdd or on a restored context), the layer
 //   warns once, draws and picks nothing and reports itself failed (stats().failed and onFailedChange), so that the map
 //   shows its 2D aircraft again (design G4: if 3D fails, 2D); the next onAdd or restored context tries again.
+// - Animated traffic (PR M2): an answer with `sprites` (instancePlan.js: planSprites) draws them too, the flat
+//   silhouettes, dashed rings and «Demo» plates of aircraft/trafficSprites.js, sized in pixels at the zoom of every frame
+//   and picked on the CPU. The map then writes a new answer each frame an aircraft moves. Sprites that cannot be built
+//   (no 2D canvas for their atlas) say so once (onSpritesFailedChange) and the map keeps its GeoJSON icons. The answer's
+//   `labels` (instancePlan.js: planLabels) are the tags and the chosen aircraft's ring (aircraft/trafficLabels.js), over
+//   everything, laid out on the CPU a few times a second and picked there too; built and failed with the sprites.
 //
 // `three` is a parameter (aircraft/aircraft3dChunk.js: THREE_PARTS), so this module imports neither three nor
 // maplibre-gl. It names three's renderer, so only the 3D chunk may import it (scripts/verify-map-chunks.mjs).
@@ -244,6 +252,8 @@ function sameSun(a, b) {
  * - `minModelPx` (PR M7): the size floor of the traffic's models in CSS pixels (MAX_MODEL_SCALE), 0 for none;
  * - `onFailedChange(failed)` hears every change of `stats().failed`, after the lifecycle call that made it, so that a
  *   map that hides its 2D aircraft under the 3D ones shows them again while the layer has failed;
+ * - PR M2: `getInstances()` may also answer `sprites` (planSprites), drawn over the models; `theme` colours the atlas's
+ *   «Demo» plate and `onSpritesFailedChange(failed)` hears when the sprites cannot be built;
  * - `createRenderer({ canvas, context })`, `buildGeometry(three, spec)` and `now()` (milliseconds, monotonic) are
  *   for tests.
  *
@@ -251,9 +261,10 @@ function sameSun(a, b) {
  * of the aircraft under the pointer, or `null` when the ray meets no aircraft (a shadow is no aircraft), before the
  * first frame, while the context is lost and while the layer has failed: the map then picks in 2D.
  * `setQuality({ shadows, dropLines })` lets the frame loop's governor lighten the scene without switching it off.
- * `stats()` → `{ meshes, instances, contacts, triangles, drawCalls, lost, failed }`: the meshes held, the instances and
- * triangles drawn, the contact shadows drawn (M4), the draw calls of the scene, whether the context is lost and whether
- * the layer has failed. It has failed while
+ * `stats()` → `{ meshes, instances, contacts, triangles, drawCalls, lost, failed }` (and `sprites`, `spritesFailed`
+ * once the animated traffic asked for sprites, PR M2): the meshes held, the instances and triangles drawn, the contact
+ * shadows drawn (M4), the draw calls of the scene, whether the context is lost and whether the layer has failed. It has
+ * failed while
  * it is on a map whose context works and three could not build its renderer on that context, so it draws nothing; it
  * has not failed before onAdd, after onRemove or while the context is lost, when nothing draws, 2D included.
  */
@@ -261,7 +272,9 @@ export function createAircraft3dLayer({
   three, originLngLat, getInstances, palette = OCC_PALETTE, getSun = () => null, onFailedChange, minModelPx = 0,
   createRenderer = ({ canvas, context }) => new three.WebGLRenderer({ canvas, context, antialias: true }),
   buildGeometry = buildAircraftGeometry, now = () => performance.now(), buildDetail = buildDetailedAircraft,
-  createCanvas = documentCanvas, loadImage = loadSameOriginImage,
+  createCanvas = documentCanvas, loadImage = loadSameOriginImage, theme = 'dark', onSpritesFailedChange,
+  createSprites = createTrafficSprites, createLabels = createTrafficLabels,
+  pixelRatio = () => globalThis.devicePixelRatio ?? 1, fonts = globalThis.document?.fonts ?? null,
 } = {}) {
   if (three == null) throw new TypeError('The 3D aircraft layer needs the parts of three');
   if (typeof getInstances !== 'function') throw new TypeError('The 3D aircraft layer needs getInstances()');
@@ -322,6 +335,11 @@ export function createAircraft3dLayer({
   let contactCount = 0;
   let contactBase = NO_FLOATS;
   let contactFloors = NO_FLOATS;
+  // PR M2: the sprites of the animated traffic, built at their first answer; whether they could not be.
+  let sprites = null;
+  let spritesFailed = false;
+  // PR M2: the tags and the chosen aircraft's ring of the animated traffic, built with the sprites.
+  let labels = null;
 
   function buildScene() {
     scene = new three.Scene();
@@ -396,8 +414,11 @@ export function createAircraft3dLayer({
       contactMesh.name = CONTACT_MESH_NAME;
       contactGroup.add(contactMesh);
     }
-    contactBase = new Float32Array(16 * count);
-    contactFloors = new Float32Array(count);
+    // Kept while they fit: the animated traffic (PR M2) plans the contact shadows every frame an aircraft moves.
+    if (contactFloors.length < count) {
+      contactBase = new Float32Array(16 * contactCapacity);
+      contactFloors = new Float32Array(contactCapacity);
+    }
     let at = 0;
     for (const entry of plan.values()) {
       for (let index = 0; index < entry.aircraftCount; index += 1) {
@@ -498,12 +519,70 @@ export function createAircraft3dLayer({
     lines.geometry.setDrawRange(0, vertices);
   }
 
+  // The CSS pixel of a point of the frame in a canvas of `width` × `height` CSS pixels, at the camera of the last
+  // frame; null behind the camera.
+  function pixelMapper(width, height) {
+    const e = camera.projectionMatrix.elements;
+    return (px, py, pz) => {
+      const w = e[3] * px + e[7] * py + e[11] * pz + e[15];
+      if (!(w > 0)) return null;
+      const x = (e[0] * px + e[4] * py + e[8] * pz + e[12]) / w;
+      const y = (e[1] * px + e[5] * py + e[9] * pz + e[13]) / w;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      return { x: ((x + 1) / 2) * width, y: ((1 - y) / 2) * height };
+    };
+  }
+
+  // The tags of this frame (PR M2): laid out again when due, written every frame where their aircraft are. The sprites
+  // take the canvas's size too, for the «Demo» plate that faces the screen (trafficSprites.js: billboardClip).
+  function syncLabels(answer, target, time) {
+    if (labels === null) return;
+    const canvas = map?.getCanvas?.();
+    const width = canvas?.clientWidth;
+    const height = canvas?.clientHeight;
+    if (!(width > 0) || !(height > 0)) return;
+    sprites?.setViewport(width, height);
+    labels.frame(answer?.labels ?? null, { toPixel: pixelMapper(width, height), viewport: { width, height },
+      pixelRatio: (target?.drawingBufferWidth ?? width) / width, nowMs: time });
+  }
+
+  // The sprites of an answer (PR M2), built the first time there are any.
+  function syncSprites(answer) {
+    const next = answer?.sprites ?? null;
+    const words = answer?.labels ?? null;
+    const wanted = next?.count > 0 || words?.tags?.length > 0 || words?.ring != null;
+    if (sprites === null && (!wanted || spritesFailed)) return;
+    if (sprites === null) {
+      try {
+        const ratio = Math.min(2, Math.max(1, Number(pixelRatio()) || 1));
+        sprites = createSprites({ three, createCanvas, theme });
+        labels = createLabels({ three, createCanvas, theme, ratio });
+        scene.add(sprites.object, labels.object);
+        // The tags were written in the font there was: once the app's font is in, they are written again.
+        fonts?.ready?.then?.(() => {
+          labels?.invalidate();
+          if (!removed) map?.triggerRepaint();
+        }, () => {});
+      } catch (error) {
+        sprites?.dispose();
+        sprites = null;
+        labels = null;
+        spritesFailed = true;
+        console.warn('The animated traffic could not be drawn; the map keeps its 2D icons.', error);
+        onSpritesFailedChange?.(true);
+        return;
+      }
+    }
+    sprites.sync(next);
+  }
+
   // Copies the plan into the meshes when its revision changed; answers whether it did.
   function syncInstances(time, answer) {
     const nextRevision = answer?.revision;
     if (copied && Object.is(nextRevision, revision)) return false;
     copied = true;
     revision = nextRevision;
+    syncSprites(answer);
     const plan = answer?.plan instanceof Map ? answer.plan : EMPTY_PLAN;
     const segments = [];
     for (const [key, entry] of plan) {
@@ -575,11 +654,14 @@ export function createAircraft3dLayer({
     held.mesh.boundingBox = null;
   }
 
-  // The floor of the zoom on screen: every mesh again when it moved more than FLOOR_STEP.
+  // The floor of the zoom on screen: every mesh again when it moved more than FLOOR_STEP. The sprites (PR M2) take the
+  // metres of a pixel at every frame's zoom.
   function syncFloor() {
-    if (!(minModelPx > 0) || typeof map?.getZoom !== 'function') return;
+    if (typeof map?.getZoom !== 'function') return;
     const zoom = map.getZoom();
     if (!finite(zoom)) return;
+    sprites?.setMetresPerPx((METRES_PER_PIXEL_Z0 * originCos) / 2 ** zoom);
+    if (!(minModelPx > 0)) return;
     const next = minModelPx * (METRES_PER_PIXEL_Z0 * originCos) / 2 ** zoom;
     if (floorM > 0 && Math.abs(next - floorM) <= FLOOR_STEP * floorM) return;
     floorM = next;
@@ -808,6 +890,7 @@ export function createAircraft3dLayer({
       const answer = getInstances();
       syncInstances(time, answer);
       syncFloor();
+      syncLabels(answer, frameContext ?? context, time);
       retireIdle(time);
       syncLighting();
       // state.reset() sets the viewport to the canvas: the drawing buffer's is set after it.
@@ -847,6 +930,10 @@ export function createAircraft3dLayer({
       detailCamera = null;
       detailHemisphere = null;
       detailSun = null;
+      sprites?.dispose();
+      sprites = null;
+      labels?.dispose();
+      labels = null;
       if (scene !== null) {
         lines.geometry.dispose();
         lineMaterial.dispose();
@@ -906,7 +993,11 @@ export function createAircraft3dLayer({
         const id = meshes.get(hit.object.userData.key)?.ids[hit.instanceId];
         if (id != null) return { kind: 'aircraft', id };
       }
-      return null;
+      // The sprites (PR M2), on the CPU: the silhouette whose centre is nearest the pointer, within its size; then the
+      // tags, where this frame drew them.
+      const toPixel = pixelMapper(width, height);
+      const spriteId = sprites?.pick(x, y, toPixel) ?? labels?.pick(x, y, toPixel) ?? null;
+      return spriteId === null ? null : { kind: 'aircraft', id: spriteId };
     },
 
     setQuality({ shadows, dropLines } = {}) {
@@ -931,6 +1022,11 @@ export function createAircraft3dLayer({
       if (lines !== null && lines.visible && lines.geometry.drawRange.count > 0) drawCalls += 1;
       const contacts = contactMesh?.count ?? 0;
       if (contacts > 0) drawCalls += 1;
+      // The sprites of the animated traffic (PR M2): one draw call for all of them.
+      const spriteCount = sprites?.stats().count ?? 0;
+      if (spriteCount > 0) drawCalls += 1;
+      const labelStats = labels?.stats() ?? null;
+      if (labelStats !== null && (labelStats.count > 0 || labelStats.ring)) drawCalls += 1;
       // The detailed aircraft (CN-30): what of it is on screen.
       let detail = null;
       if (detailDrawn !== null) {
@@ -950,6 +1046,8 @@ export function createAircraft3dLayer({
           textured: detailDrawn.model.textured };
       }
       return { meshes: meshes.size, instances, contacts, triangles, drawCalls, lost, failed,
+        ...(sprites === null && !spritesFailed ? {} : { sprites: spriteCount, spritesFailed }),
+        ...(labelStats === null ? {} : { labels: labelStats.count }),
         ...(detail === null ? {} : { detail }) };
     },
   };

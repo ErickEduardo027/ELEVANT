@@ -158,7 +158,7 @@ describe('airfield layers', () => {
     expect(overlay.sources).toEqual({ [AIRFIELD_SOURCE]: { type: 'geojson', attribution: AIRFIELD_ATTRIBUTION } });
     const style = buildOccStyle({ overlays: [overlay] });
     expect(style.sources[AIRFIELD_SOURCE]).toEqual({
-      type: 'geojson', attribution: AIRFIELD_ATTRIBUTION, data: { type: 'FeatureCollection', features: [] },
+      type: 'geojson', attribution: AIRFIELD_ATTRIBUTION, maxzoom: 16, data: { type: 'FeatureCollection', features: [] },
     });
     const credit = document.createElement('template');
     credit.innerHTML = AIRFIELD_ATTRIBUTION;

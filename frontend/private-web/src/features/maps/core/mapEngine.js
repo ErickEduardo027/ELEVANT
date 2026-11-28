@@ -81,6 +81,7 @@ const stateKey = (source, id) => `${source}\u0000${typeof id}:${String(id)}`;
  * @param {(camera: object, details: { byUser: boolean }) => void} [options.onCamera] after every move.
  * @param {() => void} [options.onIdle] after every frame MapLibre draws with nothing left to load, place or move (its
  *   `idle` event): what renderedFeatures answers is then final, as the tiles of a new zoom have loaded.
+ * @param {() => void} [options.onRender] after every frame MapLibre draws (its `render` event; PR M2: the frame meter).
  * @param {() => void} [options.onResize] after MapLibre has resized the map to its container (the fitted zooms change).
  * @param {(event: object) => void} [options.onClick] `{ point, lngLat, hit }`, `hit` as pickAt answers.
  * @param {(event: object) => void} [options.onDoubleClick] the same for a double click (M4, «Seguir en 3D»), with
@@ -94,7 +95,7 @@ const stateKey = (source, id) => `${source}\u0000${typeof id}:${String(id)}`;
  */
 export function createMapEngine({
   maplibre, host, style, camera, interactive = true, attribution, imageResolver, mapOptions,
-  onStatus, onCamera, onIdle, onResize, onClick, onDoubleClick, onPointerMove, onUserGesture,
+  onStatus, onCamera, onIdle, onRender, onResize, onClick, onDoubleClick, onPointerMove, onUserGesture,
 } = {}) {
   if (!maplibre) throw new TypeError('createMapEngine needs the maplibre-gl module');
   if (!host?.ownerDocument) throw new TypeError('createMapEngine needs a host element');
@@ -385,9 +386,11 @@ export function createMapEngine({
       renderWorldCopies: false,
       canvasContextAttributes: { antialias: true },
       validateStyle: process.env.NODE_ENV !== 'production',
-      // No symbol fade (CN-18): the traffic is written several times a second, and every fade after a placement kept
-      // MapLibre repainting without a pause.
-      fadeDuration: 0,
+      // PR M2 (2026-11-28): a 150 ms symbol fade. With 0 (CN-18), every frame MapLibre draws starts and finishes a full
+      // placement of every label; with a fade the placement runs again at most once per fade, in slices of a few
+      // milliseconds, so the frames the animated traffic draws continuously cost no placement. The traffic itself is
+      // never written every frame (CN-18), and while the 3D layer animates it, twice a second (core/OccMap.jsx).
+      fadeDuration: 150,
       interactive,
       ...cameraOptions(camera),
       ...mapOptions,
@@ -455,6 +458,7 @@ export function createMapEngine({
       onCamera?.(readCamera(), { byUser: Boolean(event?.originalEvent) });
     });
     if (onIdle) listen('idle', () => onIdle());
+    if (onRender) listen('render', () => onRender());
     if (onResize) listen('resize', () => onResize());
     if (onClick) listen('click', event => onClick(pointerEvent(event)));
     if (onDoubleClick) {
@@ -850,6 +854,36 @@ export function createMapEngine({
       whenStyleReady(() => {
         if (map.getLayer(id)) map.removeLayer(id);
       });
+    },
+
+    /**
+     * The GPU the map draws with (PR M2: the frame meter and the visual suite's GPU runs), `{ renderer, vendor }` as
+     * WebGL reports them (unmasked where the browser allows it), or null without a map or a context.
+     */
+    rendererInfo() {
+      if (!live()) return null;
+      const gl = map.painter?.context?.gl ?? null;
+      if (!gl || typeof gl.getParameter !== 'function') return null;
+      const debug = typeof gl.getExtension === 'function' ? gl.getExtension('WEBGL_debug_renderer_info') : null;
+      const renderer = gl.getParameter(debug ? debug.UNMASKED_RENDERER_WEBGL : gl.RENDERER);
+      const vendor = gl.getParameter(debug ? debug.UNMASKED_VENDOR_WEBGL : gl.VENDOR);
+      return { renderer: typeof renderer === 'string' ? renderer : null, vendor: typeof vendor === 'string' ? vendor : null };
+    },
+
+    /**
+     * What MapLibre has to go through each frame (PR M2, 2026-11-28: the map lab's CPU profile of «Seguir en 3D»), or
+     * null without a style: `{ zoom, pitch, layers, sources: [{ id, tiles }] }`, the layers it draws at this zoom and,
+     * for each source one of them reads, the tiles it holds for the frame. Read from MapLibre's internals, for the lab.
+     */
+    renderStats() {
+      const style = live() ? map.style : null;
+      if (!style?._layers) return null;
+      const zoom = map.getZoom();
+      const layers = Object.values(style._layers).filter(layer => layer.type !== 'custom' && !layer.isHidden?.(zoom));
+      const used = new Set(layers.map(layer => layer.source).filter(Boolean));
+      const managers = style.tileManagers ?? style.sourceCaches ?? {};
+      const sources = [...used].map(id => ({ id, tiles: managers[id]?.getRenderableIds?.().length ?? null }));
+      return { zoom, pitch: map.getPitch(), layers: layers.length, sources };
     },
 
     /** The pixel ratio the map draws at, or null without a map (PR M7: the 3D governor lowers it). */

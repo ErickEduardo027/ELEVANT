@@ -50,6 +50,15 @@ export const THRESHOLD_NAMES = Object.freeze(['polygons', 'codes', 'threeLine', 
 const THRESHOLD_KEYS = ['occ:minThreshold', 'occ:maxThreshold'];
 const EMPTY_COLLECTION = Object.freeze({ type: 'FeatureCollection', features: Object.freeze([]) });
 
+/**
+ * The deepest zoom MapLibre cuts the GeoJSON overlays into tiles at (PR M2, 2026-11-28); beyond it those tiles are drawn
+ * overzoomed. MapLibre's own default (18) cut «Seguir en 3D» (zoom 18.3, pitch 72) into some 25 tiles per source, and
+ * the CPU profile had MapLibre choosing, clipping and drawing those tiles of 11 sources as the largest cost of the
+ * main thread. At 16 a tile of the airfield is about 580 m wide, cut into 8192 units of 7 cm: under a third of a pixel
+ * at the map's deepest zoom (19.5), so nothing drawn moves. A source that names its own `maxzoom` keeps it.
+ */
+export const OVERLAY_MAX_ZOOM = 16;
+
 const RGBA = /^rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)$/;
 const hexOf = channels => `#${channels.map(value => Number(value).toString(16).padStart(2, '0')).join('')}`;
 
@@ -193,7 +202,7 @@ export function buildOccStyle({ basemap = true, overlays = [], theme = 'dark', p
       if (source?.type !== 'geojson') {
         throw new Error(`Overlay source ${id} must be a GeoJSON source or a raster source with https tiles`);
       }
-      sources[id] = { ...source, data: EMPTY_COLLECTION };
+      sources[id] = { maxzoom: OVERLAY_MAX_ZOOM, ...source, data: EMPTY_COLLECTION };
     }
   }
   for (const overlay of overlays) {

@@ -51,12 +51,13 @@ import { SELECTION_SOURCE, selectionFeatures, selectionOverlay } from '../style/
 import { FLIGHT_ROUTES_GROUP } from '../style/flightRouteLayers';
 import { worldBaseOverlay } from '../style/worldBaseLayers';
 import { FLIGHT_SOURCE, flightOverlay, flightsInView, toFlightFeatures } from '../traffic/flightLayers';
+import { createKeyframes, interpolateOne, writeKeyframes } from '../traffic/keyframes';
 import { nightShadeFeatures } from '../traffic/nightShade';
 import { counterpartCodes, mapRunwayInUse, referencesOnScreen as referencesOnScreenOf } from '../traffic/referenceFeatures';
 import { trailsBesideRoute } from '../traffic/routeFeatures';
 import {
-  ROUTE_SOURCE, TRAFFIC_SOURCE, TRAILS_SOURCE, featuresById, isDrawn, isEmptyDiff, onScreenKey, selectedAircraftId,
-  trafficDiff, trafficFeatures, trafficOnScreen as trafficOnScreenOf,
+  ROUTE_SOURCE, TRAFFIC_SOURCE, TRAILS_SOURCE, featuresById, isDrawn, isEmptyDiff, onScreenKey, sameData,
+  selectedAircraftId, trafficDiff, trafficFeatures, trafficOnScreen as trafficOnScreenOf,
 } from '../traffic/trafficFeatures';
 import { trafficOverlay } from '../traffic/trafficLayers';
 import {
@@ -66,6 +67,7 @@ import {
 } from '../traffic/weatherLayers';
 import { aircraftCard, flightRowOf } from '../ui/aircraftCard';
 import AltitudeLegend from '../ui/AltitudeLegend';
+import FrameMeter from '../ui/FrameMeter';
 import MapTooltip from '../ui/MapTooltip';
 import { remoteSatelliteImagery, useSatelliteImagery } from '../useSatelliteImagery';
 import {
@@ -81,6 +83,7 @@ import {
   transitionFor, unionBounds,
 } from './cameraPresets';
 import { createFrameLoop, createRenderClock, metresPerPixel, updateIntervalMs } from './frameLoop';
+import { createFrameMeter } from './frameMeter';
 import {
   availableLayerKeys, cleanOverrides, engineGroupsFor, readLayerOverrides, resolveLayers, setLayerOverride,
   writeLayerOverrides,
@@ -194,8 +197,11 @@ function trafficPoint(aircraft, id) {
   return item ? [item.lon, item.lat] : null;
 }
 
-// The legend reads the moving traffic at most this often while it moves (PR M6): once a second.
+// The legend reads the moving traffic at most this often while it moves (PR M6): once a second. The same goes for what
+// it reads back from the map when it settles (PR M2, 2026-11-28): while the traffic moves, MapLibre settles after each
+// write, and each read asks it for three queries of what it draws.
 const MOVING_ON_SCREEN_MS = 1_000;
+const IDLE_ON_SCREEN_MS = 1_000;
 
 // The aircraft a stand draws instead of the traffic (PR M6, design F4): none, and whether the map draws the stands, and
 // so the aircraft on them, at a zoom: from the polygons threshold on, as a glyph and from the codes on to scale
@@ -216,6 +222,14 @@ const ROUTE_MOVE_PX = 0.5;
 // every write (it may enter the view); the rest only when the camera moved, a read came, or once in FULL_SAMPLE_MS.
 const TRAFFIC_MARGIN = 0.5;
 const FULL_SAMPLE_MS = 1_000;
+// PR M2 (2026-11-28): while the 3D layer animates the traffic from its keyframes, the traffic's GeoJSON (the icons kept
+// for the fallback, the accessible selection, the legend) is written at most twice a second; the keyframes carry every
+// frame in between (traffic/keyframes.js). CN-18 stands: never every frame.
+const ANIMATED_TRAFFIC_WRITE_MS = 500;
+// PR M2 (2026-11-28, review): while the layer animates the traffic, the chosen flight's route starts where the frame
+// draws its aircraft (followedItemAt) and is rewritten between the writes too, at most every ANIMATED_ROUTE_MS (with
+// ROUTE_FRAME_MS and ROUTE_MOVE_PX as before), in 2D and in «Seguir en 3D»: one small line, never every frame (CN-18).
+const ANIMATED_ROUTE_MS = 100;
 
 // Follow mode (PR M6, design A6, contracts 2.1 `follow=1`). A framing of two points keeps this much room inside the
 // insets; the notice «Dejaste de seguir…» shows this long; while the camera moves every frame what is on screen is read
@@ -230,11 +244,11 @@ const FOLLOW_OFF = Object.freeze({
 });
 // «Seguir en 3D» (CN-30, kinematics/orbitCamera.js): the camera flies in to the orbit over FOLLOW_3D_ENTRY_MS and back
 // to where it was over FOLLOW_3D_RESTORE_MS; the follow panel reads the followed aircraft at most every
-// FOLLOW_3D_SUBJECT_MS; in 3D the route of the followed aircraft is rewritten at most every FOLLOW_3D_ROUTE_MS.
+// FOLLOW_3D_SUBJECT_MS; its route goes as every animated route does (ANIMATED_ROUTE_MS: PR M2, 2026-11-28, review; it
+// was twice a second with the traffic's writes, and its start lagged the model).
 const FOLLOW_3D_ENTRY_MS = 1_400;
 const FOLLOW_3D_RESTORE_MS = 1_000;
 const FOLLOW_3D_SUBJECT_MS = 500;
-const FOLLOW_3D_ROUTE_MS = 100;
 const NO_HOLD = Object.freeze({ rotate: 0, tilt: 0, zoom: 0 });
 // M4: how far under CLOSE_UP_ZOOM the camera goes back before the hidden labels return.
 const CLOSE_UP_RELEASE = 0.2;
@@ -395,6 +409,19 @@ function settledAt(camera, target) {
 // Whether the browser asks for reduced motion; false where it cannot say (jsdom has no matchMedia).
 function reducedMotionQuery() {
   return typeof globalThis.matchMedia === 'function' ? globalThis.matchMedia('(prefers-reduced-motion: reduce)') : null;
+}
+
+/**
+ * «Seguir en 3D» (CN-30, PR M2): the followed aircraft where this frame draws it. While the layer animates the traffic,
+ * the chosen aircraft of the last write moved to where its keyframes put it at `tMs` (the model is posed there, and the
+ * camera pivots on it, every frame); otherwise where the last write drew it, as its 2D icon.
+ */
+function followedItemAt(applied, tMs) {
+  const item = applied.chosen;
+  if (!item || applied.aircraft3d?.animating?.() !== true) return item ?? null;
+  const at = interpolateOne(applied.keyframes, item.id, tMs);
+  if (at === null) return item;
+  return { ...item, lon: at.lon, lat: at.lat, altM: at.altM, gsMs: at.gsMs, trackDeg: at.trackDeg, onGround: at.onGround };
 }
 
 /**
@@ -589,7 +616,8 @@ const standPointOf = stand => stand?.geometry?.center ?? lngLatOf(stand);
  *   (Monitoreo): the style then carries the globe and its atmosphere (style/occStyle.js, never a setStyle), and the map
  *   can show the world view, «0 Mundo», before the four (`views`, the key 0, `view=world`); a map in Mercator reads
  *   `view=world` as no view. Under the globe the three.js aircraft wait until the zoom where the globe is
- *   Mercator again (GLOBE_MERCATOR_ZOOM): their frames are Mercator's until M2 makes them follow the projection.
+ *   Mercator again (GLOBE_MERCATOR_ZOOM), their frames being Mercator's, and so does the animated traffic (PR M2): below
+ *   that zoom the GeoJSON icons draw every aircraft (core/aircraft3d.js: projected3d).
  *   `defaultView` may also be 'rd', the framing of the Dominican Republic and Puerto Rico (core/cameraPresets.js).
  * - `flightEmphasis` (M8, Monitoreo's board filter): `null` (no filter) or the flight keys of the map flights the board
  *   keeps. Every other AVIAM aircraft of `traffic` is dimmed through the feature state `outside` of the traffic source
@@ -632,8 +660,9 @@ const standPointOf = stand => stand?.geometry?.center ?? lngLatOf(stand);
  *   `regional3d` tilts Región and Aproximación too in 3D (cameraPresets.js: CAMERA_3D_WIDE).
  * - The motion of the traffic (PR M6, design H): when `traffic.motion` is given at start (traffic/motionStore.js, with
  *   its render clock as `motion.clock`), the map runs one frame loop for the life of its engine (core/frameLoop.js).
- *   Each frame samples the aircraft at the render clock's time and writes them with one updateData of what changed:
- *   every frame with fewer than 30 aircraft in sight, else at half the fastest one's pixels per second (2 to 30 Hz).
+ *   A frame whose write is due samples the aircraft at the render clock's time and writes them with one updateData of
+ *   what changed: never every frame, at half the fastest one's pixels per second (2 to 15 Hz, CN-18), and twice a second
+ *   while the 3D layer animates the traffic from the keyframes of each write (PR M2), «Seguir en 3D» included.
  *   The loop asks for frames only while something moves, wakes for a new situation, a selection, the groups, the
  *   language or a camera move, stops in a hidden tab and ticks once a second under reduced motion; React renders
  *   nothing per frame. OccMapContext's `motion` offers «Pausar movimiento» (ui/MapMotionControl.jsx). Without
@@ -729,6 +758,10 @@ const OccMapView = forwardRef(function OccMapView({
   const urlView = urlViewAny !== null && views.includes(urlViewAny) ? urlViewAny : null;
   const urlTerminal = urlView === null ? null : urlTerminalAny;
   const [store] = useState(() => createViewStore(initialSnapshot(basemap)));
+  // PR M2: the frames MapLibre really draws (core/frameMeter.js), for the hidden meter (Ctrl+Alt+F) and the map lab.
+  const [frameMeter] = useState(() => createFrameMeter());
+  const renderListenersRef = useRef(new Set());
+  const [frameMeterOn, setFrameMeterOn] = useState(false);
   const snapshot = useSyncExternalStore(store.subscribe, store.get, store.get);
   const stands = standsProp ?? EMPTY;
   const flights = flightsProp ?? EMPTY;
@@ -1102,21 +1135,34 @@ const OccMapView = forwardRef(function OccMapView({
   const trafficFocusRef = useRef(null);
 
   // The 3D aircraft of a write (PR M7, core/aircraft3d.js): the aircraft it drew and those the stands draw, planned at the
-  // camera's zoom from the polygons threshold on; answers the ids the 3D draws, whose 2D silhouettes give way.
-  const plan3d = useCallback((drawn, selectedId = null) => {
+  // camera's zoom from the polygons threshold on; answers the ids the 3D draws, whose 2D silhouettes give way. PR M2: a
+  // write of moving traffic hands over its keyframes too, so the layer animates every aircraft each frame.
+  const plan3d = useCallback((drawn, selectedId = null, { animated = false } = {}) => {
     const applied = appliedRef.current;
     const controller = applied.aircraft3d;
     if (!controller) return NO_IDS;
     const zoom = engineRef.current?.getCamera()?.zoom;
     // «Seguir en 3D» (CN-30): the followed aircraft gets its detailed model at any zoom, even with the 3D off or paused.
     // Under the globe (M8) the 3D waits for the zoom where the globe is Mercator again: the layer's frames are Mercator's.
-    const { minZoom, followedId } = projected3d({
+    // Integration of M8 with M2: under the globe the layer animates no traffic below that zoom either (`animates`): the
+    // GeoJSON icons draw it there, so no aircraft goes missing in Monitoreo's world view.
+    const { minZoom, followedId, animates } = projected3d({
       projection: latest.current?.projection, zoom, minZoom: store.get().thresholds?.polygons,
       followedId: applied.follow3d?.on ? selectedId : null, globeMercatorZoom: GLOBE_MERCATOR_ZOOM,
     });
     applied.reached3d = Number.isFinite(zoom) && Number.isFinite(minZoom) && zoom >= minZoom;
+    applied.animates3d = animates;
     const parked = applied.drawsStands ? parkedFromStands(latest.current.attached, drawn, applied.parkedIds ?? NO_IDS) : EMPTY;
-    return controller.plan({ aircraft: drawn, parked, zoom, minZoom, selectedId, followedId });
+    const animation = animated && animates && applied.keyframes ? { keyframes: applied.keyframes } : null;
+    // PR M2: what the animated tags need, as the GeoJSON layers read it: the aircraft under the pointer, the groups the
+    // layers menu shows, and other traffic (its ground aircraft, all its tags) only from the airfield threshold up.
+    const { groups: shown, language: words } = latest.current;
+    const airfield = store.get().thresholds?.airfield;
+    return controller.plan({ aircraft: drawn, parked, zoom, minZoom, selectedId, followedId, animation,
+      parkedIds: applied.parkedIds ?? NO_IDS, focusId: trafficFocusRef.current,
+      labelsOn: shown?.['traffic.labels'] === true, language: words,
+      shown: { aviam: shown?.['traffic.aviam'] !== false, other: shown?.['traffic.other'] !== false },
+      otherGroundMinZoom: airfield, otherTagsMinZoom: airfield });
   }, [store]);
 
   // The aircraft of a write where they are drawn at `t` (CN-18): those in or around the area in sight
@@ -1160,6 +1206,19 @@ const OccMapView = forwardRef(function OccMapView({
     return result;
   }, []);
 
+  const writeTrafficKeyframes = useCallback((motion, drawn, t, engine, inset) => {
+    const applied = appliedRef.current;
+    if (!applied.keyframes) applied.keyframes = createKeyframes();
+    const t1 = t + applied.trafficIntervalMs;
+    let ahead = null;
+    if (applied.trafficIntervalMs > 0 && typeof motion.sampleAhead === 'function') {
+      const zone = widenBounds(engine.getVisibleBounds(inset), TRAFFIC_MARGIN);
+      const due = zone === null ? drawn : drawn.filter(item => isInBounds([item.lon, item.lat], zone));
+      ahead = new Map(motion.sampleAhead(due, t1).filter(Boolean).map(item => [item.id, item]));
+    }
+    writeKeyframes(applied.keyframes, { t0Ms: t, t1Ms: t1, from: drawn, ahead });
+  }, []);
+
   // The traffic's features from the newest props: one updateData with what changed since the last write. With motion
   // (PR M6) the aircraft are those of the situation where they are drawn at `tMs` (the frame's instant, else the render
   // clock's now), and the write says how long until the next one is due.
@@ -1177,9 +1236,15 @@ const OccMapView = forwardRef(function OccMapView({
       const t = Number.isFinite(tMs) ? tMs : applied.loop.now();
       drawn = sampleTraffic(motion, aircraft, t, engine, inset).filter(Boolean);
       applied.trafficWrittenAt = t;
-      // «Seguir en 3D» (CN-30): the followed aircraft and its camera move every frame, so the traffic is written every
-      // frame (at that zoom only a few aircraft are in or around the area in sight).
-      applied.trafficIntervalMs = applied.follow3d?.on ? 0 : writeIntervalFor(engine, drawn, inset);
+      // CN-18: two pixels of the fastest aircraft in sight, 2 to 15 writes a second; while the layer animates the
+      // traffic, twice a second (PR M2). «Seguir en 3D» (CN-30) is no exception any more: its camera and the followed
+      // model take the followed aircraft from the keyframes every frame (followedItemAt).
+      const interval = writeIntervalFor(engine, drawn, inset);
+      applied.trafficIntervalMs = applied.aircraft3d?.animating?.() === true
+        ? Math.max(ANIMATED_TRAFFIC_WRITE_MS, interval) : interval;
+      // The keyframes of this write (PR M2, traffic/keyframes.js): each aircraft in or around the area in sight where it
+      // is drawn now and where it will be at the next write, for the frames in between; the others hold.
+      writeTrafficKeyframes(motion, drawn, t, engine, inset);
       // Only what moves in or around the area in sight keeps the frames going (CN-18).
       applied.trafficMoving = motion.isAnimating?.(t) === true;
     }
@@ -1192,15 +1257,18 @@ const OccMapView = forwardRef(function OccMapView({
     const standsShown = applied.drawsStands === true && standsDrawnAt(engine.getCamera()?.zoom, store.get().thresholds);
     applied.standsShown = standsShown;
     applied.parkedIds = standsShown ? parkedAircraftIds(drawn, latest.current.attached) : NO_IDS;
+    const modelIds = plan3d(drawn, chosenId, { animated: Boolean(motion) });
+    // PR M2: the aircraft the layer animates leave it their dashed ring and «Demo» plate too.
+    const animatedIds = applied.aircraft3d?.animating?.() ? modelIds : null;
     const data = trafficFeatures(drawn, {
       selection: chosen, focusId: trafficFocusRef.current, labelsOn: shown?.['traffic.labels'] === true, language: words,
-      parkedIds: applied.parkedIds, modelIds: plan3d(drawn, chosenId),
+      parkedIds: applied.parkedIds, modelIds, animatedIds,
     });
     const diff = trafficDiff(applied.trafficById, data.features);
     if (isEmptyDiff(diff)) return;
     applied.trafficById = featuresById(data);
     engine.updateData(TRAFFIC_SOURCE, diff).catch(error => console.error('The OCC map could not update its traffic.', error));
-  }, [store, plan3d, sampleTraffic]);
+  }, [store, plan3d, sampleTraffic, writeTrafficKeyframes]);
 
   // A camera or a fit that takes the zoom across the polygons threshold shows or hides the stands and the aircraft on
   // them (PR M6): the parked aircraft's symbols go or come back with them, in one write.
@@ -1208,11 +1276,14 @@ const OccMapView = forwardRef(function OccMapView({
     const engine = engineRef.current;
     const applied = appliedRef.current;
     if (!engine) return;
-    // The 3D aircraft come and go at the same threshold (PR M7), on a map with or without stands.
-    const minZoom = store.get().thresholds?.polygons;
+    // The 3D aircraft come and go at the same threshold (PR M7), on a map with or without stands; under the globe (M8)
+    // the animated traffic comes and goes at GLOBE_MERCATOR_ZOOM too (integration with M2), in the same frame.
     const zoom = engine.getCamera()?.zoom;
+    const { minZoom, animates } = projected3d({ projection: latest.current?.projection, zoom,
+      minZoom: store.get().thresholds?.polygons, globeMercatorZoom: GLOBE_MERCATOR_ZOOM });
     const reached3d = Number.isFinite(zoom) && Number.isFinite(minZoom) && zoom >= minZoom;
-    if (applied.aircraft3d && reached3d !== applied.reached3d) {
+    if (applied.aircraft3d && (reached3d !== applied.reached3d
+      || (applied.animates3d !== undefined && animates !== applied.animates3d))) {
       writeTraffic();
       return;
     }
@@ -1222,12 +1293,14 @@ const OccMapView = forwardRef(function OccMapView({
 
   // The chosen flight's route where the last write drew its aircraft (PR M6, design E5): `traffic.routeAt` rebuilds it
   // so the split follows the aircraft, at most once a second below the airfield threshold and from it every frame the
-  // aircraft moved half a pixel on screen. One setData; the route the props bring is written by its own effect.
+  // aircraft moved half a pixel on screen. One setData; the route the props bring is written by its own effect. While
+  // the layer animates the traffic (PR M2), where this frame draws the aircraft (followedItemAt), between the writes
+  // too, at most every ANIMATED_ROUTE_MS.
   const writeFrameRoute = useCallback(tMs => {
     const engine = engineRef.current;
     const applied = appliedRef.current;
     const { traffic: current, groups: shown } = latest.current ?? {};
-    const item = applied.chosen;
+    const item = followedItemAt(applied, tMs);
     if (!engine?.map || !applied.drawsTraffic || typeof current?.routeAt !== 'function' || !item || shown?.route === false) return;
     const zoom = engine.getCamera()?.zoom;
     if (!Number.isFinite(zoom)) return;
@@ -1239,7 +1312,7 @@ const OccMapView = forwardRef(function OccMapView({
       const airfield = store.get().thresholds?.airfield;
       const everyFrame = Number.isFinite(airfield) && zoom >= airfield;
       if (!everyFrame && tMs - last.at < ROUTE_FRAME_MS) return;
-      if (applied.follow3d?.on && tMs - last.at < FOLLOW_3D_ROUTE_MS) return;
+      if (applied.aircraft3d?.animating?.() === true && tMs - last.at < ANIMATED_ROUTE_MS) return;
     }
     applied.routeFrame = { id: item.id, at: tMs, point };
     // What the source holds is no longer what the props brought: their next route is written again.
@@ -1672,7 +1745,7 @@ const OccMapView = forwardRef(function OccMapView({
 
   // «Seguir en 3D», one frame (CN-30, kinematics/orbitCamera.js): what the person holds and the automatic turn move the
   // orbit by the frame's time; the camera flies in from where it was, then eases every frame onto the orbit round the
-  // aircraft where this frame's write drew it (the pivot, at its height above the field), so it never jitters or jumps;
+  // aircraft where this frame draws it (followedItemAt: the pivot, at its height above the field), so it never jitters or jumps;
   // under reduced motion it is put there at once and nothing turns by itself. The panel reads the aircraft twice a
   // second.
   const follow3dFrame = useCallback((tMs, { dtMs = 0, reduced = false, item }) => {
@@ -1721,7 +1794,7 @@ const OccMapView = forwardRef(function OccMapView({
     }
   }, [followSubject]);
 
-  // Follow mode, one frame (PR M6, design A6): the camera framing the chosen aircraft where this frame's write drew it
+  // Follow mode, one frame (PR M6, design A6): the camera framing the chosen aircraft where this frame draws it
   // and its next objective (kinematics/followCamera.js, the targets of the motion store), the zoom or tilt a person set
   // kept. Engaging is one move of the map's own (instant under reduced motion), whose end gives the camera to the frames;
   // then each frame eases it there by the time since the last one (a frame without time jumps: the clock is paused or
@@ -1731,7 +1804,8 @@ const OccMapView = forwardRef(function OccMapView({
     const engine = engineRef.current;
     const applied = appliedRef.current;
     const state = applied.follow;
-    const item = applied.chosen;
+    // Where this frame draws the aircraft (PR M2): from its keyframes while the layer animates the traffic, in 2D too.
+    const item = followedItemAt(applied, tMs);
     if (!engine?.map || !state?.on || !item || engine.isInteracting()) return;
     releaseCamera();
     const current = engine.getCamera();
@@ -1817,7 +1891,8 @@ const OccMapView = forwardRef(function OccMapView({
   // (core/aircraft3d.js: translatePick); where the 3D draws nothing under the pointer, the 2D pick stands.
   const with3dHit = useCallback(event => {
     const controller = appliedRef.current.aircraft3d;
-    if (!event || !controller?.state().enabled) return event;
+    // PR M2: the animated traffic draws its 2D aircraft in the layer too, so they are picked there.
+    if (!event || !(controller?.state().enabled || controller?.animating?.())) return event;
     let hit;
     const base = { point: event.point, lngLat: event.lngLat, originalEvent: event.originalEvent };
     // A double click's (M4) keeps the call that cancels MapLibre's zoom.
@@ -1862,7 +1937,7 @@ const OccMapView = forwardRef(function OccMapView({
     const loop = motionClock ? createFrameLoop({ clock: motionClock, reducedMotion: reduced?.matches === true }) : null;
     Object.assign(appliedRef.current, { loop, sampledAircraft: null, trafficWrittenAt: null, trafficIntervalMs: 0,
       trafficOnScreenAt: null, trafficMoving: false, sampledById: null, sampledFrom: null, trafficViewKey: '',
-      fullSampleAt: null });
+      fullSampleAt: null, keyframes: createKeyframes() });
     // The chosen aircraft as the last write drew it, its route as the frames last wrote it, and follow mode (PR M6).
     Object.assign(appliedRef.current, { chosen: null, routeFrame: null, follow: { ...FOLLOW_OFF }, followMoving: false,
       followFrameAt: null, followOnScreenAt: null, follow3d: { ...FOLLOW_3D_OFF }, limitsReleased: false });
@@ -1874,8 +1949,10 @@ const OccMapView = forwardRef(function OccMapView({
     const onFrame = tMs => {
       const applied = appliedRef.current;
       if (Number.isFinite(applied.trafficWrittenAt) && tMs - applied.trafficWrittenAt < applied.trafficIntervalMs) {
-        // A newly chosen aircraft gets its route at once, where the last write drew it.
-        if (applied.chosen && applied.routeFrame?.id !== applied.chosen.id) writeFrameRoute(tMs);
+        // A newly chosen aircraft gets its route at once, where the last write drew it; while the layer animates the
+        // traffic (PR M2) its route follows it between the writes too (writeFrameRoute keeps its own pace).
+        if (applied.chosen && (applied.routeFrame?.id !== applied.chosen.id
+          || applied.aircraft3d?.animating?.() === true)) writeFrameRoute(tMs);
         return;
       }
       writeTraffic(tMs);
@@ -1893,6 +1970,31 @@ const OccMapView = forwardRef(function OccMapView({
     });
     // Follow mode after the traffic in every frame, so the camera frames the aircraft where that frame drew it.
     const stopFollowFrames = loop?.subscribe(followFrame, { isAnimating: followAnimating });
+    // PR M2: while an aircraft the 3D layer animates moves, one repaint per frame (the layer interpolates its keyframes
+    // at the loop's instant); when nothing moves the map rests.
+    const animationMoving = tMs => appliedRef.current.aircraft3d?.animationMoving?.(tMs) === true;
+    const stopAnimationFrames = loop?.subscribe(tMs => {
+      if (animationMoving(tMs)) engineRef.current?.map?.triggerRepaint?.();
+    }, { isAnimating: animationMoving });
+    // PR M2: what the map draws, read back when it settles; while the traffic moves at most once a second, the last
+    // settle read when its second is up.
+    let idleOnScreenAt = null;
+    let idleTimer = null;
+    const clockMs = () => globalThis.performance?.now?.() ?? Date.now();
+    const readIdleOnScreen = () => {
+      idleTimer = null;
+      idleOnScreenAt = clockMs();
+      updateOnScreen();
+    };
+    const idleOnScreen = () => {
+      const waitMs = idleOnScreenAt === null ? 0 : IDLE_ON_SCREEN_MS - (clockMs() - idleOnScreenAt);
+      if (appliedRef.current.trafficMoving !== true || waitMs <= 0) {
+        if (idleTimer !== null) clearTimeout(idleTimer);
+        readIdleOnScreen();
+        return;
+      }
+      idleTimer ??= setTimeout(readIdleOnScreen, waitMs);
+    };
     const onReducedMotion = () => loop.setReducedMotion(reduced.matches === true);
     reduced?.addEventListener?.('change', onReducedMotion);
     const stopClock = motionClock?.subscribe?.(() => store.set({ motion: motionState() }));
@@ -1947,10 +2049,16 @@ const OccMapView = forwardRef(function OccMapView({
       mapOptions: { ...props.mapOptions, locale: props.locale },
       onStatus: handleStatus,
       onCamera: handleCamera,
-      // What the map draws is final once it settles: the legend reads it again then.
+      // What the map draws is final once it settles: the legend reads it again then, at most once a second while the
+      // traffic moves (IDLE_ON_SCREEN_MS), with one read after the last.
       onIdle: () => {
-        updateOnScreen();
+        idleOnScreen();
         markSettled(rootRef.current, true);
+      },
+      onRender: () => {
+        const at = globalThis.performance?.now() ?? Date.now();
+        frameMeter.frame(at);
+        for (const listener of renderListenersRef.current) listener(at);
       },
       onResize: refit,
       onClick: event => handleClick(with3dHit(event)),
@@ -1970,13 +2078,19 @@ const OccMapView = forwardRef(function OccMapView({
       getNow: () => sunClock.now(),
       governor: props.aircraft3dOptions?.governor !== false,
       liveries: props.aircraft3dOptions?.liveries === true,
+      // PR M2: the traffic animated by the layer at the loop's instant, for what is in or around the area in sight.
+      animate: loop !== null && props.aircraft3dOptions?.animate !== false,
+      frameTime: () => loop?.now() ?? sunClock.now(),
+      frameZone: () => widenBounds(engine.getVisibleBounds(latest.current?.padding), TRAFFIC_MARGIN),
       onChange: () => {
         if (appliedRef.current.aircraft3d !== aircraft3d) return;
         store.set({ view3d: aircraft3d.state() });
         writeTraffic();
       },
     }) : null;
-    Object.assign(appliedRef.current, { aircraft3d, reached3d: null });
+    Object.assign(appliedRef.current, { aircraft3d, reached3d: null, animates3d: undefined });
+    // The board's filter (M8) as the last engine had it dims the new one's animated aircraft too.
+    aircraft3d?.setOutside?.(appliedRef.current.outsideIds ?? null);
     aircraft3d?.setEnabled(props.pitchMode === '3d');
     syncSky(engine, appliedRef.current, props.theme);
     if (props.layout) engine.setData(AIRFIELD_SOURCE, airfieldFeatures(props.layout));
@@ -2002,6 +2116,9 @@ const OccMapView = forwardRef(function OccMapView({
       pointer.event = null;
       stopFrames?.();
       stopFollowFrames?.();
+      stopAnimationFrames?.();
+      if (idleTimer !== null) clearTimeout(idleTimer);
+      idleTimer = null;
       // «Seguir en 3D» (CN-30) does not outlive its engine (a theme change re-creates the map).
       appliedRef.current.lastFollow3dSaved = null;
       if (appliedRef.current.follow3d?.on) {
@@ -2022,7 +2139,8 @@ const OccMapView = forwardRef(function OccMapView({
       if (engineRef.current === engine) engineRef.current = null;
     };
   }, [store, applyView, handleCamera, handleClick, handleDoubleClick, handlePointer, handleStatus, refit, updateOnScreen,
-    writeTraffic, updateTrafficOnScreen, writeFrameRoute, followFrame, followAnimating, handleGesture, with3dHit]);
+    writeTraffic, updateTrafficOnScreen, writeFrameRoute, followFrame, followAnimating, handleGesture, with3dHit,
+    frameMeter]);
 
   // The URL view: fly only when it differs from the last view applied, so a view this map asked for flies once.
   useEffect(() => {
@@ -2201,9 +2319,10 @@ const OccMapView = forwardRef(function OccMapView({
     if (!engine || !applied.drawsTraffic) return;
     for (const [sourceId, slot, data] of [[TRAILS_SOURCE, 'trails', shownTrails], [ROUTE_SOURCE, 'route', trafficRoute]]) {
       const collection = data ?? EMPTY_COLLECTION;
-      const key = JSON.stringify(collection.features ?? EMPTY);
-      if (applied[slot] === key) continue;
-      applied[slot] = key;
+      // PR M2: compared feature by feature, never by a JSON string of every trail on each read.
+      const features = collection.features ?? EMPTY;
+      if (applied[slot] !== null && sameData(applied[slot], features)) continue;
+      applied[slot] = features;
       engine.setData(sourceId, collection);
       if (slot === 'route') applied.routeFrame = null;
     }
@@ -2463,6 +2582,9 @@ const OccMapView = forwardRef(function OccMapView({
     for (const id of previous) if (!next.has(id)) engine.setFeatureState(TRAFFIC_SOURCE, id, { outside: false });
     for (const id of next) if (!previous.has(id)) engine.setFeatureState(TRAFFIC_SOURCE, id, { outside: true });
     dimmedRef.current = { engine, ids: next };
+    // Integration of M8 with M2: the animated layer dims the same aircraft (its silhouettes, plates and tags).
+    appliedRef.current.outsideIds = next;
+    appliedRef.current.aircraft3d?.setOutside?.(next);
   }, [dimmedKey, engineState]);
 
   // A screen's own overlays: one setData for each source whose features changed, keyed like the stands and flights.
@@ -2679,11 +2801,43 @@ const OccMapView = forwardRef(function OccMapView({
       resume: () => controller.resume() } : null;
   }, []);
 
+  // PR M2: what the screen shows of the traffic. Where the last frame drew an aircraft (the animated layer's
+  // interpolated position, or the last write's without it), the frames MapLibre draws (`onRender(listener)` hears each,
+  // with its instant; answers the call that stops), the GPU and the meter's reading.
+  const framePosition = useCallback(id => appliedRef.current.aircraft3d?.framePosition?.(id) ?? drawnPosition(id),
+    [drawnPosition]);
+  const onRender = useCallback(listener => {
+    renderListenersRef.current.add(listener);
+    return () => renderListenersRef.current.delete(listener);
+  }, []);
+  const rendererInfo = useCallback(() => engineRef.current?.rendererInfo?.() ?? null, []);
+  const renderStats = useCallback(() => engineRef.current?.renderStats?.() ?? null, []);
+  const readFrameMeter = useCallback(() => {
+    const applied = appliedRef.current;
+    const framed = applied.aircraft3d?.framedCount?.() ?? 0;
+    const aircraft = framed > 0 ? framed : (applied.sampledAircraft?.length ?? 0);
+    return { ...frameMeter.read(globalThis.performance?.now() ?? Date.now()), renderer: rendererInfo()?.renderer ?? null,
+      aircraft };
+  }, [frameMeter, rendererInfo]);
+  // Ctrl+Alt+F anywhere on the page shows or hides the meter: a key for the presentation and the VPS, kept out of the
+  // OCC's key table (occ-ui/occShortcuts.js).
+  useEffect(() => {
+    const target = rootRef.current?.ownerDocument?.defaultView;
+    if (!target) return undefined;
+    const listener = event => {
+      if (!event.ctrlKey || !event.altKey || event.shiftKey || event.metaKey || event.code !== 'KeyF') return;
+      event.preventDefault();
+      setFrameMeterOn(on => !on);
+    };
+    target.addEventListener('keydown', listener);
+    return () => target.removeEventListener('keydown', listener);
+  }, []);
+
   useImperativeHandle(ref, () => ({
     flyToPreset, flyToStand, flyToFlight, flyToBounds, flyToAll, flyToPuj, resetNorth, getCamera, jumpTo, project, whenIdle,
-    aircraft3d, drawnPosition,
+    aircraft3d, drawnPosition, framePosition, onRender, rendererInfo, renderStats, frameMeter: readFrameMeter,
   }), [flyToPreset, flyToStand, flyToFlight, flyToBounds, flyToAll, flyToPuj, resetNorth, getCamera, jumpTo, project, whenIdle,
-    aircraft3d, drawnPosition]);
+    aircraft3d, drawnPosition, framePosition, onRender, rendererInfo, renderStats, readFrameMeter]);
 
   // The overlays read only these: the tooltip, which changes with the pointer, renders here and re-renders none of them.
   const {
@@ -2817,6 +2971,7 @@ const OccMapView = forwardRef(function OccMapView({
         {!unavailable && traffic !== undefined && <AltitudeLegend theme={theme} />}
         {children}
         {!unavailable && <MapTooltip tooltip={snapshot.tooltip} />}
+        {!unavailable && frameMeterOn && <FrameMeter read={readFrameMeter} />}
       </div>
     </OccMapContext.Provider>
   );

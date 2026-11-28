@@ -471,6 +471,15 @@ export const mapMessages = {
       resume: 'Volver a 3D',
       failed: 'No pudimos mostrar los aviones en 3D; los mostramos en 2D.',
     },
+    // The hidden frame meter (PR M2, ui/FrameMeter.jsx): Ctrl+Alt+F shows and hides it.
+    frameMeter: {
+      title: 'Medidor de cuadros',
+      fps: 'Cuadros por segundo',
+      p95: 'Cuadro p95',
+      aircraft: 'Aviones dibujados',
+      gpu: 'GPU',
+      unknown: 'desconocida',
+    },
     // The layers menu (ui/MapLayersMenu.jsx, core/layersMenu.js); its button takes «Capas» from the key table.
     layers: {
       menu: 'Capas del mapa',
@@ -998,6 +1007,14 @@ export const mapMessages = {
       paused: 'We paused the 3D view so the map stays smooth.',
       resume: 'Back to 3D',
       failed: 'We could not show the aircraft in 3D; they are shown in 2D.',
+    },
+    frameMeter: {
+      title: 'Frame meter',
+      fps: 'Frames per second',
+      p95: 'Frame p95',
+      aircraft: 'Aircraft drawn',
+      gpu: 'GPU',
+      unknown: 'unknown',
     },
     layers: {
       menu: 'Map layers',

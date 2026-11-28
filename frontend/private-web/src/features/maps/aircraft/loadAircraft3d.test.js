@@ -98,8 +98,9 @@ describe('the 3D chunk loader (design G1)', () => {
       'AdditiveBlending', 'BoxGeometry', 'BufferGeometry', 'Camera', 'CanvasTexture', 'Color', 'CylinderGeometry',
       'DirectionalLight', 'DoubleSide', 'DynamicDrawUsage', 'ExtrudeGeometry', 'Float32BufferAttribute', 'Group',
       'HemisphereLight', 'InstancedBufferAttribute', 'InstancedMesh', 'LatheGeometry', 'LineBasicMaterial', 'LineSegments',
-      'Matrix4', 'Mesh', 'MeshBasicMaterial', 'MeshLambertMaterial', 'MeshStandardMaterial', 'Raycaster', 'SRGBColorSpace',
-      'Scene', 'Shape', 'SphereGeometry', 'SubtractiveBlending', 'Vector2', 'Vector3', 'WebGLRenderer',
+      'Matrix4', 'Mesh', 'MeshBasicMaterial', 'MeshLambertMaterial', 'MeshStandardMaterial', 'NoColorSpace', 'Raycaster',
+      'SRGBColorSpace', 'Scene', 'ShaderMaterial', 'Shape', 'SphereGeometry', 'SubtractiveBlending', 'Vector2', 'Vector3',
+      'WebGLRenderer',
       'mergeGeometries',
     ]);
     expect(Object.isFrozen(loaded.three)).toBe(true);

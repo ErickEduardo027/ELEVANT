@@ -1,4 +1,4 @@
-import { Matrix4, PerspectiveCamera, ShaderLib, Vector3 } from 'three';
+import { Matrix4, PerspectiveCamera, ShaderLib, Vector3, Vector4 } from 'three';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OCC_PALETTE } from '../../occ-ui/occPalette';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
@@ -10,9 +10,10 @@ import {
 } from './aircraft3dLayer';
 import { triangleCount } from './aircraftGeometry';
 import { CONTACT_SHADOW, contactShadowStrength } from './contactShadow';
-import { linearRgb, liveryInstanceColours, mercatorFrame, planInstances } from './instancePlan';
+import { linearRgb, liveryInstanceColours, mercatorFrame, planInstances, planLabels, planSprites } from './instancePlan';
 import { LIVERY_ZONES } from './liveries';
 import { sunPosition } from '../traffic/solar';
+import { billboardClip, createTrafficSprites } from './trafficSprites';
 import { AIRCRAFT_TYPES } from './types';
 
 // The layer's life with the real three, in Node, and an injected renderer: three's scene, meshes, lights and raycaster
@@ -911,5 +912,171 @@ describe("the 3D aircraft layer's liveries (M9)", () => {
     for (const name of LIVERY_ZONE_ATTRIBUTES) {
       expect(Array.from(a320.geometry.getAttribute(name).array)).toEqual(Array.from(entry.colors));
     }
+  });
+});
+
+// PR M2: the sprites of the animated traffic, drawn by the same layer, with a 2D canvas that records nothing.
+describe('the sprites of the animated traffic (PR M2)', () => {
+  function fakeCanvas(width, height) {
+    const context = new Proxy({}, {
+      get: (target, key) => (key in target ? target[key] : () => {}),
+      set: (target, key, value) => {
+        target[key] = value;
+        return true;
+      },
+    });
+    return { width, height, getContext: type => (type === '2d' ? context : null) };
+  }
+
+  function spriteWorld({ createCanvas = fakeCanvas } = {}) {
+    vi.stubGlobal('Path2D', class Path2D {});
+    const { createRenderer } = fakeRenderers();
+    const made = [];
+    const onSpritesFailedChange = vi.fn();
+    let answer = { revision: 0, plan: new Map(), sprites: null };
+    const layer = createAircraft3dLayer({
+      three: THREE_PARTS, originLngLat: ARP, getInstances: () => answer, createRenderer, createCanvas,
+      onSpritesFailedChange, minModelPx: 30,
+      createSprites: options => {
+        const sprites = createTrafficSprites(options);
+        vi.spyOn(sprites, 'sync');
+        made.push(sprites);
+        return sprites;
+      },
+    });
+    const map = { ...fakeMap(), zoom: 15 };
+    map.getZoom = () => map.zoom;
+    layer.onAdd(map, fakeContext('gl'));
+    return {
+      layer, map, made, createRenderer, onSpritesFailedChange,
+      answer: next => {
+        answer = next;
+      },
+    };
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('draws the sprites of each new answer in one draw call, sized at the zoom of every frame, and picks them', () => {
+    const { layer, map, made, answer, createRenderer } = spriteWorld();
+    const view = viewOf();
+    const items = [aircraft('f:p:a', { bearing: 10, metres: 300, trackDeg: 90 }),
+      aircraft('h:p:b', { kind: 'other', bearing: 40, metres: 900, onGround: false, altM: 600 })];
+    answer({ revision: 1, plan: new Map(), sprites: planSprites(items, { originLngLat: ARP }) });
+    layer.render(fakeContext('gl'), view.input);
+    expect(made).toHaveLength(1);
+    expect(made[0].sync).toHaveBeenCalledTimes(1);
+    expect(layer.stats()).toMatchObject({ instances: 0, drawCalls: 1, sprites: 2, spritesFailed: false });
+    // The square of a sprite is its pixel size times the metres of a pixel at the frame's zoom (512 px tiles).
+    const metresPerPixel = zoom => (40_075_016.686 / 512) * Math.cos((ARP[1] * Math.PI) / 180) / 2 ** zoom;
+    expect(made[0].metresPerPx()).toBeCloseTo(metresPerPixel(15), 6);
+    map.zoom = 17;
+    layer.render(fakeContext('gl'), view.input);
+    expect(made[0].metresPerPx()).toBeCloseTo(metresPerPixel(17), 6);
+    // The same revision copies nothing; a new one (the next frame of a moving aircraft) does.
+    expect(made[0].sync).toHaveBeenCalledTimes(1);
+    const moved = items.map(item => ({ ...item, lat: item.lat + 0.0002 }));
+    answer({ revision: 2, plan: new Map(), sprites: planSprites(moved, { originLngLat: ARP }) });
+    layer.render(fakeContext('gl'), view.input);
+    expect(made[0].sync).toHaveBeenCalledTimes(2);
+    // Picked on the CPU where the frame drew it: the sprite's centre, not where it was.
+    const at = view.toPixel([...localOf(moved[1]), 0]);
+    expect(layer.pick(at)).toEqual({ kind: 'aircraft', id: 'h:p:b' });
+    expect(layer.pick({ x: at.x + 200, y: at.y + 200 })).toBeNull();
+    // The scene holds them as one InstancedMesh in its own group, never among the models.
+    const { scene } = createRenderer.mock.results[0].value;
+    expect(meshesOf(scene)).toEqual([]);
+    const group = scene.children.find(child => child.name === 'traffic-sprites');
+    expect(group.children).toHaveLength(1);
+    expect(group.children[0]).toMatchObject({ isInstancedMesh: true, count: 2, frustumCulled: false });
+    expect(group.children[0].material).toMatchObject({ transparent: true, depthTest: false, depthWrite: false });
+    layer.onRemove();
+    expect(layer.stats().sprites ?? 0).toBe(0);
+  });
+
+  it('draws the tags and the chosen ring over the sprites, and picks a tag where this frame drew it', () => {
+    const { layer, answer, createRenderer } = spriteWorld();
+    const view = viewOf();
+    const items = [aircraft('f:p:a', { bearing: 10, metres: 300, flightNumber: 'DM101' }),
+      aircraft('h:p:b', { kind: 'other', bearing: 40, metres: 900, onGround: false, altM: 600 })];
+    const labelsOf = list => planLabels(list, { originLngLat: ARP, zoom: 15, selectedId: 'f:p:a' });
+    answer({ revision: 1, plan: new Map(), sprites: planSprites(items, { originLngLat: ARP }), labels: labelsOf(items) });
+    layer.render(fakeContext('gl'), view.input);
+    expect(layer.stats()).toMatchObject({ sprites: 2, labels: 1, drawCalls: 2 });
+    const { scene } = createRenderer.mock.results[0].value;
+    const group = scene.children.find(child => child.name === 'traffic-labels');
+    const mesh = group.children[0];
+    // The ring and the chosen aircraft's tag, over the sprites; its canvas pixels are the drawing buffer's (ratio 2).
+    expect(mesh).toMatchObject({ isInstancedMesh: true, count: 2, renderOrder: 20 });
+    expect(mesh.material.uniforms.viewport.value.toArray()).toEqual([WIDTH, HEIGHT]);
+    expect(mesh.material.uniforms.pixelRatio.value).toBe(2);
+    // The centre of the tag (the last quad): its aircraft where the frame drew it, plus its offset.
+    const centre = () => {
+      const anchor = mesh.geometry.getAttribute('instanceAnchor').array;
+      const offset = mesh.geometry.getAttribute('instanceOffset').array;
+      const at = view.toPixel([anchor[3], anchor[4], 0]);
+      return { x: at.x + offset[2], y: at.y + offset[3] };
+    };
+    expect(layer.pick(centre())).toEqual({ kind: 'aircraft', id: 'f:p:a' });
+    // The next frame moves the tag with its aircraft; it is picked there.
+    const moved = items.map(item => ({ ...item, lat: item.lat + 0.001 }));
+    answer({ revision: 2, plan: new Map(), sprites: planSprites(moved, { originLngLat: ARP }), labels: labelsOf(moved) });
+    const before = centre();
+    layer.render(fakeContext('gl'), view.input);
+    expect(Math.hypot(centre().x - before.x, centre().y - before.y)).toBeGreaterThan(5);
+    expect(layer.pick(centre())).toEqual({ kind: 'aircraft', id: 'f:p:a' });
+    layer.onRemove();
+    expect(layer.stats().labels).toBeUndefined();
+  });
+
+  it('draws the «Demo» plate facing the screen: its size and offset in pixels are the same at pitch 0 and at pitch 60', () => {
+    const { layer, made, answer } = spriteWorld();
+    const demo = aircraft('f:p:demo', { bearing: 30, metres: 400, isDemo: true });
+    const sprites = planSprites([demo], { originLngLat: ARP });
+    answer({ revision: 1, plan: new Map(), sprites });
+    layer.render(fakeContext('gl'), viewOf().input);
+    // The layer hands the sprites the canvas in CSS pixels, which sizes the billboards.
+    expect(made[0].viewport()).toEqual({ width: WIDTH, height: HEIGHT });
+    const index = sprites.plain.indexOf(1);
+    expect(index).toBeGreaterThanOrEqual(0);
+    const [width, height] = sprites.sizes.slice(2 * index, 2 * index + 2);
+    const [offsetX, offsetY] = sprites.offsets.slice(2 * index, 2 * index + 2);
+    const at = new Vector3(...localOf(demo), 0);
+    // The plate on screen as the shader puts it (billboardClip), in CSS pixels from the top-left corner.
+    const plateOn = view => {
+      const clip = new Vector4(at.x, at.y, at.z, 1).applyMatrix4(view.localToClip).toArray();
+      const pixel = ([x, y, , w]) => ({ x: ((x / w + 1) / 2) * WIDTH, y: ((1 - y / w) / 2) * HEIGHT });
+      const corner = (cx, cy) => pixel(billboardClip(clip, [cx * width + offsetX, cy * height + offsetY],
+        { width: WIDTH, height: HEIGHT }));
+      const centre = pixel(clip);
+      const top = corner(0.5, 0.5);
+      const bottom = corner(-0.5, -0.5);
+      return { width: top.x - bottom.x, height: bottom.y - top.y, below: (top.y + bottom.y) / 2 - centre.y };
+    };
+    // Straight down (pitch 0) and pitched 60° from the south, at the same distance.
+    const flat = plateOn(viewOf({ from: [at.x, at.y - 1, at.z + 2_000], target: [at.x, at.y, at.z] }));
+    const pitched = plateOn(viewOf({ from: [at.x, at.y - 2_000 * Math.sin(Math.PI / 3), 2_000 * Math.cos(Math.PI / 3)],
+      target: [at.x, at.y, at.z] }));
+    for (const plate of [flat, pitched]) {
+      expect(plate.width).toBeCloseTo(width, 6);
+      expect(plate.height).toBeCloseTo(height, 6);
+      // Below its aircraft by its offset (y up in the plan, down on screen).
+      expect(plate.below).toBeCloseTo(-offsetY, 6);
+    }
+  });
+
+  it('without a 2D canvas for the atlas it says so once and keeps drawing its models', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { layer, onSpritesFailedChange, answer, createRenderer } = spriteWorld({ createCanvas: () => null });
+    const items = [aircraft('f:p:a', { bearing: 10, metres: 300 })];
+    answer({ revision: 1, plan: planOf(items), sprites: planSprites(items, { originLngLat: ARP }) });
+    layer.render(fakeContext('gl'), viewOf().input);
+    expect(onSpritesFailedChange).toHaveBeenCalledExactlyOnceWith(true);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(layer.stats()).toMatchObject({ instances: 2, sprites: 0, spritesFailed: true, failed: false });
+    answer({ revision: 2, plan: planOf(items), sprites: planSprites(items, { originLngLat: ARP }) });
+    layer.render(fakeContext('gl'), viewOf().input);
+    expect(onSpritesFailedChange).toHaveBeenCalledTimes(1);
+    expect(createRenderer.mock.results[0].value.calls.filter(call => call === 'render').length).toBeGreaterThan(0);
   });
 });

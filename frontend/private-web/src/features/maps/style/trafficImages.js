@@ -35,6 +35,12 @@ export const TAG_GLYPHS = Object.freeze({ arrival: 'glyph-arrival', departure: '
 export const DEMO_PLATE_IMAGE = 'plate-demo';
 /** The slab of the «Demo» plate inside its image (3 px clear on every side). */
 export const DEMO_PLATE = Object.freeze({ width: 38, height: 16 });
+/**
+ * The «Demo» plate's centre below its aircraft, in pixels, by the aircraft's drawn half size (its `radius`): from each
+ * radius on, the centre given (traffic/trafficLayers.js and the animated layer, aircraft/instancePlan.js: planSprites).
+ */
+export const DEMO_PLATE_CENTRE_PX = Object.freeze([[0, 22], [12, 25], [14, 27], [16, 29], [18, 31]]
+  .map(step => Object.freeze(step)));
 
 function aircraftShape(category, style) {
   const size = AIRCRAFT_ICON_SIZES[category];

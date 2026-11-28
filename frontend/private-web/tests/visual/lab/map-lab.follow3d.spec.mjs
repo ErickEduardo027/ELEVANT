@@ -1,4 +1,5 @@
 import { NOON, labIdle, openLab, shoot } from '../support/map.mjs';
+import { expectGpuGates, gpuReport, gpuRun, measureFrames, recordPerf } from '../support/perf.mjs';
 import { expect, production, test } from '../support/test.mjs';
 
 // CN-29, CN-30 and CN-31 in Chrome, on the map lab's invented data (screenshots in test-results/visual for review):
@@ -8,7 +9,9 @@ import { expect, production, test } from '../support/test.mjs';
 // - «Seguir en 3D» through a real visit replayed from its fixes (airfield-3d-replay): approach, touchdown (on the
 //   runway), taxi-in, parked (on the stand's point, with its heading), push-back, taxi-out and take-off, each followed
 //   in 3D with its panel; the orbit at four angles and the tower's view; Esc stops and flies the camera back;
-// - the fluency of follow mode on the running replay (frames per second and long tasks), printed for the pull request.
+// - the fluency of follow mode on the running replay (the frames MapLibre draws, their frame time and long tasks,
+//   support/perf.mjs), printed for the pull request; on the real GPU (OCC_VISUAL_GPU) at least 30 frames a second and a
+//   p95 frame time within 33 ms, with and without following.
 
 const ARRIVAL = 'p:5c900000-0000-4000-8000-000000000893';
 const DEPARTURE = 'p:5c900000-0000-4000-8000-000000000894';
@@ -202,45 +205,41 @@ test.describe('route, follow mode in 3D and real positions (CN-29, CN-30, CN-31)
     });
   }
 
-  test('keeps the frame budget while following in 3D', async ({ page }) => {
+  test('keeps the frame budget while following in 3D', async ({ page }, testInfo) => {
     const seconds = Number(process.env.OCC_FLUENCY_SECONDS ?? 20);
+    test.setTimeout(seconds * 2_000 + 420_000);
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     await openLab(page, `scene=airfield-3d-replay&flightId=${ARRIVAL}`);
-    // The same running replay first without following (the airfield in 3D), then followed in 3D.
-    const before = await measureFrames(page, seconds);
-    console.log(`CN-30 replay without follow: ${before.fps.toFixed(1)} frames/s, longest gap ${before.maxGapMs.toFixed(0)} ms, `
-      + `blocked ${before.blockedPerMinS.toFixed(1)} s/min`);
+    const gpu = await gpuReport(page, testInfo);
+    // The same running replay first without following (the airfield in 3D), then followed in 3D (PR M2: the frames
+    // MapLibre draws, support/perf.mjs, and where each drew the followed aircraft).
+    const ids = { arrival: `f:${ARRIVAL}` };
+    // At the scene's own instant the arrival is still beyond the airfield's view and nothing in sight moves, so the map
+    // rests and draws no frames: the measurement starts once the running replay brings it into sight.
+    await expect.poll(() => page.evaluate(id => {
+      const lab = window.__occMapLab;
+      const lngLat = lab.frameAt(id);
+      const point = lngLat ? lab.project(lngLat) : null;
+      const box = document.querySelector('[data-testid="occ-map"]').getBoundingClientRect();
+      return point !== null && point.x >= 0 && point.y >= 0 && point.x <= box.width && point.y <= box.height;
+    }, ids.arrival), { timeout: 240_000, intervals: [1_000] }).toBe(true);
+    const before = await measureFrames(page, seconds, ids);
+    console.log(`CN-30 replay without follow: ${JSON.stringify(before)}`);
+    recordPerf('airfield-3d-replay', before, gpu);
     await startFollow(page);
-    const result = await measureFrames(page, seconds);
-    console.log(`CN-30 follow 3D fluency: ${result.fps.toFixed(1)} frames/s, longest gap ${result.maxGapMs.toFixed(0)} ms, `
-      + `blocked ${result.blockedPerMinS.toFixed(1)} s/min`);
-    // Software WebGL (SwiftShader) bounds the frames per second; what follow mode must not add is blocked time.
-    expect(result.blockedPerMinS).toBeLessThan(10);
-    expect(result.fps).toBeGreaterThan(5);
+    const result = await measureFrames(page, seconds, ids);
+    console.log(`CN-30 follow 3D fluency: ${JSON.stringify(result)}`);
+    recordPerf('airfield-3d-replay-follow3d', result, gpu);
+    await testInfo.attach('follow3d-fluency.json', { body: JSON.stringify({ before, result }, null, 2),
+      contentType: 'application/json' });
+    if (process.env.OCC_FLUENCY_REPORT_ONLY === '1') return;
+    // What follow mode must not add is blocked time; software WebGL (SwiftShader) bounds the frames per second, the
+    // real GPU (OCC_VISUAL_GPU) holds the plan's floor of 30 drawn frames a second.
+    expect(result.blockedMsPerMin / 1_000).toBeLessThan(10);
+    // From PR M2 step 7 (2026-11-28: the GeoJSON overlays cut into tiles down to zoom 16), also the p95 of 33 ms.
+    if (gpuRun) {
+      expectGpuGates(before, 'the replay in 3D');
+      expectGpuGates(result, 'followed in 3D');
+    } else expect(result.renderFps).toBeGreaterThan(5);
   });
 });
-
-/** Frames per second, the longest gap between two frames and the long tasks per minute, over `seconds`. */
-function measureFrames(page, seconds) {
-  return page.evaluate(ms => new Promise(resolve => {
-    const longTasks = [];
-    const observer = new PerformanceObserver(list => list.getEntries().forEach(entry => longTasks.push(entry.duration)));
-    observer.observe({ type: 'longtask', buffered: false });
-    let frames = 0;
-    let maxGapMs = 0;
-    let last = null;
-    const start = performance.now();
-    const frame = now => {
-      frames += 1;
-      if (last !== null) maxGapMs = Math.max(maxGapMs, now - last);
-      last = now;
-      if (now - start < ms) requestAnimationFrame(frame);
-      else {
-        observer.disconnect();
-        const blocked = longTasks.reduce((sum, value) => sum + value, 0);
-        resolve({ fps: (frames * 1_000) / (now - start), maxGapMs, blockedPerMinS: (blocked / 1_000) * (60_000 / ms) });
-      }
-    };
-    requestAnimationFrame(frame);
-  }), seconds * 1_000);
-}

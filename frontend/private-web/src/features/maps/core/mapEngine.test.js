@@ -80,7 +80,8 @@ describe('map engine', () => {
       renderWorldCopies: false,
       canvasContextAttributes: { antialias: true },
       validateStyle: true,
-      fadeDuration: 0,
+      // PR M2: a 150 ms fade, so the frames drawn continuously do not each pay a full placement of the labels.
+      fadeDuration: 150,
       interactive: true,
       center: [-68.3634, 18.5674],
       zoom: 15,
@@ -1080,6 +1081,35 @@ describe('map engine', () => {
     expect(map.listenerCount()).toBe(0);
     expect(setup().map.listenerCount('idle')).toBe(0);
     return expect(idle).resolves.toBe(true);
+  });
+
+  it('reports every frame MapLibre draws to onRender, and listens to render only with a handler (PR M2)', () => {
+    const onRender = vi.fn();
+    const { engine, map, state } = ready(setup({ onRender }));
+    state.emit(map, 'render');
+    state.emit(map, 'render');
+    expect(onRender).toHaveBeenCalledTimes(2);
+    expect(onRender.mock.calls[0]).toEqual([]);
+    engine.destroy();
+    expect(map.listenerCount()).toBe(0);
+    expect(setup().map.listenerCount('render')).toBe(0);
+  });
+
+  it('rendererInfo reads the GPU from the WebGL context of the map, unmasked where it can (PR M2)', () => {
+    const { engine, map } = ready(setup());
+    expect(engine.rendererInfo()).toBeNull();
+    const debug = { UNMASKED_RENDERER_WEBGL: 0x9246, UNMASKED_VENDOR_WEBGL: 0x9245 };
+    const values = new Map([[0x9246, 'ANGLE (Intel, Intel(R) UHD Graphics Direct3D11)'], [0x9245, 'Google Inc. (Intel)'],
+      [0x1f01, 'WebKit WebGL'], [0x1f00, 'WebKit']]);
+    const gl = { RENDERER: 0x1f01, VENDOR: 0x1f00, getParameter: key => values.get(key), getExtension: () => debug };
+    map.painter = { context: { gl } };
+    expect(engine.rendererInfo()).toEqual({ renderer: 'ANGLE (Intel, Intel(R) UHD Graphics Direct3D11)',
+      vendor: 'Google Inc. (Intel)' });
+    // A browser without the extension answers the plain strings.
+    gl.getExtension = () => null;
+    expect(engine.rendererInfo()).toEqual({ renderer: 'WebKit WebGL', vendor: 'WebKit' });
+    engine.destroy();
+    expect(engine.rendererInfo()).toBeNull();
   });
 
   it('getVisibleBounds is the part of the map the insets leave in sight, never more than getBounds', () => {

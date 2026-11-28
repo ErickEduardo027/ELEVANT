@@ -317,6 +317,15 @@
   transform: translateX(-50%);
 }
 
+/* The hidden frame meter (PR M2, ui/FrameMeter.jsx, Ctrl+Alt+F): at the top left of the area in sight, over the map's
+   chips, never taking a click. */
+.occ-map .occ-map-frame-meter {
+  position: absolute;
+  z-index: 12;
+  top: calc(var(--occ-map-inset-top, 0px) + var(--occ-map-gap));
+  left: calc(var(--occ-map-inset-left, 0px) + var(--occ-map-gap));
+}
+
 /* A narrow map (beside a list and an inspector on a 1366 px laptop): the credit of the aircraft data keeps one line, so
    the key never climbs over the map. */
 @container occ-map (max-width: 36rem) {

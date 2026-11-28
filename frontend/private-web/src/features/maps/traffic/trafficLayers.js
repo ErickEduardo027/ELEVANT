@@ -2,7 +2,9 @@ import { occColor } from '../../occ-ui/occPalette';
 import { TAGS } from '../../occ-ui/statusVocabulary';
 import { altitudeColourExpression, mapColorsFor } from '../style/mapColors';
 import { FONT_STACKS } from '../style/occStyle';
-import { DEMO_PLATE_IMAGE, ESTIMATED_RING_IMAGE, ROUTE_MARK_IMAGE, TAG_GLYPHS } from '../style/trafficImages';
+import {
+  DEMO_PLATE_CENTRE_PX, DEMO_PLATE_IMAGE, ESTIMATED_RING_IMAGE, ROUTE_MARK_IMAGE, TAG_GLYPHS,
+} from '../style/trafficImages';
 import { ROUTE_SOURCE, TRAFFIC_SOURCE, TRAILS_SOURCE } from './trafficFeatures';
 
 // The traffic of the OCC maps as one overlay for buildOccStyle (design E1, contracts 2.4), fed by OccMap: the aircraft
@@ -49,8 +51,14 @@ const OTHER = ['==', get('kind'), 'other'];
 // whatever is estimated or simulated carries its mark on screen).
 const NOT_PARKED = isNot('parkedOnStand');
 // An aircraft the 3D layer draws (PR M7, core/aircraft3d.js) leaves out its 2D silhouette, the chosen one's too; its tag,
-// its rings and its «Demo» plate stay, so it keeps its words and marks over the model.
+// its rings and its «Demo» plate stay, so it keeps its words and marks over the model. PR M2: the same layer animates
+// every aircraft (`animated`, its silhouette or its model each frame), and then draws its dashed ring, its «Demo» plate,
+// its tag and the chosen one's ring too (aircraft/trafficLabels.js), so they move with it: none of its symbols is left
+// here, and a pick of the traffic is the layer's (on the CPU), never queryRenderedFeatures'. These layers stay as the
+// fallback while the layer does not animate (no WebGL2, the chunk loading or failed, no 2D canvas).
 const NOT_3D = isNot('model3d');
+const NOT_ANIMATED = isNot('animated');
+const OTHER_ICON = ['case', is('model3d'), '', get('icon')];
 // A stale position is dimmed to half; an aircraft fading out (PR M6: a cancelled demo, traffic that lost its signal)
 // carries its own opacity, which multiplies it, so the icon, its ring, its tag and its plate fade together.
 // M8: on Monitoreo, an AVIAM aircraft the board's filter leaves out is dimmed as well, by the feature state `outside`
@@ -89,8 +97,29 @@ const iconPaint = (colour, haloWidth, halo = occColor('nav')) => ({
   'icon-opacity': DIMMED,
 });
 
+/**
+ * Beside the aircraft, wherever it fits best, clear of its silhouette: right first, then left, below, above (MapLibre's
+ * text anchors: `left` puts the tag's left edge at the aircraft, so the tag stands to its right).
+ */
+export const TAG_ANCHORS = Object.freeze(['left', 'right', 'top', 'bottom', 'top-left', 'top-right', 'bottom-left',
+  'bottom-right']);
+
+/**
+ * How a tag is written (the GeoJSON tags and the animated layer's, aircraft/labelAtlas.js): the text size and colour
+ * token of an ELEVANT tag and of other traffic's, the line height and the second line's scale (ems), the halo's width
+ * in pixels and the gap past the silhouette's half size (`radius`) in ems.
+ */
+export const TAG_STYLE = Object.freeze({
+  aviam: Object.freeze({ size: 12, color: 'text' }),
+  other: Object.freeze({ size: 11, color: 'muted' }),
+  lineHeight: 1.15,
+  secondLineScale: 0.9,
+  haloPx: 1.5,
+  radialOffsetEm: 0.4,
+});
+
 // The second line of every tag: type, altitude (GND on the ground) and knots.
-const SECOND_LINE = ['\n', {}, get('tag2'), { 'font-scale': 0.9 }];
+const SECOND_LINE = ['\n', {}, get('tag2'), { 'font-scale': TAG_STYLE.secondLineScale }];
 // «est.» or the age of a stale position, muted, after the name.
 const SUFFIX = [['case', ['==', get('suffix'), ''], '', ['concat', ' ', get('suffix')]], { 'text-color': occColor('muted') }];
 
@@ -116,15 +145,13 @@ const NO_TAG = ['format', '', {}];
 // The zoom from which the ELEVANT tags are always drawn, overlapping if need be (CN-29): below it they declutter.
 export const TAG_DECLUTTER_UNTIL_ZOOM = 15;
 
-// Beside the aircraft, wherever it fits best, clear of its silhouette: right first, then left, below, above.
-const TAG_ANCHORS = ['left', 'right', 'top', 'bottom', 'top-left', 'top-right', 'bottom-left', 'bottom-right'];
 const tagLayout = (size, extra = {}) => ({
   'text-size': size,
   'text-font': [...FONT_STACKS.regular],
-  'text-variable-anchor': TAG_ANCHORS,
-  'text-radial-offset': ['+', ['/', get('radius'), size], 0.4],
+  'text-variable-anchor': [...TAG_ANCHORS],
+  'text-radial-offset': ['+', ['/', get('radius'), size], TAG_STYLE.radialOffsetEm],
   'text-justify': 'auto',
-  'text-line-height': 1.15,
+  'text-line-height': TAG_STYLE.lineHeight,
   'text-max-width': 24,
   'text-rotation-alignment': 'viewport',
   'text-pitch-alignment': 'viewport',
@@ -134,8 +161,8 @@ const tagLayout = (size, extra = {}) => ({
 // Other traffic: its icon, and its tag while it is chosen or under the pointer, placed after the rest of its layer so
 // it keeps off the icons around it and draws above them.
 const otherLayout = () => ({
-  ...iconLayout(),
-  ...tagLayout(11, {
+  ...iconLayout({ 'icon-image': OTHER_ICON }),
+  ...tagLayout(TAG_STYLE.other.size, {
     'text-field': ['case', is('forceTag'), OTHER_TAG, NO_TAG],
     'text-allow-overlap': true,
     'symbol-sort-key': ['case', is('forceTag'), 1, 0],
@@ -145,12 +172,12 @@ const otherLayout = () => ({
 const tagPaint = colour => ({
   'text-color': colour,
   'text-halo-color': occColor('nav'),
-  'text-halo-width': 1.5,
+  'text-halo-width': TAG_STYLE.haloPx,
   'text-opacity': DIMMED,
 });
 
 // The «Demo» plate under the aircraft: its centre below the silhouette, further for larger ones (`radius`).
-const PLATE_CENTRE_PX = Object.freeze([[0, 22], [12, 25], [14, 27], [16, 29], [18, 31]]);
+const PLATE_CENTRE_PX = DEMO_PLATE_CENTRE_PX;
 const PLATE_TEXT_SIZE = 11;
 const plateOffset = toUnit => ['step', get('radius'), ['literal', [0, toUnit(PLATE_CENTRE_PX[0][1])]],
   ...PLATE_CENTRE_PX.slice(1).flatMap(([radius, centre]) => [radius, ['literal', [0, toUnit(centre)]]])];
@@ -160,10 +187,11 @@ const ACCENT = occColor('accent');
 // Every aircraft but the chosen one in the colour of its altitude, edged by the halo of the theme (style/mapColors.js).
 const altitudePaint = (theme, haloWidth) => iconPaint(altitudeColourExpression(theme), haloWidth,
   mapColorsFor(theme).altitude.halo);
-// The ring of the chosen aircraft: the selection's own ring (style/selectionLayers.js: occ-selection-ring), 2 px of
-// cyan clear of the silhouette.
-const SELECTED_RING_RADIUS_PX = 18;
-const SELECTED_RING_WIDTH_PX = 2;
+/**
+ * The ring of the chosen aircraft: the selection's own ring (style/selectionLayers.js: occ-selection-ring), 2 px of
+ * cyan clear of the silhouette; the animated layer draws the same (aircraft/labelAtlas.js).
+ */
+export const SELECTED_RING = Object.freeze({ radiusPx: 18, widthPx: 2 });
 
 /** How the parts of the chosen flight's route are drawn (design E5): width in px, opacity, dashes. */
 export const ROUTE_STYLE = Object.freeze({
@@ -290,7 +318,7 @@ export function trafficOverlay({ theme = 'dark' } = {}) {
         id: 'occ-traffic-other-ground',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: ['all', OTHER, is('ground'), NOT_3D],
+        filter: ['all', OTHER, is('ground'), NOT_ANIMATED],
         layout: otherLayout(),
         paint: { ...altitudePaint(theme, 1), ...tagPaint(occColor('muted')) },
         metadata: { 'occ:group': TRAFFIC_GROUPS.other, 'occ:pick': 'aircraft', 'occ:pickId': 'hex',
@@ -301,7 +329,7 @@ export function trafficOverlay({ theme = 'dark' } = {}) {
         id: 'occ-traffic-other',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: ['all', OTHER, isNot('ground'), NOT_3D],
+        filter: ['all', OTHER, isNot('ground'), NOT_ANIMATED],
         layout: otherLayout(),
         paint: { ...altitudePaint(theme, 1), ...tagPaint(occColor('muted')) },
         metadata: { 'occ:group': TRAFFIC_GROUPS.other, 'occ:pick': 'aircraft', 'occ:pickId': 'hex' },
@@ -313,8 +341,8 @@ export function trafficOverlay({ theme = 'dark' } = {}) {
         id: 'occ-traffic-tags-other',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: ['all', OTHER, isNot('forceTag')],
-        layout: tagLayout(11, { visibility: 'none', 'text-field': OTHER_TAG, 'text-allow-overlap': false }),
+        filter: ['all', OTHER, isNot('forceTag'), NOT_ANIMATED],
+        layout: tagLayout(TAG_STYLE.other.size, { visibility: 'none', 'text-field': OTHER_TAG, 'text-allow-overlap': false }),
         paint: tagPaint(occColor('muted')),
         // M4: hidden close up (core/mapEngine.js: setCloseUp).
         metadata: { 'occ:group': TRAFFIC_GROUPS.labels, 'occ:closeUp': 'hide' },
@@ -334,7 +362,7 @@ export function trafficOverlay({ theme = 'dark' } = {}) {
         id: 'occ-traffic-estimated-ring',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: is('estimated'),
+        filter: ['all', is('estimated'), NOT_ANIMATED],
         layout: {
           'icon-image': ESTIMATED_RING_IMAGE,
           'icon-size': get('scale'),
@@ -353,8 +381,8 @@ export function trafficOverlay({ theme = 'dark' } = {}) {
         id: 'occ-traffic-tags',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: ['all', AVIAM, NOT_PARKED],
-        layout: tagLayout(12, {
+        filter: ['all', AVIAM, NOT_PARKED, NOT_ANIMATED],
+        layout: tagLayout(TAG_STYLE.aviam.size, {
           'text-field': ['case', ['!=', get('tagStand'), ''], aviamTag({ stand: true }), aviamTag({ stand: false })],
           // CN-29: below the ramp's zoom (the approach and the airfield, where the aircraft at the terminals crowd
           // together) a tag gives way where it would cover another: the chosen aircraft's first, then those in the air,
@@ -374,7 +402,7 @@ export function trafficOverlay({ theme = 'dark' } = {}) {
         id: 'occ-traffic-demo-plate',
         type: 'symbol',
         source: TRAFFIC_SOURCE,
-        filter: is('demo'),
+        filter: ['all', is('demo'), NOT_ANIMATED],
         layout: {
           'icon-image': DEMO_PLATE_IMAGE,
           'icon-anchor': 'center',
@@ -402,12 +430,12 @@ export function trafficOverlay({ theme = 'dark' } = {}) {
         id: 'occ-traffic-selected-ring',
         type: 'circle',
         source: TRAFFIC_SOURCE,
-        filter: is('selected'),
+        filter: ['all', is('selected'), NOT_ANIMATED],
         paint: {
-          'circle-radius': SELECTED_RING_RADIUS_PX,
+          'circle-radius': SELECTED_RING.radiusPx,
           'circle-color': ACCENT,
           'circle-opacity': 0,
-          'circle-stroke-width': SELECTED_RING_WIDTH_PX,
+          'circle-stroke-width': SELECTED_RING.widthPx,
           'circle-stroke-color': ACCENT,
         },
         // Close up the ring of the followed aircraft goes: drawn at its point on the ground, it sat on the model.

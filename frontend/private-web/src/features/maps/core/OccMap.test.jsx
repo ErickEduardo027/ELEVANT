@@ -869,9 +869,9 @@ describe('OccMap', () => {
     expect(map.options.fadeDuration).toBe(300);
     expect(map.options.locale).toMatchObject({ 'Map.Title': 'Mapa del OCC', 'NavigationControl.ZoomIn': 'Acercar' });
     cleanup();
-    // Without them the engine keeps its own: no symbol fade (CN-18).
+    // Without them the engine keeps its own: a 150 ms symbol fade (PR M2; it was none from CN-18).
     render(<OccMap stands={STANDS} />);
-    expect(fake.state.liveMaps().at(-1).options.fadeDuration).toBe(0);
+    expect(fake.state.liveMaps().at(-1).options.fadeDuration).toBe(150);
   });
 
   it('answers no pixel without a map', async () => {
@@ -926,7 +926,7 @@ describe('OccMap', () => {
     // One setData per source when the map starts, and no clustering any more.
     expect(sources.map(source => source.setDataCalls.length)).toEqual([1, 1, 1, 1]);
     expect(sources.map(source => source.updateDataCalls.length)).toEqual([0, 0, 0, 0]);
-    expect(sources[0].spec).toEqual({ type: 'geojson', promoteId: 'code', data: { type: 'FeatureCollection', features: [] } });
+    expect(sources[0].spec).toEqual({ type: 'geojson', promoteId: 'code', maxzoom: 16, data: { type: 'FeatureCollection', features: [] } });
     const [polygons, , labels, groups] = sources;
     expect(polygons.data.features).toHaveLength(41);
     expect(polygons.data.features.every(feature => feature.geometry.type === 'Polygon')).toBe(true);
@@ -1876,7 +1876,9 @@ describe('OccMap traffic (PR M5)', () => {
     // Its ring, a circle of the traffic overlay in the selection slot, under the cyan aircraft, drawn from the chosen
     // aircraft's own feature: the selection source, which rings the stands and the flights a screen places, stays empty.
     const ring = map.getLayer('occ-traffic-selected-ring');
-    expect(ring).toMatchObject({ type: 'circle', source: 'occ-traffic', filter: ['==', ['get', 'selected'], true] });
+    // PR M2: one the layer animates is ringed there, moving with it; this ring is the fallback.
+    expect(ring).toMatchObject({ type: 'circle', source: 'occ-traffic',
+      filter: ['all', ['==', ['get', 'selected'], true], ['!=', ['get', 'animated'], true]] });
     expect(ring.paint['circle-stroke-color']).toBe(occColor('accent'));
     expect(ring.paint['circle-stroke-width']).toBe(2);
     expect(ids.indexOf('occ-traffic-selected-ring')).toBeGreaterThan(ids.indexOf('slot-selection'));

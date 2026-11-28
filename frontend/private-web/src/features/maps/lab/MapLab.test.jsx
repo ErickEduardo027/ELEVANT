@@ -88,7 +88,8 @@ describe('MapLab', () => {
   it('draws without the vector tiles with basemap=none and keeps the clock running without t=', () => {
     const { map } = open('?scene=airfield&basemap=none');
     expect(map.options.style.sources).not.toHaveProperty('openmaptiles');
-    expect(map.options.fadeDuration).toBe(0);
+    // A running clock keeps the engine's own fade (PR M2: 150 ms); only a frozen one (t=) turns it off.
+    expect(map.options.fadeDuration).toBe(150);
     expect(fnCalls('setNow')).toEqual([]);
     expect(screen.getByText('Sin mapa base')).toBeInTheDocument();
     loadStyle(map);

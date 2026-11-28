@@ -6,8 +6,8 @@ import { basemapLayers } from './basemapLayers';
 import { createImageResolver } from './mapImages';
 import { BASEMAP_COLORS, BASEMAP_THEMES } from './mapTheme';
 import {
-  BASEMAP_SOURCE_ID, FONT_STACKS, GLYPHS_URL, OPENFREEMAP_TILEJSON, SLOT_GROUP, SLOT_ORDER, THRESHOLD_NAMES,
-  GLOBE_MERCATOR_ZOOM, PROJECTIONS, buildOccStyle, globeSky, groupLayerIds, nextSlot, slotMarkerId,
+  BASEMAP_SOURCE_ID, FONT_STACKS, GLYPHS_URL, OPENFREEMAP_TILEJSON, OVERLAY_MAX_ZOOM, SLOT_GROUP, SLOT_ORDER,
+  THRESHOLD_NAMES, GLOBE_MERCATOR_ZOOM, PROJECTIONS, buildOccStyle, globeSky, groupLayerIds, nextSlot, slotMarkerId,
 } from './occStyle';
 import { MAP_COLORS } from './mapColors';
 
@@ -206,7 +206,7 @@ describe('OCC map style', () => {
     expect(style.layers.find(layer => layer.id === 'building-3d').layout.visibility).toBe('none');
     // Overlay sources are born empty; the engine fills them.
     expect(style.sources['occ-stands']).toEqual({
-      type: 'geojson', promoteId: 'code', data: { type: 'FeatureCollection', features: [] },
+      type: 'geojson', promoteId: 'code', maxzoom: OVERLAY_MAX_ZOOM, data: { type: 'FeatureCollection', features: [] },
     });
 
     const layerOf = (overrides, slot = 'stands') => ({
@@ -221,6 +221,16 @@ describe('OCC map style', () => {
     expect(() => buildOccStyle({ overlays: [layerOf({ type: 'circle', source: 'nowhere' })] })).toThrow(/source/);
     expect(() => buildOccStyle({ overlays: [{ sources: { raster: { type: 'raster', tiles: [] } }, layers: [] }] }))
       .toThrow(/GeoJSON/);
+  });
+
+  it('cuts the GeoJSON overlays into tiles down to zoom 16 unless a source names its own (PR M2)', () => {
+    // «Seguir en 3D» at zoom 18.3 and pitch 72 went through some 25 tiles of each overlay at MapLibre's default of 18.
+    expect(OVERLAY_MAX_ZOOM).toBe(16);
+    const overlay = { sources: { plain: { type: 'geojson' }, own: { type: 'geojson', maxzoom: 14 } }, layers: [] };
+    const style = buildOccStyle({ overlays: [overlay] });
+    expect(style.sources.plain.maxzoom).toBe(16);
+    expect(style.sources.own.maxzoom).toBe(14);
+    expect(validateStyleMin(style)).toEqual([]);
   });
 
   it('accepts raster overlay sources with https tiles and rejects other types', () => {
