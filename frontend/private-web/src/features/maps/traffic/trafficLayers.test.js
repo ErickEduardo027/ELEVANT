@@ -109,6 +109,11 @@ describe('traffic layers (design E1 and E3)', () => {
     expect(layerOf('occ-traffic-other').metadata).toMatchObject({ 'occ:pick': 'aircraft', 'occ:pickId': 'hex' });
     // Other traffic on the ground from the airfield threshold up (contracts 2.3: derived, not fixed).
     expect(layerOf('occ-traffic-other-ground').metadata['occ:minThreshold']).toBe('airfield');
+    // M4: close up (core/mapEngine.js: setCloseUp) the other traffic's tags go and the ELEVANT tags keep the chosen one.
+    expect(overlay.layers.filter(layer => layer.metadata['occ:closeUp']).map(layer => [layer.id, layer.metadata['occ:closeUp']]))
+      .toEqual([['occ-traffic-tags-other', 'hide']]);
+    expect(overlay.layers.filter(layer => layer.metadata['occ:closeUpFilter'])
+      .map(layer => [layer.id, layer.metadata['occ:closeUpFilter']])).toEqual([['occ-traffic-tags', ['==', ['get', 'selected'], true]]]);
     // The trail fades toward its tail on the line's own metrics; the estimated one is dashed.
     expect(layerOf('occ-trails-live').paint['line-gradient'][2]).toEqual(['line-progress']);
     expect(layerOf('occ-trails-estimated').paint['line-dasharray']).toEqual([2, 2]);

@@ -19,8 +19,8 @@ import { haversineM } from '../airport/geo';
 import { resolveAircraftType } from '../aircraft/types';
 import { followCamera, needsReframe, stepCamera } from '../kinematics/followCamera';
 import {
-  CLOSE_UP_ZOOM, ORBIT, ORBIT_VIEWS, angleDiffDeg, closeChaseZoom, createOrbit, orbitAdvance, orbitAuto, orbitDrag,
-  orbitRotate, orbitTarget, orbitTilt, orbitWheel, orbitZoom, stepOrbitCamera,
+  CLOSE_UP_ZOOM, ORBIT, ORBIT_VIEWS, angleDiffDeg, closeChaseZoom, closestOrbitZoom, createOrbit, orbitAdvance,
+  orbitAuto, orbitDrag, orbitRotate, orbitTarget, orbitTilt, orbitWheel, orbitZoom, stepOrbitCamera,
 } from '../kinematics/orbitCamera';
 import { mapMessages } from '../mapMessages';
 import { ghostFeatures, placedLocation, placingGhost } from '../stands/placing';
@@ -230,11 +230,24 @@ const FOLLOW_3D_OFF = Object.freeze({ on: false, orbit: null, hold: NO_HOLD, cam
 // give (kinematics/orbitCamera.js: closeChaseZoom); every other view its own.
 function orbitFor(view, { item = null, engine = null, trackDeg = 0, auto = false } = {}) {
   if (view !== 'close') return createOrbit(view, { trackDeg, auto });
+  return createOrbit('close', { trackDeg, auto, zoom: closeChaseZoom(orbitSizing(item, engine)) });
+}
+
+// What the orbit's zoom of a followed `item` depends on (M4): its type's length, its latitude and the map's height.
+function orbitSizing(item, engine) {
   const type = item ? resolveAircraftType({ typeIcao: item.typeIcao ?? null, model: item.model ?? null,
     sizeCategory: item.sizeCategory ?? null, emitterCategory: item.emitterCategory ?? null }) : null;
-  const zoom = closeChaseZoom({ lengthM: type?.spec?.lengthM ?? null, latDeg: item?.lat ?? 0,
-    viewportHeightPx: engine?.getViewport?.()?.height ?? null });
-  return createOrbit('close', { trackDeg, auto, zoom });
+  return { lengthM: type?.spec?.lengthM ?? null, latDeg: item?.lat ?? 0,
+    viewportHeightPx: engine?.getViewport?.()?.height ?? null };
+}
+
+// The nearest zoom of the orbit round `item` (M4: kinematics/orbitCamera.js: closestOrbitZoom), kept in `f3` while
+// the aircraft's type, its whole degree of latitude and the map's height stay.
+function closestZoomOf(f3, item, engine) {
+  const sizing = orbitSizing(item, engine);
+  const key = `${item?.id}|${item?.typeIcao ?? item?.model ?? ''}|${Math.round(sizing.latDeg)}|${sizing.viewportHeightPx}`;
+  if (f3.closest?.key !== key) f3.closest = { key, zoom: closestOrbitZoom(sizing) };
+  return f3.closest.zoom;
 }
 
 // The orbit's gestures on the map's element (CN-30): a drag (any button) turns and tilts, two pointers turn, pinch and
@@ -1537,6 +1550,9 @@ const OccMapView = forwardRef(function OccMapView({
     const f3 = applied.follow3d;
     const dtS = Math.max(0, dtMs) / 1_000;
     if (!reduced) f3.orbit = orbitAdvance(f3.orbit, dtS, f3.hold);
+    // M4: past zoom 19.5 the camera would end inside a long fuselage; the orbit stops where the type's length allows.
+    const closest = closestZoomOf(f3, item, engine);
+    if (f3.orbit.zoom > closest) f3.orbit = orbitZoom(f3.orbit, closest - f3.orbit.zoom);
     const fieldElevationM = (latest.current?.layout?.meta?.elevationFt ?? 0) * METRES_PER_FOOT;
     // The 3D model moves with the camera every frame, and the camera pivots at the height the model is drawn at
     // (aircraft/attitude.js: never under the runway).

@@ -66,7 +66,12 @@ export const ORBIT_VIEW_NAMES = Object.freeze(['chase', 'close', 'side', 'top', 
 export const CLOSE_UP_ZOOM = 19.5;
 
 /** «Muy cerca» (M4): how far behind the tail the camera sits, `factor` times the type's length within these metres. */
-export const CLOSE_CHASE = Object.freeze({ behindTailFactor: 0.7, minBehindTailM: 25, maxBehindTailM: 40, lengthM: 38 });
+export const CLOSE_CHASE = Object.freeze({
+  behindTailFactor: 0.7, minBehindTailM: 25, maxBehindTailM: 40, lengthM: 38,
+  // M4 (2026-11-28): the nearest the camera may come, in metres beyond half the type's length (closestOrbitZoom): at
+  // zoom 22 on a short map MapLibre's camera stands some 13–21 m from the pivot, inside a fuselage.
+  clearanceM: 12,
+});
 
 // MapLibre: the metres of one pixel at zoom 0 on the equator (512 px tiles), and the camera's distance to the centre of
 // the map in screen heights (its field of view of 36.87°: half the height over tan(18.43°)).
@@ -79,10 +84,24 @@ const CAMERA_HEIGHTS = 1.5;
  * length plus 25–40 m (0.7 lengths) behind it, within the orbit's zoom.
  */
 export function closeChaseZoom({ lengthM = null, latDeg = 0, viewportHeightPx = null } = {}) {
-  const length = finite(lengthM) && lengthM > 0 ? lengthM : CLOSE_CHASE.lengthM;
-  const height = finite(viewportHeightPx) && viewportHeightPx > 0 ? viewportHeightPx : 800;
+  const length = lengthOf(lengthM);
   const behind = clamp(length * CLOSE_CHASE.behindTailFactor, CLOSE_CHASE.minBehindTailM, CLOSE_CHASE.maxBehindTailM);
-  const distanceM = length / 2 + behind;
+  return zoomAtDistance(length / 2 + behind, { latDeg, viewportHeightPx });
+}
+
+/**
+ * The nearest zoom of the orbit round an aircraft `lengthM` long (M4): the camera stays half the length plus
+ * CLOSE_CHASE.clearanceM from the pivot, never inside the model, whatever the person zooms; within the orbit's zoom.
+ */
+export function closestOrbitZoom({ lengthM = null, latDeg = 0, viewportHeightPx = null } = {}) {
+  return zoomAtDistance(lengthOf(lengthM) / 2 + CLOSE_CHASE.clearanceM, { latDeg, viewportHeightPx });
+}
+
+const lengthOf = lengthM => (finite(lengthM) && lengthM > 0 ? lengthM : CLOSE_CHASE.lengthM);
+
+// The zoom at which MapLibre's camera, 1.5 map heights (800 px when unknown) from the pivot, stands `distanceM` from it.
+function zoomAtDistance(distanceM, { latDeg, viewportHeightPx }) {
+  const height = finite(viewportHeightPx) && viewportHeightPx > 0 ? viewportHeightPx : 800;
   const metresPerPxZ0 = METRES_PER_PX_Z0 * Math.cos(((finite(latDeg) ? latDeg : 0) * Math.PI) / 180);
   return clamp(Math.log2((CAMERA_HEIGHTS * height * metresPerPxZ0) / distanceM), ORBIT.minZoom, ORBIT.maxZoom);
 }

@@ -766,6 +766,64 @@ describe('map engine', () => {
     expect(setup().map.listenerCount('dblclick')).toBe(0);
   });
 
+  it('setOrbitMode lifts the zoom limit to 22 with the tilt and gives both back, easing the camera within (M4)', () => {
+    const { engine, map } = ready(setup({ camera: { center: [-68.36, 18.57], zoom: 17 } }));
+    expect(map.getMaxZoom()).toBe(19.5);
+    engine.setOrbitMode(true);
+    expect([map.getMaxZoom(), map.getMaxPitch()]).toEqual([22, 85]);
+    expect(map.doubleClickZoom.isEnabled()).toBe(false);
+    engine.jumpTo({ zoom: 21.6, pitch: 80 });
+    expect(map.getZoom()).toBe(21.6);
+    // Twice is once: the limits saved are the map's own, not the orbit's.
+    engine.setOrbitMode(true);
+    engine.setOrbitMode(false);
+    expect([map.getMaxZoom(), map.getMaxPitch()]).toEqual([19.5, 65]);
+    expect(map.getZoom()).toBe(19.5);
+    expect(map.doubleClickZoom.isEnabled()).toBe(true);
+  });
+
+  it('setCloseUp hides the layers marked for it and narrows the filtered ones; their groups win back (M4)', () => {
+    const overlay = {
+      sources: { 'occ-traffic': { type: 'geojson', promoteId: 'id' }, 'occ-stands': { type: 'geojson' } },
+      layers: [
+        { slot: 'traffic', id: 'occ-traffic-points', type: 'circle', source: 'occ-traffic',
+          metadata: { 'occ:group': 'traffic' } },
+        { slot: 'traffic', id: 'occ-traffic-tags', type: 'symbol', source: 'occ-traffic', filter: ['==', ['get', 'own'], false],
+          layout: { visibility: 'none' }, metadata: { 'occ:group': 'traffic.labels', 'occ:closeUp': 'hide' } },
+        { slot: 'traffic', id: 'occ-aviam-tags', type: 'symbol', source: 'occ-traffic', filter: ['get', 'own'],
+          metadata: { 'occ:group': 'traffic', 'occ:closeUpFilter': ['get', 'selected'] } },
+        { slot: 'standLabels', id: 'occ-stand-codes', type: 'symbol', source: 'occ-stands',
+          metadata: { 'occ:group': 'stands', 'occ:closeUp': 'hide' } },
+      ],
+    };
+    const style = buildOccStyle({ overlays: [overlay] });
+    const { engine, map } = ready(setup({ style }));
+    const shown = id => map.getLayer(id).layout.visibility ?? 'visible';
+    expect(engine.isCloseUp()).toBe(false);
+    // The other traffic's tags are on from the layers menu.
+    engine.setGroupVisibility('traffic.labels', true);
+    engine.setCloseUp(true);
+    expect(engine.isCloseUp()).toBe(true);
+    expect(['occ-traffic-points', 'occ-traffic-tags', 'occ-stand-codes', 'occ-aviam-tags'].map(shown))
+      .toEqual(['visible', 'none', 'none', 'visible']);
+    expect(map.getFilter('occ-aviam-tags')).toEqual(['all', ['get', 'own'], ['get', 'selected']]);
+    // Nothing more while the answer stays.
+    const calls = map.layoutCalls.length + map.filterCalls.length;
+    engine.setCloseUp(true);
+    expect(map.layoutCalls.length + map.filterCalls.length).toBe(calls);
+    // A group turned on close up stays hidden until the camera goes back; one turned off stays off after it.
+    engine.setGroupVisibility('stands', true);
+    expect(shown('occ-stand-codes')).toBe('none');
+    engine.setGroupVisibility('traffic.labels', false);
+    engine.setCloseUp(false);
+    expect(['occ-traffic-tags', 'occ-stand-codes'].map(shown)).toEqual(['none', 'visible']);
+    expect(map.getFilter('occ-aviam-tags')).toEqual(['get', 'own']);
+    engine.setGroupVisibility('traffic.labels', true);
+    engine.setCloseUp(true);
+    engine.setCloseUp(false);
+    expect(shown('occ-traffic-tags')).toBe('visible');
+  });
+
   it('onUserGesture hears a person pan, zoom, rotate and tilt the map, never a move the code makes', () => {
     const onUserGesture = vi.fn();
     const onCamera = vi.fn();

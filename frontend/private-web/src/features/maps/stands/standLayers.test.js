@@ -126,6 +126,10 @@ describe('standOverlay', () => {
       'occ-stand-groups', 'occ-stand-groups-arriving', 'occ-stand-glyph', 'occ-stand-glyph-unsized', 'occ-stand-clock',
       'occ-stand-labels', 'occ-stand-labels-3', 'occ-stand-label-selected', 'occ-stand-label-selected-3', 'occ-stand-signal',
     ]);
+    // M4: every label of the stands is hidden close up (core/mapEngine.js: setCloseUp), no other layer of theirs.
+    expect(style.layers.filter(layer => layer.metadata?.['occ:closeUp'] === 'hide').map(layer => layer.id))
+      .toEqual(style.layers.filter(layer => layer.metadata?.['occ:group'] === 'stands' && layer.type === 'symbol'
+        && layer.id !== 'occ-stand-signal').map(layer => layer.id));
     // A stand is picked by its polygon, a terminal by its chip.
     const picks = style.layers.filter(layer => layer.metadata?.['occ:pick']).map(layer => [layer.id, layer.metadata['occ:pick'], layer.metadata['occ:pickId']]);
     expect(picks).toEqual([[STAND_FILL_LAYER, 'stand', 'code'], [STAND_CHIP_LAYER, 'terminal', 'terminal']]);

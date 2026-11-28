@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { destinationPoint, initialBearing } from '../airport/geo.js';
 import {
-  CLOSE_CHASE, CLOSE_UP_ZOOM, ORBIT, ORBIT_VIEWS, ORBIT_VIEW_NAMES, PUJ_TOWER, closeChaseZoom, createOrbit, orbitAdvance, orbitAuto, orbitDrag, orbitRotate, orbitTarget, orbitTilt,
+  CLOSE_CHASE, CLOSE_UP_ZOOM, ORBIT, ORBIT_VIEWS, ORBIT_VIEW_NAMES, PUJ_TOWER, closeChaseZoom, closestOrbitZoom,
+  createOrbit, orbitAdvance, orbitAuto, orbitDrag, orbitRotate, orbitTarget, orbitTilt,
   orbitWheel, orbitZoom, stepOrbitCamera, wrap360,
 } from './orbitCamera.js';
 
@@ -138,6 +139,24 @@ describe('«Muy cerca» and the ultra zoom (M4)', () => {
     // Never past the orbit's limits.
     expect(closeChaseZoom({ lengthM: 0.01, viewportHeightPx: 4000 })).toBe(ORBIT.maxZoom);
     expect(closeChaseZoom({ lengthM: 1e7 })).toBe(ORBIT.minZoom);
+  });
+
+  it('closestOrbitZoom keeps the camera out of the model, nearer than «Muy cerca» and within 22 (M4)', () => {
+    const clearanceM = (lengthM, heightPx = 800) => cameraDistanceM(closestOrbitZoom({ lengthM, latDeg: AIRCRAFT.lat,
+      viewportHeightPx: heightPx }), { heightPx }) - lengthM / 2;
+    for (const lengthM of [27.2, 37.6, 56.7, 70.7]) {
+      expect(clearanceM(lengthM), String(lengthM)).toBeCloseTo(CLOSE_CHASE.clearanceM, 6);
+      const sizing = { lengthM, latDeg: AIRCRAFT.lat };
+      expect(closestOrbitZoom(sizing)).toBeGreaterThan(closeChaseZoom(sizing));
+      expect(closestOrbitZoom(sizing)).toBeLessThanOrEqual(ORBIT.maxZoom);
+    }
+    // A short map would put MapLibre's camera inside an A320 at zoom 22; a tall one lets it nearer in zoom.
+    expect(closestOrbitZoom({ lengthM: 37.6, latDeg: AIRCRAFT.lat, viewportHeightPx: 500 })).toBeLessThan(22);
+    expect(closestOrbitZoom({ lengthM: 37.6, latDeg: AIRCRAFT.lat, viewportHeightPx: 1200 }))
+      .toBeGreaterThan(closestOrbitZoom({ lengthM: 37.6, latDeg: AIRCRAFT.lat }));
+    // A light aircraft is far enough at the map's own limit.
+    expect(closestOrbitZoom({ lengthM: 8.3, latDeg: AIRCRAFT.lat })).toBe(ORBIT.maxZoom);
+    expect(closestOrbitZoom({})).toBe(closestOrbitZoom({ lengthM: CLOSE_CHASE.lengthM }));
   });
 
   it("createOrbit takes a given zoom within the limits, and keeps the view's own without one", () => {

@@ -343,7 +343,7 @@ function footprintLayers() {
   ];
 }
 
-function labelLayer(id, { source = STAND_LABEL_SOURCE, filter, layout, paint, meta }) {
+function labelLayer(id, { source = STAND_LABEL_SOURCE, filter, layout, paint, meta, closeUp = 'hide' }) {
   return {
     slot: 'standLabels',
     id,
@@ -352,8 +352,8 @@ function labelLayer(id, { source = STAND_LABEL_SOURCE, filter, layout, paint, me
     ...(filter ? { filter } : {}),
     layout,
     paint,
-    // M4: the designators are hidden close up (core/mapEngine.js: setCloseUp).
-    metadata: metadata({ 'occ:closeUp': 'hide', ...meta }),
+    // M4: the designators are hidden close up (core/mapEngine.js: setCloseUp); the signals are not.
+    metadata: metadata({ ...(closeUp ? { 'occ:closeUp': closeUp } : {}), ...meta }),
   };
 }
 
@@ -507,6 +507,7 @@ function labelLayers(labels) {
     // notice's diamond without a hue (PR M6), above the stand's box with a dark halo that fills their «!». Always drawn,
     // never over the stand's code: the labels are placed after them and give way.
     labelLayer('occ-stand-signal', {
+      closeUp: null,
       filter: ['to-boolean', ['get', 'signal']],
       layout: {
         'icon-image': [...SIGNAL_IMAGE],

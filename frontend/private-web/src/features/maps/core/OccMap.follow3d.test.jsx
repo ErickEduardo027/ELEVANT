@@ -1,10 +1,10 @@
-import { act, cleanup, createEvent, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, createEvent, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sharedFakeMapLibre } from '../../../../tests/fakeMapLibre';
 import { LanguageScope } from '../../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../../i18n/languageStore';
 import { haversineM } from '../airport/geo';
-import { ORBIT, ORBIT_VIEWS } from '../kinematics/orbitCamera';
+import { CLOSE_UP_ZOOM, ORBIT, ORBIT_VIEWS, closeChaseZoom } from '../kinematics/orbitCamera';
 import {
   createAirPicture, createDemoBlock, createDemoFlights, TRAFFIC_FLIGHT_KEY as KEY, TRAFFIC_NOON,
 } from '../testing/trafficFixtures';
@@ -267,3 +267,76 @@ describe('OccMap double click on an aircraft (M4)', () => {
   });
 });
 
+
+describe('OccMap «Muy cerca» and the ultra zoom (M4)', () => {
+  const AT = { point: { x: 100, y: 100 }, lngLat: { lng: -68.36, lat: 18.57 } };
+  const demoUnder = { layer: { id: 'occ-traffic-aviam' }, properties: { id: DEMO_ID, flightKey: KEY.demoArrival } };
+  const marked = (map, key) => map.layers.filter(layer => layer.metadata?.[key] !== undefined).map(layer => layer.id);
+  const shown = (map, id) => map.getLayer(id).layout?.visibility ?? 'visible';
+  // What the layers menu gives a marked layer: as the unmarked layers of its group (the rings, centrelines and night).
+  const asGroup = (map, id) => {
+    const group = map.getLayer(id).metadata['occ:group'];
+    const sibling = map.layers.find(layer => layer.metadata?.['occ:group'] === group && !layer.metadata['occ:closeUp']
+      && !layer.id.startsWith('slot-'));
+    return sibling ? shown(map, sibling.id) : null;
+  };
+
+  it('the double click flies in close behind the tail past zoom 19.5, hides the crowding labels and gives all back', () => {
+    const { map, seconds, root } = renderFollow3d();
+    const hidden = marked(map, 'occ:closeUp');
+    const narrowed = marked(map, 'occ:closeUpFilter');
+    // The other traffic's tags, the stand designators and the references' words; the ELEVANT tags keep the chosen one.
+    expect(hidden).toEqual(expect.arrayContaining(['occ-traffic-tags-other', 'occ-reference-arp']));
+    expect(narrowed).toHaveLength(1);
+    const own = map.getFilter(narrowed[0]);
+    const before = Object.fromEntries(hidden.map(id => [id, shown(map, id)]));
+    fake.state.setRenderedFeatures(map, (_geometry, options) => [demoUnder]
+      .filter(feature => options.layers.includes(feature.layer.id)));
+    act(() => { fake.state.doubleClick(map, AT); });
+    expect(threeProbe()).toEqual({ on: true, view: 'close', following: true });
+    expect(screen.getByRole('radio', { name: 'Muy cerca' })).toHaveAttribute('aria-checked', 'true');
+    expect(map.getMaxZoom()).toBe(ORBIT.maxZoom);
+    seconds(3);
+    expect(map.getZoom()).toBeGreaterThan(CLOSE_UP_ZOOM);
+    expect(map.getPitch()).toBeCloseTo(ORBIT_VIEWS.close.pitch, 0);
+    for (const id of hidden) expect(shown(map, id), id).toBe('none');
+    expect(map.getFilter(narrowed[0])).toEqual(['all', own, ['==', ['get', 'selected'], true]]);
+    // «Persecución» goes back under 19.5: the labels come back while it still follows.
+    act(() => { screen.getByRole('radio', { name: 'Persecución' }).click(); });
+    seconds(3);
+    expect(map.getZoom()).toBeLessThan(CLOSE_UP_ZOOM);
+    const grouped = hidden.filter(id => asGroup(map, id) !== null);
+    expect(grouped).toEqual(expect.arrayContaining(['occ-night-label', 'occ-reference-centreline-label']));
+    for (const id of grouped) expect(shown(map, id), id).toBe(asGroup(map, id));
+    expect(map.getFilter(narrowed[0])).toEqual(own);
+    // Close again, then Esc: the labels and the map's own zoom limit come back.
+    act(() => { screen.getByRole('radio', { name: 'Muy cerca' }).click(); });
+    seconds(3);
+    expect(shown(map, hidden[0])).toBe('none');
+    fireEvent(root, createEvent.keyDown(root, { key: 'Escape' }));
+    expect(threeProbe().on).toBe(false);
+    for (const id of hidden) expect(shown(map, id), id).toBe(before[id]);
+    expect(map.getFilter(narrowed[0])).toEqual(own);
+    expect(map.getMaxZoom()).toBe(19.5);
+  });
+
+  it('zoomed in all the way, the camera stops short of the model, under 22 on this map, and backs off at once', () => {
+    const { map, seconds } = renderFollow3d();
+    fake.state.setRenderedFeatures(map, (_geometry, options) => [demoUnder]
+      .filter(feature => options.layers.includes(feature.layer.id)));
+    act(() => { fake.state.doubleClick(map, AT); });
+    seconds(3);
+    const close = map.getZoom();
+    const camera = within(screen.getByRole('region', { name: 'Cámara' }));
+    for (let step = 0; step < 12; step += 1) act(() => { camera.getByRole('button', { name: 'Acercar' }).click(); });
+    seconds(3);
+    // The demo airliner on a map 900 px high: MapLibre's camera would stand some 24 m from its middle at 22.
+    const closest = map.getZoom();
+    expect(closest).toBeGreaterThan(close);
+    expect(closest).toBeLessThan(ORBIT.maxZoom);
+    expect(closest).toBeGreaterThan(closeChaseZoom({ lengthM: 38, latDeg: 18.57, viewportHeightPx: 900 }));
+    act(() => { camera.getByRole('button', { name: 'Alejar' }).click(); });
+    seconds(3);
+    expect(map.getZoom()).toBeCloseTo(closest - ORBIT.zoomStep, 2);
+  });
+});
