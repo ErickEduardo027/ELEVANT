@@ -135,6 +135,9 @@ describe('legend entries', () => {
       .toEqual({ ...NOTHING, airfield: ['runway', 'apron', 'terminal'] });
     expect(legendEntries({ airfield: ['holdBar', 'taxiway', 'runway', 'terminal', 'apron'] }).airfield)
       .toEqual(['runway', 'taxiway', 'holdBar', 'apron', 'terminal']);
+    // The structures of M9, in the legend's order.
+    expect(legendEntries({ airfield: ['jetBridge', 'building', 'taxiwayPavement', 'taxiway'] }).airfield)
+      .toEqual(['taxiway', 'taxiwayPavement', 'building', 'jetBridge']);
     expect(legendEntries({ airfield: ['designator', 'stand', 'toString'] }).airfield).toEqual([]);
     expect(legendEntries({ airfield: 'runway' }).airfield).toEqual([]);
     expect(legendEntries({ airfield: null }).airfield).toEqual([]);

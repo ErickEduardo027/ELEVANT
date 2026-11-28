@@ -4,15 +4,16 @@ import { createFakeMapLibre } from '../../../../tests/fakeMapLibre';
 import { OCC_PALETTE, occColor } from '../../occ-ui/occPalette';
 import { airfieldFeatures } from '../airport/airfieldFeatures';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
+import { airportStructures, structureFeatures } from '../airport/structures';
 import { AIRFIELD_ATTRIBUTION } from '../core/attribution';
 import { thresholdsFromFits } from '../core/cameraPresets';
 import { createMapEngine } from '../core/mapEngine';
 import {
-  AIRFIELD_GROUP, AIRFIELD_LAYER_IDS, AIRFIELD_LEGEND_KINDS, AIRFIELD_SOURCE, airfieldKindsOnScreen, airfieldOverlay,
-  airfieldTooltip,
+  AIRFIELD_GROUP, AIRFIELD_LAYER_IDS, AIRFIELD_LEGEND_KINDS, AIRFIELD_SOURCE, AIRFIELD_STRUCTURE_LAYER_IDS,
+  AIRFIELD_STRUCTURES_SOURCE, airfieldKindsOnScreen, airfieldOverlay, airfieldTooltip,
 } from './airfieldLayers';
-import { FONT_STACKS } from './basemapLayers';
-import { BASEMAP_COLORS, contrastRatio, relativeLuminance } from './mapTheme';
+import { FONT_STACKS, RUNWAY_WIDTH, TAXIWAY_WIDTH } from './basemapLayers';
+import { BASEMAP_COLORS, BASEMAP_THEMES, contrastRatio, relativeLuminance } from './mapTheme';
 import { buildOccStyle } from './occStyle';
 
 const overlay = airfieldOverlay();
@@ -175,7 +176,9 @@ describe('airfield layers', () => {
 
   it('tells the legend which airfield items are drawn, in its order', () => {
     const drawn = (layer, kind) => ({ layer: { id: layer }, properties: { kind } });
-    expect(AIRFIELD_LEGEND_KINDS).toEqual(['runway', 'taxiway', 'holdBar', 'apron', 'terminal']);
+    expect(AIRFIELD_LEGEND_KINDS).toEqual([
+      'runway', 'taxiway', 'taxiwayPavement', 'holdBar', 'apron', 'terminal', 'building', 'jetBridge',
+    ]);
     expect(airfieldKindsOnScreen([
       drawn('occ-airfield-terminal', 'terminal'), drawn('occ-airfield-hold', 'holdBar'), drawn('occ-airfield-taxiway', 'taxilane'),
       drawn('occ-airfield-designator', 'designator'), drawn('occ-airfield-apron', 'apron'), drawn('occ-airfield-apron', 'apron'),
@@ -200,5 +203,144 @@ describe('airfield layers', () => {
     for (const hit of [null, { kind: 'stand', id: 'A1' }, { kind: 'cluster', id: 3 }, { kind: 'runway', id: null }]) {
       expect(airfieldTooltip(hit), JSON.stringify(hit)).toBeNull();
     }
+  });
+});
+
+describe('airport structures in 3D (M9)', () => {
+  const withStructures = airfieldOverlay({ structures: true });
+  const structureLayer = id => withStructures.layers.find(layer => layer.id === id);
+  const slotOf = (style, id) => style.layers.find(layer => layer.id === id).metadata['occ:slot'];
+
+  it('adds its own source, the pavement under the taxiway lines and the raised structures over the 3D buildings', () => {
+    expect(AIRFIELD_STRUCTURE_LAYER_IDS).toEqual([
+      'occ-airfield-taxiway-pavement', 'occ-airfield-building-3d', 'occ-airfield-jet-bridge', 'occ-airfield-building-label',
+    ]);
+    // Without the option the overlay is the one of every other map.
+    expect(airfieldOverlay().layers.map(layer => layer.id)).toEqual(AIRFIELD_LAYER_IDS);
+    expect(withStructures.sources).toEqual({
+      [AIRFIELD_SOURCE]: { type: 'geojson', attribution: AIRFIELD_ATTRIBUTION },
+      [AIRFIELD_STRUCTURES_SOURCE]: { type: 'geojson', attribution: AIRFIELD_ATTRIBUTION },
+    });
+    for (const theme of ['dark', 'light']) {
+      for (const basemap of [true, false]) {
+        const style = buildOccStyle({ basemap, theme, overlays: [withStructures] });
+        expect(validateStyleMin(style), `${theme} ${basemap}`).toEqual([]);
+        style.sources[AIRFIELD_SOURCE].data = airfieldFeatures(MDPC_LAYOUT);
+        style.sources[AIRFIELD_STRUCTURES_SOURCE].data = structureFeatures(MDPC_LAYOUT);
+        expect(validateStyleMin(style), `${theme} ${basemap} filled`).toEqual([]);
+      }
+    }
+    const style = buildOccStyle({ overlays: [withStructures] });
+    const ids = style.layers.map(layer => layer.id);
+    // The pavement right after the terminals and before the taxiway lines, so lines, runways and markings stay on top.
+    expect(ids.indexOf('occ-airfield-taxiway-pavement')).toBe(ids.indexOf('occ-airfield-terminal-outline') + 1);
+    expect(ids.indexOf('occ-airfield-taxiway')).toBe(ids.indexOf('occ-airfield-taxiway-pavement') + 1);
+    expect(slotOf(style, 'occ-airfield-taxiway-pavement')).toBe('airfield');
+    // The terminals, the bridges and the labels after the tile buildings of the extrusions slot.
+    const extrusions = ids.slice(ids.indexOf('slot-extrusions') + 1, ids.indexOf('slot-models'));
+    expect(extrusions).toEqual(['building-3d', 'occ-airfield-building-3d', 'occ-airfield-jet-bridge', 'occ-airfield-building-label']);
+    for (const id of AIRFIELD_STRUCTURE_LAYER_IDS) {
+      const layer = structureLayer(id);
+      expect(layer.source, id).toBe(AIRFIELD_STRUCTURES_SOURCE);
+      expect(layer.metadata, id).toMatchObject({ 'occ:group': AIRFIELD_GROUP, 'occ:minThreshold': 'airfield' });
+      expect(layer.metadata, id).not.toHaveProperty('occ:pick');
+    }
+  });
+
+  it('raises each structure from its base to its height with the vertical gradient, in theme colours', () => {
+    for (const id of ['occ-airfield-building-3d', 'occ-airfield-jet-bridge']) {
+      expect(structureLayer(id).type).toBe('fill-extrusion');
+      expect(structureLayer(id).paint, id).toMatchObject({
+        'fill-extrusion-base': ['to-number', ['get', 'baseM'], 0],
+        'fill-extrusion-height': ['to-number', ['get', 'heightM'], 0],
+        'fill-extrusion-opacity': 1,
+        'fill-extrusion-vertical-gradient': true,
+      });
+    }
+    for (const theme of ['dark', 'light']) {
+      const style = buildOccStyle({ theme, overlays: [withStructures] });
+      const paintOf = (id, property) => style.layers.find(layer => layer.id === id).paint[property];
+      expect(paintOf('occ-airfield-building-3d', 'fill-extrusion-color'), theme).toBe(BASEMAP_THEMES[theme].buildingExtrusion);
+      expect(paintOf('occ-airfield-jet-bridge', 'fill-extrusion-color'), theme).toBe(occColor('line-strong', theme));
+      expect(paintOf('occ-airfield-taxiway-pavement', 'fill-color'), theme).toBe(BASEMAP_THEMES[theme].taxiway);
+      expect(paintOf('occ-airfield-building-label', 'text-color'), theme).toBe(occColor('muted', theme));
+    }
+    // The bridges stand apart from the terminals they meet.
+    expect(occColor('line-strong')).not.toBe(BASEMAP_COLORS.buildingExtrusion);
+
+    // What the layers read: the terminals from the ground to their estimated height, the bridges on their supports
+    // (the tunnel from about 3.5 m to 6.5 m), each one an estimate.
+    const { features } = structureFeatures(MDPC_LAYOUT);
+    const ofKind = kind => features.filter(feature => feature.properties.kind === kind);
+    expect(ofKind('building').length).toBeGreaterThan(0);
+    for (const { properties } of ofKind('building')) {
+      expect(properties.baseM).toBe(0);
+      expect(properties.heightM).toBeGreaterThan(properties.baseM);
+      expect(properties.heightLabel).toMatch(/ m est\.$/);
+      expect(typeof properties.name).toBe('string');
+    }
+    expect(ofKind('jetBridgeTunnel').map(feature => feature.properties.stand).sort())
+      .toEqual(['B20', 'B21', 'B22', 'B23', 'B24', 'B25', 'B26']);
+    for (const { properties } of [...ofKind('jetBridgeTunnel'), ...ofKind('jetBridgeRotunda')]) {
+      expect(properties.baseM).toBeGreaterThanOrEqual(3);
+      expect(properties.baseM).toBeLessThanOrEqual(4);
+      expect(properties.heightM).toBeGreaterThanOrEqual(6);
+      expect(properties.heightM).toBeLessThanOrEqual(7.5);
+      expect(properties.estimate).toBe(true);
+    }
+    // The label names the terminal over its estimated height, at the 12 px floor.
+    expect(structureLayer('occ-airfield-building-label').layout).toMatchObject({
+      'text-field': ['concat', ['coalesce', ['get', 'name'], ''], '\n', ['coalesce', ['get', 'heightLabel'], '']],
+      'text-font': ['Noto Sans Regular'],
+      'text-size': 12,
+    });
+  });
+
+  it('draws structures only for the airport they describe', () => {
+    expect(airportStructures(MDPC_LAYOUT).features.length).toBe(structureFeatures(MDPC_LAYOUT).features.length);
+    // Built once per layout.
+    expect(airportStructures(MDPC_LAYOUT)).toBe(airportStructures(MDPC_LAYOUT));
+    const other = { ...MDPC_LAYOUT, meta: { ...MDPC_LAYOUT.meta, icao: 'MDSD' } };
+    expect(airportStructures(other).features).toEqual([]);
+    expect(airportStructures(null).features).toEqual([]);
+  });
+
+  it('keeps the pavement and the runway designators right up to zoom 22', () => {
+    const stops = expression => Object.fromEntries(Array.from(
+      { length: (expression.length - 3) / 2 }, (_, at) => [expression[3 + 2 * at], expression[4 + 2 * at]],
+    ));
+    // Twice as wide for each zoom step past 19.5, as the ground grows.
+    for (const width of [RUNWAY_WIDTH, TAXIWAY_WIDTH]) {
+      const at = stops(width);
+      expect(Math.max(...Object.keys(at).map(Number))).toBe(22);
+      expect(at[22] / at[19.5]).toBeCloseTo(2 ** 2.5, 2);
+    }
+    expect(layerOf('occ-airfield-taxiway').paint['line-width']).toEqual([...TAXIWAY_WIDTH]);
+    const designator = stops(layerOf('occ-airfield-designator').layout['text-size']);
+    expect(designator[22] / designator[19.5]).toBeCloseTo(2 ** 2.5, 1);
+  });
+
+  it('hides the 3D buildings of the base map from the airfield threshold, where the own structures take over', () => {
+    const style = buildOccStyle({ overlays: [withStructures] });
+    const tiles = style.layers.find(layer => layer.id === 'building-3d');
+    expect(tiles.metadata).toMatchObject({ 'occ:group': 'buildings-3d', 'occ:maxThreshold': 'airfield' });
+    const { engine, map } = startEngine(style);
+    const thresholds = thresholdsFromFits({ region: 5.6, approach: 8.8, airfield: 14.6, ramp: 15.5 });
+    engine.applyThresholds(thresholds);
+    const ranges = Object.fromEntries(map.zoomRangeCalls.map(call => [call.id, [call.minzoom, call.maxzoom]]));
+    expect(ranges['building-3d']).toEqual([13, thresholds.airfield]);
+    for (const id of AIRFIELD_STRUCTURE_LAYER_IDS) expect(ranges[id], id).toEqual([thresholds.airfield, 24]);
+  });
+
+  it('tells the legend of the structures on screen; a raised terminal stands in for its footprint', () => {
+    const drawn = (layer, kind) => ({ layer: { id: layer }, properties: { kind } });
+    expect(airfieldKindsOnScreen([
+      drawn('occ-airfield-jet-bridge', 'jetBridgeRotunda'), drawn('occ-airfield-building-3d', 'building'),
+      drawn('occ-airfield-terminal', 'terminal'), drawn('occ-airfield-taxiway-pavement', 'taxiwayPavement'),
+      drawn('occ-airfield-taxiway', 'taxiway'),
+    ])).toEqual(['taxiway', 'taxiwayPavement', 'building', 'jetBridge']);
+    expect(airfieldKindsOnScreen([drawn('occ-airfield-jet-bridge', 'jetBridgeTunnel')])).toEqual(['jetBridge']);
+    // Without a raised terminal in sight the flat one is listed.
+    expect(airfieldKindsOnScreen([drawn('occ-airfield-terminal', 'terminal')])).toEqual(['terminal']);
   });
 });

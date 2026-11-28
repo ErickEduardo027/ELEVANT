@@ -52,7 +52,8 @@ const listed = (value, order) => {
  * - `tags`: «No oficial» when a drawn stand is not placed by OCC (it sits at an internal reference location);
  * - `marks`: the stand marks drawn on screen (`chipArriving`, `footprint`, `footprintPlanned`, `progress`, `combined`,
  *   `narrowbody`, `sameAgent`, `sameAgentHover`, `ghost`, `pending`, as OccMap reads them), in that order;
- * - `airfield`: the airfield items drawn on screen (`runway`, `taxiway`, `holdBar`, `apron`, `terminal`), in that order.
+ * - `airfield`: the airfield items drawn on screen (`runway`, `taxiway`, `taxiwayPavement`, `holdBar`, `apron`,
+ *   `terminal`, `building`, `jetBridge`: style/airfieldLayers.js AIRFIELD_LEGEND_KINDS), in that order.
  * Stands and flights count inside `bounds` when given. Pure.
  */
 export function legendEntries({

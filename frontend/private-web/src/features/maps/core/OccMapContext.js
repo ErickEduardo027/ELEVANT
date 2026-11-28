@@ -13,7 +13,7 @@ import { createContext, useContext } from 'react';
 //   pointer, whichever it follows; `ghost` and `pending`, the boxes of a stand being placed),
 //   `flightsOnScreen`, the flights drawn in that area (the list changes when other flights come into sight, not when
 //   they move inside it), and `airfieldOnScreen`, the airfield items the map draws there (`runway`, `taxiway`,
-//   `holdBar`, `apron`, `terminal`, in that order);
+//   `taxiwayPavement`, `holdBar`, `apron`, `terminal`, `building`, `jetBridge`, in that order);
 // - actions: `requestView(view, { terminal })` flies and writes `view=` in the URL, `flyToPreset(view, { terminal })`
 //   only flies, `flyToStand(code, { minZoom })` centres a stand and `flyToFlight(id, { minZoom })` a flight;
 //   `views`, the views the map offers (all four, or fewer on a map fixed on the airport, M9), which the switcher shows.
