@@ -686,6 +686,10 @@ const OccMapView = forwardRef(function OccMapView({
   const runway = useMemo(() => mapRunwayInUse({ layout, arrivals, weather: weatherNow, nowMs: referenceMinute }),
     [layout, arrivals, weatherNow, referenceMinute]);
   const { arrival: runwayArrival, departure: runwayDeparture, source: runwaySource } = runway;
+  // The runway in use the map draws, for the panels over it (OccMapContext's `runwayInUse`, 2026-11-28): the same object
+  // while it names the same runways for the same reason.
+  const runwayInUse = useMemo(() => Object.freeze({ arrival: runwayArrival, departure: runwayDeparture,
+    source: runwaySource }), [runwayArrival, runwayDeparture, runwaySource]);
   const counterpartsKey = counterpartCodes(traffic?.flights).join('|');
   const referenceData = useMemo(() => referenceFeatures(), []);
   const ourAirportsData = useMemo(() => ourAirportsFeatures({
@@ -2487,9 +2491,9 @@ const OccMapView = forwardRef(function OccMapView({
     [motionSnapshot, pauseMotion, resumeMotion]);
   const mapContext = useMemo(() => ({
     ...context, trafficOnScreen: trafficShown, trafficSource, layers, setLayer, layersMenuOpen, setLayersMenuOpen,
-    registerLayersMenu, motion, follow: followInfo, referencesOnScreen, view3d,
+    registerLayersMenu, motion, follow: followInfo, referencesOnScreen, runwayInUse, view3d,
   }), [context, trafficShown, trafficSource, layers, setLayer, layersMenuOpen, setLayersMenuOpen, registerLayersMenu,
-    motion, followInfo, referencesOnScreen, view3d]);
+    motion, followInfo, referencesOnScreen, runwayInUse, view3d]);
 
   // The list of the fallback: the adapter's own items, else the stands of the screen, else those that frame the views.
   const listedStands = stands.length > 0 ? stands : referenceStands;

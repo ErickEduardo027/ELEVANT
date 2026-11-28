@@ -12,6 +12,7 @@ import { useAirportRoutes } from '../../aviation-reference/useAirportRoutes';
 import { STATION_TIME_ZONE } from '../../admin-occ/shell/status/OccClocks';
 import { matchFlight, relatedEntities } from '../../maps/core/mapSelection';
 import OccMap from '../../maps/core/OccMap';
+import { useOccMap } from '../../maps/core/OccMapContext';
 import Follow3dPanel from '../../maps/ui/Follow3dPanel';
 import MapDock from '../../maps/ui/MapDock';
 import MapLayersMenu from '../../maps/ui/MapLayersMenu';
@@ -83,12 +84,22 @@ const CONSOLE_MAP_BOOT = Object.freeze({ markReady: () => {} });
 
 // Lane M7 (2026-11-28): Panorama opens in Región in 3D with the regional weather; 3 and 4 still go to Aeródromo and Rampa.
 export const CONSOLE_DEFAULT_VIEW = 'region';
-// Where «Meteorología PUJ» floats until the panels of lane M1: the bottom left of the area the panels leave in sight.
-// It is not measured into the insets (it would move with them), so it stays inside that area.
+// Where «Meteorología PUJ» floats until the panels of lane M1: the bottom left of the area the panels leave in sight,
+// over the map's key (the altitude scale and the credit of the aircraft data, occ-map.css: --occ-map-key-band), which
+// stays in sight (ADR-0044, 2026-11-28). It is not measured into the insets (it would move with them), so it stays
+// inside that area.
 const WEATHER_PLACE = Object.freeze({
-  bottom: 'calc(var(--occ-map-inset-bottom, 0px) + 12px)', left: 'calc(var(--occ-map-inset-left, 0px) + 12px)',
-  maxHeight: 'calc(100% - var(--occ-map-inset-top, 0px) - var(--occ-map-inset-bottom, 0px) - 24px)',
+  bottom: 'calc(var(--occ-map-inset-bottom, 0px) + var(--occ-map-key-band, 7rem) + 12px)',
+  left: 'calc(var(--occ-map-inset-left, 0px) + 12px)',
+  maxHeight: 'calc(100% - var(--occ-map-inset-top, 0px) - var(--occ-map-inset-bottom, 0px) - var(--occ-map-key-band, 7rem) - 24px)',
 });
+
+// «Meteorología PUJ» names the runway in use the map draws (OccMapContext's `runwayInUse`, with the recent live
+// arrivals the map saw), so the panel and the map never say two runways (2026-11-28).
+function MapWeatherPanel(props) {
+  const { runwayInUse } = useOccMap();
+  return <WeatherPanel {...props} runway={runwayInUse ?? null} />;
+}
 
 const matches = query => typeof window !== 'undefined' && typeof window.matchMedia === 'function'
   && window.matchMedia(query).matches;
@@ -543,7 +554,7 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
   const weatherPanel = useMemo(() => (layout === 'map' && !focusMap && weather ? (
     <div data-occ-weather-place="" className="absolute z-20 flex w-[22rem] max-w-[calc(100%-24px)] flex-col overflow-hidden"
       style={WEATHER_PLACE}>
-      <WeatherPanel weather={weather} nowMs={nowMs ?? undefined} panelLayout="float" defaultFolded={narrow} />
+      <MapWeatherPanel weather={weather} nowMs={nowMs ?? undefined} panelLayout="float" defaultFolded={narrow} />
     </div>
   ) : null), [focusMap, layout, narrow, nowMs, weather]);
   // What the map hosts, kept while nothing of it changes, so the map is not handed new children on every render.

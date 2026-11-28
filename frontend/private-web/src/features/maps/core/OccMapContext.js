@@ -41,6 +41,9 @@ import { createContext, useContext } from 'react';
 //   «Seguir en 3D»: `{ on, view, auto, subject, start(), stop(), setView(view), rotate(sign), tilt(sign), zoom(sign),
 //   hold(kind, sign), reset(), setAuto(on) }`, `subject` a store of the followed aircraft as the frames draw it (the
 //   panel's, ui/Follow3dPanel.jsx); outside an OccMap there is none.
+// - runway in use (2026-11-28): `runwayInUse`, the runway the map draws in use (`{ arrival, departure, source }`, from
+//   traffic/referenceFeatures.js: mapRunwayInUse with the recent live arrivals it saw and the weather it was given),
+//   whether or not its centreline is on screen, so a panel over the map names the same runway; null outside an OccMap.
 // Outside an OccMap the value is a map that does nothing and shows nothing.
 
 const doNothing = () => {};
@@ -64,6 +67,7 @@ export const OCC_MAP_IDLE = Object.freeze({
     route: Object.freeze([]) }),
   trafficSource: null,
   referencesOnScreen: Object.freeze({ kinds: Object.freeze([]), runway: null }),
+  runwayInUse: null,
   layers: Object.freeze({ keys: Object.freeze([]), values: Object.freeze({}), notes: Object.freeze({}) }),
   setLayer: doNothing,
   layersMenuOpen: false,

@@ -287,7 +287,11 @@ describe('the OCC console', () => {
     expect(map.getSource('occ-weather-radar-5').serialize().tiles[0]).toContain('ridge::TJUA-N0Q-');
     // «Meteorología PUJ» floats in the area the panels leave, with its METAR.
     const panel = screen.getByTestId('weather-panel');
-    expect(panel.closest('[data-occ-weather-place]').style.left).toContain('--occ-map-inset-left');
+    const place = panel.closest('[data-occ-weather-place]');
+    expect(place.style.left).toContain('--occ-map-inset-left');
+    // Over the map's key (the altitude scale and the credit of the aircraft data), never on it (2026-11-28).
+    expect(place.style.bottom).toContain('--occ-map-key-band');
+    expect(place.style.maxHeight).toContain('--occ-map-key-band');
     expect(within(panel).getAllByText(/MDPC/).length).toBeGreaterThan(0);
     // The keys of the views as before: 3 Aeródromo, 4 Rampa.
     act(() => { fireEvent.keyDown(map.getCanvas(), { key: '3' }); });
@@ -295,6 +299,23 @@ describe('the OCC console', () => {
     act(() => { fireEvent.keyDown(map.getCanvas(), { key: '4' }); });
     await waitFor(() => expect(search().get('view')).toBe('ramp'));
     window.localStorage.removeItem(MODE_3D_STORAGE_KEY);
+  });
+
+  it('«Meteorología PUJ» names the runway in use the map draws, from its live arrivals, over the wind (2026-11-28)', async () => {
+    // A westerly METAR favours 26, but ZZZ161 is on final for 08: the map and the panel both say 08.
+    weatherView.current = weatherOf('success', { ...observation(20),
+      metar: parseMetar('MDPC 111900Z 27015KT 9999 FEW022 30/23 Q1015') });
+    const { map } = renderConsole({ regionWeatherService: createSimulatedRegionWeatherAdapter({
+      scenario: createRegionWeatherScenario() }) });
+    await boardReady();
+    await act(async () => fake.state.emit(map, 'style.load'));
+    const panel = screen.getByTestId('weather-panel');
+    await waitFor(() => expect(panel.querySelector('[data-runway="08"]')).toHaveAttribute('data-in-use', 'true'));
+    expect(panel.querySelector('[data-runway="26"]')).not.toHaveAttribute('data-in-use');
+    expect(within(panel).getByText('En uso: Pista 08 (según las llegadas)')).toBeInTheDocument();
+    expect(map.getSource('occ-reference-ourairports').data.features
+      .filter(item => item.properties.kind === 'centrelineLabel').map(item => item.properties.label))
+      .toEqual(['Pista 08 (según las llegadas)']);
   });
 
   it('shows the scoped OCC facts of PUJ without a station selector or synthetic claims', async () => {
