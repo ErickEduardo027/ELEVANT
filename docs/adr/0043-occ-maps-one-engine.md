@@ -1166,7 +1166,7 @@ Plan aprobado del 27 de noviembre (carril M9). Esta nota cambia solo el Mapa de 
 - los fingers, extruidos en `--occ-line-strong`;
 - el rótulo de cada terminal con su altura («15 m est.»).
 
-Ninguna capa se puede elegir con un clic, y todas empiezan en el umbral del aeródromo. El `building-3d` del mapa base se oculta desde ese umbral en todos los mapas (`occ:maxThreshold: 'airfield'`; la prueba de `occStyle.test.js` lo fija). Los anchos de pista y rodaje, los designadores, los glifos de las posiciones y los desplazamientos de señal y reloj tienen paradas hasta el zoom 22. Los códigos de posición siguen en 12 px.
+Ninguna capa se puede elegir con un clic. Todas empiezan en el umbral del aeródromo, menos los rótulos de las terminales, que empiezan donde se ven los códigos de posición: en la revisión visual, a la escala de Aeródromo se amontonaban sobre las posiciones. El `building-3d` del mapa base se oculta desde ese umbral en todos los mapas (`occ:maxThreshold: 'airfield'`; la prueba de `occStyle.test.js` lo fija). Los anchos de pista y rodaje, los designadores, los glifos de las posiciones y los desplazamientos de señal y reloj tienen paradas hasta el zoom 22. Los códigos de posición siguen en 12 px.
 
 La leyenda añade «Calle de rodaje (pavimento, ancho est.)», «Terminal (altura est.)» y «Finger (pasarela, est.)». Con una terminal elevada a la vista, la «Terminal» plana no se repite.
 
