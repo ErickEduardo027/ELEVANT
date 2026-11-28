@@ -1910,7 +1910,7 @@ const OccMapView = forwardRef(function OccMapView({
       if (engineRef.current === engine) engineRef.current = null;
     };
   }, [store, applyView, handleCamera, handleClick, handlePointer, handleStatus, refit, updateOnScreen, writeTraffic,
-    updateTrafficOnScreen, writeFrameRoute, followFrame, followAnimating, handleGesture, with3dHit]);
+    updateTrafficOnScreen, writeFrameRoute, followFrame, followAnimating, handleGesture, with3dHit, frameMeter]);
 
   // The URL view: fly only when it differs from the last view applied, so a view this map asked for flies once.
   useEffect(() => {
