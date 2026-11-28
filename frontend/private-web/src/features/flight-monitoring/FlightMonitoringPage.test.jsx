@@ -164,6 +164,34 @@ describe('FlightMonitoringPage', () => {
     expect(within(inspector).queryByRole('list', { name: 'Hitos de la escala' })).not.toBeInTheDocument();
   });
 
+  it('M8: the board filter reaches the map, and En vuelo reads the phases of the map flights the map hands over', async () => {
+    const user = userEvent.setup();
+    window.history.replaceState({}, '', `${PAGE}?stationId=${STATION_ID}`);
+    render(page());
+    // Todos with no search keeps every flight: nothing is dimmed on the map.
+    expect(map.props.emphasisedFlightIds).toBeNull();
+    const group = within(board()).getByRole('group', { name: 'Filtro del tablero' });
+    await user.click(within(group).getByRole('button', { name: 'Salidas 1' }));
+    expect(map.props.emphasisedFlightIds).toEqual(['leg-904']);
+    const kept = map.props.emphasisedFlightIds;
+    // The page's clock re-renders hand the map the same list.
+    act(() => map.props.onSelectionFlights({ flight: null, flights: [] }));
+    expect(map.props.emphasisedFlightIds).toBe(kept);
+    // A filter that keeps nothing dims every AVIAM flight.
+    await user.click(within(group).getByRole('button', { name: 'En vuelo 0' }));
+    expect(map.props.emphasisedFlightIds).toEqual([]);
+    // The map flights the map has read (contratos 2.7: no read of the page's own) say the arrival flies.
+    const mapFlight = { flightKey: 'l:leg-161', legId: 'leg-161', direction: 'Arrival', phase: 'enroute' };
+    act(() => map.props.onSelectionFlights({ flight: null, flights: [mapFlight] }));
+    expect(within(group).getByRole('button', { name: 'En vuelo 1' })).toHaveAttribute('aria-pressed', 'true');
+    expect(map.props.emphasisedFlightIds).toEqual(['leg-161']);
+    await user.click(within(group).getByRole('button', { name: 'Todos 2' }));
+    expect(map.props.emphasisedFlightIds).toBeNull();
+    // The search alone is a filter too.
+    await user.type(within(board()).getByLabelText('Buscar vuelo'), 'aa9');
+    expect(map.props.emphasisedFlightIds).toEqual(['leg-904']);
+  });
+
   it('a flightId link selects that flight', () => {
     for (const [link, number] of [['leg-161', 'DM161'], ['l:leg-904', 'AA904'], ['tat-161', 'DM161']]) {
       window.history.replaceState({}, '', `${PAGE}?stationId=${STATION_ID}&flightId=${link}`);
@@ -313,7 +341,7 @@ describe('FlightMonitoringPage in English', () => {
     render(<LanguageScope>{page()}</LanguageScope>);
     expect(screen.getByRole('heading', { level: 1, name: 'Flight monitoring' })).toBeInTheDocument();
     const flights = screen.getByRole('region', { name: 'Flight board' });
-    expect(within(flights).getByRole('group', { name: 'Direction' })).toBeInTheDocument();
+    expect(within(flights).getByRole('group', { name: 'Board filter' })).toBeInTheDocument();
     expect(within(flights).getByRole('button', { name: 'Departures 1' })).toBeInTheDocument();
     expect(screen.getByLabelText('Search flight')).toHaveAttribute('placeholder', 'Number, airline, registration or supervisor');
     expect(within(flights).getAllByText('Scheduled')).toHaveLength(2);
