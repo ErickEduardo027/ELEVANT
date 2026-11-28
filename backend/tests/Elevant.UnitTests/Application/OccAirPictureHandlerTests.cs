@@ -257,6 +257,46 @@ public sealed class OccAirPictureHandlerTests
         Assert.True(rig.Picture.HasDemand);
     }
 
+    [Fact]
+    public async Task AnAircraftALookupFoundTakesTheFlightItWasLookedUpFor()
+    {
+        var rig = new Rig();
+        rig.Network.AllowsFrequentReads = true;
+        rig.Network.SupportsCallsignLookups = true;
+        // M3: a departure that left 90 minutes ago, beyond the matcher's hour, and an arrival whose aircraft the whole
+        // circle sees by its callsign.
+        rig.Keys.Keys =
+        [
+            new MapFlightMatchKey("dep-202", "Departure", "ZZ202", "DZZ", "ZZ", null, Now.AddMinutes(-90), true, false),
+            Key("arr-101", "ZZ101"),
+        ];
+        var reader = Member("operations.flight_monitoring.read");
+        await rig.ReadNetworkAsync(Plane("0c0001", callsign: "DZZ101"));
+        var first = await rig.AirPicture(reader).HandleAsync(AccountId, PuntaCana, null, Ct);
+        Assert.Equal(new FlightMatch("arr-101", FlightMatch.ByCallsign), Assert.Single(first.Value!.Matches).Value);
+
+        // The token is back 1.25 s later: the departure is looked up by its callsign, far outside the circle.
+        rig.Clock.Advance(AirTrafficRequestBucket.TokenInterval);
+        rig.Network.LookupAircraft = [Plane("0d0202", callsign: "DZZ202", latitude: 30.25) with { PositionAt = Now }];
+        await rig.Picture.PollOnceAsync(Ct);
+        Assert.Equal(["DZZ202"], rig.Network.Lookups);
+
+        var read = await rig.AirPicture(reader).HandleAsync(AccountId, PuntaCana, null, Ct);
+        Assert.True(read.IsSuccess);
+        Assert.Equal(["0c0001", "0d0202"], read.Value!.Picture.Aircraft.Select(item => item.Aircraft.Hex));
+        Assert.Equal(new Dictionary<string, FlightMatch>
+        {
+            ["0c0001"] = new("arr-101", FlightMatch.ByCallsign),
+            ["0d0202"] = new("dep-202", FlightMatch.ByCallsign),
+        }, read.Value.Matches);
+
+        // A flight that is no longer the station's gives the found aircraft no flight.
+        rig.Keys.Keys = [Key("arr-101", "ZZ101")];
+        rig.Clock.Advance(AirPictureService.MatchKeysLifetime);
+        var gone = await rig.AirPicture(reader).HandleAsync(AccountId, PuntaCana, null, Ct);
+        Assert.False(gone.Value!.Matches.ContainsKey("0d0202"));
+    }
+
     private static AirTrafficSettings Settings() =>
         new(true, "PUJ", 18.5674, -68.3634, 250, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(900), TimeSpan.FromMinutes(180));
 
@@ -360,6 +400,22 @@ public sealed class OccAirPictureHandlerTests
         public bool IsConfigured => true;
 
         public AirTrafficAttribution? Attribution => Credit;
+
+        public bool AllowsFrequentReads { get; set; }
+
+        /// <summary>M3: whether the stub answers callsign lookups, what they bring and the callsigns asked for.</summary>
+        public bool SupportsCallsignLookups { get; set; }
+
+        public IReadOnlyList<AirTrafficAircraft> LookupAircraft { get; set; } = [];
+
+        public List<string> Lookups { get; } = [];
+
+        public Task<AirTrafficReadResult> ReadCallsignAsync(string callsign, CancellationToken cancellationToken = default)
+        {
+            Lookups.Add(callsign);
+            return Task.FromResult(new AirTrafficReadResult(AirTrafficOutcome.Succeeded, Credit, clock.GetUtcNow(),
+                [.. LookupAircraft], null));
+        }
 
         public Task<AirTrafficReadResult> ReadAsync(AirTrafficArea area, CancellationToken cancellationToken = default)
         {

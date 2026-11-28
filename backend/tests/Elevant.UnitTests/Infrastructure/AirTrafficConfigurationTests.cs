@@ -152,6 +152,16 @@ public sealed class AirTrafficConfigurationTests
         }));
         Assert.Equal((true, 5, TimeSpan.FromSeconds(3)),
             (defaults.AirfieldReadsEnabled, defaults.AirfieldRadiusNm, defaults.AirfieldInterval));
+
+        // M3: the callsign lookups are on by default and can be switched off.
+        Assert.True(defaults.CallsignLookupsEnabled);
+        var (_, noLookups) = Composed(Compose(new()
+        {
+            ["AirTraffic:Enabled"] = "true",
+            ["AirTraffic:Providers:0"] = "AdsbFi",
+            ["AirTraffic:CallsignLookupsEnabled"] = "false",
+        }));
+        Assert.False(noLookups.CallsignLookupsEnabled);
     }
 
     [Fact]

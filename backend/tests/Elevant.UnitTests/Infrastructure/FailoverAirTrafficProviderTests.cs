@@ -362,6 +362,40 @@ public sealed class FailoverAirTrafficProviderTests
             new FailoverAirTrafficProvider([new ScriptedProvider(First), new UnconfiguredAirTrafficProvider()], TimeProvider.System));
     }
 
+    [Fact]
+    public async Task CallsignLookupsGoToTheActiveNetworkAndTheirFailuresNeverHandOver()
+    {
+        var clock = new ManualClock(Start);
+        var first = new ScriptedProvider(First) { SupportsCallsignLookups = true, LookupOutcome = AirTrafficOutcome.Failed };
+        var second = new ScriptedProvider(Second);
+        using var failover = new FailoverAirTrafficProvider([first, second], clock);
+        IAirTrafficProvider port = failover;
+        Assert.True(port.SupportsCallsignLookups);
+
+        // M3: five failed lookups in a row are no hand-over, nor do they count toward one: two failed reads of an area
+        // after them still leave the first network active.
+        for (var lookup = 0; lookup < 5; lookup++)
+            Assert.Equal(AirTrafficOutcome.Failed, (await Lookup(failover)).Outcome);
+        first.Outcome = AirTrafficOutcome.Failed;
+        await Read(failover);
+        await Read(failover);
+        Assert.Equal((5, 2, 0), (first.Lookups, first.Reads, second.Reads));
+        Assert.Equal(First, failover.Attribution);
+        // The third failed read of an area hands over; a lookup between them changes nothing.
+        await Lookup(failover);
+        await Read(failover);
+        Assert.Equal(Second, failover.Attribution);
+
+        // The second network does not answer callsigns: a lookup answers Failed and calls neither network.
+        Assert.False(port.SupportsCallsignLookups);
+        var refused = await Lookup(failover);
+        Assert.Equal((AirTrafficOutcome.Failed, Second), (refused.Outcome, refused.Source));
+        Assert.Equal((6, 0), (first.Lookups, second.Lookups));
+    }
+
+    private static Task<AirTrafficReadResult> Lookup(FailoverAirTrafficProvider failover) =>
+        failover.ReadCallsignAsync("ZZA101", TestContext.Current.CancellationToken);
+
     private static Task<AirTrafficReadResult> Read(FailoverAirTrafficProvider failover) =>
         failover.ReadAsync(Area, TestContext.Current.CancellationToken);
 
@@ -382,6 +416,21 @@ public sealed class FailoverAirTrafficProviderTests
         public bool IsConfigured => true;
 
         public AirTrafficAttribution? Attribution => attribution;
+
+        /// <summary>M3: whether the stub answers callsign lookups, how they end and how many it answered.</summary>
+        public bool SupportsCallsignLookups { get; set; }
+
+        public AirTrafficOutcome LookupOutcome { get; set; } = AirTrafficOutcome.Succeeded;
+
+        public int Lookups { get; private set; }
+
+        public Task<AirTrafficReadResult> ReadCallsignAsync(string callsign, CancellationToken cancellationToken = default)
+        {
+            Lookups++;
+            return Task.FromResult(LookupOutcome == AirTrafficOutcome.Succeeded
+                ? new AirTrafficReadResult(LookupOutcome, attribution, Start, [], null)
+                : AirTrafficReadResult.Failure(LookupOutcome, attribution, RetryAfter));
+        }
 
         public async Task<AirTrafficReadResult> ReadAsync(AirTrafficArea area, CancellationToken cancellationToken = default)
         {

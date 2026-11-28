@@ -390,6 +390,74 @@ public sealed class ReadsbAirTrafficProviderTests
         Assert.Null(adsbFi.DailyLimit);
     }
 
+    [Fact]
+    public async Task OnlyAdsbFiIsAskedForACallsignAndItsAnswerIsReadAsAPointQueryIs()
+    {
+        // M3: adsb.fi answers /api/v2/callsign in the same readsb v2 JSON; adsb.lol is never asked (its daily limit would
+        // not bear the lookups), nor is the unconfigured provider.
+        var handler = new StubHandler(_ => Json("""
+            {"now": 1794582000, "ac": [
+              {"hex": "F0E001", "flight": "ZZA101  ", "r": "ZZ-SYE", "t": "A321", "alt_baro": 35000, "gs": 455.0,
+               "track": 45.0, "lat": 25.5, "lon": -75.25, "seen_pos": 1}
+            ]}
+            """));
+        using var adsbFi = Provider(handler, ReadsbProfile.AdsbFi);
+        IAirTrafficProvider fi = adsbFi;
+        Assert.True(fi.SupportsCallsignLookups);
+
+        var result = await fi.ReadCallsignAsync("ZZA101", TestContext.Current.CancellationToken);
+
+        Assert.Equal((AirTrafficOutcome.Succeeded, ReadsbProfile.AdsbFi.Attribution), (result.Outcome, result.Source));
+        var plane = Assert.Single(result.Aircraft);
+        Assert.Equal(("f0e001", "ZZA101", 25.5, -75.25, (int?)35000), (plane.Hex, plane.Callsign, plane.Latitude,
+            plane.Longitude, plane.AltitudeFeet));
+        var sent = Assert.Single(handler.Requests);
+        Assert.Equal((HttpMethod.Get, "https://opendata.adsb.fi/api/v2/callsign/ZZA101", ReadsbAirTrafficProvider.UserAgent,
+            (string?)null), (sent.Method, sent.Uri, sent.UserAgent, sent.Key));
+
+        var lolHandler = new StubHandler(_ => Json("{}"));
+        using var adsbLol = Provider(lolHandler, ReadsbProfile.AdsbLol);
+        IAirTrafficProvider lol = adsbLol;
+        Assert.False(lol.SupportsCallsignLookups);
+        Assert.False(ReadsbProfile.AdsbLol.AnswersCallsigns);
+        Assert.Null(ReadsbProfile.AdsbLol.CallsignQuery("ZZA101"));
+        Assert.Equal(AirTrafficOutcome.Failed,
+            (await lol.ReadCallsignAsync("ZZA101", TestContext.Current.CancellationToken)).Outcome);
+        Assert.Empty(lolHandler.Requests);
+        IAirTrafficProvider none = new UnconfiguredAirTrafficProvider();
+        Assert.False(none.SupportsCallsignLookups);
+        Assert.Equal(AirTrafficOutcome.Failed,
+            (await none.ReadCallsignAsync("ZZA101", TestContext.Current.CancellationToken)).Outcome);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("Z")]
+    [InlineData("zza101")]
+    [InlineData("ZZA 101")]
+    [InlineData("ZZA/101")]
+    [InlineData("ZZA101234")]
+    public async Task ACallsignTheQueryCannotTakeAsItIsIsRefusedBeforeAnyRequest(string callsign)
+    {
+        var handler = new StubHandler(_ => Json("{}"));
+        using var adsbFi = Provider(handler, ReadsbProfile.AdsbFi);
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            adsbFi.ReadCallsignAsync(callsign, TestContext.Current.CancellationToken));
+        Assert.Empty(handler.Requests);
+    }
+
+    [Fact]
+    public async Task ACallsignLookupAnswersARefusalAsItsOutcome()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+        {
+            Headers = { RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromSeconds(90)) },
+        });
+        using var adsbFi = Provider(handler, ReadsbProfile.AdsbFi);
+        var result = await adsbFi.ReadCallsignAsync("ZZA101", TestContext.Current.CancellationToken);
+        Assert.Equal((AirTrafficOutcome.RateLimited, (TimeSpan?)TimeSpan.FromSeconds(90)), (result.Outcome, result.RetryAfter));
+    }
+
     private static (DateTimeOffset ObservedAt, IReadOnlyList<AirTrafficAircraft> Aircraft) Parse(string json) =>
         TryParse(json) ?? throw new InvalidOperationException("The answer has no aircraft list.");
 
