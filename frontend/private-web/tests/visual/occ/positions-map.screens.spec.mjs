@@ -1,5 +1,5 @@
 import { createOccApi } from './fixtures/occApi.mjs';
-import { SCREEN_VIEWPORTS, openOccScreen } from './occScreen.mjs';
+import { SCREEN_VIEWPORTS, expectFloatingLayout, openOccScreen } from './occScreen.mjs';
 import { mapReady, shoot } from '../support/map.mjs';
 import { expect, test } from '../support/test.mjs';
 
@@ -29,19 +29,14 @@ async function expectDockFits(map) {
   expect(dock.needs, 'the dock fits its row').toBeLessThanOrEqual(dock.has + 1);
 }
 
-// A box inside another one.
-const within = (inner, outer) => inner.x >= outer.x - 0.5 && inner.y >= outer.y - 0.5
-  && inner.x + inner.width <= outer.x + outer.width + 0.5 && inner.y + inner.height <= outer.y + outer.height + 0.5;
-
 // The inspector floats over the map, left of its control column, and apart from the bar and the band.
+// M1: the map fills the screen, every panel floats 12 px from its edges and clear of its control column.
 async function expectInspectorFloats(page, map) {
-  const [mapBox, inspectorBox, railBox, barBox, bandBox] = await Promise.all([map.boundingBox(),
-    inspector(page).boundingBox(), map.locator('.occ-map-dock').boundingBox(),
-    page.locator('[data-occ-positions-toolbar]').boundingBox(), page.locator('[data-occ-positions-band-slot]').boundingBox()]);
-  expect(within(inspectorBox, mapBox), 'the inspector floats over the map').toBe(true);
-  expect(inspectorBox.x + inspectorBox.width, 'the inspector left of the control column').toBeLessThanOrEqual(railBox.x);
-  expect(apart(inspectorBox, barBox), 'the inspector under the bar').toBe(true);
-  expect(apart(inspectorBox, bandBox), 'the inspector over the band').toBe(true);
+  const { boxes } = await expectFloatingLayout(page, map, { inspector: inspector(page),
+    bar: page.locator('[data-occ-positions-toolbar]'), band: page.locator('[data-occ-positions-band-slot]') });
+  expect(apart(boxes.inspector, boxes.bar), 'the inspector under the bar').toBe(true);
+  expect(apart(boxes.inspector, boxes.band), 'the inspector over the band').toBe(true);
+  return boxes;
 }
 
 // Two boxes on screen share no pixel.
@@ -107,6 +102,8 @@ test.describe('Mapa de posiciones as a work map', () => {
       await expect(band).toBeVisible();
       await page.getByRole('group', { name: 'Posiciones de la banda' }).getByRole('button', { name: 'Todas' }).click();
       await settled(map);
+      await expectFloatingLayout(page, map, { bar: page.locator('[data-occ-positions-toolbar]'),
+        band: page.locator('[data-occ-positions-band-slot]') });
       await shoot(page, testInfo, `u5-posiciones-banda-${viewport.width}`);
     });
 
@@ -128,10 +125,11 @@ test.describe('Mapa de posiciones as a work map', () => {
       if (viewport.width < 1536) await expect(column).toBeHidden();
       else {
         await expect(column).toBeVisible();
-        const [mapBox, columnBox, inspectorBox] = await Promise.all([map.boundingBox(), column.boundingBox(),
-          inspector(page).boundingBox()]);
-        expect(within(columnBox, mapBox), 'the list floats over the map').toBe(true);
-        expect(apart(columnBox, inspectorBox), 'the list and the inspector apart').toBe(true);
+        const { boxes } = await expectFloatingLayout(page, map, { list: column, inspector: inspector(page),
+          bar: page.locator('[data-occ-positions-toolbar]'), band: page.locator('[data-occ-positions-band-slot]') });
+        expect(apart(boxes.list, boxes.inspector), 'the list and the inspector apart').toBe(true);
+        expect(apart(boxes.list, boxes.bar), 'the list under the bar').toBe(true);
+        expect(apart(boxes.list, boxes.band), 'the list over the band').toBe(true);
       }
       await shoot(page, testInfo, `u5-posiciones-tabla-${viewport.width}`);
     });

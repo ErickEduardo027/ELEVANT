@@ -1,5 +1,5 @@
 import { arrivalLegOf, createMonitoringApi, UNASSIGNED_VISIT } from './fixtures/monitoringApi.mjs';
-import { SCREEN_VIEWPORTS, openOccScreen } from './occScreen.mjs';
+import { SCREEN_VIEWPORTS, expectFloatingLayout, openOccScreen } from './occScreen.mjs';
 import { mapReady, shoot } from '../support/map.mjs';
 import { expect, test } from '../support/test.mjs';
 
@@ -25,9 +25,6 @@ const inspectors = page => page.getByRole('complementary', { name: /^Detalle del
 
 // The maps lane's control rail (its view selector and tools, maps/ui/MapDock.jsx): the width it needs and the width it has.
 const dockRoom = map => map.locator('.occ-map-dock').evaluate(node => ({ needs: node.scrollWidth, has: node.clientWidth }));
-// A box inside another one.
-const within = (inner, outer) => inner.x >= outer.x - 0.5 && inner.y >= outer.y - 0.5
-  && inner.x + inner.width <= outer.x + outer.width + 0.5 && inner.y + inner.height <= outer.y + outer.height + 0.5;
 
 async function openMonitoring(page, isolation, { viewport, empty = false }) {
   const api = createMonitoringApi({ empty });
@@ -64,10 +61,8 @@ test.describe('Monitoreo de vuelos as a work map', () => {
     const inspector = page.getByRole('complementary', { name: 'Detalle del vuelo ZZ9001' });
     await expect(inspector).toBeVisible();
     await expect(map).toHaveAttribute('data-occ-settled', 'true', { timeout: 60_000 });
-    const [mapBox, inspectorBox, railBox] = await Promise.all([map.boundingBox(), inspector.boundingBox(),
-      map.locator('.occ-map-dock').boundingBox()]);
-    expect(within(inspectorBox, mapBox), 'the inspector floats over the map').toBe(true);
-    expect(inspectorBox.x + inspectorBox.width, 'the inspector left of the control column').toBeLessThanOrEqual(railBox.x);
+    const { boxes } = await expectFloatingLayout(page, map, { board: board(page), inspector });
+    expect(apart(boxes.board, boxes.inspector), 'the board and the inspector apart').toBe(true);
     await expect(board(page)).toHaveAttribute('data-folded', 'false');
     const dock = await dockRoom(map);
     expect(dock.needs, 'the dock fits its row').toBeLessThanOrEqual(dock.has + 1);
@@ -107,13 +102,8 @@ test.describe('Monitoreo de vuelos as a work map', () => {
       // The map fills the screen and the panels float over it (M1): the inspector at its right, left of the control
       // column, never under it; the board at its left, folded to its pill below 1536 px while the inspector is open, and
       // open beside it from there, the two apart.
-      const [mapBox, inspectorBox, railBox] = await Promise.all([map.boundingBox(), inspector.boundingBox(),
-        map.locator('.occ-map-dock').boundingBox()]);
-      expect(within(inspectorBox, mapBox), 'the inspector floats over the map').toBe(true);
-      expect(inspectorBox.x + inspectorBox.width, 'the inspector left of the control column').toBeLessThanOrEqual(railBox.x);
-      const boardBox = await board(page).boundingBox();
-      expect(within(boardBox, mapBox), 'the board floats over the map').toBe(true);
-      expect(apart(boardBox, inspectorBox), 'the board and the inspector apart').toBe(true);
+      const { mapBox, boxes } = await expectFloatingLayout(page, map, { board: board(page), inspector });
+      expect(apart(boxes.board, boxes.inspector), 'the board and the inspector apart').toBe(true);
       await expect(board(page)).toHaveAttribute('data-folded', viewport.width < 1536 ? 'true' : 'false');
       // The live data of the aircraft is in the inspector (its slot): the flight has one card.
       await expect(inspector.getByTestId('flight-data-block')).toBeVisible();
@@ -133,6 +123,7 @@ test.describe('Monitoreo de vuelos as a work map', () => {
       await mapReady(map);
       await expect(map).toHaveAttribute('data-occ-settled', 'true', { timeout: 60_000 });
       await expect(inspectors(page)).toHaveCount(0);
+      await expectFloatingLayout(page, map, { board: board(page) });
       await shoot(page, testInfo, `u5-monitoreo-dia-vacio-${viewport.width}`);
     });
 

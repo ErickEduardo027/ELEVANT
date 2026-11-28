@@ -42,3 +42,48 @@ export async function openOccScreen(page, isolation, { path, api, viewport }) {
   await expect(page.getByTestId('occ-boot-screen'), 'the OCC boot screen').toHaveCount(0, { timeout: 1_000 });
   return main;
 }
+
+// Two boxes on screen share no pixel.
+const apart = (one, other) => one.x + one.width <= other.x + 0.5 || other.x + other.width <= one.x + 0.5
+  || one.y + one.height <= other.y + 0.5 || other.y + other.height <= one.y + 0.5;
+
+/** The map's own control column (M1): MapLibre's zoom group at its top right corner and the rail under it. */
+export const controlColumn = map => ({
+  zoom: map.locator('.maplibregl-ctrl-top-right .maplibregl-ctrl-group').first(),
+  rail: map.locator('.occ-map-dock'),
+});
+
+/**
+ * The full-screen map with floating panels (M1, which replaces CN-32's docked template B), checked on screen: the map
+ * fills the frame's main region; the control column sits at its true right edge (the zoom group and the rail 12 px from
+ * it); every panel of `panels` (visible locators, open or folded to their pills) floats over the map at least 12 px from
+ * its edges, never over the zoom group or the rail, and a panel at the right ends 12 px left of the rail. Returns the
+ * boxes, for the spec's own checks.
+ */
+export async function expectFloatingLayout(page, map, panels) {
+  const { zoom, rail } = controlColumn(map);
+  const [mainBox, mapBox, zoomBox, railBox] = await Promise.all([page.locator('main#main-content').boundingBox(),
+    map.boundingBox(), zoom.boundingBox(), rail.boundingBox()]);
+  expect(Math.round(mapBox.x), 'the map starts at the left of main').toBe(Math.round(mainBox.x));
+  expect(Math.round(mapBox.y), 'the map starts at the top of main').toBe(Math.round(mainBox.y));
+  expect(Math.round(mapBox.width), 'the map as wide as main').toBe(Math.round(mainBox.width));
+  expect(Math.round(mapBox.height), 'the map as tall as main').toBe(Math.round(mainBox.height));
+  const mapRight = mapBox.x + mapBox.width;
+  expect(Math.round(mapRight - (zoomBox.x + zoomBox.width)), 'the zoom group 12 px from the right edge').toBe(12);
+  expect(Math.round(mapRight - (railBox.x + railBox.width)), 'the rail 12 px from the right edge').toBe(12);
+  expect(Math.round(zoomBox.y - mapBox.y), 'the zoom group 12 px from the top edge').toBe(12);
+  const boxes = {};
+  for (const [name, locator] of Object.entries(panels)) {
+    const box = await locator.boundingBox();
+    expect(box, `${name} on screen`).not.toBeNull();
+    boxes[name] = box;
+    expect(box.x - mapBox.x, `${name} 12 px from the left edge`).toBeGreaterThanOrEqual(11.5);
+    expect(box.y - mapBox.y, `${name} 12 px from the top edge`).toBeGreaterThanOrEqual(11.5);
+    expect(mapBox.y + mapBox.height - (box.y + box.height), `${name} 12 px from the bottom edge`)
+      .toBeGreaterThanOrEqual(11.5);
+    expect(railBox.x - (box.x + box.width), `${name} 12 px left of the rail`).toBeGreaterThanOrEqual(11.5);
+    expect(apart(box, zoomBox), `${name} clear of the zoom group`).toBe(true);
+    expect(apart(box, railBox), `${name} clear of the rail`).toBe(true);
+  }
+  return { mapBox, railBox, zoomBox, boxes };
+}
