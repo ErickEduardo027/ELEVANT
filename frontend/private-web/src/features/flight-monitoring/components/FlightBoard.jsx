@@ -7,7 +7,8 @@ import OccBoardLegend from '../../occ-ui/OccBoardLegend';
 import OccEmptyState from '../../occ-ui/OccEmptyState';
 import { OccTextField } from '../../occ-ui/OccField';
 import OccFlightStrip, { OCC_FLIGHT_STRIP_LAYOUT } from '../../occ-ui/OccFlightStrip';
-import OccPanel from '../../occ-ui/OccPanel';
+import OccFloatingPanel from '../../occ-ui/OccFloatingPanel';
+import OccPanel, { OccRemoteView } from '../../occ-ui/OccPanel';
 import OccSegmented from '../../occ-ui/OccSegmented';
 import {
   DEFAULT_FLIGHT_BOARD_SORT, FLIGHT_BOARD_FILTERS, FLIGHT_BOARD_SORT_KEYS, filterBoard, nextBoardSort, sortBoard,
@@ -20,7 +21,13 @@ import { flightMonitoringMessages } from '../flightMonitoringMessages';
 // to «Demo» and «est.». A strip selects its flight in the one selection of the screen (contratos 2.1), which the map and
 // the inspector share; a flight chosen on the map or through a link has its strip brought into view. The header names
 // the marks the strips on screen carry (contratos 2.4: a board shows its legend in its header), as a list and never as
-// a button «Leyenda»: the map's legend is the screen's only one. The model is flightBoardModel.js.
+// a button «Leyenda»: the map's legend is the screen's only one. Over the full-screen map (M1, «pantalla completa con
+// paneles flotantes») it floats at the left of the map and folds to a pill (`floating`: occ-ui/OccFloatingPanel.jsx,
+// its fold remembered as `fm-board`); in the drawer of a tablet and beside the card of another station it is a plain
+// panel (occ-ui/OccPanel.jsx). The model is flightBoardModel.js.
+
+/** The board's floating panel over the map: its id in the page's insets and in the memory of folds. */
+export const FLIGHT_BOARD_PANEL_ID = 'fm-board';
 
 const NO_STRIPS = Object.freeze([]);
 const SCROLL = 'overflow-y-auto overscroll-contain [scrollbar-width:thin]';
@@ -83,10 +90,12 @@ function emptyTextOf(filter, search, t) {
  * `onFilterChange(id)` and `onSearchChange(text)`. The order of the columns is the board's own (sortBoard), by time at
  * first. `selectedId` is the id of the selected strip (the leg id as text) and `onSelect(strip)` hears a strip; `nowMs`
  * is the server's time and `timeZone` the station's. Each strip forwards `data-testid="flight-list-item"`.
+ * `floating` floats it over the map (FLIGHT_BOARD_PANEL_ID): `ref` goes on the panel, so the page measures it, and
+ * `folded` with `onFoldedChange(next)` lets the page own its fold (else the panel remembers it, from `defaultFolded`).
  */
 export default function FlightBoard({
-  board, state, labels, filter = 'all', onFilterChange, search = '', onSearchChange, selectedId = null, onSelect, nowMs,
-  timeZone, className = '',
+  ref, board, state, labels, filter = 'all', onFilterChange, search = '', onSearchChange, selectedId = null, onSelect,
+  nowMs, timeZone, floating = false, folded, onFoldedChange, defaultFolded = false, className = '',
 }) {
   const { t, locale } = useTranslation(flightMonitoringMessages);
   const listRef = useRef(null);
@@ -108,12 +117,14 @@ export default function FlightBoard({
   const options = FLIGHT_BOARD_FILTERS.map(id => ({ id, label: t(`board.filters.${id}`), count: board?.counts?.[id] }));
   const empty = emptyTextOf(filter, search, t);
 
-  return (
-    <OccPanel title={t('board.title')} meta={legend} status={state?.status ?? 'loading'} staleSince={state?.staleSince}
-      onRetry={state?.onRetry} labels={labels} timeZone={timeZone} locale={locale}
-      emptyState={<OccEmptyState title={t('empty.no-flights.title')} description={t('empty.no-flights.description')} />}
-      className={`h-full min-h-0 ${className}`} bodyClassName={SCROLL}>
-      {/* The controls and the columns stay in sight while the strips scroll under them. */}
+  const remote = {
+    status: state?.status ?? 'loading', staleSince: state?.staleSince, onRetry: state?.onRetry, labels, timeZone, locale,
+    emptyState: <OccEmptyState title={t('empty.no-flights.title')} description={t('empty.no-flights.description')} />,
+  };
+  const content = (
+    <>
+      {/* The controls and the columns stay in sight while the strips scroll under them, on an opaque slab, so no strip
+          shows through them over the map. */}
       <div className="sticky top-0 z-[1] border-b border-occ-line bg-occ-panel">
         <div className="flex flex-col gap-2 p-2">
           <OccSegmented label={t('board.direction')} size="sm" value={filter} onChange={onFilterChange} options={options} />
@@ -135,6 +146,22 @@ export default function FlightBoard({
           ))}
         </ul>
       ) : <OccEmptyState title={empty.title} description={empty.description} className="p-3" />}
+    </>
+  );
+
+  if (floating) {
+    return (
+      <OccFloatingPanel ref={ref} panelId={FLIGHT_BOARD_PANEL_ID} title={t('board.title')} legend={legend}
+        folded={folded} onFoldedChange={onFoldedChange} defaultFolded={defaultFolded} className={className}
+        bodyClassName="flex h-full min-h-0 flex-col">
+        <OccRemoteView {...remote} className={`min-h-0 flex-1 ${SCROLL}`}>{content}</OccRemoteView>
+      </OccFloatingPanel>
+    );
+  }
+  return (
+    <OccPanel title={t('board.title')} meta={legend} {...remote} className={`h-full min-h-0 ${className}`}
+      bodyClassName={SCROLL}>
+      {content}
     </OccPanel>
   );
 }

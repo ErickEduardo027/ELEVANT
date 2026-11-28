@@ -26,8 +26,8 @@ function MotionGlyph({ paused }) {
 
 /**
  * The pause control of an OccMap; nothing on a map that does not move its traffic, or that cannot draw. `compact`
- * (the console, whose provenance line under the map already says the time of its data) leaves out the status chip: the
- * button's name and icon say «Reanudar movimiento».
+ * (the console, whose provenance line at the foot of its map already says the time of its data) leaves out the status
+ * chip: the button's name and icon say «Reanudar movimiento».
  */
 export default function MapMotionControl({ compact = false, className = '' }) {
   const { motion, engineStatus } = useOccMap();

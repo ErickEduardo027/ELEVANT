@@ -356,6 +356,21 @@ describe('FlightMap', () => {
     expect(fake.state.liveMaps()).toEqual([]);
     expect(liveEngineCount()).toBe(before);
   });
+
+  it("fills the page's stage and floats the page's panels inside it, framed by the insets the page measures (M1)", () => {
+    const panel = <section aria-label="Panel de prueba" data-testid="test-panel" />;
+    const { map } = renderFlights({ flights: [flight({ id: 1 })], panels: panel,
+      insets: { top: 0, right: 480, bottom: 0, left: 404 } });
+    loadStyle(map);
+    const root = screen.getByTestId('occ-map');
+    // The map fills its box with no frame of its own (CN-32's rounded work-map slab is gone).
+    expect(root.className).not.toContain('rounded-md');
+    // The panels float inside the map, so the rail's menus open over them.
+    expect(root).toContainElement(screen.getByTestId('test-panel'));
+    // The insets reach OccMap: its variables place the controls and the key of the map.
+    expect(root.style.getPropertyValue('--occ-map-inset-left')).toBe('404px');
+    expect(root.style.getPropertyValue('--occ-map-inset-right')).toBe('480px');
+  });
 });
 describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
   const ACCESS = administratorAccess('operations', DepartmentPermissionCodes.operations);
@@ -638,7 +653,7 @@ describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
     expect(within(screen.getByTestId('occ-map')).getByRole('dialog', { name: 'Detalle del vuelo ZZ101' })).toBeInTheDocument();
   });
 
-  it('renders the data block in the side panel of the page when the page gives its slot, so nothing floats over the map (CN-32)', async () => {
+  it('renders the data block in the inspector of the page when the page gives its slot, so the flight has one card', async () => {
     const slot = document.createElement('div');
     document.body.append(slot);
     try {
@@ -652,10 +667,11 @@ describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
       expect(within(screen.getByTestId('occ-map')).queryByTestId('flight-data-block')).not.toBeInTheDocument();
       // Through a portal it keeps the map's context: «Seguir» is the map's switch.
       expect(within(block).getByRole('button', { name: 'Seguir' })).toHaveAttribute('aria-pressed', 'false');
-      // Without the slot, back on the map at the top left.
+      // Without the slot, back on the map at the top left of the area the page's panels leave in sight (M1).
       rerender({ dataBlockSlot: null });
-      expect(within(screen.getByTestId('occ-map')).getByRole('dialog', { name: 'Vuelo ZZ161' }))
-        .toHaveStyle({ top: '12px', left: '12px' });
+      const docked = within(screen.getByTestId('occ-map')).getByRole('dialog', { name: 'Vuelo ZZ161' });
+      expect(docked.style.top).toBe('calc(var(--occ-map-inset-top, 0px) + 12px)');
+      expect(docked.style.left).toBe('calc(var(--occ-map-inset-left, 0px) + 12px)');
       expect(slot).toBeEmptyDOMElement();
     } finally {
       slot.remove();
@@ -678,10 +694,12 @@ describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
     const { map, rerender } = renderLive({ selectedFlightId: arrivalRow.legId, onSelectFlight });
     loadStyle(map);
     await flush();
-    // Docked at the top left, named with the flight number, with its route, its time and where its position comes from.
+    // Docked at the top left of the area in sight, named with the flight number, with its route, its time and where its
+    // position comes from.
     const block = screen.getByRole('dialog', { name: 'Vuelo ZZ161' });
     expect(block).toBe(screen.getByTestId('flight-data-block'));
-    expect(block).toHaveStyle({ top: '12px', left: '12px' });
+    expect(block.style.top).toContain('--occ-map-inset-top');
+    expect(block.style.left).toContain('--occ-map-inset-left');
     expect(within(block).getByText('MIA')).toBeInTheDocument();
     expect(block).toHaveTextContent('Llega 11:10 · en 10 min');
     expect(block).toHaveTextContent('Posición A5');

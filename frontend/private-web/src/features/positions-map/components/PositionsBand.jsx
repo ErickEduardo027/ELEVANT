@@ -11,22 +11,27 @@ import { STAND_STATE_KEYS, STAND_STATES } from '../../occ-ui/statusVocabulary';
 import { ChevronDownIcon } from '../../shell/components/icons';
 import { positionsMapMessages } from '../positionsMapMessages';
 
-// The stand band of Mapa de posiciones (design E.2, template B): under the map, the ramp in time, one row per stand with
-// its visits as bars and the «ahora» line (occ-ui/OccTimeline.jsx over the console's model, dashboard/noc/
-// standTimeline.js, so both screens draw the same visit the same way). Folded, its header still says how many stands read
-// each state, with the shape the map draws them with. A bar chooses its stand: the one selection of the URL (`stand=`).
+// The stand band of Mapa de posiciones (design E.2; M1): floating at the bottom of the full-screen map, the ramp in
+// time, one row per stand with its visits as bars and the «ahora» line (occ-ui/OccTimeline.jsx over the console's
+// model, dashboard/noc/standTimeline.js, so both screens draw the same visit the same way). Folded, its header still
+// says how many stands read each state, with the shape the map draws them with. A bar chooses its stand: the one
+// selection of the URL (`stand=`).
 
 const RANGES = Object.freeze(['4h', '8h', 'day']);
 const NO_STANDS = Object.freeze([]);
+// Its slab: the panel's, or over the full-screen map (M1, `floating`) the near-opaque floating one, flat.
+const PANEL_SLAB = 'rounded-md bg-occ-panel';
+const FLOATING_SLAB = 'rounded-[var(--occ-radius-overlay)] bg-occ-panel-float';
 
 /**
  * The band. `stands` are the stands as the map draws them (useStandDisplay), `flightsByTurnaround` and `aircraft` the
  * map flights and aircraft of the frame (both may be empty outside it); `nowMs` is the server's time and `timeZone` the
  * station's. `selectedCode` is the chosen stand and `onSelectStand(code)` chooses one. `open` and `onToggle()` fold it.
+ * `floating` draws it on the floating slab, for the bottom of the full-screen map (M1).
  */
 export default function PositionsBand({
   stands = NO_STANDS, flightsByTurnaround = null, aircraft, nowMs, timeZone, selectedCode = null, onSelectStand,
-  open = true, onToggle, className = '',
+  open = true, onToggle, floating = false, className = '',
 }) {
   const { t, language } = useTranslation(positionsMapMessages);
   const { t: tConsole } = useTranslation(consoleMessages);
@@ -48,7 +53,7 @@ export default function PositionsBand({
 
   return (
     <section aria-labelledby={titleId} data-occ-positions-band={open ? 'open' : 'folded'}
-      className={`flex min-h-0 min-w-0 flex-col rounded-md border border-occ-line bg-occ-panel ${className}`}>
+      className={`flex min-h-0 min-w-0 flex-col border border-occ-line ${floating ? FLOATING_SLAB : PANEL_SLAB} ${className}`}>
       <header className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-3 py-2">
         <button type="button" onClick={() => onToggle?.()} aria-expanded={open} aria-controls={bodyId}
           className="-ml-1 inline-flex min-h-8 items-center gap-1.5 rounded px-1 text-sm font-semibold text-occ-text hover:bg-occ-panel-raised [@media(pointer:coarse)]:min-h-11">

@@ -5,10 +5,11 @@ import { pictureAgeSeconds } from '../../maps/ui/MapSourceStatus';
 import { consoleMessages } from './consoleMessages';
 import { useConsoleClock } from './useConsoleClock';
 
-// The provenance line under the console's map (contratos 2.5, owner decision 6): where what the map shows comes from,
-// one sentence per source and only when it applies. «Posiciones: referencia interna sin verificar.» while a stand sits
-// at its internal reference point; «Aviones: {red}, hace N s.» with the age of the air picture on the server's clock;
-// «N posiciones estimadas.» when the map draws aircraft from the schedule; «Incluye un vuelo demo.» with a demo flight.
+// The provenance line of the console's status bar, at the foot of its map (contratos 2.5, owner decision 6; M1): where
+// what the map shows comes from, one sentence per source and only when it applies. «Posiciones: referencia interna sin
+// verificar.» while a stand sits at its internal reference point; «Aviones: {red}, hace N s.» with the age of the air
+// picture on the server's clock; «N posiciones estimadas.» when the map draws aircraft from the schedule; «Incluye un
+// vuelo demo.» with a demo flight.
 
 const SECOND_MS = 1_000;
 const LIVE_PICTURES = new Set(['Live', 'Stale']);

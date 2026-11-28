@@ -279,7 +279,7 @@ Desde U3, las cifras siguen siendo conteos de consultas acotadas (la planificaci
 
 El catálogo de referencia de las posiciones ([datos](../../frontend/private-web/src/features/dashboard/positionsData.js) y [catálogo](../../frontend/private-web/src/features/dashboard/dashboardPositions.js)) recupera las 42 ubicaciones internas originales: 41 se dibujan y B33 permanece como registro histórico fuera de la vista operativa. Incluye B34–B37 y conserva las 13 coordenadas internas de B20–B32. La [carta AIP de 2024](https://aip.sna.gob.do/Datos/AMDT_AIRAC/AMDT_AIRAC_03-24.pdf) y la [enmienda de 2026](https://aip.sna.gob.do/Datos/AMDT_AIRAC/AMDT_AIRAC_3-26/AMDT_AIRAC_03-26.pdf) sirven solo como referencias de conciliación. La enmienda retira B33; las coordenadas internas difieren de la documentación AIP, especialmente B20–B32, y **no se declaran oficiales ni verificadas**. No consta permiso de IDAC para procesar coordenadas AIP, de acuerdo con su [política de uso](https://aip.sna.gob.do/Aip/CircularSerA); el frontend ya no contiene la transcripción previa. Los códigos planificados sin coincidencia exacta en el catálogo activo, incluido B33, se listan sin ubicación. No hay alias automáticos entre A1 y 1 ni entre códigos parecidos.
 
-**Meteorología MDPC.** El METAR y el TAF de MDPC llegan por la API desde NOAA Aviation Weather Center, como dato no oficial. La píldora del clima, bajo el mapa de Panorama, separa la hora observada de la recepción local. Avisa cuando el METAR pasa de 90 minutos o la API lo marca «Stale», y conserva el aviso de un refresco fallido. Su detalle conserva el historial de 6 h de Iowa Environmental Mesonet, una réplica no oficial. En la rama de la línea M7 (28 de noviembre de 2026, sin desplegar), Panorama abre en Región en 3D y su mapa recibe el clima del aeródromo y las capas regionales (bucle GOES, radar, estaciones METAR y SIGMET). El panel flotante «Meteorología PUJ» muestra el METAR decodificado, el TAF, el viento por pista y las horas del sol. En la rama de integración de los mapas (sin desplegar), con la línea M6 integrada, Panorama lee el clima regional por la API con el cliente compartido; el radar es el de IEM (TJUA) con las teselas que nombra cada lectura, y cada lectura respeta el `refreshAfterSeconds` de su respuesta. El segundo mapa de satélite del detalle de la píldora se retiró. Se describe abajo como registro. GOES-East infrarrojo e [IMERG](https://gpm.nasa.gov/data/imerg) de NASA GIBS son capas seleccionables. La vista fija las teselas al tiempo reportado por GIBS; si solo hay fecha, muestra únicamente el día sin antigüedad horaria. IMERG estima precipitación y puede retrasarse varias horas; no es radar ni observación local. Se muestran atribución, unidad y opacidad de la capa. Fuentes: [píldora](../../frontend/private-web/src/features/dashboard/noc/WeatherPill.jsx), [palabras del METAR](../../frontend/private-web/src/features/dashboard/noc/weatherWords.js) y [teselas](../../frontend/private-web/src/services/satelliteService.js).
+**Meteorología MDPC.** El METAR y el TAF de MDPC llegan por la API desde NOAA Aviation Weather Center, como dato no oficial. La píldora del clima, bajo el mapa de Panorama, separa la hora observada de la recepción local. Avisa cuando el METAR pasa de 90 minutos o la API lo marca «Stale», y conserva el aviso de un refresco fallido. Su detalle conserva el historial de 6 h de Iowa Environmental Mesonet, una réplica no oficial. En la rama de la línea M7 (28 de noviembre de 2026, sin desplegar), Panorama abre en Región en 3D y su mapa recibe el clima del aeródromo y las capas regionales (bucle GOES, radar, estaciones METAR y SIGMET). El panel flotante «Meteorología PUJ» muestra el METAR decodificado, el TAF, el viento por pista y las horas del sol. En la rama de integración de los mapas (sin desplegar), con los paneles flotantes de M1, el panel va al pie de la columna derecha de Panorama, bajo el lugar del inspector. Se mide en los márgenes del mapa y abre plegado por debajo de 1440 px ([ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md), nota del 28 de noviembre de 2026). En la rama de integración de los mapas (sin desplegar), con la línea M6 integrada, Panorama lee el clima regional por la API con el cliente compartido; el radar es el de IEM (TJUA) con las teselas que nombra cada lectura, y cada lectura respeta el `refreshAfterSeconds` de su respuesta. El segundo mapa de satélite del detalle de la píldora se retiró. Se describe abajo como registro. GOES-East infrarrojo e [IMERG](https://gpm.nasa.gov/data/imerg) de NASA GIBS son capas seleccionables. La vista fija las teselas al tiempo reportado por GIBS; si solo hay fecha, muestra únicamente el día sin antigüedad horaria. IMERG estima precipitación y puede retrasarse varias horas; no es radar ni observación local. Se muestran atribución, unidad y opacidad de la capa. Fuentes: [píldora](../../frontend/private-web/src/features/dashboard/noc/WeatherPill.jsx), [palabras del METAR](../../frontend/private-web/src/features/dashboard/noc/weatherWords.js) y [teselas](../../frontend/private-web/src/services/satelliteService.js).
 
 En esta rama local, la certificación de la imagen AVIAM compara la CSP generada con una lista cerrada que incluye la API certificada, su WebSocket, dos orígenes cartográficos, IEM y NASA GIBS. Rechaza fuentes adicionales o ausentes; la prueba usa la política que genera la aplicación para evitar otra divergencia. Fuentes: [validador](../../frontend/scripts/deployment/csp-tool.mjs), [pruebas](../../frontend/tests/deployment/test-csp-tool.mjs) y [política AVIAM](../../frontend/private-web/src/config/securityHeaders.mjs).
 
@@ -2056,9 +2056,16 @@ tampoco.
   cifras en una franja arriba y el «Inspector» a la derecha desde 1536 px; los
   controles del mapa forman una columna a la derecha (ver
   [Monitoreo OCC más profesional](#monitoreo-occ-más-profesional-cn-32)).
-  «Posiciones» abre plegada, «Cifras de la jornada» también por debajo de
-  1600 px, y «Tablero» y «Alertas» por debajo de 1280 px. «Ocultar paneles»,
-  bajo el mapa, deja solo el mapa (`focus=map`), y «Mostrar paneles» los
+  *Posterior (M1, 27 de noviembre de 2026):* los paneles vuelven a flotar
+  dentro del mapa a pantalla completa, a 12 px de sus bordes, y la columna de
+  control queda fija en el borde derecho; la barra de estado, con «Ocultar
+  paneles», flota al pie dentro del mapa. Por debajo de 1440 px solo abre
+  «Tablero»: las cifras y «Alertas» abren plegadas, y «Posiciones» abre
+  siempre plegada (ver
+  [Mapa a pantalla completa con paneles flotantes](#mapa-a-pantalla-completa-con-paneles-flotantes-m1)).
+  Antes de M1, «Posiciones» abría plegada, «Cifras de la jornada» también por
+  debajo de 1600 px, y «Tablero» y «Alertas» por debajo de 1280 px.
+  «Ocultar paneles» deja solo el mapa (`focus=map`), y «Mostrar paneles» los
   devuelve. Los paneles son casi opacos y sin desenfoque. La consola los mide y
   el mapa encuadra sus vistas en lo que queda a la vista. Lo elegido no queda
   debajo de un panel: la cámara se mueve después de medir el inspector que se
@@ -2930,7 +2937,9 @@ API, lo que leen las pantallas ni su cadencia.
   línea arriba; «Posiciones» abajo. El «Inspector» ocupa una columna propia a la
   derecha desde 1536 px; en un portátil de 1366 o 1440 px se acopla bajo el
   «Tablero» y «Alertas» se pliega mientras está abierto, así el mapa conserva
-  su ancho.
+  su ancho. *Posterior (M1):* los paneles vuelven a flotar dentro del mapa, en
+  los mismos lugares (ver
+  [Mapa a pantalla completa con paneles flotantes](#mapa-a-pantalla-completa-con-paneles-flotantes-m1)).
 - **Monitoreo de vuelos**
   ([vista](../../frontend/private-web/src/features/flight-monitoring/FlightMonitoringPage.jsx)).
   El tablero es más denso y se ordena por Hora, Vuelo, Estado, Ruta o Posición.
@@ -2957,10 +2966,13 @@ API, lo que leen las pantallas ni su cadencia.
   y el mapa atenúa los vuelos y rutas que el filtro o la búsqueda dejan fuera
   (28 de noviembre de 2026, sin desplegar). El carril se verificó solo con
   pruebas unitarias y el MapLibre simulado; falta verlo en un navegador, y la
-  capa 3D bajo el globo llega con M2.
+  capa 3D bajo el globo llega con M2. *Posterior (M1):* el tablero y el
+  detalle flotan sobre el mapa a pantalla completa, a la izquierda y a la
+  derecha.
 - **Mapa de posiciones.** 2D/3D, «Centrar PUJ» y pantalla completa pasan al riel
   del mapa. El detalle de la posición usa el mismo panel acoplado, y sus rótulos
-  ya no van en mayúsculas.
+  ya no van en mayúsculas. *Posterior (M1):* la barra, la lista, el detalle y
+  la banda flotan sobre el mapa a pantalla completa.
 - **Demora.** Cada tira de los tableros y el detalle del vuelo muestran «+N»
   cuando el vuelo va 5 minutos o más tarde de su hora programada, con el
   triángulo ámbar desde 15 minutos
@@ -2969,7 +2981,60 @@ API, lo que leen las pantallas ni su cadencia.
 - **Panel acoplado común**
   ([`MapSidePanel`](../../frontend/private-web/src/features/maps/ui/MapSidePanel.jsx)):
   el detalle de Monitoreo y de Mapa de posiciones, y el lugar previsto para el
-  panel de un vuelo en modo seguimiento.
+  panel de un vuelo en modo seguimiento. *Posterior (M1):* tiene también una
+  variante flotante, la que usan ahora los dos detalles.
+
+Las capturas se revisaron en local con la API simulada de la suite visual, a
+1366×768, 1440×900 y 1920×1080, en oscuro y en claro; nada de esto acredita un
+despliegue ni una revisión visual en el VPS.
+
+## Mapa a pantalla completa con paneles flotantes (M1)
+
+Posterior al commit verificado de esta nota: describe el código de la rama
+`feat/occ-mapa-completo`, que esa verificación no cubre. Lo pidió el dueño al
+cerrar la ronda 1 de la
+[caja negra](../12-backlog/caja-negra-2026-11.md): el mapa a pantalla completa
+en Panorama, Monitoreo de vuelos y Mapa de posiciones, con todo flotando
+dentro. Revierte el acoplado de CN-32. Las decisiones están en la nota del 27 de
+noviembre de 2026 de [ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md).
+No cambian la API, lo que leen las pantallas, su cadencia ni el presupuesto de
+peticiones.
+
+- **El mapa llena el marco**
+  ([marco](../../frontend/private-web/src/features/admin-occ/AdminOccLayout.jsx)).
+  Las tres pantallas de mapa ocupan el área de trabajo sin margen ni
+  desplazamiento. Las demás pantallas del OCC no cambian.
+- **Paneles flotantes.** Flotan dentro del mapa a 12 px de sus bordes, casi
+  opacos, sin sombra ni desenfoque, y cada uno se pliega a su pastilla. Están
+  debajo de la columna de control y de sus menús, y debajo de «Seguir en 3D».
+- **La columna de control queda en el borde derecho**
+  ([estilos del mapa](../../frontend/private-web/src/styles/occ-map.css)). El
+  zoom y el riel no se mueven con los paneles. Un panel de la derecha flota a su
+  izquierda, a 112 px del borde, y las franjas de arriba y de abajo terminan
+  antes de la columna. «Capas» y «Leyenda» abren debajo de lo que flota arriba
+  del mapa. Los avisos quedan a la izquierda de la columna.
+- **Los márgenes del mapa**
+  ([medida](../../frontend/private-web/src/features/maps/ui/stageInsets.js)).
+  Cada pantalla mide lo que tapan sus paneles, y el mapa encuadra sus vistas y
+  trae lo elegido al área que queda a la vista. La medida pasó de la consola a
+  los componentes comunes de los mapas.
+- **Panorama.** «Tablero» y «Alertas» van a la izquierda, las cifras arriba,
+  «Posiciones» abajo y el «Inspector» a la derecha desde 1536 px. La barra de
+  estado, con la procedencia, «Ocultar paneles», el clima y las demoras, flota
+  al pie dentro del mapa.
+- **Monitoreo de vuelos.** El tablero flota a la izquierda y el detalle del
+  vuelo a la derecha. Por debajo de 1536 px, abrir el detalle pliega el tablero,
+  que se puede desplegar, y «Cerrar detalle» lo devuelve. En tablet, «Ver
+  vuelos» flota arriba a la izquierda del mapa.
+- **Mapa de posiciones.** La barra flota arriba a la izquierda, la lista a la
+  izquierda, el detalle a la derecha y la banda abajo. Sus avisos son chips
+  arriba al centro, y «Pantalla completa» agranda todo el escenario.
+  Planificación no cambia.
+- **Sin motor de mapa,** la lista que lo reemplaza ocupa el área que dejan los
+  paneles, así que se siguen usando a su lado.
+- **A 1366 px** abre lo esencial: en Panorama, solo «Tablero»; en Monitoreo, el
+  tablero, o el detalle si hay un vuelo elegido; en Mapa de posiciones, la barra
+  y la lista, que se pliega mientras el detalle está abierto.
 
 Las capturas se revisaron en local con la API simulada de la suite visual, a
 1366×768, 1440×900 y 1920×1080, en oscuro y en claro; nada de esto acredita un

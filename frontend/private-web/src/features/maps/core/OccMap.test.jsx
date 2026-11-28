@@ -299,6 +299,25 @@ describe('OccMap', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
+  it('leaves the map keys to a child that opts out with data-occ-map-keys="off" (M1)', () => {
+    const onSelect = vi.fn();
+    const { map } = renderMap({
+      selection: { kind: 'stand', id: 'A5' }, onSelect,
+      children: <div data-occ-map-keys="off"><button type="button">Meteorología</button></div>,
+    });
+    loadStyle(map);
+    const root = screen.getByTestId('occ-map');
+    const button = screen.getByRole('button', { name: 'Meteorología' });
+    // Inside the opted-out child (the console's status bar): Esc and the views are not the map's.
+    expect(press(button, 'Escape').defaultPrevented).toBe(false);
+    expect(press(button, '1').defaultPrevented).toBe(false);
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(root).toHaveAttribute('data-occ-view', 'ramp');
+    // On the map itself they still are.
+    expect(press(map.getCanvas(), 'Escape').defaultPrevented).toBe(true);
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(null);
+  });
+
   it('leaves exactly one live map after a StrictMode double mount', () => {
     const before = liveEngineCount();
     const { map, unmount } = renderMap({}, { strict: true });
@@ -1601,6 +1620,8 @@ describe('OccMap', () => {
       'src/features/maps/ui/FlightDataBlock.jsx', 'src/features/maps/ui/MapLayersMenu.jsx',
       // PR M6: the pause control and the follow button.
       'src/features/maps/ui/MapMotionControl.jsx', 'src/features/maps/ui/MapFollowButton.jsx',
+      // CN-30, flat since M1: the panel of «Seguir en 3D».
+      'src/features/maps/ui/Follow3dPanel.jsx',
     ];
     const tokens = new Set(Object.keys(tailwindConfig.theme.extend.colors.occ));
     for (const file of files) {
@@ -1642,6 +1663,104 @@ describe('OccMap', () => {
     // The root of the component is the scope of the stylesheet.
     renderMap();
     expect(screen.getByTestId('occ-map')).toHaveClass('occ-map');
+  });
+
+  it('styles only its own MapLibre controls, never those of a map nested among its children (M1)', () => {
+    const css = readSource('src/styles/occ-map.css').replace(/\/\*[\s\S]*?\*\//g, '');
+    const selectors = [...css.matchAll(/([^{}]+)\{/g)].map(([, prelude]) => prelude.trim())
+      .filter(prelude => !prelude.startsWith('@')).flatMap(prelude => prelude.split(',').map(part => part.trim()))
+      .filter(selector => selector.includes('.maplibregl-'));
+    expect(selectors.length).toBeGreaterThan(15);
+    // The map's root with its own host, and, among its children, a raw MapLibre map (M1 wrote this for the GOES map of
+    // the weather pill in the console's status bar, which M7 retired; it holds for any nested map), each with the same
+    // controls.
+    const { container } = render(<div className="occ-map" />);
+    const controls = parent => {
+      const corner = position => `<div class="maplibregl-ctrl-${position}">`
+        + '<div class="maplibregl-ctrl maplibregl-ctrl-group">'
+        + '<button type="button"><span class="maplibregl-ctrl-icon"></span></button><button type="button"></button></div>'
+        + '<details class="maplibregl-ctrl maplibregl-ctrl-attrib maplibregl-compact maplibregl-compact-show" open>'
+        + '<summary class="maplibregl-ctrl-attrib-button"></summary><a href="#">OSM</a>'
+        // The link to the dialog of the map's credits (PR M5).
+        + '<a href="#" class="occ-map-credits-link">Créditos y licencias</a></details>'
+        + '<div class="maplibregl-ctrl maplibregl-ctrl-scale"></div></div>';
+      parent.innerHTML = `<div class="maplibregl-control-container">${['top-left', 'top-right', 'bottom-left', 'bottom-right']
+        .map(corner).join('')}</div>`;
+      return [...parent.querySelectorAll('*')];
+    };
+    const root = container.firstElementChild;
+    root.innerHTML = '<div class="occ-map-host"></div><div data-occ-console-status=""><div><div class="nested"></div></div></div>';
+    const own = controls(root.querySelector('.occ-map-host'));
+    const nested = controls(root.querySelector('.nested'));
+    for (const selector of selectors) {
+      expect(nested.filter(element => element.matches(selector)), selector).toEqual([]);
+      // The map's own controls answer to every rule, the states of a pointer or a focus left aside.
+      const resting = selector.replace(/:(?:hover|active|focus-visible|focus)\b/g, '');
+      if (!selector.includes(':root:not(.dark)')) expect(own.some(element => element.matches(resting)), selector).toBe(true);
+    }
+  });
+
+  it('keeps the control column at the true right edge of the map and the right slot left of it (M1)', () => {
+    const css = readSource('src/styles/occ-map.css').replace(/\/\*[\s\S]*?\*\//g, '');
+    // The innermost rules in their order, the narrow map's included: each selector with its declarations.
+    const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, prelude, body]) => ({
+      selector: prelude.trim(),
+      declarations: Object.fromEntries(body.split(';').map(text => text.trim()).filter(Boolean).map(text => {
+        const colon = text.indexOf(':');
+        return [text.slice(0, colon).trim(), text.slice(colon + 1).trim().replace(/\s+/g, ' ')];
+      })),
+    }));
+    const all = selector => rules.filter(rule => rule.selector === selector).map(rule => rule.declarations);
+    const [root] = all('.occ-map');
+    // The column keeps a reserve at the right edge: its gap, the rail and the gap to a panel floating at its left. What
+    // the map shows ends at the column, or further in at such a panel, whose right inset holds the reserve.
+    expect(root['--occ-map-rail-reserve']).toBe('calc(var(--occ-map-rail) + 2 * var(--occ-map-gap))');
+    expect(root['--occ-map-clear-right'])
+      .toBe('max(var(--occ-map-inset-right, 0px), calc(var(--occ-map-rail) + var(--occ-map-gap)))');
+    // The zoom group and the rail never move with the insets: the column stays where it is whatever the panels report,
+    // and only the area in sight reads the right inset, through --occ-map-clear-right.
+    expect(all('.occ-map > .occ-map-host .maplibregl-ctrl-top-right')).toEqual([{ top: '0', right: '0' }]);
+    const [dock] = all('.occ-map .occ-map-dock');
+    expect(dock).toMatchObject({ top: 'calc(var(--occ-map-gap) + var(--occ-map-zoom-height) + 8px)',
+      right: 'var(--occ-map-gap)', bottom: 'var(--occ-map-gap)' });
+    expect(Object.values(dock).join(' ')).not.toMatch(/--occ-map-inset/);
+    expect(rules.filter(rule => Object.values(rule.declarations).some(value => value.includes('--occ-map-inset-right')))
+      .map(rule => rule.selector)).toEqual(['.occ-map']);
+    // The scale and the credits sit left of the column, or of a panel left of it.
+    expect(all('.occ-map > .occ-map-host .maplibregl-ctrl-bottom-right')[0].right).toBe('var(--occ-map-clear-right)');
+    // «Seguir en 3D» takes the right slot: left of the column, inside the top and bottom insets; over the screen's
+    // panels and under the rail, whose menus open over it. On a narrow map it is a sheet along the bottom, still left of
+    // the column.
+    const [follow, narrowFollow] = all('.occ-map .occ-map-follow-panel');
+    expect(follow).toMatchObject({ right: 'var(--occ-map-rail-reserve)',
+      top: 'calc(var(--occ-map-inset-top, 0px) + var(--occ-map-gap))',
+      bottom: 'calc(var(--occ-map-inset-bottom, 0px) + var(--occ-map-gap))' });
+    expect(Number(follow['z-index'])).toBeGreaterThan(10);
+    expect(Number(follow['z-index'])).toBeLessThan(Number(dock['z-index']));
+    expect(narrowFollow).toEqual({ top: 'auto', left: 'var(--occ-map-gap)', width: 'auto', 'max-height': '55%' });
+    // Folded, its header stays at the top of the slot, or at the bottom of a narrow map.
+    expect(all('.occ-map .occ-map-follow-panel[data-open="false"]')).toEqual([{ bottom: 'auto' },
+      { bottom: 'calc(var(--occ-map-inset-bottom, 0px) + var(--occ-map-gap))' }]);
+    // A screen's own notices (Mapa de posiciones, M1) sit at the top centre of the area in sight, short of the column,
+    // and push the traffic's chips under them.
+    const [pageChips] = all('.occ-map .occ-map-page-chips');
+    expect(pageChips).toMatchObject({ top: 'calc(var(--occ-map-inset-top, 0px) + var(--occ-map-gap))',
+      left: 'calc(var(--occ-map-inset-left, 0px) + (100% - var(--occ-map-inset-left, 0px) - var(--occ-map-clear-right)) / 2)',
+      transform: 'translateX(-50%)' });
+    expect(all('.occ-map .occ-map-page-chips ~ .occ-map-source-status .occ-map-source-chips')).toEqual([
+      { top: 'calc(var(--occ-map-inset-top, 0px) + var(--occ-map-gap) + 3.25rem)' }]);
+    // The list of a map that cannot draw fills the area the floating panels leave, short of the column, so the
+    // panels stay usable beside it.
+    expect(all('.occ-map .occ-map-unavailable')).toEqual([{ top: 'var(--occ-map-inset-top, 0px)',
+      right: 'var(--occ-map-clear-right)', bottom: 'var(--occ-map-inset-bottom, 0px)',
+      left: 'var(--occ-map-inset-left, 0px)' }]);
+    // A menu of the rail opens under the panels floating along the top (Mapa de posiciones' bar), never over them,
+    // and still ends at the bottom of the column.
+    const [flyout] = all('.occ-map .occ-map-flyout');
+    expect(flyout).toMatchObject({
+      top: 'calc(max(var(--occ-map-gap), var(--occ-map-inset-top, 0px)) - var(--occ-map-gap) - var(--occ-map-zoom-height) - 8px)',
+      'max-height': 'calc(100% + var(--occ-map-zoom-height) + 8px + var(--occ-map-gap) - max(var(--occ-map-gap), var(--occ-map-inset-top, 0px)))',
+    });
   });
 });
 // The traffic of PR M5 at the lab's noon: the synthetic air picture and map flights, the demo arrival estimated on

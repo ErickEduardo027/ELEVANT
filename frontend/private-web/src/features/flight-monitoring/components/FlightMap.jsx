@@ -33,8 +33,12 @@ import { CrosshairIcon, RotateCcwIcon } from './icons';
 const EMPTY = Object.freeze([]);
 // Room left around the flights and PUJ when «Restablecer vista» frames them.
 const RESET_PADDING_PX = 60;
-// The data block is docked at the top left of the map, so it never follows the aircraft on screen.
-const DOCKED_BLOCK_STYLE = Object.freeze({ top: 12, left: 12 });
+// The data block is docked at the top left of the area the page's floating panels leave in sight (OccMap's inset
+// variables, M1), so it never follows the aircraft on screen and never goes under the board.
+const DOCKED_BLOCK_STYLE = Object.freeze({
+  top: 'calc(var(--occ-map-inset-top, 0px) + 12px)', left: 'calc(var(--occ-map-inset-left, 0px) + 12px)',
+  maxWidth: 'calc(100% - var(--occ-map-inset-left, 0px) - var(--occ-map-clear-right, 0px) - 24px)',
+});
 
 // Monitoreo looks at the world (M8): the globe with its atmosphere, a zoom out to 1 (the engine's own limits stay for
 // the other screens) and an opening on the Dominican Republic and Puerto Rico.
@@ -52,10 +56,13 @@ const findFlight = (flights, id) => (id == null ? null : flights.find(flight => 
 // (PR M6) follow mode, «Seguir» beside the view selector (LiveFlightMap). `detail` is the page's own card of its selected
 // flight: the plain map shows it, the live map only for a flight it does not know. `theme` is accepted and ignored: the
 // OCC maps follow the shell theme on their own (OccMap). `follow3dButton` (M4) adds «Seguir en 3D» under «Seguir» in the
-// rail (Monitoreo de vuelos opts in).
+// rail (Monitoreo de vuelos opts in). The map fills the page's stage (M1, «pantalla completa con paneles flotantes»):
+// `panels`, the page's floating panels, float inside it, under its cards and its control column, and `insets` (what
+// they cover, measured by the page) frame its views, place its controls and keep the chosen flight in sight.
 function FlightMapView({
   flights = EMPTY, selectedFlightId = null, onSelectFlight, traffic, weather, drawnFlights, selection: chosen,
-  onSelect, framePoints = EMPTY, overlays, overlayData, flightEmphasis = null, follow3dButton = false, children,
+  onSelect, framePoints = EMPTY, overlays, overlayData, flightEmphasis = null, follow3dButton = false, insets,
+  panels = null, children,
 }) {
   const { t } = useTranslation(flightMonitoringMessages);
   const { t: tMap } = useTranslation(mapMessages);
@@ -97,10 +104,10 @@ function FlightMapView({
     <OccMap
       ref={mapRef}
       testId="flight-map-container"
-      className="rounded-md"
       defaultView={defaultView}
       projection="globe"
       mapOptions={MONITORING_MAP_OPTIONS}
+      insets={insets}
       presetStands={STAND_REFERENCE}
       overlays={overlays}
       overlayData={overlayData}
@@ -118,6 +125,7 @@ function FlightMapView({
       fallbackItems={fallbackItems}
       onFallbackSelect={selectFlight}
     >
+      {panels}
       {children}
       {/* The control rail (CN-32): the views and 3D, «Seguir», the screen's two framing tools in one slab, the pause,
           «Capas» and «Leyenda». */}
@@ -171,13 +179,13 @@ function visitKeysOf(keys, mapFlights) {
  * The state of the traffic (from the air picture alone, its age on the server's clock), the credit of its source and,
  * apart, a failed read of the AVIAM flights sit over the map (MapSourceStatus). The chosen flight or
  * aircraft has its data block (FlightDataBlock) and its route on the map: inside the page's side panel when the page
- * gives its `dataBlockSlot` (CN-32: the flight's inspector, so nothing floats over the map), else docked at the top left
- * of the map, as for another aircraft; a flight of the page the map does not know (outside its window, or while the map
+ * gives its `dataBlockSlot` (CN-32; the flight's inspector, so the flight has one card), else docked at the top left
+ * of the area the page's panels leave in sight (M1), as for another aircraft; a flight of the page the map does not know (outside its window, or while the map
  * cannot read its flights) keeps the page's own card, as does every flight of the page while the map cannot draw.
  */
 function LiveFlightMap({
   flights = EMPTY, selectedFlightId = null, onSelectFlight, detail = null, onSelectionFlights, dataBlockSlot = null,
-  emphasisedFlightIds = null, follow3dButton = false,
+  emphasisedFlightIds = null, follow3dButton = false, insets, panels = null,
 }) {
   const { stationId } = useOccStation();
   const { selection: urlSelection, selectAircraft, clear } = useMapSelection();
@@ -255,7 +263,8 @@ function LiveFlightMap({
   return (
     <FlightMapView flights={flights} selectedFlightId={selectedFlightId} onSelectFlight={onSelectFlight} traffic={traffic}
       weather={weather} drawnFlights={drawnFlights} selection={selection} onSelect={handleSelect} framePoints={framePoints}
-      overlays={routeOverlays} overlayData={routeData} flightEmphasis={aircraftEmphasis} follow3dButton={follow3dButton}>
+      overlays={routeOverlays} overlayData={routeData} flightEmphasis={aircraftEmphasis} follow3dButton={follow3dButton}
+      insets={insets} panels={panels}>
       <MapSourceStatus status={live.status} picture={live.picture} sourceState={live.sourceState} clock={live.clock}
         onRetry={live.retry} />
       <SelectionCard target={target} detail={pageDetail} telemetry={live.telemetry} slot={dataBlockSlot}
@@ -289,6 +298,8 @@ function SelectionCard({ target, detail, slot = null, ...block }) {
  * `dataBlockSlot` (CN-32), an element of the page's side panel, receives the chosen flight's live data block.
  * `emphasisedFlightIds` (M8), the ids of the page's flights the board's filter keeps (`null` for every flight): inside
  * the shell the map dims the other AVIAM aircraft and their routes.
+ * `panels` (M1) are the page's floating panels, rendered inside the map, and `insets` ({ top, right, bottom, left } in
+ * px, optional) what they cover of it.
  */
 export default function FlightMap({ detail = null, ...props }) {
   const channel = useOptionalOccShellChannel();

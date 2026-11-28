@@ -14,12 +14,13 @@ import {
 import { describeWind, weatherStateKey } from './weatherWords';
 
 // The weather pill of the console (contratos 2.5): the METAR of MDPC that the API relays from NOAA Aviation Weather
-// Center (useMdpcWeather), at the end of the provenance line under the map, with the wind, the QNH, the age of the
-// observation and «No oficial». It opens its detail: the decoded and the raw METAR with its times and freshness, and the
-// last reports. Lane M7 (2026-11-27) retired the detail's own satellite map (GoesCloudMap): the satellite is a layer of
-// the one map now. It also says every state without an observation (empty, refused) instead of «Consultando…», counts
-// the API's Stale as stale, and credits NOAA AWC. The six hours of reports still come from IEM (loadRecentMetars, the
-// last Mesonet reader, read only while the detail is open) until the API relays them.
+// Center (useMdpcWeather), in the console's status bar after the provenance line, floating at the foot of the map (M1),
+// with the wind, the QNH, the age of the observation and «No oficial». It opens its detail: the decoded and the raw
+// METAR with its times and freshness, and the last reports. Lane M7 (2026-11-27) retired the detail's own satellite map
+// (GoesCloudMap): the satellite is a layer of the one map now. It also says every state without an observation (empty,
+// refused) instead of «Consultando…», counts the API's Stale as stale, and credits NOAA AWC. The six hours of reports
+// still come from IEM (loadRecentMetars, the last Mesonet reader, read only while the detail is open) until the API
+// relays them.
 
 // The last reports of MDPC, read once each time the detail opens.
 function History({ t, locale }) {

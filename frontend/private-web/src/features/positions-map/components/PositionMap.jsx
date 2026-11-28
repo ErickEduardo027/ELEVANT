@@ -54,12 +54,15 @@ const AIRPORT_AIRCRAFT_3D = Object.freeze({ liveries: true });
 // Its 3D aircraft wear their airlines' liveries, and other traffic on the ground near the field is drawn in 3D too
 // (OccMap `aircraft3d.liveries`).
 // `follow3dButton` (M4) adds «Seguir en 3D» under «Seguir» (Mapa de posiciones opts in; Planificación does not).
+// `insets` (M1, optional: { top, right, bottom, left } in px) are what the screen's floating panels cover of a map that
+// fills its stage, as Mapa de posiciones measures them; `className` replaces the rounded corners of the framed map
+// (Planificación keeps both defaults: no insets, rounded).
 const PositionMap = forwardRef(function PositionMap({
   positions = EMPTY, selectedPositionId = null, onSelectPosition, viewMode = '2d', initialCamera, onCameraChange,
   allowBuildingExtrusion = false, dashboardLabels = false, onMapClick, placing = false, placingCode = null,
   pendingLocation = null, onCancelPlacing, weather, traffic, trafficSelection = null, onSelectTraffic,
   focusSelectedOnStart = false, legendFoldKey = null, railTools = null, fixedOnAirport = false, onViewModeChange,
-  follow3dButton = false, children,
+  follow3dButton = false, insets, className = 'rounded-md', children,
 }, ref) {
   const { t } = useTranslation(positionsMapMessages);
   const { t: tMap } = useTranslation(mapMessages);
@@ -104,7 +107,7 @@ const PositionMap = forwardRef(function PositionMap({
     <OccMap
       ref={mapRef}
       testId="position-map-container"
-      className="rounded-md"
+      className={className}
       defaultView={fixedOnAirport ? 'airfield' : 'ramp'}
       views={fixedOnAirport ? AIRPORT_VIEWS : undefined}
       airfieldCentre={fixedOnAirport ? PUJ_ARP : null}
@@ -112,6 +115,7 @@ const PositionMap = forwardRef(function PositionMap({
       followLimits={fixedOnAirport ? AIRPORT_FOLLOW_LIMITS : null}
       structures={fixedOnAirport}
       aircraft3d={fixedOnAirport ? AIRPORT_AIRCRAFT_3D : undefined}
+      insets={insets}
       presetStands={STAND_REFERENCE}
       stands={positions}
       traffic={traffic}

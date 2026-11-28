@@ -12,8 +12,8 @@ export const OCC_STAT_TONES = Object.freeze(['neutral', 'attention', 'urgent']);
 // Manrope, proportional figures (the global tabular figures of tokens.css are switched off here): a figure of the day
 // is read alone, not compared down a column. Never mono, because it is not an identifier.
 const FIGURE = "text-2xl font-semibold leading-8 text-occ-text [font-feature-settings:'tnum'_0]";
-// The figure of a strip of figures docked along the top of the console's map (CN-32): one size down, so the strip stays
-// one line low over the map.
+// The figure of a strip of figures along the top of the console's map (CN-32; floating since M1): one size down, so the
+// strip stays one line low over the map.
 const FIGURE_COMPACT = "text-lg font-semibold leading-6 text-occ-text [font-feature-settings:'tnum'_0]";
 // A linked figure stays plain text with an underline, so the console's figures never light up.
 const FIGURE_LINK = 'rounded-sm underline decoration-occ-line-strong decoration-1 underline-offset-4 '

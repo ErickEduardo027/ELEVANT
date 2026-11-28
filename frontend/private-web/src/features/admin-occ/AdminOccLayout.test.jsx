@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { loadOperationalNotifications } from '../../services/operationalCommunicationService';
 import { administratorAccess, DepartmentAccessProvider } from '../access/DepartmentAccessContext';
 import { DepartmentPermissionCodes } from '../access/testAccess';
-import AdminOccLayout from './AdminOccLayout';
+import AdminOccLayout, { OCC_MAP_PATHS } from './AdminOccLayout';
 import OccSidebar from './shell/OccSidebar';
 import OccTopbar from './shell/OccTopbar';
 import { useOptionalOccShell } from './shell/OccShellProvider';
@@ -77,14 +77,23 @@ it('keeps the bridge attribute in the frame props', async () => {
   });
 });
 
-it('the console route fills main without padding; other modules keep scrolling', async () => {
-  const view = renderLayout();
-  await screen.findByText('Marco OCC con avisos: empty');
-  // Panorama is a full-screen map (contratos 2.5): main takes it edge to edge, with no padding and no scroll.
-  expect(shellProps.frameProps.mainVariant).toBe('fill');
-  view.unmount();
+it('the three map routes fill main without padding; other modules keep scrolling (M1)', async () => {
+  // Panorama, Monitoreo de vuelos and Mapa de posiciones are full-screen maps with their panels floating inside
+  // (contratos 2.5; M1): main takes them edge to edge, with no padding and no scroll. The set is exact and frozen.
+  expect(OCC_MAP_PATHS).toEqual(['/admin-occ/dashboard', '/admin-occ/flight-monitoring', '/admin-occ/positions-map']);
+  expect(Object.isFrozen(OCC_MAP_PATHS)).toBe(true);
+  for (const path of OCC_MAP_PATHS) {
+    window.history.replaceState({}, '', path);
+    const map = renderLayout();
+    await screen.findByText('Marco OCC con avisos: empty');
+    expect(shellProps.frameProps.mainVariant, path).toBe('fill');
+    expect(shellProps.frameProps).toMatchObject({ department: 'occ', rootAttributes: { 'data-occ-bridge': '' } });
+    map.unmount();
+  }
 
-  for (const path of ['/admin-occ/planning', '/admin-occ/dashboard/otra', '/admin-occ/positions-map']) {
+  // Every other module, and a path under a map route, keeps the padded main that scrolls.
+  for (const path of ['/admin-occ/planning', '/admin-occ/dashboard/otra', '/admin-occ/positions-map/otra',
+    '/admin-occ/reports', '/admin-occ/position-coverage']) {
     window.history.replaceState({}, '', path);
     const other = renderLayout();
     await screen.findByText('Marco OCC con avisos: empty');

@@ -12,7 +12,8 @@ import { readPanelFolded, subscribePanelFolds, writePanelFolded } from './occPan
  * - `grid`: the plain grid the console falls back to when the map engine is unavailable, on the panel slab with the
  *   6 px panel radius.
  * - `dock` (CN-32): flush against an edge of the map, on the opaque panel slab, with no border or radius of its own: the
- *   console docks it and draws the 1 px joint on the side that meets the map (CONSOLE_OVERLAY_LAYOUT).
+ *   screen that docks it draws the 1 px joint on the side that meets the map. Since M1 the console's panels float
+ *   (`float`, CONSOLE_OVERLAY_LAYOUT).
  */
 export const OCC_FLOATING_PANEL_LAYOUT = Object.freeze({
   float: 'border border-occ-line bg-occ-panel-float rounded-[var(--occ-radius-overlay)] text-occ-text',
@@ -22,7 +23,7 @@ export const OCC_FLOATING_PANEL_LAYOUT = Object.freeze({
 
 /**
  * How the header and the body of a panel sit (CN-32): `column`, the header over the body; `row`, the header at the
- * left of the body on one line, for a strip of figures docked along the top of the map.
+ * left of the body on one line, for a strip of figures along the top of the map.
  */
 export const OCC_FLOATING_PANEL_ORIENTATIONS = Object.freeze({
   column: Object.freeze({ root: 'flex-col', header: 'border-b border-occ-line', body: 'min-h-0 flex-1' }),

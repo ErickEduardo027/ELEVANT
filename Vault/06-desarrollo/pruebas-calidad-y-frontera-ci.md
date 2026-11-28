@@ -787,7 +787,7 @@ vitest corren con `npm test`; la spec visual, con la suite visual.
   encuadra la vista que sigue el vuelo y después centra su avión, salvo que la
   persona mueva la cámara antes
   ([cámara](../../frontend/private-web/src/features/dashboard/noc/consoleCamera.test.js)
-  y [última medida de los paneles](../../frontend/private-web/src/features/dashboard/noc/useConsoleInsets.test.jsx)).
+  y [última medida de los paneles](../../frontend/private-web/src/features/maps/ui/useStageInsets.test.jsx)).
   El mapa se simula con el MapLibre falso de `tests/fakeMapLibre.js`, y jsdom
   recibe un `ResizeObserver` falso.
 - **Datos sintéticos validados.**

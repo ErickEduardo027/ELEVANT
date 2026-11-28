@@ -167,9 +167,10 @@ export default function WeatherPanel({
   const source = observation?.source ?? weather?.source ?? null;
   return (
     <OccFloatingPanel ref={ref} panelId="pan-weather" title={t('weather.panel.title')} layout={panelLayout}
-      defaultFolded={defaultFolded} className={className} data-testid="weather-panel"
+      defaultFolded={defaultFolded} className={className} bodyClassName="h-full min-h-0" data-testid="weather-panel"
       meta={<span className={`${WEATHER_TAG} text-occ-muted`}>{t('weather.unofficial')}</span>}>
-      <div className={`max-h-[min(40rem,calc(100dvh_-_12rem))] space-y-4 p-3 ${CONSOLE_SCROLL}`}>
+      {/* It scrolls inside the room the console's right column gives it (M1), and never past 40 rem. */}
+      <div className={`h-full max-h-[min(40rem,calc(100dvh_-_12rem))] min-h-0 space-y-4 p-3 ${CONSOLE_SCROLL}`}>
         <Section title={t('weather.panel.metar')}>
           <WeatherState t={t} weather={weather} />
           {observation ? (
