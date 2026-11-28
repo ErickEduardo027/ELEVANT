@@ -528,6 +528,9 @@ describe('the animated traffic (PR M2)', () => {
     expect(controller.plan({ aircraft, zoom: 9, minZoom: 15, animation: { keyframes } }).size).toBe(0);
     expect(load).toHaveBeenCalledOnce();
     expect(controller.animating()).toBe(false);
+    // Not animated: no frame position (the map falls back to the write's).
+    expect(controller.framePosition('f:k-1')).toBeNull();
+    expect(controller.framedCount()).toBe(0);
     await settle();
     expect(engine.layers).toHaveLength(1);
     expect(controller.state()).toMatchObject({ enabled: false, status: 'off', notice: null });
@@ -548,6 +551,11 @@ describe('the animated traffic (PR M2)', () => {
     expect(middle.revision).toBeGreaterThan(first.revision);
     const [x0, y0] = xyOf(first.sprites, 'f:k-1');
     const [x1, y1] = xyOf(middle.sprites, 'f:k-1');
+    // PR M2: the frame position is where this frame drew it, not the write's.
+    expect(frame.toLocal(controller.framePosition('f:k-1'))).toEqual([x1, y1].map(value => expect.closeTo(value, 1)));
+    expect(controller.framePosition('f:k-1')).not.toEqual([aircraft[0].lon, aircraft[0].lat]);
+    expect(controller.framedCount()).toBe(2);
+    expect(controller.framePosition('h:nobody')).toBeNull();
     expect(Math.hypot(x1 - x0, y1 - y0)).toBeGreaterThan(40);
     expect(Math.hypot(x1 - x0, y1 - y0)).toBeLessThan(80);
     at(500);

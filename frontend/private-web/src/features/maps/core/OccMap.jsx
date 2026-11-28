@@ -60,6 +60,7 @@ import {
 } from '../traffic/weatherLayers';
 import { aircraftCard, flightRowOf } from '../ui/aircraftCard';
 import AltitudeLegend from '../ui/AltitudeLegend';
+import FrameMeter from '../ui/FrameMeter';
 import MapTooltip from '../ui/MapTooltip';
 import { remoteSatelliteImagery, useSatelliteImagery } from '../useSatelliteImagery';
 import { createAircraft3dController, parkedFromStands, readMode3d, translatePick, writeMode3d } from './aircraft3d';
@@ -69,6 +70,7 @@ import {
   presetTargets, sameFits, standCodeOf, standsInView, targetFor, thresholdsFromFits, transitionFor, unionBounds,
 } from './cameraPresets';
 import { createFrameLoop, createRenderClock, metresPerPixel, updateIntervalMs } from './frameLoop';
+import { createFrameMeter } from './frameMeter';
 import {
   availableLayerKeys, cleanOverrides, engineGroupsFor, readLayerOverrides, resolveLayers, setLayerOverride,
   writeLayerOverrides,
@@ -653,6 +655,10 @@ const OccMapView = forwardRef(function OccMapView({
   const { markReady } = useOccBoot();
   const { view: urlView, terminal: urlTerminal, setView, follow: urlFollow, setFollow } = useMapSelection();
   const [store] = useState(() => createViewStore(initialSnapshot(basemap)));
+  // PR M2: the frames MapLibre really draws (core/frameMeter.js), for the hidden meter (Ctrl+Alt+F) and the map lab.
+  const [frameMeter] = useState(() => createFrameMeter());
+  const renderListenersRef = useRef(new Set());
+  const [frameMeterOn, setFrameMeterOn] = useState(false);
   const snapshot = useSyncExternalStore(store.subscribe, store.get, store.get);
   const stands = standsProp ?? EMPTY;
   const flights = flightsProp ?? EMPTY;
@@ -1835,6 +1841,11 @@ const OccMapView = forwardRef(function OccMapView({
         idleOnScreen();
         markSettled(rootRef.current, true);
       },
+      onRender: () => {
+        const at = globalThis.performance?.now() ?? Date.now();
+        frameMeter.frame(at);
+        for (const listener of renderListenersRef.current) listener(at);
+      },
       onResize: refit,
       onClick: event => handleClick(with3dHit(event)),
       onPointerMove: event => handlePointer(with3dHit(event)),
@@ -2453,11 +2464,42 @@ const OccMapView = forwardRef(function OccMapView({
       resume: () => controller.resume() } : null;
   }, []);
 
+  // PR M2: what the screen shows of the traffic. Where the last frame drew an aircraft (the animated layer's
+  // interpolated position, or the last write's without it), the frames MapLibre draws (`onRender(listener)` hears each,
+  // with its instant; answers the call that stops), the GPU and the meter's reading.
+  const framePosition = useCallback(id => appliedRef.current.aircraft3d?.framePosition?.(id) ?? drawnPosition(id),
+    [drawnPosition]);
+  const onRender = useCallback(listener => {
+    renderListenersRef.current.add(listener);
+    return () => renderListenersRef.current.delete(listener);
+  }, []);
+  const rendererInfo = useCallback(() => engineRef.current?.rendererInfo?.() ?? null, []);
+  const readFrameMeter = useCallback(() => {
+    const applied = appliedRef.current;
+    const framed = applied.aircraft3d?.framedCount?.() ?? 0;
+    const aircraft = framed > 0 ? framed : (applied.sampledAircraft?.length ?? 0);
+    return { ...frameMeter.read(globalThis.performance?.now() ?? Date.now()), renderer: rendererInfo()?.renderer ?? null,
+      aircraft };
+  }, [frameMeter, rendererInfo]);
+  // Ctrl+Alt+F anywhere on the page shows or hides the meter: a key for the presentation and the VPS, kept out of the
+  // OCC's key table (occ-ui/occShortcuts.js).
+  useEffect(() => {
+    const target = rootRef.current?.ownerDocument?.defaultView;
+    if (!target) return undefined;
+    const listener = event => {
+      if (!event.ctrlKey || !event.altKey || event.shiftKey || event.metaKey || event.code !== 'KeyF') return;
+      event.preventDefault();
+      setFrameMeterOn(on => !on);
+    };
+    target.addEventListener('keydown', listener);
+    return () => target.removeEventListener('keydown', listener);
+  }, []);
+
   useImperativeHandle(ref, () => ({
     flyToPreset, flyToStand, flyToFlight, flyToBounds, flyToAll, flyToPuj, resetNorth, getCamera, jumpTo, project, whenIdle,
-    aircraft3d, drawnPosition,
+    aircraft3d, drawnPosition, framePosition, onRender, rendererInfo, frameMeter: readFrameMeter,
   }), [flyToPreset, flyToStand, flyToFlight, flyToBounds, flyToAll, flyToPuj, resetNorth, getCamera, jumpTo, project, whenIdle,
-    aircraft3d, drawnPosition]);
+    aircraft3d, drawnPosition, framePosition, onRender, rendererInfo, readFrameMeter]);
 
   // The overlays read only these: the tooltip, which changes with the pointer, renders here and re-renders none of them.
   const {
@@ -2590,6 +2632,7 @@ const OccMapView = forwardRef(function OccMapView({
         {!unavailable && traffic !== undefined && <AltitudeLegend theme={theme} />}
         {children}
         {!unavailable && <MapTooltip tooltip={snapshot.tooltip} />}
+        {!unavailable && frameMeterOn && <FrameMeter read={readFrameMeter} />}
       </div>
     </OccMapContext.Provider>
   );

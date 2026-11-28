@@ -416,6 +416,57 @@ describe('OccMap animated traffic (PR M2)', () => {
     expect(repaints(map)).toBe(resting);
   });
 
+  it('answers where the last frame drew an aircraft, hears every drawn frame and shows the meter on Ctrl+Alt+F (PR M2)', async () => {
+    hoisted.createCanvas = fakeCanvas;
+    vi.stubGlobal('Path2D', class Path2D {});
+    window.localStorage.setItem(MODE_3D_STORAGE_KEY, '2d');
+    const frames = controlledFrames();
+    const { server, traffic } = demoTraffic();
+    const ref = createRef();
+    render(<OccMap ref={ref} defaultView="approach" traffic={traffic} mapOptions={{ fadeDuration: 0 }} />);
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    await settle();
+    server.at += 500;
+    frames.run();
+    const { getInstances } = hoisted.layers.at(-1).options;
+    getInstances();
+    server.at += 100;
+    frames.run();
+    getInstances();
+    // The frame's interpolated position, not the last write's.
+    const framed = ref.current.framePosition(DEMO_ID);
+    expect(framed).not.toBeNull();
+    expect(framed).not.toEqual(ref.current.drawnPosition(DEMO_ID));
+
+    // Every frame MapLibre draws reaches the listeners, with its instant, until they stop.
+    const heard = vi.fn();
+    const stop = ref.current.onRender(heard);
+    act(() => fake.state.emit(map, 'render'));
+    act(() => fake.state.emit(map, 'render'));
+    expect(heard).toHaveBeenCalledTimes(2);
+    expect(Number.isFinite(heard.mock.calls[0][0])).toBe(true);
+    stop();
+    act(() => fake.state.emit(map, 'render'));
+    expect(heard).toHaveBeenCalledTimes(2);
+    expect(ref.current.frameMeter()).toMatchObject({ frames: 3, renderer: null, aircraft: expect.any(Number) });
+    expect(ref.current.frameMeter().aircraft).toBeGreaterThan(0);
+
+    // Hidden by default; Ctrl+Alt+F anywhere on the page shows it with its Spanish words, and hides it again.
+    expect(screen.queryByTestId('occ-frame-meter')).toBeNull();
+    fireEvent.keyDown(window, { key: 'f', code: 'KeyF', ctrlKey: true });
+    expect(screen.queryByTestId('occ-frame-meter')).toBeNull();
+    fireEvent.keyDown(window, { key: 'f', code: 'KeyF', ctrlKey: true, altKey: true });
+    const meter = screen.getByTestId('occ-frame-meter');
+    expect(within(meter).getByText('Medidor de cuadros')).toBeTruthy();
+    expect(within(meter).getByText('Cuadros por segundo')).toBeTruthy();
+    expect(within(meter).getByText('Cuadro p95')).toBeTruthy();
+    expect(within(meter).getByText('Aviones dibujados')).toBeTruthy();
+    expect(meter.querySelector('[data-frame-meter="renderer"]').textContent).toBe('GPU: desconocida');
+    fireEvent.keyDown(window, { key: 'f', code: 'KeyF', ctrlKey: true, altKey: true });
+    expect(screen.queryByTestId('occ-frame-meter')).toBeNull();
+  });
+
   it('writes the GeoJSON at most twice a second while the layer animates the traffic; the keyframes carry the rest', async () => {
     hoisted.createCanvas = fakeCanvas;
     vi.stubGlobal('Path2D', class Path2D {});

@@ -77,6 +77,7 @@ const stateKey = (source, id) => `${source}\u0000${typeof id}:${String(id)}`;
  * @param {(camera: object, details: { byUser: boolean }) => void} [options.onCamera] after every move.
  * @param {() => void} [options.onIdle] after every frame MapLibre draws with nothing left to load, place or move (its
  *   `idle` event): what renderedFeatures answers is then final, as the tiles of a new zoom have loaded.
+ * @param {() => void} [options.onRender] after every frame MapLibre draws (its `render` event; PR M2: the frame meter).
  * @param {() => void} [options.onResize] after MapLibre has resized the map to its container (the fitted zooms change).
  * @param {(event: object) => void} [options.onClick] `{ point, lngLat, hit }`, `hit` as pickAt answers.
  * @param {(event: object|null) => void} [options.onPointerMove] the same while the pointer moves, `null` when it
@@ -87,7 +88,7 @@ const stateKey = (source, id) => `${source}\u0000${typeof id}:${String(id)}`;
  */
 export function createMapEngine({
   maplibre, host, style, camera, interactive = true, attribution, imageResolver, mapOptions,
-  onStatus, onCamera, onIdle, onResize, onClick, onPointerMove, onUserGesture,
+  onStatus, onCamera, onIdle, onRender, onResize, onClick, onPointerMove, onUserGesture,
 } = {}) {
   if (!maplibre) throw new TypeError('createMapEngine needs the maplibre-gl module');
   if (!host?.ownerDocument) throw new TypeError('createMapEngine needs a host element');
@@ -404,6 +405,7 @@ export function createMapEngine({
       onCamera?.(readCamera(), { byUser: Boolean(event?.originalEvent) });
     });
     if (onIdle) listen('idle', () => onIdle());
+    if (onRender) listen('render', () => onRender());
     if (onResize) listen('resize', () => onResize());
     if (onClick) listen('click', event => onClick(pointerEvent(event)));
     if (onPointerMove) {
@@ -706,6 +708,20 @@ export function createMapEngine({
       whenStyleReady(() => {
         if (map.getLayer(id)) map.removeLayer(id);
       });
+    },
+
+    /**
+     * The GPU the map draws with (PR M2: the frame meter and the visual suite's GPU runs), `{ renderer, vendor }` as
+     * WebGL reports them (unmasked where the browser allows it), or null without a map or a context.
+     */
+    rendererInfo() {
+      if (!live()) return null;
+      const gl = map.painter?.context?.gl ?? null;
+      if (!gl || typeof gl.getParameter !== 'function') return null;
+      const debug = typeof gl.getExtension === 'function' ? gl.getExtension('WEBGL_debug_renderer_info') : null;
+      const renderer = gl.getParameter(debug ? debug.UNMASKED_RENDERER_WEBGL : gl.RENDERER);
+      const vendor = gl.getParameter(debug ? debug.UNMASKED_VENDOR_WEBGL : gl.VENDOR);
+      return { renderer: typeof renderer === 'string' ? renderer : null, vendor: typeof vendor === 'string' ? vendor : null };
     },
 
     /** The pixel ratio the map draws at, or null without a map (PR M7: the 3D governor lowers it). */

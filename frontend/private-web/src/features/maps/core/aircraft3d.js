@@ -280,7 +280,8 @@ export function createGovernor({ limits = GOVERNOR, following = false } = {}) {
  * - `setFollowing(on)`, `pause()` and `resume()` («Volver a 3D»), `state()` → `{ enabled, status, notice, level,
  *   follow }` (status `off` · `idle` · `loading` · `ready` · `failed` · `paused`; notice `null` · `failed` · `paused`;
  *   follow, the followed aircraft's 3D: `off` without one, `loading`, `ready`, or `failed` when the browser cannot draw
- *   3D, so the map says it shows it in 2D), `stats()` (the layer's, or null) and `dispose()`.
+ *   3D, so the map says it shows it in 2D), `stats()` (the layer's, or null) and `dispose()`; PR M2: `framePosition(id)`
+ *   and `framedCount()`, what the last animated frame drew.
  * - PR M2: `animate` (with `frameTime()`, the frame loop's instant, and `frameZone()`, the area in sight and its margin)
  *   lets `plan({ …, animation: { keyframes }, parkedIds })` hand the layer the keyframes of a write of moving traffic: the
  *   layer then draws every aircraft each frame, in 2D too, and `plan` answers all their ids; `animating()` says whether
@@ -329,6 +330,9 @@ export function createAircraft3dController({
   let animation = null;
   let spritesFailed = false;
   let frameCache = null;
+  // The aircraft the layer's last animated frame drew, by id, where it drew them (PR M2: the frame meter and the visual
+  // suite read the positions on screen, not those of the last write).
+  let frameDrawn = new Map();
 
   const changed = () => {
     if (!disposed) onChange?.();
@@ -639,6 +643,7 @@ export function createAircraft3dController({
     // At rest the layer lays the tags out once more where the aircraft stopped.
     labels.rest = !moving;
     revision += 1;
+    frameDrawn = new Map(items.map(item => [item.id, item]));
     const answer = { revision, plan: models, detail, sprites, labels };
     frameCache = { animation, bearing, zoneKey, zoomKey, detail: current.detail, answer, rest: !moving };
     return answer;
@@ -825,6 +830,15 @@ export function createAircraft3dController({
     state: () => ({ enabled, status, notice, level: governor.level, follow: followStatus() }),
 
     stats: () => (layer === null || !added ? null : layer.stats()),
+
+    // PR M2: where the last animated frame drew an aircraft, `[lng, lat]`, or null (not animated, or not in that frame);
+    // `framedCount()` how many aircraft that frame drew (0 while the layer does not animate).
+    framePosition(id) {
+      if (!animating()) return null;
+      const item = frameDrawn.get(id);
+      return item === undefined ? null : [item.lon, item.lat];
+    },
+    framedCount: () => (animating() ? frameDrawn.size : 0),
 
     dispose() {
       if (disposed) return;

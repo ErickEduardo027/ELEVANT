@@ -53,6 +53,8 @@ import { createSimulatedSatelliteImagery } from '../useSatelliteImagery';
 // The 3D aircraft (PR M7): each scene opens in its own 2D or 3D (`pitchMode`), which the dock's control and D change
 // while it is open (never remembered, so every run opens the same); the governor stays off unless `?governor=on`, so a
 // slow software GPU never lightens a picture; and the handle adds aircraft3d(), the 3D's state and the governor's pause.
+// The perf runs on a real GPU (PR M2): the handle adds frameAt(id), where the last frame drew an aircraft, onRender, the
+// renderer and the frame meter's reading.
 
 /** On the root of the lab only: scripts/verify-map-chunks.mjs fails a production build whose chunks carry it. */
 export const MAP_LAB_MARKER = 'data-occ-map-lab';
@@ -269,6 +271,13 @@ function LabScene({ scene, basemap, frozenAt, governed = false }) {
       placing: () => (placingRef.current ? JSON.parse(JSON.stringify(placingRef.current)) : null),
       // Where the map's last traffic write drew an aircraft, as `[lng, lat]`, or null (the motion measurements, CN-18).
       drawnAt: id => mapRef.current?.drawnPosition?.(id) ?? null,
+      // PR M2 (the perf runs on a real GPU): where the last frame drew an aircraft (the animated layer's interpolated
+      // position), `onRender(listener)` at every frame MapLibre draws (answers the call that stops), the GPU WebGL
+      // reports (`{ renderer, vendor }`) and the reading of the map's frame meter.
+      frameAt: id => mapRef.current?.framePosition?.(id) ?? null,
+      onRender: listener => mapRef.current?.onRender?.(listener) ?? (() => {}),
+      renderer: () => mapRef.current?.rendererInfo?.() ?? null,
+      frameMeter: () => mapRef.current?.frameMeter?.() ?? null,
       // Where the scene's wind stands by the airfield (PR M8), as `[lng, lat]`, or null without weather.
       windAt: () => (scene.weather ? windPoint() : null),
       // The 3D aircraft (PR M7): `{ enabled, status, notice, level, stats, pause, resume }`, or null.
