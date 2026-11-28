@@ -197,6 +197,8 @@ export function parkedFromStands(stands = [], aircraft = [], parkedIds = NO_IDS)
       typeIcao: type,
       model: type,
       kind: 'aviam',
+      // M9 and PR M5: what names the airline of the aircraft parked there (its owner's callsign and codes, else the
+      // stand's flight), for the livery its model wears (aircraft/liveries.js); null where nothing names it.
       airlineIcao: owner?.airlineIcao ?? null,
       airlineIata: owner?.airlineIata ?? null,
       callsign: owner?.callsign ?? null,

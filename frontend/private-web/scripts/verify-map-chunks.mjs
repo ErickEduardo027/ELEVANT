@@ -12,6 +12,8 @@ import vm from 'node:vm';
 //   WebGLRenderer. A route's first load is what its client reference manifest
 //   (.next/server/app/**/page_client-reference-manifest.js) names for it, with the root main files and the polyfills
 //   of .next/build-manifest.json. three's own messages and properties name the renderer, so minifying keeps the word.
+// - PR M5: three's GLTFLoader (the types' 3D models) travels in that same async chunk: no first-load chunk may carry
+//   it either, and its own warnings ('THREE.GLTFLoader: ...') keep its name through minifying.
 
 const projectRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 
@@ -23,6 +25,12 @@ export const BUILT_ROOTS = Object.freeze(['.next/static', '.next/server']);
 
 /** The word of three's renderer that no first-load chunk may carry. */
 export const THREE_NEEDLE = 'WebGLRenderer';
+
+/** The words of three's GLTFLoader (PR M5), which travels with three: no first-load chunk may carry it either. */
+export const GLTF_NEEDLE = 'THREE.GLTFLoader';
+
+/** What no first-load chunk may carry: three's renderer and its glTF loader. */
+export const FIRST_LOAD_NEEDLES = Object.freeze([THREE_NEEDLE, GLTF_NEEDLE]);
 
 const CLIENT_MANIFEST = 'page_client-reference-manifest.js';
 
@@ -70,10 +78,14 @@ export function firstLoadChunks({ rscManifests = [], buildManifest = {} } = {}) 
   return [...files].sort();
 }
 
-/** Of the `firstLoad` files, those whose source (`sources`: a Map or `[{ file, source }]`) carries the needle. */
-export function findThreeInFirstLoad(sources, firstLoad, needle = THREE_NEEDLE) {
+/**
+ * Of the `firstLoad` files, those whose source (`sources`: a Map or `[{ file, source }]`) carries one of the needles
+ * (a word or a list of words: FIRST_LOAD_NEEDLES by default).
+ */
+export function findThreeInFirstLoad(sources, firstLoad, needles = FIRST_LOAD_NEEDLES) {
+  const words = typeof needles === 'string' ? [needles] : needles;
   const byFile = sources instanceof Map ? sources : new Map(sources.map(({ file, source }) => [file, source]));
-  return firstLoad.filter(file => byFile.get(file)?.includes(needle) === true);
+  return firstLoad.filter(file => words.some(word => byFile.get(file)?.includes(word) === true));
 }
 
 async function scriptFiles(directory) {
@@ -119,16 +131,23 @@ export async function checkThreeFirstLoad(nextDir, { requireThree = true } = {})
     .map(({ route, files }) => ({ route, files: findThreeInFirstLoad(sources, files) }))
     .filter(({ files }) => files.length > 0);
   if (carrying.length > 0) {
-    throw new Error(`three's ${THREE_NEEDLE} reached the first load of ${carrying.map(({ route, files }) => `${route} (${files.join(', ')})`).join('; ')}`);
+    const found = FIRST_LOAD_NEEDLES.filter(word => carrying.some(({ files }) => files.some(file => sources.get(file).includes(word))));
+    throw new Error(`three's ${found.join(' and ')} reached the first load of ${carrying.map(({ route, files }) => `${route} (${files.join(', ')})`).join('; ')}`);
   }
   let threeChunks = 0;
+  let gltfChunks = 0;
   for (const file of await scriptFiles(path.join(nextDir, 'static'))) {
-    if ((await readFile(file, 'utf8')).includes(THREE_NEEDLE)) threeChunks += 1;
+    const source = await readFile(file, 'utf8');
+    if (source.includes(THREE_NEEDLE)) threeChunks += 1;
+    if (source.includes(GLTF_NEEDLE)) gltfChunks += 1;
   }
   // OccMap loads the 3D chunk (PR M7): a build without it lost the 3D aircraft, or bundled three where the needle no
-  // longer finds it.
+  // longer finds it. PR M5: the chunk carries the GLTFLoader of the types' models too.
   if (requireThree && threeChunks === 0) {
     throw new Error(`No built browser chunk carries three's ${THREE_NEEDLE}: the 3D aircraft chunk is missing.`);
+  }
+  if (requireThree && gltfChunks === 0) {
+    throw new Error(`No built browser chunk carries three's GLTFLoader (${GLTF_NEEDLE}): the 3D models' loader is missing.`);
   }
   return { routes: routes.length, firstLoad: firstLoad.length, threeChunks };
 }

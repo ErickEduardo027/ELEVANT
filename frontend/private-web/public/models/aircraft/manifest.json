@@ -1,0 +1,1636 @@
+{
+  "description": "Modelos 3D de aviones de los mapas del OCC (M5). Generado por scripts/models/build-aircraft-models.mjs: no se edita a mano.",
+  "generator": "ELEVANT scripts/models/build-aircraft-models.mjs (glTF-Transform 4.5.1, meshoptimizer 1.2.0)",
+  "changeDate": "2026-11-27",
+  "frame": "x a la derecha, y hacia la nariz, z arriba, metros; centrado en la envergadura y la longitud; suelo en z = 0 (sin tren: hasGear false)",
+  "format": "glTF 2.0 (.gltf + .bin), KHR_mesh_quantization, sin texturas",
+  "levels": {
+    "l2": "avión seguido, hasta 60 000 triángulos",
+    "l1": "cercanos y estacionados, hasta 15 000 triángulos, una primitiva"
+  },
+  "totalBytes": 12571589,
+  "types": {
+    "A20N": {
+      "name": "Airbus A320neo",
+      "proxy": true,
+      "base": "A320",
+      "licence": "GPL-2.0-only",
+      "hasGear": false,
+      "files": {
+        "l2": [
+          {
+            "file": "l2.gltf",
+            "bytes": 4541,
+            "sha256": "34e30319806423c13dff2082cc4ad9fb3d134f8c3645c20723afa217f2176008"
+          },
+          {
+            "file": "l2.bin",
+            "bytes": 417720,
+            "sha256": "433a6247f0bcd9685fd9f22df1cbffa17283e64dcc541ef24772cfe24881dfaf"
+          }
+        ],
+        "l1": [
+          {
+            "file": "l1.gltf",
+            "bytes": 2242,
+            "sha256": "b48af4b51d46a3529389f15ee66323419421714bc8f5e6565f98ea7d42c91b0f"
+          },
+          {
+            "file": "l1.bin",
+            "bytes": 245184,
+            "sha256": "5f4b478cce86629ae543ac408b58bcd925e6f16c62f99c7f94a754a648dd5796"
+          }
+        ],
+        "notices": [
+          "LICENSE",
+          "NOTICE.md",
+          "SOURCE.md"
+        ]
+      },
+      "triangles": {
+        "l2": 23056,
+        "l1": 12522
+      },
+      "dimensionsM": {
+        "length": 37.57,
+        "span": 35.87,
+        "height": 11.89,
+        "lowest": 0.3
+      },
+      "groundClearanceM": 0.3,
+      "sources": [
+        "fam/a320/glTF2/A320.glb",
+        "fam/a320/COPYING"
+      ],
+      "credit": {
+        "baseName": "Airbus A320",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/a320/glTF2/A320.glb",
+        "upstream": "FGMEMBERS/A320-family",
+        "upstreamUrl": "https://github.com/FGMEMBERS/A320-family"
+      },
+      "changes": [
+        "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+X».",
+        "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
+        "Escalado ×0.9817 a la longitud del A320 (37,57 m).",
+        "Envergadura llevada de 33,29 a 34,10 m fuera del fuselaje (alas, motores y estabilizador).",
+        "Góndola izquierda de Ø 2,26 a Ø 2,60 m y alargada ×1.12 (15 piezas; forma estimada).",
+        "Góndola derecha de Ø 2,26 a Ø 2,60 m y alargada ×1.12 (15 piezas; forma estimada).",
+        "Añadidos sharklets procedurales (forma estimada): envergadura de 34,10 a 35,80 m.",
+        "Centrado en la envergadura y la longitud y elevado: la parte más baja queda a 0,30 m del suelo (z = 0) y la deriva a 11,89 m (11,76 m publicados); el tren lo dibuja la app (est.).",
+        "Normales recalculadas con el ángulo de pliegue de cada pieza; vértices soldados y cuantizados con KHR_mesh_quantization; materiales unificados en tres clases (cuerpo, vidrio, oscuro) de doble cara.",
+        "L1 simplificado con meshoptimizer de 23056 a 12522 triángulos (ratio 0.54, error relativo 0.0003), en una primitiva."
+      ]
+    },
+    "A21N": {
+      "name": "Airbus A321neo",
+      "proxy": true,
+      "base": "A321",
+      "licence": "GPL-2.0-only",
+      "hasGear": false,
+      "files": {
+        "l2": [
+          {
+            "file": "l2.gltf",
+            "bytes": 4533,
+            "sha256": "724b9b07bd153ea4718697afb9e8fbe947ef3eb0d24ea41552732be810b1d0ea"
+          },
+          {
+            "file": "l2.bin",
+            "bytes": 457128,
+            "sha256": "f52a42dec7800c3f94d670751df5d918723834b512e5569160ba2f9239e56ad8"
+          }
+        ],
+        "l1": [
+          {
+            "file": "l1.gltf",
+            "bytes": 2239,
+            "sha256": "d4ab6e5c587580945c126afcd81f756fcaab8f8a4b19cd2d33a930634e495572"
+          },
+          {
+            "file": "l1.bin",
+            "bytes": 269520,
+            "sha256": "22978e543e973eef001a84aed43fc4a3c8d891c3e29cef171aaec679f150a42b"
+          }
+        ],
+        "notices": [
+          "LICENSE",
+          "NOTICE.md",
+          "SOURCE.md"
+        ]
+      },
+      "triangles": {
+        "l2": 25550,
+        "l1": 13856
+      },
+      "dimensionsM": {
+        "length": 44.51,
+        "span": 35.87,
+        "height": 11.86,
+        "lowest": 0.3
+      },
+      "groundClearanceM": 0.3,
+      "sources": [
+        "fam/a320/glTF2/A321.glb",
+        "fam/a320/COPYING"
+      ],
+      "credit": {
+        "baseName": "Airbus A321",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/a320/glTF2/A321.glb",
+        "upstream": "FGMEMBERS/A320-family",
+        "upstreamUrl": "https://github.com/FGMEMBERS/A320-family"
+      },
+      "changes": [
+        "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+Z».",
+        "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
+        "Escalado ×0.9998 a la longitud del A321 (44,51 m).",
+        "Góndola izquierda de Ø 2,30 a Ø 2,65 m y alargada ×1.12 (14 piezas; forma estimada).",
+        "Góndola derecha de Ø 2,30 a Ø 2,65 m y alargada ×1.12 (14 piezas; forma estimada).",
+        "Añadidos sharklets procedurales (forma estimada): envergadura de 33,90 a 35,80 m.",
+        "Centrado en la envergadura y la longitud y elevado: la parte más baja queda a 0,30 m del suelo (z = 0) y la deriva a 11,86 m (11,76 m publicados); el tren lo dibuja la app (est.).",
+        "Normales recalculadas con el ángulo de pliegue de cada pieza; vértices soldados y cuantizados con KHR_mesh_quantization; materiales unificados en tres clases (cuerpo, vidrio, oscuro) de doble cara.",
+        "L1 simplificado con meshoptimizer de 25550 a 13856 triángulos (ratio 0.54, error relativo 0.0002), en una primitiva."
+      ]
+    },
+    "A319": {
+      "name": "Airbus A319",
+      "proxy": false,
+      "base": "A319",
+      "licence": "GPL-2.0-only",
+      "hasGear": false,
+      "files": {
+        "l2": [
+          {
+            "file": "l2.gltf",
+            "bytes": 4545,
+            "sha256": "0209388735cab9da7234cda29f53249ada1392a86af8425fd0fc91d88fe9b802"
+          },
+          {
+            "file": "l2.bin",
+            "bytes": 403820,
+            "sha256": "646eb8a4e23944f9e599ff92bf3ebe18c76dfcd037d33a9017bd9444050c2d17"
+          }
+        ],
+        "l1": [
+          {
+            "file": "l1.gltf",
+            "bytes": 2238,
+            "sha256": "d29fdebf6e303027b4bcbe80ca60b3ce5064f2561e0bf132b4f5daa756aa5971"
+          },
+          {
+            "file": "l1.bin",
+            "bytes": 236588,
+            "sha256": "a4ccd7558fc3e6b668aaa054c589def45c163210df7f141596145a01af6a854f"
+          }
+        ],
+        "notices": [
+          "LICENSE",
+          "NOTICE.md",
+          "SOURCE.md"
+        ]
+      },
+      "triangles": {
+        "l2": 22245,
+        "l1": 12133
+      },
+      "dimensionsM": {
+        "length": 33.84,
+        "span": 35.87,
+        "height": 11.93,
+        "lowest": 0.3
+      },
+      "groundClearanceM": 0.3,
+      "sources": [
+        "fam/a320/glTF2/A319.glb",
+        "fam/a320/COPYING"
+      ],
+      "credit": {
+        "baseName": "Airbus A319",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/a320/glTF2/A319.glb",
+        "upstream": "FGMEMBERS/A320-family",
+        "upstreamUrl": "https://github.com/FGMEMBERS/A320-family"
+      },
+      "changes": [
+        "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+Z».",
+        "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
+        "Escalado ×0.9985 a la longitud del A319 (33,84 m).",
+        "Añadidos sharklets procedurales (forma estimada): envergadura de 33,86 a 35,80 m.",
+        "Centrado en la envergadura y la longitud y elevado: la parte más baja queda a 0,30 m del suelo (z = 0) y la deriva a 11,93 m (11,76 m publicados); el tren lo dibuja la app (est.).",
+        "Normales recalculadas con el ángulo de pliegue de cada pieza; vértices soldados y cuantizados con KHR_mesh_quantization; materiales unificados en tres clases (cuerpo, vidrio, oscuro) de doble cara.",
+        "L1 simplificado con meshoptimizer de 22245 a 12133 triángulos (ratio 0.55, error relativo 0.0003), en una primitiva."
+      ]
+    },
+    "A320": {
+      "name": "Airbus A320",
+      "proxy": false,
+      "base": "A320",
+      "licence": "GPL-2.0-only",
+      "hasGear": false,
+      "files": {
+        "l2": [
+          {
+            "file": "l2.gltf",
+            "bytes": 4539,
+            "sha256": "cf32097e3e65d1ff9a22482da5dbec11bc75379b203fad4085e2e91045d8306c"
+          },
+          {
+            "file": "l2.bin",
+            "bytes": 418248,
+            "sha256": "75acd119bc41145d91deeccd59b0b113c2b95e27cbe015955287e710a0deee98"
+          }
+        ],
+        "l1": [
+          {
+            "file": "l1.gltf",
+            "bytes": 2240,
+            "sha256": "70c98cfd92951d9826805de7514aa258952714f588652d3929a4cf5c09366a14"
+          },
+          {
+            "file": "l1.bin",
+            "bytes": 246276,
+            "sha256": "6d314a9ce8db833be9917d54490ab30e5a7fa7d6ce7c1785f329696dc5eab82d"
+          }
+        ],
+        "notices": [
+          "LICENSE",
+          "NOTICE.md",
+          "SOURCE.md"
+        ]
+      },
+      "triangles": {
+        "l2": 23056,
+        "l1": 12512
+      },
+      "dimensionsM": {
+        "length": 37.57,
+        "span": 35.87,
+        "height": 11.76,
+        "lowest": 0.34
+      },
+      "groundClearanceM": 0.34,
+      "sources": [
+        "fam/a320/glTF2/A320.glb",
+        "fam/a320/COPYING"
+      ],
+      "credit": {
+        "baseName": "Airbus A320",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/a320/glTF2/A320.glb",
+        "upstream": "FGMEMBERS/A320-family",
+        "upstreamUrl": "https://github.com/FGMEMBERS/A320-family"
+      },
+      "changes": [
+        "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+X».",
+        "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
+        "Escalado ×0.9817 a la longitud del A320 (37,57 m).",
+        "Envergadura llevada de 33,29 a 34,10 m fuera del fuselaje (alas, motores y estabilizador).",
+        "Añadidos sharklets procedurales (forma estimada): envergadura de 34,10 a 35,80 m.",
+        "Centrado en la envergadura y la longitud y elevado: la parte más baja queda a 0,34 m del suelo (z = 0) y la deriva a 11,76 m (11,76 m publicados); el tren lo dibuja la app (est.).",
+        "Normales recalculadas con el ángulo de pliegue de cada pieza; vértices soldados y cuantizados con KHR_mesh_quantization; materiales unificados en tres clases (cuerpo, vidrio, oscuro) de doble cara.",
+        "L1 simplificado con meshoptimizer de 23056 a 12512 triángulos (ratio 0.54, error relativo 0.0003), en una primitiva."
+      ]
+    },
+    "A321": {
+      "name": "Airbus A321",
+      "proxy": false,
+      "base": "A321",
+      "licence": "GPL-2.0-only",
+      "hasGear": false,
+      "files": {
+        "l2": [
+          {
+            "file": "l2.gltf",
+            "bytes": 4535,
+            "sha256": "a8ba6806da35e947cd80f55fd641191168e41e4ca4655b65f60dbb4e4c3705c5"
+          },
+          {
+            "file": "l2.bin",
+            "bytes": 457056,
+            "sha256": "0a32766c0f47e4e7dcd067ee04f9f60a805e755e86bb8d807409c24871feb86c"
+          }
+        ],
+        "l1": [
+          {
+            "file": "l1.gltf",
+            "bytes": 2214,
+            "sha256": "04423cd8312ccd0cfd721d392dfddbc7b118197938dc3ae0c6f68f0fbc0f2066"
+          },
+          {
+            "file": "l1.bin",
+            "bytes": 270216,
+            "sha256": "579be48ebfdfb6e7966606398212495b71ee2fb80fed83e41c5b620797a05831"
+          }
+        ],
+        "notices": [
+          "LICENSE",
+          "NOTICE.md",
+          "SOURCE.md"
+        ]
+      },
+      "triangles": {
+        "l2": 25550,
+        "l1": 13904
+      },
+      "dimensionsM": {
+        "length": 44.51,
+        "span": 35.87,
+        "height": 11.76,
+        "lowest": 0.37
+      },
+      "groundClearanceM": 0.37,
+      "sources": [
+        "fam/a320/glTF2/A321.glb",
+        "fam/a320/COPYING"
+      ],
+      "credit": {
+        "baseName": "Airbus A321",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/a320/glTF2/A321.glb",
+        "upstream": "FGMEMBERS/A320-family",
+        "upstreamUrl": "https://github.com/FGMEMBERS/A320-family"
+      },
+      "changes": [
+        "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+Z».",
+        "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
+        "Escalado ×0.9998 a la longitud del A321 (44,51 m).",
+        "Añadidos sharklets procedurales (forma estimada): envergadura de 33,90 a 35,80 m.",
+        "Centrado en la envergadura y la longitud y elevado: la parte más baja queda a 0,37 m del suelo (z = 0) y la deriva a 11,76 m (11,76 m publicados); el tren lo dibuja la app (est.).",
+        "Normales recalculadas con el ángulo de pliegue de cada pieza; vértices soldados y cuantizados con KHR_mesh_quantization; materiales unificados en tres clases (cuerpo, vidrio, oscuro) de doble cara.",
+        "L1 simplificado con meshoptimizer de 25550 a 13904 triángulos (ratio 0.54, error relativo 0.0002), en una primitiva."
+      ]
+    },
+    "A332": {
+      "name": "Airbus A330-200",
+      "proxy": false,
+      "base": "A332",
+      "licence": "GPL-2.0-only",
+      "hasGear": false,
+      "files": {
+        "l2": [
+          {
+            "file": "l2.gltf",
+            "bytes": 4528,
+            "sha256": "510c17b9af45b3c896b2786b9e41c43984dd16cbf2e0c91eb7689f69345eaae6"
+          },
+          {
+            "file": "l2.bin",
+            "bytes": 310216,
+            "sha256": "3cffdad0ea1abe70ff23f586c65c72be222f6c85f7717169acb636608aef472f"
+          }
+        ],
+        "l1": [
+          {
+            "file": "l1.gltf",
+            "bytes": 2238,
+            "sha256": "bc1656a564d62dd6c383edac4ef19d0fa2f379fe8fcf44d7c836ec868f31f4a2"
+          },
+          {
+            "file": "l1.bin",
+            "bytes": 183584,
+            "sha256": "c9e8d94d4cffa233f0dbaef8f825ed46f65d72c9116909c7ffeb4669ca814d50"
+          }
+        ],
+        "notices": [
+          "LICENSE",
+          "NOTICE.md",
+          "SOURCE.md"
+        ]
+      },
+      "triangles": {
+        "l2": 17648,
+        "l1": 9701
+      },
+      "dimensionsM": {
+        "length": 58.82,
+        "span": 60.39,
+        "height": 17.36,
+        "lowest": 1.1
+      },
+      "groundClearanceM": 1.1,
+      "sources": [
+        "fam/a332/glTF2/A332.glb",
+        "fam/a332/COPYING"
+      ],
+      "credit": {
+        "baseName": "Airbus A330-200",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/a332/glTF2/A332.glb",
+        "upstream": "FGMEMBERS/A330-200",
+        "upstreamUrl": "https://github.com/FGMEMBERS/A330-200"
+      },
+      "changes": [
+        "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+Z».",
+        "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
+        "Quitadas 4 piezas (380 triángulos): land-light-l, land-light-r, pw.nacelle0_, pw.nacelle0_.001.",
+        "Escalado ×1.0079 a la longitud del A332 (58,82 m).",
+        "Centrado en la envergadura y la longitud y elevado: la parte más baja queda a 1,10 m del suelo (z = 0) y la deriva a 17,36 m (17,39 m publicados); el tren lo dibuja la app (est.).",
+        "Normales recalculadas con el ángulo de pliegue de cada pieza; vértices soldados y cuantizados con KHR_mesh_quantization; materiales unificados en tres clases (cuerpo, vidrio, oscuro) de doble cara.",
+        "L1 simplificado con meshoptimizer de 17648 a 9701 triángulos (ratio 0.55, error relativo 0.0002), en una primitiva."
+      ]
+    },
+    "A333": {
+      "name": "Airbus A330-300",
+      "proxy": false,
+      "base": "A333",
+      "licence": "GPL-2.0-only",
+      "hasGear": false,
+      "files": {
+        "l2": [
+          {
+            "file": "l2.gltf",
+            "bytes": 3381,
+            "sha256": "099ab5c319416d6df3cc67bf02862e883c7861b6915d6047f1daef8bb74d9539"
+          },
+          {
+            "file": "l2.bin",
+            "bytes": 305004,
+            "sha256": "28b51d6af4579374f0b8a133d54ec375b34290823a9b7fcb04fb90f48029e103"
+          }
+        ],
+        "l1": [
+          {
+            "file": "l1.gltf",
+            "bytes": 2241,
+            "sha256": "7f362043179291784752d6bd71d2d6e9e3b261c059a9e280cffc3a0b43adf4bb"
+          },
+          {
+            "file": "l1.bin",
+            "bytes": 177924,
+            "sha256": "1874694b0eb90d332defb48539c3189bc95135bf911743b3717a14efca7353c9"
+          }
+        ],
+        "notices": [
+          "LICENSE",
+          "NOTICE.md",
+          "SOURCE.md"
+        ]
+      },
+      "triangles": {
+        "l2": 17372,
+        "l1": 9544
+      },
+      "dimensionsM": {
+        "length": 63.66,
+        "span": 60.49,
+        "height": 16.77,
+        "lowest": 1.1
+      },
+      "groundClearanceM": 1.1,
+      "sources": [
+        "fam/a333/glTF2/A333.glb",
+        "fam/a333/COPYING"
+      ],
+      "credit": {
+        "baseName": "Airbus A330-300",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/a333/glTF2/A333.glb",
+        "upstream": "FGMEMBERS/A330-300",
+        "upstreamUrl": "https://github.com/FGMEMBERS/A330-300"
+      },
+      "changes": [
+        "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+Z».",
+        "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
+        "Quitadas 6 piezas (604 triángulos): land-light-l, land-light-r, landing-l, landing-r, pw.nacelle0_, pw.nacelle0_.001.",
+        "Escalado ×1.0097 a la longitud del A333 (63,66 m).",
+        "Centrado en la envergadura y la longitud y elevado: la parte más baja queda a 1,10 m del suelo (z = 0) y la deriva a 16,77 m (16,79 m publicados); el tren lo dibuja la app (est.).",
+        "Normales recalculadas con el ángulo de pliegue de cada pieza; vértices soldados y cuantizados con KHR_mesh_quantization; materiales unificados en tres clases (cuerpo, vidrio, oscuro) de doble cara.",
+        "L1 simplificado con meshoptimizer de 17366 a 9544 triángulos (ratio 0.55, error relativo 0.0002), en una primitiva."
+      ]
+    },
+    "A339": {
+      "name": "Airbus A330-900",
+      "proxy": true,
+      "base": "A333",
+      "licence": "GPL-2.0-only",
+      "hasGear": false,
+      "files": {
+        "l2": [
+          {
+            "file": "l2.gltf",
+            "bytes": 3381,
+            "sha256": "40bc0915608422bce4c82cdbda726c3504146eb2ca0950f015ac69b10940f900"
+          },
+          {
+            "file": "l2.bin",
+            "bytes": 310260,
+            "sha256": "5cc1316de2cfee74c21c4be477d9a76765b27fc288769a2e2c22882085ca681c"
+          }
+        ],
+        "l1": [
+          {
+            "file": "l1.gltf",
+            "bytes": 2220,
+            "sha256": "7361e3fa46a02c9ea0fe4fa9c7647537c1f0f6e8a2890a129a4c7ff4e5bef4c3"
+          },
+          {
+            "file": "l1.bin",
+            "bytes": 180380,
+            "sha256": "01b4afb70e8d07e271364ab33da0d70e7b5d3bedca969530e97e4b944f7bcec8"
+          }
+        ],
+        "notices": [
+          "LICENSE",
+          "NOTICE.md",
+          "SOURCE.md"
+        ]
+      },
+      "triangles": {
+        "l2": 17702,
+        "l1": 9721
+      },
+      "dimensionsM": {
+        "length": 63.66,
+        "span": 64.04,
+        "height": 16.79,
+        "lowest": 0.9
+      },
+      "groundClearanceM": 0.9,
+      "sources": [
+        "fam/a333/glTF2/A333.glb",
+        "fam/a333/COPYING"
+      ],
+      "credit": {
+        "baseName": "Airbus A330-300",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/a333/glTF2/A333.glb",
+        "upstream": "FGMEMBERS/A330-300",
+        "upstreamUrl": "https://github.com/FGMEMBERS/A330-300"
+      },
+      "changes": [
+        "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+Z».",
+        "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
+        "Quitadas 6 piezas (604 triángulos): land-light-l, land-light-r, landing-l, landing-r, pw.nacelle0_, pw.nacelle0_.001.",
+        "Escalado ×1.0097 a la longitud del A333 (63,66 m).",
+        "Góndola izquierda de Ø 3,43 a Ø 3,89 m y alargada ×1.08 (9 piezas; forma estimada).",
+        "Góndola derecha de Ø 3,43 a Ø 3,89 m y alargada ×1.08 (9 piezas; forma estimada).",
+        "Añadidos sharklets procedurales (forma estimada): envergadura de 60,49 a 64,00 m.",
+        "Centrado en la envergadura y la longitud y elevado: la parte más baja queda a 0,90 m del suelo (z = 0) y la deriva a 16,79 m (16,79 m publicados); el tren lo dibuja la app (est.).",
+        "Normales recalculadas con el ángulo de pliegue de cada pieza; vértices soldados y cuantizados con KHR_mesh_quantization; materiales unificados en tres clases (cuerpo, vidrio, oscuro) de doble cara.",
+        "L1 simplificado con meshoptimizer de 17692 a 9721 triángulos (ratio 0.55, error relativo 0.0002), en una primitiva."
+      ]
+    },
+    "AT76": {
+      "name": "ATR 72-600",
+      "proxy": false,
+      "base": "AT76",
+      "licence": "GPL-3.0-only",
+      "hasGear": false,
+      "files": {
+        "l2": [
+          {
+            "file": "l2.gltf",
+            "bytes": 3379,
+            "sha256": "ff7b16bb5041449213e8477864d2ae1c425f9b04a1d3f723acdc0c0736a03f8d"
+          },
+          {
+            "file": "l2.bin",
+            "bytes": 451044,
+            "sha256": "2d578a74b3c32fb7e961838c1be0e721b710028b1adf441e7bd502b6eb1b5d75"
+          }
+        ],
+        "l1": [
+          {
+            "file": "l1.gltf",
+            "bytes": 2220,
+            "sha256": "32003ee28942017ca1b5188c697792255f9cc18c0e1d62b4045f0391ea362cbe"
+          },
+          {
+            "file": "l1.bin",
+            "bytes": 280596,
+            "sha256": "97aa8157b46d77a9de2c28dddda8ec9f448edffbf92fcf9794bc1c0437a6b660"
+          }
+        ],
+        "notices": [
+          "LICENSE",
+          "NOTICE.md",
+          "SOURCE.md"
+        ]
+      },
+      "triangles": {
+        "l2": 24882,
+        "l1": 13676
+      },
+      "dimensionsM": {
+        "length": 27.17,
+        "span": 26.75,
+        "height": 7.55,
+        "lowest": 0.7
+      },
+      "groundClearanceM": 0.7,
+      "sources": [
+        "fam/atr72/glTF2/AT75.glb",
+        "fam/atr72/LICENCE.txt"
+      ],
+      "credit": {
+        "baseName": "ATR 72-500 (por el ATR 72-600)",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/atr72/glTF2/AT75.glb",
+        "upstream": "FlightGear ATR 72-500 (FGMEMBERS), según el README de FlightAirMap",
+        "upstreamUrl": null
+      },
+      "changes": [
+        "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+Z».",
+        "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
+        "Quitadas 4 piezas (624 triángulos): lpropblur, nav0, nav1, rpropblur.",
+        "Escalado ×0.9920 a la longitud del AT76 (27,17 m).",
+        "Centrado en la envergadura y la longitud y elevado: la parte más baja queda a 0,70 m del suelo (z = 0) y la deriva a 7,55 m (7,65 m publicados); el tren lo dibuja la app (est.).",
+        "Normales recalculadas con el ángulo de pliegue de cada pieza; vértices soldados y cuantizados con KHR_mesh_quantization; materiales unificados en tres clases (cuerpo, vidrio, oscuro) de doble cara.",
+        "L1 simplificado con meshoptimizer de 24865 a 13676 triángulos (ratio 0.55, error relativo 0.0002), en una primitiva."
+      ]
+    },
+    "B38M": {
+      "name": "Boeing 737 MAX 8",
+      "proxy": true,
+      "base": "B39M",
+      "licence": "GPL-2.0-only",
+      "hasGear": false,
+      "files": {
+        "l2": [
+          {
+            "file": "l2.gltf",
+            "bytes": 4538,
+            "sha256": "36b08e17cfb16cdbe251a2c3d7457d4589e45a9afaa9b96ee563bd97a03398c6"
+          },
+          {
+            "file": "l2.bin",
+            "bytes": 512456,
+            "sha256": "b73e0c7109ac676efd45c88c3a5975d0deb950769ef31d016db314463b69a5e2"
+          }
+        ],
+        "l1": [
+          {
+            "file": "l1.gltf",
+            "bytes": 2220,
+            "sha256": "36ca8bf3a6ebdbbeef675d81703d2b8da01f5b8ff935a4a366022ecbcdcb56a6"
+          },
+          {
+            "file": "l1.bin",
+            "bytes": 306192,
+            "sha256": "18a57fcf4828f24eff64ab7c27d4f1a4ad33913e30d6ee30c31c170cfce231c9"
+          }
+        ],
+        "notices": [
+          "LICENSE",
+          "NOTICE.md",
+          "SOURCE.md"
+        ]
+      },
+      "triangles": {
+        "l2": 25983,
+        "l1": 14286
+      },
+      "dimensionsM": {
+        "length": 39.52,
+        "span": 36.25,
+        "height": 12.33,
+        "lowest": 0.3
+      },
+      "groundClearanceM": 0.3,
+      "sources": [
+        "rexo/Models/737-9.ac",
+        "rexo/LICENSE"
+      ],
+      "credit": {
+        "baseName": "Boeing 737 MAX 9",
+        "authors": "REXO-77/737-MAX: Israel Emmanuel (naviat-dev), SP-NTX, Captain Jake, Semir Gebran (CaptB), Marsdolphin y otros; «Original model by omri_ha_muglob»",
+        "repository": "REXO-77/737-MAX",
+        "repositoryUrl": "https://github.com/REXO-77/737-MAX",
+        "commit": "fc4316a01c1ec488789725bb54ed2f454f931ac6",
+        "sourceUrl": "https://github.com/REXO-77/737-MAX/blob/fc4316a01c1ec488789725bb54ed2f454f931ac6/Models/737-9.ac",
+        "upstream": "REXO-77/737-MAX",
+        "upstreamUrl": "https://github.com/REXO-77/737-MAX"
+      },
+      "changes": [
+        "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose-X».",
+        "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
+        "Quitadas 61 piezas (17932 triángulos): beacon, interior.aft, interior.fwd, light.strobeA, light.strobeL, light.strobeR, lightning.elevatorL, lightning.elevatorR, lightning.rudder, lightning.vstab, lightning.wingL, lightning.wingR, lights.landing, mlg.armL1, mlg.armL2, mlg.armL3, mlg.armR1, mlg.armR2, mlg.armR3, mlg.axleL, mlg.axleR, mlg.coverL1, mlg.coverL2, mlg.coverL3, mlg.coverR1, mlg.coverR2, mlg.coverR3, mlg.coverarmL, mlg.coverarmR, mlg.lowerL, mlg.lowerR, mlg.scissorLL, mlg.scissorLR, mlg.scissorUL, mlg.scissorUR, mlg.tireL, mlg.tireR, mlg.upperL, mlg.upperR, nlg.arm, nlg.arm.001, nlg.arm.002, nlg.arm.003, nlg.axle, nlg.doorL, nlg.doorR, nlg.lower, nlg.scissorsL, nlg.scissorsU, nlg.tire, nlg.upper, overlay.cdoor.aftO, overlay.cdoor.fwd, overlay.doorAL, overlay.doorAR, overlay.doorFL, overlay.doorFR, overlay.engine1, overlay.engine2, overlay.engine3, overlay.fuse1.",
+        "Escalado ×1.0021 a la longitud del B39M (42,16 m).",
+        "Retirado un tramo de fuselaje de 1,07 m entre 24,75 y 30,25 m desde la nariz (sección constante; reparto estimado).",
+        "Retirado un tramo de fuselaje de 1,57 m entre 9,25 y 15,50 m desde la nariz (sección constante; reparto estimado).",
+        "Centrado en la envergadura y la longitud y elevado: la parte más baja queda a 0,30 m del suelo (z = 0) y la deriva a 12,33 m (12,29 m publicados); el tren lo dibuja la app (est.).",
+        "Normales recalculadas con el ángulo de pliegue de cada pieza; vértices soldados y cuantizados con KHR_mesh_quantization; materiales unificados en tres clases (cuerpo, vidrio, oscuro) de doble cara.",
+        "L1 simplificado con meshoptimizer de 25982 a 14286 triángulos (ratio 0.55, error relativo 0.0003), en una primitiva."
+      ]
+    },
+    "B39M": {
+      "name": "Boeing 737 MAX 9",
+      "proxy": false,
+      "base": "B39M",
+      "licence": "GPL-2.0-only",
+      "hasGear": false,
+      "files": {
+        "l2": [
+          {
+            "file": "l2.gltf",
+            "bytes": 4538,
+            "sha256": "27d504778fa78fbecb92a95260b47e35155554067d480d8767fadc8d0f46d01a"
+          },
+          {
+            "file": "l2.bin",
+            "bytes": 512336,
+            "sha256": "d0d9faf5bbb49bf9a4d43237d5100d7d17650e4c7407d936b8d1d49719cd4ed2"
+          }
+        ],
+        "l1": [
+          {
+            "file": "l1.gltf",
+            "bytes": 2241,
+            "sha256": "b94ee2c46bdd5273af712c7441c3e53940a038821fb7c2114793549926fe5eb1"
+          },
+          {
+            "file": "l1.bin",
+            "bytes": 307520,
+            "sha256": "02223fc5d00100291ba612b1f375c751b906ab32f7b1584f329904281a691e37"
+          }
+        ],
+        "notices": [
+          "LICENSE",
+          "NOTICE.md",
+          "SOURCE.md"
+        ]
+      },
+      "triangles": {
+        "l2": 25983,
+        "l1": 14285
+      },
+      "dimensionsM": {
+        "length": 42.16,
+        "span": 36.25,
+        "height": 12.33,
+        "lowest": 0.3
+      },
+      "groundClearanceM": 0.3,
+      "sources": [
+        "rexo/Models/737-9.ac",
+        "rexo/LICENSE"
+      ],
+      "credit": {
+        "baseName": "Boeing 737 MAX 9",
+        "authors": "REXO-77/737-MAX: Israel Emmanuel (naviat-dev), SP-NTX, Captain Jake, Semir Gebran (CaptB), Marsdolphin y otros; «Original model by omri_ha_muglob»",
+        "repository": "REXO-77/737-MAX",
+        "repositoryUrl": "https://github.com/REXO-77/737-MAX",
+        "commit": "fc4316a01c1ec488789725bb54ed2f454f931ac6",
+        "sourceUrl": "https://github.com/REXO-77/737-MAX/blob/fc4316a01c1ec488789725bb54ed2f454f931ac6/Models/737-9.ac",
+        "upstream": "REXO-77/737-MAX",
+        "upstreamUrl": "https://github.com/REXO-77/737-MAX"
+      },
+      "changes": [
+        "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose-X».",
+        "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
+        "Quitadas 61 piezas (17932 triángulos): beacon, interior.aft, interior.fwd, light.strobeA, light.strobeL, light.strobeR, lightning.elevatorL, lightning.elevatorR, lightning.rudder, lightning.vstab, lightning.wingL, lightning.wingR, lights.landing, mlg.armL1, mlg.armL2, mlg.armL3, mlg.armR1, mlg.armR2, mlg.armR3, mlg.axleL, mlg.axleR, mlg.coverL1, mlg.coverL2, mlg.coverL3, mlg.coverR1, mlg.coverR2, mlg.coverR3, mlg.coverarmL, mlg.coverarmR, mlg.lowerL, mlg.lowerR, mlg.scissorLL, mlg.scissorLR, mlg.scissorUL, mlg.scissorUR, mlg.tireL, mlg.tireR, mlg.upperL, mlg.upperR, nlg.arm, nlg.arm.001, nlg.arm.002, nlg.arm.003, nlg.axle, nlg.doorL, nlg.doorR, nlg.lower, nlg.scissorsL, nlg.scissorsU, nlg.tire, nlg.upper, overlay.cdoor.aftO, overlay.cdoor.fwd, overlay.doorAL, overlay.doorAR, overlay.doorFL, overlay.doorFR, overlay.engine1, overlay.engine2, overlay.engine3, overlay.fuse1.",
+        "Escalado ×1.0021 a la longitud del B39M (42,16 m).",
+        "Centrado en la envergadura y la longitud y elevado: la parte más baja queda a 0,30 m del suelo (z = 0) y la deriva a 12,33 m (12,29 m publicados); el tren lo dibuja la app (est.).",
+        "Normales recalculadas con el ángulo de pliegue de cada pieza; vértices soldados y cuantizados con KHR_mesh_quantization; materiales unificados en tres clases (cuerpo, vidrio, oscuro) de doble cara.",
+        "L1 simplificado con meshoptimizer de 25982 a 14285 triángulos (ratio 0.55, error relativo 0.0003), en una primitiva."
+      ]
+    },
+    "B737": {
+      "name": "Boeing 737-700",
+      "proxy": true,
+      "base": "B738",
+      "licence": "GPL-2.0-only",
+      "hasGear": false,
+      "files": {
+        "l2": [
+          {
+            "file": "l2.gltf",
+            "bytes": 4534,
+            "sha256": "5a77da90f7f586827e7e847e2d07772c5a844fa62c9cf0804cffcfc6dcef38ab"
+          },
+          {
+            "file": "l2.bin",
+            "bytes": 236940,
+            "sha256": "f63ee42bdccca10a768b30d473d1729afa2bfca39411e53a48f089375ba92ba0"
+          }
+        ],
+        "l1": [
+          {
+            "file": "l1.gltf",
+            "bytes": 2259,
+            "sha256": "b2681fb0a7794ab7efc1e9b68fb3adf1af82bfaded242b6c1bab33b25823adfb"
+          },
+          {
+            "file": "l1.bin",
+            "bytes": 143648,
+            "sha256": "b1a39d98353323dbdd0b64f75bec082eefab86effe473d1fc52497556e6e8857"
+          }
+        ],
+        "notices": [
+          "LICENSE",
+          "NOTICE.md",
+          "SOURCE.md"
+        ]
+      },
+      "triangles": {
+        "l2": 14230,
+        "l1": 7827
+      },
+      "dimensionsM": {
+        "length": 33.63,
+        "span": 35.74,
+        "height": 12.55,
+        "lowest": 0.42
+      },
+      "groundClearanceM": 0.42,
+      "sources": [
+        "mbr1376/models/gltf_v2/airplane/b738.glb",
+        "mbr1376/LICENSE"
+      ],
+      "credit": {
+        "baseName": "Boeing 737-800",
+        "authors": "Aleksei Kalmykov (kalmykov) / Flightradar24, repositorio fr24-3d-models; conversión a glTF 2.0 de mbr1376",
+        "repository": "mbr1376/fr24-3d-models",
+        "repositoryUrl": "https://github.com/mbr1376/fr24-3d-models",
+        "commit": "3d0a50dfddf14cff653dd4ac6c6c11e3aa58b7de",
+        "sourceUrl": "https://github.com/mbr1376/fr24-3d-models/blob/3d0a50dfddf14cff653dd4ac6c6c11e3aa58b7de/models/gltf_v2/airplane/b738.glb",
+        "upstream": "FGMEMBERS/737-800",
+        "upstreamUrl": "https://github.com/FGMEMBERS/737-800"
+      },
+      "changes": [
+        "Quitadas 1 primitivas de líneas o puntos.",
+        "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose-Z».",
+        "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
+        "Quitadas 2 piezas (10708 triángulos): a-light, a-light1.",
+        "Quitadas 1 piezas duplicadas superpuestas (32 triángulos).",
+        "Escalado ×1.0013 a la longitud del B738 (39,47 m).",
+        "Retirado un tramo de fuselaje de 2,44 m entre 21,50 y 26,00 m desde la nariz (sección constante; reparto estimado).",
+        "Retirado un tramo de fuselaje de 3,40 m entre 6,75 y 14,50 m desde la nariz (sección constante; reparto estimado).",
+        "Centrado en la envergadura y la longitud y elevado: la parte más baja queda a 0,42 m del suelo (z = 0) y la deriva a 12,55 m (12,55 m publicados); el tren lo dibuja la app (est.).",
+        "Normales recalculadas con el ángulo de pliegue de cada pieza; vértices soldados y cuantizados con KHR_mesh_quantization; materiales unificados en tres clases (cuerpo, vidrio, oscuro) de doble cara.",
+        "L1 simplificado con meshoptimizer de 14230 a 7827 triángulos (ratio 0.55, error relativo 0.0002), en una primitiva."
+      ]
+    },
+    "B738": {
+      "name": "Boeing 737-800",
+      "proxy": false,
+      "base": "B738",
+      "licence": "GPL-2.0-only",
+      "hasGear": false,
+      "files": {
+        "l2": [
+          {
+            "file": "l2.gltf",
+            "bytes": 4533,
+            "sha256": "ef880069bd5b6246427e677fcbea71ae53c97802aed1c67ef573c0380bebaa66"
+          },
+          {
+            "file": "l2.bin",
+            "bytes": 236760,
+            "sha256": "4b35d2831dd1fbf036a74110ec3cd578e51e8ba9c609916c877b35de87dd4a39"
+          }
+        ],
+        "l1": [
+          {
+            "file": "l1.gltf",
+            "bytes": 2236,
+            "sha256": "09b62362f3b2cb8d4a1dafe203dfe88128d87b87f1c928e76a79cccd6ffd2987"
+          },
+          {
+            "file": "l1.bin",
+            "bytes": 142784,
+            "sha256": "536d9810812eaa7acc90d9f8667739f6c19ec508938f820fcc5595ab31e2431d"
+          }
+        ],
+        "notices": [
+          "LICENSE",
+          "NOTICE.md",
+          "SOURCE.md"
+        ]
+      },
+      "triangles": {
+        "l2": 14230,
+        "l1": 7827
+      },
+      "dimensionsM": {
+        "length": 39.47,
+        "span": 35.74,
+        "height": 12.55,
+        "lowest": 0.42
+      },
+      "groundClearanceM": 0.42,
+      "sources": [
+        "mbr1376/models/gltf_v2/airplane/b738.glb",
+        "mbr1376/LICENSE"
+      ],
+      "credit": {
+        "baseName": "Boeing 737-800",
+        "authors": "Aleksei Kalmykov (kalmykov) / Flightradar24, repositorio fr24-3d-models; conversión a glTF 2.0 de mbr1376",
+        "repository": "mbr1376/fr24-3d-models",
+        "repositoryUrl": "https://github.com/mbr1376/fr24-3d-models",
+        "commit": "3d0a50dfddf14cff653dd4ac6c6c11e3aa58b7de",
+        "sourceUrl": "https://github.com/mbr1376/fr24-3d-models/blob/3d0a50dfddf14cff653dd4ac6c6c11e3aa58b7de/models/gltf_v2/airplane/b738.glb",
+        "upstream": "FGMEMBERS/737-800",
+        "upstreamUrl": "https://github.com/FGMEMBERS/737-800"
+      },
+      "changes": [
+        "Quitadas 1 primitivas de líneas o puntos.",
+        "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose-Z».",
+        "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
+        "Quitadas 2 piezas (10708 triángulos): a-light, a-light1.",
+        "Quitadas 1 piezas duplicadas superpuestas (32 triángulos).",
+        "Escalado ×1.0013 a la longitud del B738 (39,47 m).",
+        "Centrado en la envergadura y la longitud y elevado: la parte más baja queda a 0,42 m del suelo (z = 0) y la deriva a 12,55 m (12,55 m publicados); el tren lo dibuja la app (est.).",
+        "Normales recalculadas con el ángulo de pliegue de cada pieza; vértices soldados y cuantizados con KHR_mesh_quantization; materiales unificados en tres clases (cuerpo, vidrio, oscuro) de doble cara.",
+        "L1 simplificado con meshoptimizer de 14230 a 7827 triángulos (ratio 0.55, error relativo 0.0002), en una primitiva."
+      ]
+    },
+    "B739": {
+      "name": "Boeing 737-900ER",
+      "proxy": true,
+      "base": "B738",
+      "licence": "GPL-2.0-only",
+      "hasGear": false,
+      "files": {
+        "l2": [
+          {
+            "file": "l2.gltf",
+            "bytes": 4524,
+            "sha256": "c4c52650fff0326ce932acdd93a5e0d11cc67ccc48a9b39fbcdb2984a7741d99"
+          },
+          {
+            "file": "l2.bin",
+            "bytes": 236640,
+            "sha256": "ef0728d0eed7d947afe10163f80830d45f85d619bc7c31d426bba0fcaf23d93c"
+          }
+        ],
+        "l1": [
+          {
+            "file": "l1.gltf",
+            "bytes": 2251,
+            "sha256": "0642b392d07045d56c4a455ac2871bcdedb48b580b47de3d5a1559b5d56faecd"
+          },
+          {
+            "file": "l1.bin",
+            "bytes": 142124,
+            "sha256": "43ea067c515ebbc9737b42868f8afd1c11f3c4f260e564f7bcb0ae8716398884"
+          }
+        ],
+        "notices": [
+          "LICENSE",
+          "NOTICE.md",
+          "SOURCE.md"
+        ]
+      },
+      "triangles": {
+        "l2": 14230,
+        "l1": 7827
+      },
+      "dimensionsM": {
+        "length": 42.11,
+        "span": 35.74,
+        "height": 12.55,
+        "lowest": 0.42
+      },
+      "groundClearanceM": 0.42,
+      "sources": [
+        "mbr1376/models/gltf_v2/airplane/b738.glb",
+        "mbr1376/LICENSE"
+      ],
+      "credit": {
+        "baseName": "Boeing 737-800",
+        "authors": "Aleksei Kalmykov (kalmykov) / Flightradar24, repositorio fr24-3d-models; conversión a glTF 2.0 de mbr1376",
+        "repository": "mbr1376/fr24-3d-models",
+        "repositoryUrl": "https://github.com/mbr1376/fr24-3d-models",
+        "commit": "3d0a50dfddf14cff653dd4ac6c6c11e3aa58b7de",
+        "sourceUrl": "https://github.com/mbr1376/fr24-3d-models/blob/3d0a50dfddf14cff653dd4ac6c6c11e3aa58b7de/models/gltf_v2/airplane/b738.glb",
+        "upstream": "FGMEMBERS/737-800",
+        "upstreamUrl": "https://github.com/FGMEMBERS/737-800"
+      },
+      "changes": [
+        "Quitadas 1 primitivas de líneas o puntos.",
+        "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose-Z».",
+        "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
+        "Quitadas 2 piezas (10708 triángulos): a-light, a-light1.",
+        "Quitadas 1 piezas duplicadas superpuestas (32 triángulos).",
+        "Escalado ×1.0013 a la longitud del B738 (39,47 m).",
+        "Insertado un tramo de fuselaje de 1,07 m entre 21,50 y 26,00 m desde la nariz (sección constante; reparto estimado).",
+        "Insertado un tramo de fuselaje de 1,57 m entre 6,75 y 14,50 m desde la nariz (sección constante; reparto estimado).",
+        "Centrado en la envergadura y la longitud y elevado: la parte más baja queda a 0,42 m del suelo (z = 0) y la deriva a 12,55 m (12,55 m publicados); el tren lo dibuja la app (est.).",
+        "Normales recalculadas con el ángulo de pliegue de cada pieza; vértices soldados y cuantizados con KHR_mesh_quantization; materiales unificados en tres clases (cuerpo, vidrio, oscuro) de doble cara.",
+        "L1 simplificado con meshoptimizer de 14230 a 7827 triángulos (ratio 0.55, error relativo 0.0002), en una primitiva."
+      ]
+    },
+    "B752": {
+      "name": "Boeing 757-200",
+      "proxy": false,
+      "base": "B752",
+      "licence": "GPL-2.0-or-later",
+      "hasGear": false,
+      "files": {
+        "l2": [
+          {
+            "file": "l2.gltf",
+            "bytes": 4545,
+            "sha256": "b02c183a5ee9878c10a35cd03321b0440465d62053becf068d6af6328163eb1a"
+          },
+          {
+            "file": "l2.bin",
+            "bytes": 561844,
+            "sha256": "7ef0317bdc5f721a0054e829bcdbd9359b640b175a3241cbbe5348742199a358"
+          }
+        ],
+        "l1": [
+          {
+            "file": "l1.gltf",
+            "bytes": 2261,
+            "sha256": "10322e4e692a18a79aeb54925e2d26945b6c81276c2826bf122eade8affd19be"
+          },
+          {
+            "file": "l1.bin",
+            "bytes": 267360,
+            "sha256": "6a6e7bc4d46799d8bf2d463c57dd7097a97cee91bf902a55c3e3d6fa1b3914eb"
+          }
+        ],
+        "notices": [
+          "LICENSE",
+          "NOTICE.md",
+          "SOURCE.md"
+        ]
+      },
+      "triangles": {
+        "l2": 33454,
+        "l1": 14382
+      },
+      "dimensionsM": {
+        "length": 47.32,
+        "span": 38.05,
+        "height": 13.35,
+        "lowest": 0.75
+      },
+      "groundClearanceM": 0.75,
+      "sources": [
+        "fam/b752/glTF2/B752.glb",
+        "fam/b752/LICENSE"
+      ],
+      "credit": {
+        "baseName": "Boeing 757-200",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/b752/glTF2/B752.glb",
+        "upstream": "FGMEMBERS/757-200",
+        "upstreamUrl": "https://github.com/FGMEMBERS/757-200"
+      },
+      "changes": [
+        "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+X».",
+        "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
+        "Escalado ×1.0210 a la longitud del B752 (47,32 m).",
+        "Envergadura llevada de 39,16 a 38,05 m fuera del fuselaje (alas, motores y estabilizador).",
+        "Centrado en la envergadura y la longitud y elevado: la parte más baja queda a 0,75 m del suelo (z = 0) y la deriva a 13,35 m (13,56 m publicados); el tren lo dibuja la app (est.).",
+        "Normales recalculadas con el ángulo de pliegue de cada pieza; vértices soldados y cuantizados con KHR_mesh_quantization; materiales unificados en tres clases (cuerpo, vidrio, oscuro) de doble cara.",
+        "L1 simplificado con meshoptimizer de 33454 a 14382 triángulos (ratio 0.43, error relativo 0.0002), en una primitiva."
+      ]
+    },
+    "B772": {
+      "name": "Boeing 777-200",
+      "proxy": true,
+      "base": "B77W",
+      "licence": "GPL-2.0-only",
+      "hasGear": false,
+      "files": {
+        "l2": [
+          {
+            "file": "l2.gltf",
+            "bytes": 4540,
+            "sha256": "d6ef7aaec088c23263c20d2f7330a18b98c184cd0dcab3317785d32187bd50da"
+          },
+          {
+            "file": "l2.bin",
+            "bytes": 296816,
+            "sha256": "c0a74e5b35ba809be6626620c4682a755037b778bd21969eacd92900581b48c0"
+          }
+        ],
+        "l1": [
+          {
+            "file": "l1.gltf",
+            "bytes": 2255,
+            "sha256": "471537ff5e6b90e30acea3188960ed32c1d6654346468a83b98ad8e716a59094"
+          },
+          {
+            "file": "l1.bin",
+            "bytes": 183080,
+            "sha256": "e29b17b77c207889f3c21415a00e15fc766c524edff0df1f3362906c4361f05d"
+          }
+        ],
+        "notices": [
+          "LICENSE",
+          "NOTICE.md",
+          "SOURCE.md"
+        ]
+      },
+      "triangles": {
+        "l2": 17329,
+        "l1": 9531
+      },
+      "dimensionsM": {
+        "length": 63.73,
+        "span": 60.29,
+        "height": 18.2,
+        "lowest": 1.1
+      },
+      "groundClearanceM": 1.1,
+      "sources": [
+        "mbr1376/models/gltf_v2/airplane/b773.glb",
+        "mbr1376/LICENSE"
+      ],
+      "credit": {
+        "baseName": "Boeing 777-300",
+        "authors": "Aleksei Kalmykov (kalmykov) / Flightradar24, repositorio fr24-3d-models; conversión a glTF 2.0 de mbr1376",
+        "repository": "mbr1376/fr24-3d-models",
+        "repositoryUrl": "https://github.com/mbr1376/fr24-3d-models",
+        "commit": "3d0a50dfddf14cff653dd4ac6c6c11e3aa58b7de",
+        "sourceUrl": "https://github.com/mbr1376/fr24-3d-models/blob/3d0a50dfddf14cff653dd4ac6c6c11e3aa58b7de/models/gltf_v2/airplane/b773.glb",
+        "upstream": "FGMEMBERS/777",
+        "upstreamUrl": "https://github.com/FGMEMBERS/777",
+        "note": "FGMEMBERS/777 no trae archivo de licencia (solo AUTHORS: Syd Adams, Karla); fr24 publica el modelo como GPLv2"
+      },
+      "changes": [
+        "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose-Z».",
+        "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
+        "Quitadas 18 piezas (128 triángulos): Beacon01, Beacon01_001, Beacon02, Beacon02_001, Strobe01, Strobe01_001, Strobe02, Strobe02_001, Strobe03, Strobe03_001, greenflash, greenflash_001, redflash, redflash_001, redlight, redlight_001, whiteflash, whiteflash_001.",
+        "Quitadas 71 piezas duplicadas superpuestas (6632 triángulos).",
+        "Escalado ×0.9929 a la longitud del B77W (73,86 m).",
+        "Retirado un tramo de fuselaje de 4,83 m entre 43,25 y 53,50 m desde la nariz (sección constante; reparto estimado).",
+        "Retirado un tramo de fuselaje de 5,30 m entre 8,75 y 26,25 m desde la nariz (sección constante; reparto estimado).",
+        "Centrado en la envergadura y la longitud y elevado: la parte más baja queda a 1,10 m del suelo (z = 0) y la deriva a 18,20 m (18,52 m publicados); el tren lo dibuja la app (est.).",
+        "Normales recalculadas con el ángulo de pliegue de cada pieza; vértices soldados y cuantizados con KHR_mesh_quantization; materiales unificados en tres clases (cuerpo, vidrio, oscuro) de doble cara.",
+        "L1 simplificado con meshoptimizer de 17329 a 9531 triángulos (ratio 0.55, error relativo 0.0003), en una primitiva."
+      ]
+    },
+    "B77W": {
+      "name": "Boeing 777-300ER",
+      "proxy": false,
+      "base": "B77W",
+      "licence": "GPL-2.0-only",
+      "hasGear": false,
+      "files": {
+        "l2": [
+          {
+            "file": "l2.gltf",
+            "bytes": 4537,
+            "sha256": "06b19377193d1088b3e7285145b573d84665bd7c7f5decda5fe6354429512e2a"
+          },
+          {
+            "file": "l2.bin",
+            "bytes": 302168,
+            "sha256": "12e8f5af7f24c93a9a2b74ffabc95ebffeb7c65649211186d268aca04104a2fd"
+          }
+        ],
+        "l1": [
+          {
+            "file": "l1.gltf",
+            "bytes": 2235,
+            "sha256": "997d5be4b98f8299da0ffd479d50182fb6fae7852b1e722bddae964748c68eb1"
+          },
+          {
+            "file": "l1.bin",
+            "bytes": 187316,
+            "sha256": "a8364e291c3dc534b2e2660a03ce69e61e8b14db5dbe87fcf815910064a7a098"
+          }
+        ],
+        "notices": [
+          "LICENSE",
+          "NOTICE.md",
+          "SOURCE.md"
+        ]
+      },
+      "triangles": {
+        "l2": 17661,
+        "l1": 9713
+      },
+      "dimensionsM": {
+        "length": 73.86,
+        "span": 64.8,
+        "height": 18.41,
+        "lowest": 1.1
+      },
+      "groundClearanceM": 1.1,
+      "sources": [
+        "mbr1376/models/gltf_v2/airplane/b773.glb",
+        "mbr1376/LICENSE"
+      ],
+      "credit": {
+        "baseName": "Boeing 777-300",
+        "authors": "Aleksei Kalmykov (kalmykov) / Flightradar24, repositorio fr24-3d-models; conversión a glTF 2.0 de mbr1376",
+        "repository": "mbr1376/fr24-3d-models",
+        "repositoryUrl": "https://github.com/mbr1376/fr24-3d-models",
+        "commit": "3d0a50dfddf14cff653dd4ac6c6c11e3aa58b7de",
+        "sourceUrl": "https://github.com/mbr1376/fr24-3d-models/blob/3d0a50dfddf14cff653dd4ac6c6c11e3aa58b7de/models/gltf_v2/airplane/b773.glb",
+        "upstream": "FGMEMBERS/777",
+        "upstreamUrl": "https://github.com/FGMEMBERS/777",
+        "note": "FGMEMBERS/777 no trae archivo de licencia (solo AUTHORS: Syd Adams, Karla); fr24 publica el modelo como GPLv2"
+      },
+      "changes": [
+        "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose-Z».",
+        "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
+        "Quitadas 18 piezas (128 triángulos): Beacon01, Beacon01_001, Beacon02, Beacon02_001, Strobe01, Strobe01_001, Strobe02, Strobe02_001, Strobe03, Strobe03_001, greenflash, greenflash_001, redflash, redflash_001, redlight, redlight_001, whiteflash, whiteflash_001.",
+        "Quitadas 71 piezas duplicadas superpuestas (6632 triángulos).",
+        "Escalado ×0.9929 a la longitud del B77W (73,86 m).",
+        "Góndola izquierda de Ø 3,72 a Ø 4,14 m y alargada ×1.05 (8 piezas; forma estimada).",
+        "Góndola derecha de Ø 3,72 a Ø 4,14 m y alargada ×1.05 (8 piezas; forma estimada).",
+        "Añadidas puntas inclinadas procedurales (forma estimada): envergadura de 60,29 a 64,80 m.",
+        "Centrado en la envergadura y la longitud y elevado: la parte más baja queda a 1,10 m del suelo (z = 0) y la deriva a 18,41 m (18,50 m publicados); el tren lo dibuja la app (est.).",
+        "Normales recalculadas con el ángulo de pliegue de cada pieza; vértices soldados y cuantizados con KHR_mesh_quantization; materiales unificados en tres clases (cuerpo, vidrio, oscuro) de doble cara.",
+        "L1 simplificado con meshoptimizer de 17661 a 9713 triángulos (ratio 0.55, error relativo 0.0003), en una primitiva."
+      ]
+    },
+    "B788": {
+      "name": "Boeing 787-8",
+      "proxy": false,
+      "base": "B788",
+      "licence": "GPL-2.0-only",
+      "hasGear": false,
+      "files": {
+        "l2": [
+          {
+            "file": "l2.gltf",
+            "bytes": 4535,
+            "sha256": "84843ea680becfd48b1df8d32823cbe02c8b7d9a0ce4af4fdc5e92cd92b00de8"
+          },
+          {
+            "file": "l2.bin",
+            "bytes": 253800,
+            "sha256": "e8b45146c6b72b3e82d7f7bcb3340ebd013a6d9f7f41fc47261b8f74f249e450"
+          }
+        ],
+        "l1": [
+          {
+            "file": "l1.gltf",
+            "bytes": 2216,
+            "sha256": "160f8171b640ff4df06dae5d2c5221e23a4c91e65dd7e9e0051fa7105b1ca221"
+          },
+          {
+            "file": "l1.bin",
+            "bytes": 152420,
+            "sha256": "468de86a8448c03e7012d9fee436cfb40d773b15028f64311797c72d51a51182"
+          }
+        ],
+        "notices": [
+          "LICENSE",
+          "NOTICE.md",
+          "SOURCE.md"
+        ]
+      },
+      "triangles": {
+        "l2": 14456,
+        "l1": 7875
+      },
+      "dimensionsM": {
+        "length": 56.72,
+        "span": 59.58,
+        "height": 16.03,
+        "lowest": 1.1
+      },
+      "groundClearanceM": 1.1,
+      "sources": [
+        "fam/b788/glTF2/B788.glb",
+        "fam/b788/COPYING"
+      ],
+      "credit": {
+        "baseName": "Boeing 787-8",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/b788/glTF2/B788.glb",
+        "upstream": "FGMEMBERS/787-8",
+        "upstreamUrl": "https://github.com/FGMEMBERS/787-8"
+      },
+      "changes": [
+        "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+Z».",
+        "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
+        "Quitadas 29 piezas (380 triángulos): lbeacon, lbeaconbase, lbeaconlenz, lhlight, lhnavlite, lhturnoffl, lhturnofflt, lights.000, lights.001, lights.002, lights.003, llandlt, llandlt.001, lltcover, lltcover.0, lltcover.001, lltcover.002, logolts, rhlight, rhnavlite, rhturnoffl, rhturnofflt, rlandlt, rlandlt.001, tlight, ubeacon, ubeaconbase, ubeaconlenz, winglts.",
+        "Quitadas 3 piezas duplicadas superpuestas (17 triángulos).",
+        "Escalado ×1.0006 a la longitud del B788 (56,72 m).",
+        "Centrado en la envergadura y la longitud y elevado: la parte más baja queda a 1,10 m del suelo (z = 0) y la deriva a 16,03 m (16,92 m publicados); el tren lo dibuja la app (est.).",
+        "Normales recalculadas con el ángulo de pliegue de cada pieza; vértices soldados y cuantizados con KHR_mesh_quantization; materiales unificados en tres clases (cuerpo, vidrio, oscuro) de doble cara.",
+        "L1 simplificado con meshoptimizer de 14333 a 7875 triángulos (ratio 0.55, error relativo 0.0003), en una primitiva."
+      ]
+    },
+    "B789": {
+      "name": "Boeing 787-9",
+      "proxy": true,
+      "base": "B788",
+      "licence": "GPL-2.0-only",
+      "hasGear": false,
+      "files": {
+        "l2": [
+          {
+            "file": "l2.gltf",
+            "bytes": 4535,
+            "sha256": "a1eaa719dece6af801a9848f6dd6d913358651a1ccb3857af45e261cd26fb0a8"
+          },
+          {
+            "file": "l2.bin",
+            "bytes": 254076,
+            "sha256": "b8e914401bafd7455dbeb46ad8f7e392000f6578b01927f7a52b201b31944c11"
+          }
+        ],
+        "l1": [
+          {
+            "file": "l1.gltf",
+            "bytes": 2237,
+            "sha256": "ef4187de878e26d86f4234f4e6765089c2d81aad9e1ab8b10c590232e8b701c1"
+          },
+          {
+            "file": "l1.bin",
+            "bytes": 152216,
+            "sha256": "b3ef5b34c394122fdb2dc59d19210a6f66a1e857153491132865292c8014fd37"
+          }
+        ],
+        "notices": [
+          "LICENSE",
+          "NOTICE.md",
+          "SOURCE.md"
+        ]
+      },
+      "triangles": {
+        "l2": 14456,
+        "l1": 7871
+      },
+      "dimensionsM": {
+        "length": 62.81,
+        "span": 59.58,
+        "height": 16.03,
+        "lowest": 1.1
+      },
+      "groundClearanceM": 1.1,
+      "sources": [
+        "fam/b788/glTF2/B788.glb",
+        "fam/b788/COPYING"
+      ],
+      "credit": {
+        "baseName": "Boeing 787-8",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/b788/glTF2/B788.glb",
+        "upstream": "FGMEMBERS/787-8",
+        "upstreamUrl": "https://github.com/FGMEMBERS/787-8"
+      },
+      "changes": [
+        "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+Z».",
+        "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
+        "Quitadas 29 piezas (380 triángulos): lbeacon, lbeaconbase, lbeaconlenz, lhlight, lhnavlite, lhturnoffl, lhturnofflt, lights.000, lights.001, lights.002, lights.003, llandlt, llandlt.001, lltcover, lltcover.0, lltcover.001, lltcover.002, logolts, rhlight, rhnavlite, rhturnoffl, rhturnofflt, rlandlt, rlandlt.001, tlight, ubeacon, ubeaconbase, ubeaconlenz, winglts.",
+        "Quitadas 3 piezas duplicadas superpuestas (17 triángulos).",
+        "Escalado ×1.0006 a la longitud del B788 (56,72 m).",
+        "Insertado un tramo de fuselaje de 3,05 m entre 31,75 y 39,25 m desde la nariz (sección constante; reparto estimado).",
+        "Insertado un tramo de fuselaje de 3,05 m entre 8,00 y 16,50 m desde la nariz (sección constante; reparto estimado).",
+        "Centrado en la envergadura y la longitud y elevado: la parte más baja queda a 1,10 m del suelo (z = 0) y la deriva a 16,03 m (17,02 m publicados); el tren lo dibuja la app (est.).",
+        "Normales recalculadas con el ángulo de pliegue de cada pieza; vértices soldados y cuantizados con KHR_mesh_quantization; materiales unificados en tres clases (cuerpo, vidrio, oscuro) de doble cara.",
+        "L1 simplificado con meshoptimizer de 14333 a 7871 triángulos (ratio 0.55, error relativo 0.0003), en una primitiva."
+      ]
+    },
+    "CRJ9": {
+      "name": "Bombardier CRJ900",
+      "proxy": false,
+      "base": "CRJ9",
+      "licence": "GPL-2.0-or-later",
+      "hasGear": false,
+      "files": {
+        "l2": [
+          {
+            "file": "l2.gltf",
+            "bytes": 4541,
+            "sha256": "b2722eee401ebc3286c179bcc46e0d1e44de7c36265ca5b9412a4d207bf31e1d"
+          },
+          {
+            "file": "l2.bin",
+            "bytes": 231176,
+            "sha256": "90cfbb9a92d312879c9654130e1f904cb39f4a41c4fa4c54cbc4660a57783d6d"
+          }
+        ],
+        "l1": [
+          {
+            "file": "l1.gltf",
+            "bytes": 2242,
+            "sha256": "f007adfb7ccc078a12d8b868b9b0939b3fb087e0e4af6d4461a3542cd0dc9348"
+          },
+          {
+            "file": "l1.bin",
+            "bytes": 131600,
+            "sha256": "8408766547b8e7ef6d71e099e1d3bf0c423833441ed3f8fdaa905154043fcca4"
+          }
+        ],
+        "notices": [
+          "LICENSE",
+          "NOTICE.md",
+          "SOURCE.md"
+        ]
+      },
+      "triangles": {
+        "l2": 13755,
+        "l1": 7503
+      },
+      "dimensionsM": {
+        "length": 36.2,
+        "span": 24.85,
+        "height": 6.66,
+        "lowest": 0.6
+      },
+      "groundClearanceM": 0.6,
+      "sources": [
+        "fam/crj9/glTF2/CRJ9.glb",
+        "fam/crj9/LICENSE",
+        "fam/a320/COPYING"
+      ],
+      "credit": {
+        "baseName": "Bombardier CRJ900",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/crj9/glTF2/CRJ9.glb",
+        "upstream": "FGMEMBERS/CRJ700-family",
+        "upstreamUrl": "https://github.com/FGMEMBERS/CRJ700-family"
+      },
+      "changes": [
+        "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+Z».",
+        "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
+        "Quitadas 7 piezas (1804 triángulos): LandingLtCases, LandingLtLens, LandingLts, RAT, RATBlades, StairHandles, Stairs.",
+        "Escalado ×0.9957 a la longitud del CRJ9 (36,20 m).",
+        "Envergadura llevada de 23,81 a 24,85 m fuera del fuselaje (alas, motores y estabilizador).",
+        "Centrado en la envergadura y la longitud y elevado: la parte más baja queda a 0,60 m del suelo (z = 0) y la deriva a 6,66 m (7,51 m publicados); el tren lo dibuja la app (est.).",
+        "Normales recalculadas con el ángulo de pliegue de cada pieza; vértices soldados y cuantizados con KHR_mesh_quantization; materiales unificados en tres clases (cuerpo, vidrio, oscuro) de doble cara.",
+        "L1 simplificado con meshoptimizer de 13663 a 7503 triángulos (ratio 0.55, error relativo 0.0002), en una primitiva."
+      ]
+    },
+    "E190": {
+      "name": "Embraer E190",
+      "proxy": false,
+      "base": "E190",
+      "licence": "GPL-2.0-only",
+      "hasGear": false,
+      "files": {
+        "l2": [
+          {
+            "file": "l2.gltf",
+            "bytes": 4531,
+            "sha256": "157abc1b2cde6b553f11088da3b33cf667eda6057a7bc258f20e8cfce8127cd0"
+          },
+          {
+            "file": "l2.bin",
+            "bytes": 321956,
+            "sha256": "5d6761b5ea22784fea3b204f24a35307cbbd8018465d3e20f4e9037617e237bc"
+          }
+        ],
+        "l1": [
+          {
+            "file": "l1.gltf",
+            "bytes": 2214,
+            "sha256": "6ead7081c804a675696d5723b72481030d2cba7198780d1325f5f394376aeeda"
+          },
+          {
+            "file": "l1.bin",
+            "bytes": 204068,
+            "sha256": "157527a2ebb7d7296b5736f76299b2e5df8849571d8ae80a42e2515f0efd1985"
+          }
+        ],
+        "notices": [
+          "LICENSE",
+          "NOTICE.md",
+          "SOURCE.md"
+        ]
+      },
+      "triangles": {
+        "l2": 20165,
+        "l1": 11077
+      },
+      "dimensionsM": {
+        "length": 36.24,
+        "span": 28.53,
+        "height": 10.64,
+        "lowest": 0.3
+      },
+      "groundClearanceM": 0.3,
+      "sources": [
+        "fam/e190/glTF2/E190.glb",
+        "fam/e190/License.txt"
+      ],
+      "credit": {
+        "baseName": "Embraer E190",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/e190/glTF2/E190.glb",
+        "upstream": "FGMEMBERS/E-jet-family",
+        "upstreamUrl": "https://github.com/FGMEMBERS/E-jet-family"
+      },
+      "changes": [
+        "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+Z».",
+        "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
+        "Quitadas 2 piezas (224 triángulos): beacon, beacon.001.",
+        "Escalado ×1.0116 a la longitud del E190 (36,24 m).",
+        "Centrado en la envergadura y la longitud y elevado: la parte más baja queda a 0,30 m del suelo (z = 0) y la deriva a 10,64 m (10,57 m publicados); el tren lo dibuja la app (est.).",
+        "Normales recalculadas con el ángulo de pliegue de cada pieza; vértices soldados y cuantizados con KHR_mesh_quantization; materiales unificados en tres clases (cuerpo, vidrio, oscuro) de doble cara.",
+        "L1 simplificado con meshoptimizer de 20165 a 11077 triángulos (ratio 0.55, error relativo 0.0001), en una primitiva."
+      ]
+    },
+    "E195": {
+      "name": "Embraer E195",
+      "proxy": true,
+      "base": "E190",
+      "licence": "GPL-2.0-only",
+      "hasGear": false,
+      "files": {
+        "l2": [
+          {
+            "file": "l2.gltf",
+            "bytes": 4537,
+            "sha256": "0f835053caecd5e9e3d1ba7b299b067d92924b4f519cbea6453d0c258f62e19d"
+          },
+          {
+            "file": "l2.bin",
+            "bytes": 322280,
+            "sha256": "15baea8ed864a24cdeaed9fbafba655ded9335c039ccf372c81259af3a5c9f58"
+          }
+        ],
+        "l1": [
+          {
+            "file": "l1.gltf",
+            "bytes": 2220,
+            "sha256": "204911a2a6cc6c3564b7b65f39ba4f342e0534af9970ae1d103d6bad19659597"
+          },
+          {
+            "file": "l1.bin",
+            "bytes": 205740,
+            "sha256": "430cb78781e8af40ebcb8cd2dd14e544556effa7829a6c3e2cc6c09b4ca24888"
+          }
+        ],
+        "notices": [
+          "LICENSE",
+          "NOTICE.md",
+          "SOURCE.md"
+        ]
+      },
+      "triangles": {
+        "l2": 20165,
+        "l1": 11088
+      },
+      "dimensionsM": {
+        "length": 38.65,
+        "span": 28.53,
+        "height": 10.64,
+        "lowest": 0.3
+      },
+      "groundClearanceM": 0.3,
+      "sources": [
+        "fam/e190/glTF2/E190.glb",
+        "fam/e190/License.txt"
+      ],
+      "credit": {
+        "baseName": "Embraer E190",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/e190/glTF2/E190.glb",
+        "upstream": "FGMEMBERS/E-jet-family",
+        "upstreamUrl": "https://github.com/FGMEMBERS/E-jet-family"
+      },
+      "changes": [
+        "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+Z».",
+        "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
+        "Quitadas 2 piezas (224 triángulos): beacon, beacon.001.",
+        "Escalado ×1.0116 a la longitud del E190 (36,24 m).",
+        "Insertado un tramo de fuselaje de 1,11 m entre 20,75 y 25,25 m desde la nariz (sección constante; reparto estimado).",
+        "Insertado un tramo de fuselaje de 1,30 m entre 6,00 y 10,25 m desde la nariz (sección constante; reparto estimado).",
+        "Centrado en la envergadura y la longitud y elevado: la parte más baja queda a 0,30 m del suelo (z = 0) y la deriva a 10,64 m (10,55 m publicados); el tren lo dibuja la app (est.).",
+        "Normales recalculadas con el ángulo de pliegue de cada pieza; vértices soldados y cuantizados con KHR_mesh_quantization; materiales unificados en tres clases (cuerpo, vidrio, oscuro) de doble cara.",
+        "L1 simplificado con meshoptimizer de 20165 a 11088 triángulos (ratio 0.55, error relativo 0.0001), en una primitiva."
+      ]
+    }
+  }
+}

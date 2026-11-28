@@ -354,6 +354,44 @@ describe('the 3D instance plan (design G3)', () => {
   });
 });
 
+describe('liveries and gear (PR M5)', () => {
+  it("only an AVIAM aircraft wears its airline's livery: the chosen one, other traffic and every shadow none", () => {
+    const list = [
+      aircraft('f:a', { airlineIcao: 'CMP' }),
+      aircraft('f:b', { bearing: 90, metres: 300, airlineIcao: 'JBU' }),
+      aircraft('h:c', { kind: 'other', bearing: 180, metres: 900, onGround: false, altM: 1_200, airlineIcao: 'UAL' }),
+      aircraft('f:d', { bearing: 270, metres: 300 }),
+    ];
+    const entry = planInstances(list, [], { ...OPTIONS, selectedId: 'f:b' }).get('A320');
+    expect(entry.ids).toEqual(['f:a', 'f:b', 'f:d', 'h:c', null, null, null, null]);
+    // AVIAM's own aircraft in their airline's livery, an unknown airline in the default one.
+    expect(entry.liveries).toEqual(['CMP', null, 'DEFAULT', null, null, null, null, null]);
+    expect(Object.isFrozen(entry.liveries)).toBe(true);
+    // The other traffic and the chosen aircraft keep their role colours.
+    expect(colourOf(entry, 1)).toEqual(Array.from(Float32Array.from(AIRCRAFT_3D_COLORS.selected)));
+    expect(colourOf(entry, 3)).toEqual(Array.from(Float32Array.from(AIRCRAFT_3D_COLORS.other)));
+    // A parked aircraft wears its airline's livery too.
+    const parked = planInstances([], [{ id: 's:A5', lon: list[0].lon, lat: list[0].lat, headingDeg: 0, typeIcao: 'A320',
+      model: 'A320', kind: 'aviam', airlineIcao: 'DAL' }], OPTIONS).get('A320');
+    expect(parked.liveries).toEqual(['DAL', null]);
+  });
+
+  it("puts the gear down on a stand and on the ground, up in a climb, and gives each shadow its aircraft's gear", () => {
+    const list = [
+      aircraft('f:a'),
+      aircraft('f:b', { bearing: 90, metres: 2_000, onGround: false, altM: FIELD_M + 900, vrateMs: 8, phase: 'climb' }),
+    ];
+    const entry = planInstances(list, [{ id: 's:A5', lon: list[0].lon, lat: list[0].lat, headingDeg: 0, typeIcao: 'A320',
+      model: 'A320', kind: 'aviam' }], { ...OPTIONS, fieldElevationM: FIELD_M }).get('A320');
+    expect(entry.ids.slice(0, 3)).toEqual(['f:a', 'f:b', 's:A5']);
+    expect([...entry.gear]).toEqual([1, 0, 1, 1, 0, 1]);
+    // An attitude that eased the gear decides it.
+    const eased = planInstances(list, [], { ...OPTIONS, fieldElevationM: FIELD_M,
+      attitudes: new Map([['f:b', { heightM: 900, pitchDeg: 5, bankDeg: 0, gearDown: true }]]) }).get('A320');
+    expect([...eased.gear]).toEqual([1, 1, 1, 1]);
+  });
+});
+
 describe('poseMatrix and attitudes (CN-30)', () => {
   const apply = (matrix, [x, y, z]) => new Vector3(x, y, z).applyMatrix4(new Matrix4().fromArray(matrix));
 
@@ -479,6 +517,22 @@ describe('the 3D instance plan with liveries (M9)', () => {
       AIRCRAFT_TYPES.A320.lengthM, AIRCRAFT_TYPES.A320.lengthM, 0]));
     const plain = planInstances([taxiing, chosen], [parked], { ...OPTIONS, selectedId: 'f:p:chosen' }).get('A320');
     expect(Array.from(entry.matrices)).toEqual(Array.from(plain.matrices));
+  });
+
+  it('with livery the L1 models of PR M5 wear the same airline as the procedural zones, other traffic included', () => {
+    const parked = { id: 's:B20', lon: ARP[0] + 0.001, lat: ARP[1], headingDeg: 200, typeIcao: 'A320', model: 'A320',
+      kind: 'aviam', flightNumber: 'CM 893' };
+    const ground = aircraft('h:7a7b7c', { kind: 'other', onGround: true, bearing: 300, metres: 1_500, callsign: 'AAL1234' });
+    const chosen = aircraft('f:p:chosen', { bearing: 135, metres: 600, callsign: 'DAL455' });
+    const options = { ...OPTIONS, livery: true, groundRadiusM: GROUND_TRAFFIC_3D_RADIUS_M, selectedId: 'f:p:chosen' };
+    const entry = planInstances([ground, chosen], [parked], options).get('A320');
+    expect(entry.ids).toEqual(['f:p:chosen', 'h:7a7b7c', 's:B20', null, null, null]);
+    // Mapa de posiciones (M9): every aircraft but the chosen one wears its airline, the other traffic too.
+    expect(entry.liveries).toEqual([null, 'AAL', 'CMP', null, null, null]);
+    expectZones(entry, 1, liveryInstanceColours({ airlineIcao: 'AAL' }));
+    // Without livery (the other screens, contracts 2.4) only AVIAM's aircraft wear it.
+    const plain = planInstances([ground, chosen], [parked], { ...options, livery: false }).get('A320');
+    expect(plain.liveries).toEqual([null, null, 'CMP', null, null, null]);
   });
 
   it('draws other traffic on the ground in 3D within groundRadiusM of the ARP only, at its heading on the ground', () => {

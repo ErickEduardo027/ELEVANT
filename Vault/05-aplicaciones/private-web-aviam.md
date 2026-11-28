@@ -2552,9 +2552,66 @@ actualización del 24 de noviembre de 2026 «CN-29 a CN-31» de
 - **Queda pendiente.** Los modelos 3D de Flightradar24 / FlightGear (GPL-2.0)
   no se integraron: la descarga quedó bloqueada por los permisos de la sesión,
   son glTF 1.0 (three 0.187 lee solo glTF 2.0), añadirían unos 37 MB a la
-  imagen y la licencia copyleft requiere confirmación del dueño. La posición de
+  imagen y la licencia copyleft requiere confirmación del dueño (M5 lo cambió
+  después: ver la sección siguiente). La posición de
   la torre es aproximada. Nada de esto acredita un despliegue ni una medición
   en el VPS.
+
+## Modelos 3D de terceros, libreas y «Créditos y licencias» (M5)
+
+Posterior al commit verificado de esta nota: esta sección describe la rama
+`feat/occ-modelos-3d` del plan de mapas (M5), en revisión y sin desplegar. Las
+decisiones están en la actualización del 27 de noviembre de 2026 «M5: modelos
+3D de terceros con licencia GPL» de
+[ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md), que revierte «no se
+usan modelos de terceros» para los modelos 3D.
+
+- **Modelos.** 22 tipos con modelo GPL en glTF 2.0, servidos por la propia
+  aplicación desde
+  [`public/models/aircraft/`](../../frontend/private-web/public/models/aircraft/manifest.json),
+  cada uno como archivo aparte con su `LICENSE`, su `NOTICE.md` (origen,
+  autoría y cambios del 2026-11-27) y su `SOURCE.md` (fuentes fijadas y orden
+  de reconstrucción). Vienen de fr24-3d-models (Aleksei Kalmykov /
+  Flightradar24, conversión de mbr1376), FlightAirMap-3dmodels (Ysurac) y
+  REXO-77/737-MAX, con modelos de FlightGear / FGMEMBERS en su origen; el AT76
+  conserva aparte su GPL-3.0. Los rehace
+  [`build-aircraft-models.mjs`](../../frontend/private-web/scripts/models/build-aircraft-models.mjs)
+  de forma reproducible. El B763, los tipos sin modelo y los modelos que aún
+  cargan siguen con el modelo propio procedural, y el tráfico lejano también.
+- **Niveles y carga.** `GLTFLoader` va en el trozo perezoso de three
+  ([`gltfModels.js`](../../frontend/private-web/src/features/maps/aircraft/gltfModels.js)).
+  L1 entra cuando un tipo se ve grande (unos 17 de zoom para un A320) y L2 en
+  el avión seguido. Sin Draco, meshopt, KTX2 ni `blob:`: la CSP no cambia.
+- **Libreas.** Son de ELEVANT: un sombreador pinta las zonas del modelo con los
+  colores de
+  [`liveries.js`](../../frontend/private-web/src/features/maps/aircraft/liveries.js)
+  y escribe el nombre con Manrope (OFL)
+  ([`liveryMaterial.js`](../../frontend/private-web/src/features/maps/aircraft/liveryMaterial.js)).
+  Doce aerolíneas llevan en la deriva su logotipo de texto de Wikimedia
+  Commons, de dominio público por no alcanzar el umbral de originalidad y
+  marca de su titular, en un solo color, como uso demostrativo y sin
+  afiliación
+  ([`logos/README.md`](../../frontend/private-web/public/models/liveries/logos/README.md));
+  las demás, su código IATA. El tren es el procedural de la app. Solo los
+  aviones de AVIAM llevan librea; el resto del tráfico conserva su color tenue
+  y el elegido su acento, y la leyenda lo dice en 3D (nota del 28 de noviembre
+  en ADR-0043). En L1 las sombras siguen con el modelo procedural.
+- **«Créditos y licencias».** Al final de la atribución de cada mapa OCC hay
+  un enlace que abre un diálogo
+  ([`MapCreditsDialog.jsx`](../../frontend/private-web/src/features/maps/ui/MapCreditsDialog.jsx),
+  [`credits.js`](../../frontend/private-web/src/features/maps/core/credits.js)):
+  cada modelo con su tipo, modelo base, autoría, fuente y commit, procedencia,
+  licencia, «Modificado: 2026-11-27, ELEVANT / AVIAM», sus cambios y sus tres
+  archivos; los logotipos con el aviso de marcas; y las fuentes de datos y
+  teselas que ya acredita el mapa (OpenStreetMap, OpenFreeMap, OpenMapTiles,
+  OurAirports, NASA GIBS, NOAA AWC, la tipografía y la fuente de los datos de
+  aeronaves en pantalla). Se abre con clic, Enter o Espacio, conserva el foco
+  dentro, se cierra con Esc y devuelve el foco al enlace; lee sus dos archivos
+  la primera vez que se abre.
+- **Límites.** Donde la deriva del modelo es más baja que la altura publicada
+  (B788/B789, A33x, CRJ9), la holgura al suelo es estimada; los pozos del tren
+  principal del 737 MAX (REXO) se ven abiertos de lado con el tren recogido.
+  Nada de esto acredita un despliegue ni una revisión visual en el VPS.
 
 ## «Seguir en 3D» ultra cerca (M4, 27 de noviembre de 2026)
 

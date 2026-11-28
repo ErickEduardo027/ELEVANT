@@ -156,6 +156,18 @@
   color: var(--occ-accent);
 }
 
+/* «Créditos y licencias» (PR M5): the link that opens the dialog of the map's credits, with the OCC's focus outline. */
+.occ-map .maplibregl-ctrl-attrib a.occ-map-credits-link {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.occ-map .maplibregl-ctrl-attrib a.occ-map-credits-link:focus-visible {
+  outline: 2px solid var(--occ-accent);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+
 .occ-map .maplibregl-ctrl-attrib-button,
 .occ-map .maplibregl-ctrl-attrib.maplibregl-compact-show .maplibregl-ctrl-attrib-button {
   border-radius: 4px;

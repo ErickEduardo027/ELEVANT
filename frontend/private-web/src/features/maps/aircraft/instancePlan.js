@@ -6,6 +6,7 @@ import {
 } from '../style/trafficImages';
 import { TRAFFIC_SCALES, altitudeFeet, drawnRadius, isDrawn, tagTextOf } from '../traffic/trafficFeatures';
 import { OUTSIDE_FILTER_OPACITY, TAG_DECLUTTER_UNTIL_ZOOM, TAG_STYLE } from '../traffic/trafficLayers';
+import { gearDown } from './attitude';
 import { LIVERY_ZONES, liveryZones, resolveLivery } from './liveries';
 import { SPRITE_CELLS, cellUv } from './spriteAtlas';
 import { resolveAircraftType } from './types';
@@ -281,7 +282,8 @@ const byId = (a, b) => {
  * (traffic/situationModel.js: RenderAircraft); `parkedAircraft` the aircraft standing on their stands,
  * `{ id, lon, lat, headingDeg, typeIcao, model, sizeCategory, kind? }`, each owning the aircraft of the map with its id.
  *
- * Answers `Map<key, { spec, approximate, aircraftCount, count, matrices, colors, zoneColors, floorLengths, ids,
+ * Answers `Map<key, { spec, approximate, aircraftCount, count, matrices, colors, zoneColors, floorLengths, ids, liveries,
+ * gear, dropLines, contacts, contactStrengths }>`, the keys
  * dropLines }>`, the keys
  * (instanceKey) sorted, empty below `minZoom` (the caller's 3D threshold: the airfield fit − 0.3, contracts 2.3):
  * - only aircraft within AIRCRAFT_3D_RADIUS_NM of `originLngLat` (the ARP) that the 2D layers draw (isDrawn); other
@@ -301,6 +303,12 @@ const byId = (a, b) => {
  * - M9: with `livery`, every aircraft but the chosen one and the shadows wears its airline's livery
  *   (liveryInstanceColours: fuselage, belly, fin, engines and wings), and with `groundRadiusM` other traffic on the
  *   ground within that many metres of the ARP is drawn too (GROUND_TRAFFIC_3D_RADIUS_M), as the traffic is;
+ * - PR M5: `liveries` holds per instance the id of the livery a type's glTF model wears up close (aircraft/liveries.js:
+ *   resolveLivery, painted by aircraft/liveryMaterial.js from the same liveryPaint as `zoneColors`): for an AVIAM
+ *   aircraft, and with `livery` (M9, the Mapa de posiciones' exception to contracts 2.4) for every aircraft; null for
+ *   the chosen aircraft (it keeps the selection's accent), for other traffic without `livery` (it keeps its plain
+ *   colour, so the livery itself marks AVIAM's aircraft) and for a shadow; `gear` 1 where the landing gear is down (on
+ *   a stand, on the ground, or as aircraft/attitude.js eased it) and 0 where it is up, a shadow as its aircraft;
  * - `spec` and `approximate` come from resolveAircraftType: a type the table lacks takes its category's generic
  *   airframe under the category's own key, approximate.
  * - CN-30: `attitudes` (`Map<id, { heightM, pitchDeg, bankDeg }>`, aircraft/attitude.js) pitch and bank an aircraft of
@@ -361,7 +369,16 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
     // The attitude the controller eased for it (CN-30): its pitch, its bank and its height over the field.
     const attitude = entry.onStand === true ? null : attitudeOf(entry.item.id);
     const z = finite(attitude?.heightM) ? attitude.heightM : entry.z;
+    const selected = entry.item.id === selectedId;
+    // PR M5: the livery its type's model wears up close, and its gear. Only an AVIAM aircraft wears its airline's
+    // livery: the chosen one keeps the selection's accent and other traffic its plain colour, so the 3D picture still
+    // tells AVIAM's aircraft from the rest (contracts 2.4; ADR-0043, note of 2026-11-28). With `livery` (M9, the Mapa
+    // de posiciones) every aircraft but the chosen one wears it, as its procedural model does (paintOf).
+    const down = entry.onStand === true || (typeof attitude?.gearDown === 'boolean' ? attitude.gearDown
+      : gearDown({ heightM: z, onGround: entry.item.onGround === true, phase: entry.item.phase ?? null,
+        vrateMs: finite(entry.item.vrateMs) ? entry.item.vrateMs : null }));
     group.members.push({ id: entry.item.id, x, y, z, headingDeg: heading, onStand: entry.onStand === true,
+      livery: selected || !(entry.aviam || livery === true) ? null : resolveLivery(entry.item).id, gearDown: down,
       pitchDeg: finite(attitude?.pitchDeg) ? attitude.pitchDeg : 0, bankDeg: finite(attitude?.bankDeg) ? attitude.bankDeg : 0,
       pivot: pivotOf(resolved.spec),
       zones: paintOf(entry) });
@@ -379,6 +396,8 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
     // is never drawn smaller than a few pixels; one on its stand keeps the stand's scale, as its footprint does.
     const floorLengths = new Float32Array(2 * aircraftCount);
     const ids = [];
+    const liveries = [];
+    const gear = new Float32Array(2 * aircraftCount);
     const drops = [];
     // M4: the soft contact shadow under each aircraft (contactShadow.js), fading with its height.
     const contacts = new Float32Array(16 * aircraftCount);
@@ -395,6 +414,10 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
       }
       ids[index] = member.id;
       ids[aircraftCount + index] = null;
+      liveries[index] = member.livery;
+      liveries[aircraftCount + index] = null;
+      gear[index] = member.gearDown ? 1 : 0;
+      gear[aircraftCount + index] = gear[index];
       const floor = member.onStand ? 0 : resolved.spec.lengthM;
       floorLengths[index] = floor;
       floorLengths[aircraftCount + index] = floor;
@@ -416,6 +439,8 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
       zoneColors: Object.freeze(zoneColors),
       floorLengths,
       ids: Object.freeze(ids),
+      liveries: Object.freeze(liveries),
+      gear,
       dropLines: Float32Array.from(drops),
       contacts,
       contactStrengths,

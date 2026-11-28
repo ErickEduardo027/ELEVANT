@@ -4,11 +4,11 @@ import {
   typeFromModel,
 } from './types';
 
-// The thirty-four types of the plan (design G2, the M5 brief and PR M7), in the order of the table.
+// The thirty-five types of the plan (design G2, the M5 brief, PR M7 and the B739 of PR M5), in the order of the table.
 const PLAN_TYPES = [
-  'A319', 'A320', 'A321', 'A20N', 'A21N', 'B737', 'B738', 'B38M', 'B39M', 'B752', 'B763', 'B772', 'B77W', 'A332', 'A333',
-  'A339', 'A359', 'B788', 'B789', 'B744', 'A388', 'E190', 'E195', 'BCS3', 'CRJ9', 'AT76', 'DH8D', 'B350', 'B190', 'CL35',
-  'GLF5', 'C172', 'AS50', 'EC35',
+  'A319', 'A320', 'A321', 'A20N', 'A21N', 'B737', 'B738', 'B739', 'B38M', 'B39M', 'B752', 'B763', 'B772', 'B77W', 'A332',
+  'A333', 'A339', 'A359', 'B788', 'B789', 'B744', 'A388', 'E190', 'E195', 'BCS3', 'CRJ9', 'AT76', 'DH8D', 'B350', 'B190',
+  'CL35', 'GLF5', 'C172', 'AS50', 'EC35',
 ];
 
 const SPEC_KEYS = ['family', 'iconCategory', 'lengthM', 'spanM', 'heightM', 'fuselageDiaM', 'wingSweepDeg', 'engines',
@@ -48,6 +48,7 @@ describe('aircraft types (design G2)', () => {
     }
     // Spot checks against the manufacturers' figures (length × span × height).
     expect(AIRCRAFT_TYPES.B38M).toMatchObject({ lengthM: 39.52, spanM: 35.92, heightM: 12.29 });
+    expect(AIRCRAFT_TYPES.B739).toMatchObject({ lengthM: 42.11, spanM: 35.79, heightM: 12.55, family: 'twinUnderwing' });
     expect(AIRCRAFT_TYPES.E195).toMatchObject({ lengthM: 38.65, spanM: 28.72, heightM: 10.55 });
     expect(AIRCRAFT_TYPES.B77W).toMatchObject({ lengthM: 73.86, spanM: 64.8, iconCategory: 'wide2' });
     expect(AIRCRAFT_TYPES.A319).toMatchObject({ lengthM: 33.84, spanM: 35.8, heightM: 11.76 });
@@ -104,9 +105,10 @@ describe('aircraft types (design G2)', () => {
     expect([
       'Boeing 737-800', 'B737 MAX 8', 'A320-200', 'A320neo', 'A321-200', 'Airbus A330-300', 'A350-900', '787-9 Dreamliner',
       '777-300ER', 'Embraer 195', 'ERJ-190', 'A220-300', 'CRJ900', 'ATR 72-600', '757-200', '767-300ER', '737-700',
+      'Boeing 737-900ER',
     ].map(typeFromModel)).toEqual([
       'B738', 'B38M', 'A320', 'A20N', 'A321', 'A333', 'A359', 'B789', 'B77W', 'E195', 'E190', 'BCS3', 'CRJ9', 'AT76',
-      'B752', 'B763', 'B737',
+      'B752', 'B763', 'B737', 'B739',
     ]);
     expect([
       'Airbus A319-100', 'Boeing 777-200ER', 'A330-200', 'Airbus A330-900', 'A330neo', 'Boeing 747-400', 'Airbus A380-800',

@@ -5,7 +5,7 @@ import {
 } from './silhouette';
 import { AIRCRAFT_TYPES, CATEGORY_FALLBACKS, ICON_CATEGORIES } from './types';
 
-// Every airframe the map draws: the thirty-four types of the table and the generic one of each icon category.
+// Every airframe the map draws: the thirty-five types of the table and the generic one of each icon category.
 const AIRFRAMES = [
   ...Object.entries(AIRCRAFT_TYPES),
   ...Object.entries(CATEGORY_FALLBACKS).map(([category, spec]) => [`category ${category}`, spec]),

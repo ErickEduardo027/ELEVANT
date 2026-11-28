@@ -96,6 +96,22 @@ describe('parkedFromStands', () => {
     expect(second).toMatchObject({ id: 'f:owner', airlineIcao: 'JBU', airlineIata: 'B6', callsign: 'JBU1234',
       flightNumber: 'B6 1234' });
   });
+
+  it('carries the airline of the parked aircraft for its livery (PR M5), and null for an aircraft only the stand knows', () => {
+    const stands = [stand('A5'), stand('A6', { turnaroundId: 't-busy' })];
+    const parkedAircraft = aviam('f:parked', { turnaroundId: 't-busy', gsMs: 0, airlineIcao: 'CMP', airlineIata: 'CM',
+      callsign: 'CMP123', flightNumber: 'CM 123' });
+    const [byStand, owned] = parkedFromStands(stands, [parkedAircraft], new Set(['f:parked']));
+    expect(owned).toMatchObject({ id: 'f:parked', airlineIcao: 'CMP', airlineIata: 'CM', callsign: 'CMP123',
+      flightNumber: 'CM 123' });
+    expect(byStand.id).toBe('s:A5');
+    // Integration of M5 with M9: a stand without its aircraft names no airline (null), and its livery is the default.
+    expect(byStand).toMatchObject({ airlineIcao: null, airlineIata: null, callsign: null });
+    // Missing fields are null, never undefined.
+    const [, bare] = parkedFromStands(stands, [aviam('f:parked', { turnaroundId: 't-busy', gsMs: 0 })], new Set(['f:parked']));
+    expect(bare).toMatchObject({ airlineIcao: null, airlineIata: null, callsign: null });
+    expect(bare.flightNumber === null || typeof bare.flightNumber === 'string').toBe(true);
+  });
 });
 
 describe('parkedTrafficByStand (M4)', () => {

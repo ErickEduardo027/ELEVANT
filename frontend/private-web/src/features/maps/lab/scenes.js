@@ -6,7 +6,7 @@ import { STAND_REFERENCE } from '../stands/standReference';
 import { SCENARIO_AGENTS, boardStand, boardVisit } from '../testing/mapFixtures';
 import { TRAFFIC_FLIGHT_KEY } from '../testing/trafficFixtures';
 import { createAerodromeWeather } from '../testing/weatherFixtures';
-import { SHOWCASE_SCENARIO } from './aircraftShowcaseScene';
+import { GALLERY_SCENARIO, SHOWCASE_SCENARIO } from './aircraftShowcaseScene';
 import { FEED_SCENARIOS, LAB_CHOSEN_HEX, TRAFFIC_SCENARIOS } from './trafficScenes';
 import { OFFPLAN_KEY, REPLAY_KEYS, replayScenarioAt } from './replayScenes';
 
@@ -586,6 +586,14 @@ export const SCENES = deepFreeze([
     view: 'airfield',
     pitchMode: '3d',
   }), traffic: SHOWCASE_SCENARIO, standFlights: STAND_FLIGHTS },
+  // M5: every type with a 3D model of its own, three times with three liveries (lab/aircraftShowcaseScene.js).
+  { ...scene('airfield-3d-models', {
+    title: 'Modelos 3D de cada tipo con tres libreas',
+    description: 'Los 22 tipos con modelo 3D propio, cada uno tres veces con libreas distintas, detenidos en tres filas '
+      + 'junto a la pista 08/26: elegido y de cerca, cada uno se dibuja con su modelo detallado.',
+    view: 'airfield',
+    pitchMode: '3d',
+  }), traffic: GALLERY_SCENARIO },
 ]);
 
 /** The scene with that id, or `null`. */
