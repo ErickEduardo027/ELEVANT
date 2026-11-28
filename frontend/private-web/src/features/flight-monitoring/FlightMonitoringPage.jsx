@@ -33,6 +33,9 @@ import { useIsTabletBreakpoint } from './useIsTabletBreakpoint';
 // of the work area, apart from the frame's.
 
 const NO_FLIGHTS = Object.freeze([]);
+// The ids the board's filter keeps as one text, so a list equal to the last one keeps its identity (M8); `null` for none.
+const keyOfStrips = strips => strips.map(strip => strip.id).join('|');
+const idsOfKey = key => (key === null ? null : (key === '' ? NO_FLIGHTS : key.split('|')));
 
 /**
  * How the screen is laid out, as pure classes so a test can read what jsdom does not lay out. The board is 24rem wide:
@@ -133,11 +136,10 @@ export default function FlightMonitoringPage({
     [flights, nowMs, t, code, mapFlights]);
   const shown = filterBoard(board, filter, search);
   // The board's filter on the map (M8): the flights it keeps stand out and the rest is dimmed; nothing is dimmed while
-  // it keeps every flight. Kept by its ids, so the clock's re-renders hand the map the same list.
-  const filtering = filter !== 'all' || search.trim() !== '';
-  const emphasisKey = filtering ? shown.map(strip => strip.id).join('|') : null;
-  const emphasisedFlightIds = useMemo(() => (emphasisKey === null ? null
-    : (emphasisKey === '' ? NO_FLIGHTS : emphasisKey.split('|'))), [emphasisKey]);
+  // it keeps every flight. Kept by its ids, so the clock's re-renders hand the map the same list; the key is a template
+  // literal so the React Compiler knows it for a string and keeps compiling the page.
+  const emphasisKey = filter !== 'all' || search.trim() !== '' ? `${keyOfStrips(shown)}` : null;
+  const emphasisedFlightIds = useMemo(() => idsOfKey(emphasisKey), [emphasisKey]);
   const { toasts, dismissToast } = useFlightAlerts(flights, displayConnection);
 
   // The chosen flight: the URL's, when it names a flight of the page (its leg, its `l:` key or its turnaround).
