@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PositionsToolbar from './components/PositionsToolbar';
 import PositionMap from './components/PositionMap';
 import MapControls from './components/MapControls';
@@ -25,6 +25,7 @@ import { useTranslation } from '../../i18n/LanguageScope';
 import { positionsMapMessages } from './positionsMapMessages';
 import { locateOccStand } from '../../services/occPositionsService';
 import { useMapSelection } from '../maps/core/useMapSelection';
+import { useStageInsets } from '../maps/ui/useStageInsets';
 import MapSituationGate, { MapSituationOverlays, trafficSelectionOf } from '../maps/MapSituationGate';
 import { mapMessages } from '../maps/mapMessages';
 import { attachStandGeometry, unlocatedStands } from '../maps/stands/standModel';
@@ -35,41 +36,68 @@ import { standInputsOf } from '../maps/traffic/standInputs';
 
 const NO_POSITIONS = Object.freeze([]);
 const NO_MESSAGE = Object.freeze({ tone: '', text: '' });
-// The data block of the chosen flight or aircraft (PR M6) docks at the top left corner of the map: the page's map tools
-// are in the map's control rail at the right (CN-32). «Ubicar en el mapa» keeps the top centre.
-const DATA_BLOCK_STYLE = Object.freeze({ top: 12, left: 12 });
+// The data block of the chosen flight or aircraft (PR M6) docks at the top left of the area the floating panels leave in
+// sight (OccMap's inset variables, M1), so it never goes under the bar or the list; the page's notices keep the top
+// centre and the page's map tools are in the map's control rail at the right (CN-32).
+const DATA_BLOCK_STYLE = Object.freeze({
+  top: 'calc(var(--occ-map-inset-top, 0px) + 12px)', left: 'calc(var(--occ-map-inset-left, 0px) + 12px)',
+  maxWidth: 'calc(100% - var(--occ-map-inset-left, 0px) - var(--occ-map-clear-right, 0px) - 24px)',
+});
+const TOOLBAR_PANEL_ID = 'pm-toolbar';
+const LIST_PANEL_ID = 'pm-list';
+const INSPECTOR_PANEL_ID = 'pm-inspector';
+const BAND_PANEL_ID = 'pm-band';
 // The location saved for a stand, as «Ubicar en el mapa» always sent it: six decimals, about 10 cm.
 const toSixDecimals = value => Number(Number(value).toFixed(6));
 
 /**
- * How the screen is laid out (design E.2, template B «Mapa de trabajo»), as pure classes so a test can read what jsdom
- * does not lay out: the toolbar, then from 1024 px «Lista de posiciones» at the left when it is open (24 rem, 28 rem
- * from 1536 px, where the terminal and agent columns show; below 1536 px it folds away while the inspector is open), the map
- * with the stand band under it, and the inspector of the chosen stand docked at the right (24 rem), beside the map and
- * never over it, so it covers no stand. Below 1024 px the list opens in a drawer and the inspector goes under the map.
+ * The edge of the map each floating panel of the screen takes room from (maps/ui/stageInsets.js): the bar the top, the
+ * list the left, the inspector the right and the stand band the bottom.
+ */
+export const POSITIONS_MAP_PANEL_EDGES = Object.freeze({
+  [TOOLBAR_PANEL_ID]: 'top',
+  [LIST_PANEL_ID]: 'left',
+  [INSPECTOR_PANEL_ID]: 'right',
+  [BAND_PANEL_ID]: 'bottom',
+});
+
+// Between the bar and the band: a column at either side starts under the bar and ends over the band, 8 px from both
+// (the gap of the insets), or 12 px from the map's edge while neither is measured.
+const COLUMN = 'top-[max(12px,var(--occ-map-inset-top,0px))] bottom-[max(12px,var(--occ-map-inset-bottom,0px))]';
+const FLOAT_SLAB = 'rounded-[var(--occ-radius-overlay)] border border-occ-line bg-occ-panel-float';
+const CHIP = 'pointer-events-auto rounded-md border border-occ-line px-3 py-2 text-sm';
+
+/**
+ * How the screen is laid out (design E.2; M1, «pantalla completa con paneles flotantes», which replaces the docked
+ * template B of CN-32), as pure classes so a test can read what jsdom does not lay out.
+ * - Over the map (`stage`): the map fills the screen, and full screen takes the whole stage. Its panels float in it
+ *   12 px from its edges, under the cards of the map (z-20) and its control column (z-30, occ-map.css): the bar
+ *   (`toolbar`: the title, the terminals, the search and «Lista de posiciones», on one compact row from 1280 px) at the
+ *   top left; «Lista de posiciones» (`list`, 24 rem, 28 rem from 1536 px, where the terminal and agent columns show) at
+ *   the left under the bar, folded away below 1536 px while the inspector is open (`listWithInspector`); the inspector
+ *   of the chosen stand (`inspector`, 24 rem) at the right, left of the control column (--occ-map-rail-reserve); the
+ *   stand band (`band`) along the bottom, ending before the column. None is ever wider than the map leaves beside the
+ *   column. The page's notices (`chips`) sit at the top centre of the area the panels leave in sight.
+ * - Without a map (`scroll`): the first load, a failed read and another station's planned stands scroll in the frame.
+ * Below 1024 px the list opens in a drawer.
  */
 export const POSITIONS_MAP_LAYOUT = Object.freeze({
-  root: 'flex h-full min-h-0 flex-col gap-3',
-  grid: Object.freeze({
-    noList: 'grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-rows-[minmax(0,1fr)]',
-    list: 'grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[24rem_minmax(0,1fr)] 2xl:grid-cols-[28rem_minmax(0,1fr)] '
-      + 'lg:grid-rows-[minmax(0,1fr)]',
-    noListInspector: 'grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_24rem] '
-      + 'lg:grid-rows-[minmax(0,1fr)]',
-    listInspector: 'grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_24rem] '
-      + '2xl:grid-cols-[28rem_minmax(0,1fr)_24rem] lg:grid-rows-[minmax(0,1fr)]',
-  }),
-  list: 'flex min-h-0 min-w-0 flex-col',
-  // Below 1536 px the list folds away while a stand is open, so the map keeps the room its dock needs; it comes back
-  // when the inspector closes («Lista de posiciones» stays pressed).
-  listWithInspector: 'hidden min-h-0 min-w-0 flex-col 2xl:flex',
-  main: 'flex min-h-0 min-w-0 flex-col gap-3',
-  inspector: 'flex min-h-0 min-w-0 flex-col',
-  notice: 'rounded-md border border-occ-line bg-occ-panel px-3 py-2 text-sm text-occ-muted',
-  danger: 'rounded-md border border-l-[3px] border-occ-line border-l-occ-danger bg-occ-danger-soft px-3 py-2 text-sm '
-    + 'text-occ-text',
-  stale: 'flex flex-wrap items-center gap-2 rounded-md border border-l-[3px] border-occ-line border-l-occ-warn '
-    + 'bg-occ-warn-soft px-3 py-1.5 text-sm text-occ-text',
+  stage: 'relative h-full min-h-0 overflow-hidden bg-occ-canvas',
+  scroll: 'flex h-full min-h-0 flex-col gap-3 overflow-y-auto overscroll-contain p-3',
+  toolbar: `pointer-events-auto absolute left-3 top-3 z-10 max-w-[calc(100%_-_var(--occ-map-rail-reserve)_-_12px)] px-3 py-2 ${FLOAT_SLAB}`,
+  toolbarRow: 'gap-1.5 xl:flex-row xl:items-end xl:gap-4',
+  list: `pointer-events-auto absolute left-3 z-10 flex w-[24rem] 2xl:w-[28rem] ${COLUMN} `
+    + 'max-w-[calc(100%_-_var(--occ-map-rail-reserve)_-_12px)] min-h-0 flex-col',
+  listWithInspector: `pointer-events-auto absolute left-3 z-10 hidden w-[28rem] ${COLUMN} `
+    + 'max-w-[calc(100%_-_var(--occ-map-rail-reserve)_-_12px)] min-h-0 flex-col 2xl:flex',
+  inspector: `pointer-events-auto absolute right-[var(--occ-map-rail-reserve)] z-10 w-[24rem] ${COLUMN} `
+    + 'max-w-[calc(100%_-_var(--occ-map-rail-reserve)_-_12px)]',
+  band: 'pointer-events-auto absolute bottom-3 left-3 right-[var(--occ-map-rail-reserve)] z-10',
+  chips: 'occ-map-page-chips pointer-events-none',
+  notice: `${CHIP} bg-occ-panel-float text-occ-muted`,
+  danger: `${CHIP} border-l-[3px] border-l-occ-danger bg-occ-danger-soft text-occ-text`,
+  stale: `${CHIP} flex flex-wrap items-center gap-2 border-l-[3px] border-l-occ-warn bg-occ-warn-soft py-1.5 text-occ-text`,
+  placing: `${CHIP} flex flex-wrap items-center gap-x-3 gap-y-2 border-occ-line-strong bg-occ-panel-float text-occ-text`,
 });
 
 // Flights that can be brought to a stand: the unassigned ones and those parked elsewhere.
@@ -153,6 +181,14 @@ function PositionsMapScreen({
 
   const isLoading = status === 'loading' || forceState === 'loading';
   const isError = (status === 'error' && forceState === 'default') || forceState === 'positionsMapError';
+  const plannedOnly = status === 'success' && data?.source === 'planning-no-map';
+  // The map fills the screen and its panels are measured into its insets (M1); full screen takes the whole stage.
+  const onStage = !isLoading && !isError && !plannedOnly;
+  const { insets, rootRef, measure } = useStageInsets({ edges: POSITIONS_MAP_PANEL_EDGES, enabled: onStage });
+  const stageRef = useCallback(element => {
+    mapAreaRef.current = element;
+    rootRef(element);
+  }, [rootRef]);
   // The stands of the board that no map position shows are listed too, «Sin ubicar», so OCC can place them; the map
   // does not draw them.
   const positions = useMemo(() => {
@@ -306,17 +342,19 @@ function PositionsMapScreen({
 
   if (isError) {
     return (
-      <div role="alert"
-        className="flex flex-col items-start gap-3 rounded-md border border-l-[3px] border-occ-line border-l-occ-danger bg-occ-panel p-4">
-        <p className="text-sm font-semibold text-occ-text">{t('page.errorTitle')}</p>
-        <p className="text-sm text-occ-muted">{error?.message ?? t('page.errorFallback')}</p>
-        <OccButton onClick={onRetry}>{t('page.retry')}</OccButton>
+      <div className={POSITIONS_MAP_LAYOUT.scroll}>
+        <div role="alert"
+          className="flex flex-col items-start gap-3 rounded-md border border-l-[3px] border-occ-line border-l-occ-danger bg-occ-panel p-4">
+          <p className="text-sm font-semibold text-occ-text">{t('page.errorTitle')}</p>
+          <p className="text-sm text-occ-muted">{error?.message ?? t('page.errorFallback')}</p>
+          <OccButton onClick={onRetry}>{t('page.retry')}</OccButton>
+        </div>
       </div>
     );
   }
 
-  if (status === 'success' && data?.source === 'planning-no-map') {
-    return <section className="flex flex-col gap-3">
+  if (plannedOnly) {
+    return <section className={POSITIONS_MAP_LAYOUT.scroll}>
       <OccToolbar title={t('page.plannedTitle', { station: data.station.code })} />
       <p className="max-w-3xl text-sm text-occ-muted">{t('page.plannedDescription')}</p>
       {positions.length ? <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -333,20 +371,87 @@ function PositionsMapScreen({
     </section>;
   }
 
+  const frame = POSITIONS_MAP_LAYOUT;
   const selectedPositionId = selectedPosition?.id ?? selectedCode;
-  const table = (
+  const table = floating => (
     <PositionsTable
       positions={filteredPositions}
       emptyReason={emptyReason}
       selectedPositionId={selectedPositionId}
       onSelectPosition={handleSelectFromList}
+      floating={floating}
       className="h-full"
     />
   );
+  const toolbar = className => (
+    <PositionsToolbar
+      search={search}
+      onSearchChange={handleSearchChange}
+      onSearchSubmit={handleSearchSubmit}
+      searchNotFound={searchNotFound}
+      terminalFilter={terminalFilter}
+      onTerminalChange={handleTerminalChange}
+      onToggleSidePanel={() => setSidePanelOpen(open => !open)}
+      sidePanelOpen={sidePanelOpen}
+      count={isLoading ? null : positions.length}
+      className={className}
+    />
+  );
+  const toastStack = <OccToastStack toasts={pageToasts} onDismiss={dismissToast} placement="workArea" />;
+
+  if (isLoading) {
+    return (
+      <div data-occ-positions-map="loading" className={frame.scroll}>
+        {toolbar('')}
+        <PositionsMapSkeleton />
+        {toastStack}
+      </div>
+    );
+  }
 
   const saving = placing?.phase === 'saving';
-  const mapArea = (
-    <div ref={mapAreaRef} className="relative min-h-[24rem] min-w-0 flex-1 overflow-hidden rounded-md border border-occ-line bg-occ-canvas">
+  // The page's notices, at the top centre of the area the panels leave in sight (occ-map.css, .occ-map-page-chips).
+  const planningNote = data?.source === 'planning';
+  const disconnected = displayConnection === 'disconnected';
+  const chips = placing || planningNote || placeMessage.text || disconnected ? (
+    <div data-occ-positions-chips="" className={frame.chips}>
+      {placing && (
+        <div ref={placingRef} tabIndex={-1} role="group" aria-label={tMap('placing.label', { code: placing.code })}
+          onKeyDown={handlePlacingKeyDown} className={frame.placing}>
+          <p role="status" className="min-w-0">
+            {saving ? tMap('placing.saving', { code: placing.code }) : tMap('placing.prompt', { code: placing.code })}
+          </p>
+          <div className="flex items-center gap-2">
+            <button type="button" disabled={placing.phase !== 'pending'} onClick={() => void handleSaveLocation()}
+              className="min-h-9 rounded bg-occ-primary px-3 font-semibold text-occ-on-primary hover:bg-occ-primary-hover disabled:cursor-not-allowed disabled:bg-occ-panel-raised disabled:text-occ-faint">
+              {tMap('placing.save')}
+            </button>
+            <button type="button" disabled={saving} onClick={cancelPlacing}
+              className="min-h-9 rounded border border-occ-line px-3 font-semibold text-occ-text hover:border-occ-line-strong disabled:cursor-not-allowed disabled:text-occ-faint">
+              {tMap('placing.cancel')}
+            </button>
+          </div>
+        </div>
+      )}
+      {planningNote && <p role="status" className={frame.notice}>{t('page.planningNote')}</p>}
+      {placeMessage.text && <p role={placeMessage.tone === 'danger' ? 'alert' : 'status'}
+        className={placeMessage.tone === 'danger' ? frame.danger : frame.notice}>
+        {placeMessage.text}</p>}
+      {disconnected && (
+        <p role="status" className={frame.stale}>
+          <OccGlyph name="attention" />
+          {t('page.disconnected')}
+          {lastUpdatedAt && <span className="text-occ-muted">{t('page.lastSync')}</span>}
+        </p>
+      )}
+    </div>
+  ) : null;
+
+  const inspectorOpen = drawerOpen && selectedPosition !== null;
+  const listShown = sidePanelOpen && !isTablet;
+
+  return (
+    <div ref={stageRef} data-occ-positions-map="map" className={frame.stage}>
       <PositionMap
         ref={mapRef}
         positions={filteredPositions}
@@ -365,6 +470,8 @@ function PositionsMapScreen({
         onSelectTraffic={live ? handleSelectTraffic : undefined}
         focusSelectedOnStart
         legendFoldKey={legendFold}
+        insets={insets}
+        className=""
         railTools={(
           <MapControls
             viewMode={viewMode}
@@ -375,101 +482,47 @@ function PositionsMapScreen({
           />
         )}
       >
+        {/* The panels float inside the map, under its cards and its control column, whose menus open over them. */}
+        <div ref={measure(TOOLBAR_PANEL_ID)} data-occ-positions-toolbar="" className={frame.toolbar}>
+          {toolbar(frame.toolbarRow)}
+        </div>
+        {listShown ? (
+          <div ref={measure(LIST_PANEL_ID)} data-occ-positions-list=""
+            className={inspectorOpen ? frame.listWithInspector : frame.list}>{table(true)}</div>
+        ) : null}
+        {inspectorOpen ? (
+          <PositionDetailDrawer
+            ref={measure(INSPECTOR_PANEL_ID)}
+            variant="floating"
+            position={selectedPosition}
+            onClose={closeInspector}
+            onViewFlightInMonitoring={handleViewFlightInMonitoring}
+            canAssign={Boolean(data?.canAssign)}
+            candidates={assignCandidates(data)}
+            onChanged={onRetry}
+            onStartPlacing={handleStartPlacing}
+            operationDate={data?.operationDate}
+            aircraftFacts={aircraftFacts}
+            className={frame.inspector}
+          />
+        ) : null}
+        <div ref={measure(BAND_PANEL_ID)} data-occ-positions-band-slot="" className={frame.band}>
+          <PositionsBand stands={displayedPositions} flightsByTurnaround={flightsByTurnaround}
+            aircraft={situation?.aircraft} nowMs={bandNowMs} timeZone={STATION_TIME_ZONE} selectedCode={selectedCode}
+            onSelectStand={handleSelectFromList} open={bandOpen} onToggle={() => setBandOpen(open => !open)} floating />
+        </div>
+        {/* Before the traffic's state, so its chips go under the page's (occ-map.css). */}
+        {chips}
         <MapSituationOverlays live={live} onClose={clear} blockStyle={DATA_BLOCK_STYLE} />
       </PositionMap>
-      {placing && (
-        <div ref={placingRef} tabIndex={-1} role="group" aria-label={tMap('placing.label', { code: placing.code })}
-          onKeyDown={handlePlacingKeyDown}
-          className="absolute left-1/2 top-3 z-10 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-occ-line-strong bg-occ-panel-float px-3 py-2 text-sm text-occ-text">
-          <p role="status" className="min-w-0">
-            {saving ? tMap('placing.saving', { code: placing.code }) : tMap('placing.prompt', { code: placing.code })}
-          </p>
-          <div className="flex items-center gap-2">
-            <button type="button" disabled={placing.phase !== 'pending'} onClick={() => void handleSaveLocation()}
-              className="min-h-9 rounded bg-occ-primary px-3 font-semibold text-occ-on-primary hover:bg-occ-primary-hover disabled:cursor-not-allowed disabled:bg-occ-panel-raised disabled:text-occ-faint">
-              {tMap('placing.save')}
-            </button>
-            <button type="button" disabled={saving} onClick={cancelPlacing}
-              className="min-h-9 rounded border border-occ-line px-3 font-semibold text-occ-text hover:border-occ-line-strong disabled:cursor-not-allowed disabled:text-occ-faint">
-              {tMap('placing.cancel')}
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
-  const inspectorOpen = drawerOpen && selectedPosition !== null;
-  const inspector = (
-    <PositionDetailDrawer
-      position={inspectorOpen ? selectedPosition : null}
-      onClose={closeInspector}
-      onViewFlightInMonitoring={handleViewFlightInMonitoring}
-      canAssign={Boolean(data?.canAssign)}
-      candidates={assignCandidates(data)}
-      onChanged={onRetry}
-      onStartPlacing={handleStartPlacing}
-      operationDate={data?.operationDate}
-      aircraftFacts={aircraftFacts}
-      className={isTablet ? 'max-h-[60dvh]' : 'h-full'}
-    />
-  );
-  const listShown = sidePanelOpen && !isTablet;
-  const frame = POSITIONS_MAP_LAYOUT;
-  const grid = frame.grid[`${listShown ? 'list' : 'noList'}${inspectorOpen ? 'Inspector' : ''}`];
-
-  return (
-    <div data-occ-positions-map="" className={frame.root}>
-      <PositionsToolbar
-        search={search}
-        onSearchChange={handleSearchChange}
-        onSearchSubmit={handleSearchSubmit}
-        searchNotFound={searchNotFound}
-        terminalFilter={terminalFilter}
-        onTerminalChange={handleTerminalChange}
-        onToggleSidePanel={() => setSidePanelOpen(open => !open)}
-        sidePanelOpen={sidePanelOpen}
-        count={isLoading ? null : positions.length}
-      />
-
-      {data?.source === 'planning' && <p role="status" className={frame.notice}>
-        {t('page.planningNote')}
-      </p>}
-
-      {placeMessage.text && <p role={placeMessage.tone === 'danger' ? 'alert' : 'status'}
-        className={placeMessage.tone === 'danger' ? frame.danger : frame.notice}>
-        {placeMessage.text}</p>}
-
-      {displayConnection === 'disconnected' && (
-        <p role="status" className={frame.stale}>
-          <OccGlyph name="attention" />
-          {t('page.disconnected')}
-          {lastUpdatedAt && <span className="text-occ-muted">{t('page.lastSync')}</span>}
-        </p>
-      )}
-
-      {isLoading ? (
-        <PositionsMapSkeleton />
-      ) : (
-        <div className={grid}>
-          {listShown ? <div data-occ-positions-list="" className={inspectorOpen ? frame.listWithInspector : frame.list}>{table}</div> : null}
-          <div className={frame.main}>
-            {mapArea}
-            <PositionsBand stands={displayedPositions} flightsByTurnaround={flightsByTurnaround}
-              aircraft={situation?.aircraft} nowMs={bandNowMs} timeZone={STATION_TIME_ZONE} selectedCode={selectedCode}
-              onSelectStand={handleSelectFromList} open={bandOpen} onToggle={() => setBandOpen(open => !open)} />
-          </div>
-          {inspectorOpen ? <div className={frame.inspector}>{inspector}</div> : null}
-        </div>
-      )}
 
       {isTablet ? (
         <OccDrawer open={sidePanelOpen} onClose={() => setSidePanelOpen(false)} title={t('list.drawer')}>
-          <div data-testid="positions-list-drawer" className="flex h-full min-h-0 flex-col">{table}</div>
+          <div data-testid="positions-list-drawer" className="flex h-full min-h-0 flex-col">{table(false)}</div>
         </OccDrawer>
       ) : null}
 
-      <OccToastStack toasts={pageToasts} onDismiss={dismissToast} placement="workArea" />
+      {toastStack}
     </div>
   );
 }

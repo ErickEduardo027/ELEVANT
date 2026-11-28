@@ -33,11 +33,14 @@ const EMPTY = Object.freeze([]);
 // ready, as a row of the list does; it starts with the legend folded. `legendFoldKey` folds the legend when it changes.
 // `railTools` (CN-32) are the screen's own map tools, such as Mapa de posiciones' 2D/3D, «Centrar PUJ» and full screen:
 // they go in the map's control rail, after «Seguir» and before the pause.
+// `insets` (M1, optional: { top, right, bottom, left } in px) are what the screen's floating panels cover of a map that
+// fills its stage, as Mapa de posiciones measures them; `className` replaces the rounded corners of the framed map
+// (Planificación keeps both defaults: no insets, rounded).
 const PositionMap = forwardRef(function PositionMap({
   positions = EMPTY, selectedPositionId = null, onSelectPosition, viewMode = '2d', initialCamera, onCameraChange,
   allowBuildingExtrusion = false, dashboardLabels = false, onMapClick, placing = false, placingCode = null,
   pendingLocation = null, onCancelPlacing, weather, traffic, trafficSelection = null, onSelectTraffic,
-  focusSelectedOnStart = false, legendFoldKey = null, railTools = null, children,
+  focusSelectedOnStart = false, legendFoldKey = null, railTools = null, insets, className = 'rounded-md', children,
 }, ref) {
   const { t } = useTranslation(positionsMapMessages);
   const { t: tMap } = useTranslation(mapMessages);
@@ -82,8 +85,9 @@ const PositionMap = forwardRef(function PositionMap({
     <OccMap
       ref={mapRef}
       testId="position-map-container"
-      className="rounded-md"
+      className={className}
       defaultView="ramp"
+      insets={insets}
       presetStands={STAND_REFERENCE}
       stands={positions}
       traffic={traffic}

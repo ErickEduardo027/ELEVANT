@@ -312,6 +312,29 @@
   top: calc(var(--occ-map-inset-top, 0px) + var(--occ-map-gap) + 3.25rem);
 }
 
+/* A screen's own notices over its full-screen map (M1: Mapa de posiciones' planning note, its placing of a stand and
+   its stale board), one under the other at the top centre of the area in sight, short of the control column; the
+   traffic's chips go under them. */
+.occ-map .occ-map-page-chips {
+  position: absolute;
+  z-index: 11;
+  top: calc(var(--occ-map-inset-top, 0px) + var(--occ-map-gap));
+  left: calc(var(--occ-map-inset-left, 0px)
+    + (100% - var(--occ-map-inset-left, 0px) - var(--occ-map-clear-right)) / 2);
+  display: flex;
+  width: max-content;
+  max-width: min(36rem, calc(100% - var(--occ-map-inset-left, 0px) - var(--occ-map-clear-right)
+    - 2 * var(--occ-map-gap)));
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  transform: translateX(-50%);
+}
+
+.occ-map .occ-map-page-chips ~ .occ-map-source-status .occ-map-source-chips {
+  top: calc(var(--occ-map-inset-top, 0px) + var(--occ-map-gap) + 3.25rem);
+}
+
 /* A short notice of the map that answers something just done, such as «Dejaste de seguir a …» (follow mode, PR M6):
    at the bottom centre of the area in sight, short of the control column, over the map's key. The rail's menus, opened
    by a person, stay over it. */

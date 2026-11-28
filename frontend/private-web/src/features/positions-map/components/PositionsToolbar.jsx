@@ -8,6 +8,7 @@ import { positionsMapMessages } from '../positionsMapMessages';
 
 // The bar of Mapa de posiciones (design E.1 and F, occ-ui/OccToolbar.jsx): the page's `h1` with the station in secondary
 // text, then the terminal, the search and «Lista de posiciones», which opens the dense table at the left of the map.
+// Over the full-screen map (M1) the page floats it at the top left and lays it out on one compact row (`className`).
 export default function PositionsToolbar({
   search,
   onSearchChange,
@@ -18,10 +19,12 @@ export default function PositionsToolbar({
   onToggleSidePanel,
   sidePanelOpen,
   count = null,
+  className = '',
 }) {
   const { t } = useTranslation(positionsMapMessages);
   return (
     <OccToolbar
+      className={className}
       title={t('toolbar.title')}
       summary={(
         <span className="flex flex-wrap gap-x-3">

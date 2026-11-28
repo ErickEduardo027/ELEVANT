@@ -13,10 +13,11 @@ import StandTurnaround from '../../maps/ui/StandTurnaround';
 import MapSidePanel from '../../maps/ui/MapSidePanel';
 import { positionsMapMessages } from '../positionsMapMessages';
 
-// The inspector of Mapa de posiciones (design E.2, template B; CN-32): the chosen stand in the screen's docked side
-// panel (maps/ui/MapSidePanel.jsx) at the right of the map, never over it, so it covers no stand and the map needs no
-// inset. It is a landmark (`aside`), not a dialog: no veil and no
-// focus trap, the map keeps its keys. Esc closes it first and is marked as used, so the next Esc, on the map, leaves the
+// The inspector of Mapa de posiciones (design E.2; M1, «pantalla completa con paneles flotantes», which replaces the
+// docked template B of CN-32): the chosen stand in the screen's side panel (maps/ui/MapSidePanel.jsx), floating over
+// the full-screen map at its right, left of the control column (`variant` `floating`, `ref` on the panel): the page
+// measures it into the map's insets, so the camera keeps the stand clear of it. It is a landmark (`aside`), not a
+// dialog: no veil and no focus trap, the map keeps its keys. Esc closes it first and is marked as used, so the next Esc, on the map, leaves the
 // selection (contratos 2.2). It keeps the test id and «Cerrar detalle» the cycle E2E closes it with, and the stand's
 // facts (maps/ui/StandDetailFacts.jsx), its turnaround with the milestone strip of its flight (maps/ui/
 // StandTurnaround.jsx) and the OCC commands («Registrar llegada», «Asignar posición», «Liberar posición», «Ubicar en el
@@ -34,8 +35,8 @@ function Field({ label, children }) {
   );
 }
 
-export default function PositionDetailDrawer({ position, onClose, onViewFlightInMonitoring, canAssign = false, candidates = [], onChanged,
-  onStartPlacing, operationDate, aircraftFacts = null, className = '' }) {
+export default function PositionDetailDrawer({ ref, position, onClose, onViewFlightInMonitoring, canAssign = false,
+  candidates = [], onChanged, onStartPlacing, operationDate, aircraftFacts = null, variant = 'framed', className = '' }) {
   const { t, locale } = useTranslation(positionsMapMessages);
   useEffect(() => {
     if (!position) return undefined;
@@ -60,6 +61,8 @@ export default function PositionDetailDrawer({ position, onClose, onViewFlightIn
 
   return (
     <MapSidePanel
+      ref={ref}
+      variant={variant}
       data-testid="position-detail-drawer"
       data-occ-inspector="stand"
       label={t('inspector.label', { code: position.id })}
