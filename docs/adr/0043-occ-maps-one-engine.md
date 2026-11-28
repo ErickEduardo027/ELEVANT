@@ -1423,3 +1423,16 @@ La rama de integración une los modelos 3D GPL de M5 con la capa animada (M2), l
 3. **Sombras.** Las sombras de un tipo en L1 siguen con su modelo procedural en una malla aparte (M5), ahora con las zonas de la librea de M9 en el color de la sombra. La sombra de contacto de M4 se dibuja bajo los aviones L1 como bajo los procedurales, y el avión detallado (L2) conserva la suya.
 4. **M2 y M8.** Los cuadros animados planifican con `planInstances`, así que las instancias L1 se colocan en cada cuadro desde los fotogramas clave, con su tren y su librea. En el globo, por debajo de `GLOBE_MERCATOR_ZOOM`, el plan queda vacío (`projected3d`): no hay modelos 3D ni L1.
 5. **Verificación.** Pruebas de `liveries.test.js` (una paleta para los dos), `instancePlan.test.js` (libreas L1 con y sin `livery`), `aircraft3dLayer.models.test.js` (sombras L1 con zonas y sombras de contacto), `core/aircraft3d.test.js` (aerolínea de los estacionados) y `trafficLegend.test.js`. Nada de esto acredita un despliegue ni una revisión visual en el VPS.
+
+## Actualización (28 de noviembre de 2026). Medición tras la integración
+
+La rama de integración de los mapas (Development con M3 y M6, más M9, M8, M4, M7, M2, M5 y M1, en `a0c7ce23`) se midió en la GPU real con las dos pruebas de rendimiento del laboratorio de M2: `OCC_VISUAL_GPU=1`, ventana visible, ANGLE sobre Direct3D 11, Intel UHD (el piso), Chrome 159.0.8154.13, 1920 × 1080 y densidad 1, con `next dev` en la laptop de desarrollo, compartida con otras tareas. `map-lab.fluency.spec.mjs` pasa (2 pruebas) y `map-lab.follow3d.spec.mjs` también (12 pruebas, más una segunda corrida de la prueba del presupuesto); las cifras completas quedan fuera del repositorio, en `perf-final.json`.
+
+| Escena | GPU | Cuadros/s | p50 / p95 (ms) | Cuadros de más de 33,3 ms | Tareas largas | Bloqueado (s/min) | Paso más largo en pantalla |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `perf-approach-feed` | Intel UHD | 120,7 | 7,5 / 12,5 | 0,1 % | 0 | 0 | 0,13 px (el que gira) |
+| `perf-airfield-feed` | Intel UHD | 129,5 | 7,1 / 11,6 | 0,1 % | 0 | 0 | 0,22 px |
+| `airfield-3d-replay` | Intel UHD | 135,3 (120,6) | 6,9 / 11,4 (7,2 / 14,4) | 0,1 % (0,7 %) | 1 (1) | 0,17 (0,20) | 1,6 px (2,1 px) |
+| `airfield-3d-replay` con «Seguir en 3D» | Intel UHD | 136,3 (129,2) | 7,0 / 10,0 (7,1 / 10,8) | 0,2 % (0,3 %) | 0 (0) | 0 (0) | 0 px (fijo en pantalla) |
+
+Entre paréntesis, la segunda corrida. Todas las escenas pasan las puertas (al menos 30 cuadros por segundo y un p95 de 33 ms como mucho), con cifras iguales o mejores que las de M2 en la misma Intel (113,6, 121,8, 91,0 y 84,2 cuadros por segundo): la planificación por cuadro de libreas y sombras de contacto (M4, M9) y las instancias glTF L1 (M5) no rompen el presupuesto, y no hizo falta perfilar con `map-lab.follow3d-profile.spec.mjs`. Una primera corrida de `map-lab.follow3d` falló antes de medir, en la espera de 240 s a que la llegada reproducida entrara en la vista; las dos corridas siguientes pasaron. La RTX 3060 no se volvió a medir. Nada de esto acredita un despliegue ni una medición en el VPS.
