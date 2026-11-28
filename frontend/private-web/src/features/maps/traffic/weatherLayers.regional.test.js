@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { GIBS_ATTRIBUTION } from '../core/attribution';
 import { availableLayerKeys } from '../core/layersMenu';
 import { MAP_IMAGE_IDS } from '../style/mapImages';
+import { contrastRatio } from '../style/mapTheme';
 import { SLOT_ORDER, buildOccStyle } from '../style/occStyle';
 import { referenceOverlay } from '../style/referenceLayers';
 import { FLIGHT_CATEGORY_COLORS, SIGMET_HAZARD_COLORS } from '../style/weatherColors';
@@ -89,6 +90,9 @@ describe('regional weather: the overlay', () => {
         // The light theme's pass leaves the aviation colours as they are.
         const text = JSON.stringify(style.layers);
         for (const colour of Object.values(FLIGHT_CATEGORY_COLORS)) expect(text, theme).toContain(colour);
+        // The SIGMET words read over their halo in both themes: the text token, not the hazard's pastel (2026-11-28).
+        const words = style.layers.find(layer => layer.id === SIGMET_LAYER_IDS[2]).paint;
+        expect(contrastRatio(words['text-color'], words['text-halo-color']), theme).toBeGreaterThanOrEqual(7);
       }
     }
     // The radar and the loop under the SIGMETs, all under the references; the stations over the references.

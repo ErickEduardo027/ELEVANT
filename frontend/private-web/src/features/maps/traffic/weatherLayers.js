@@ -710,8 +710,8 @@ function frameLayer(id, source, group, paint) {
 /**
  * The regional part of the weather overlay (lane M7): the sources and layers of the satellite loop (LOOP_FRAME_COUNT
  * rasters with the latest infrared until OccMap pins them, in greys until the band says otherwise), the radar
- * (RADAR_FRAME_COUNT rasters born with RADAR_PLACEHOLDER_TILE), the SIGMETs (a light fill, an outline and the words, in
- * the colour of the hazard) and the METAR stations (the dot of the flight category, the wind barb and the ICAO code with
+ * (RADAR_FRAME_COUNT rasters born with RADAR_PLACEHOLDER_TILE), the SIGMETs (a light fill and an outline in the colour
+ * of the hazard, the words in the text token over the halo, legible in both themes: 2026-11-28) and the METAR stations (the dot of the flight category, the wind barb and the ICAO code with
  * the category), each in the layers-menu group of its key and drawn up to the airfield threshold.
  */
 export function regionalOverlay() {
@@ -751,7 +751,7 @@ export function regionalOverlay() {
         'text-field': ['get', 'label'], 'text-font': [...FONT_STACKS.regular], 'text-size': 11, 'text-max-width': 14,
         'text-optional': true,
       },
-      paint: { 'text-color': hazardColour(), ...HALO },
+      paint: { 'text-color': occColor('text'), ...HALO },
       metadata: sigmetMetadata,
     },
     {
