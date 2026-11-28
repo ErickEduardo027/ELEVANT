@@ -8,6 +8,7 @@ import { FOOTPRINT_PAINT, PROGRESS_PAINT, standFill, standPaint } from '../stand
 import { MILESTONES_TOTAL } from '../stands/standModel';
 import { mapColorsFor } from '../style/mapColors';
 import { MAP_IMAGE_SHAPES } from '../style/mapImages';
+import { FLIGHT_ROUTES_GROUP, FLIGHT_ROUTE_STYLE } from '../style/flightRouteLayers';
 import { AIRPORT_KINDS } from '../style/referenceLayers';
 import { basemapColorsFor } from '../style/mapTheme';
 import { useOptionalTheme } from '../../shell/useTheme';
@@ -316,6 +317,25 @@ function AirportSwatch({ kind }) {
   );
 }
 
+// The great circles of every AVIAM flight (M8, style/flightRouteLayers.js) while the map shows them: in the Mundo and
+// Región views with «Rutas de los vuelos de AVIAM» on (Monitoreo's globe alone has the layer). And the board's filter
+// on the map (OccMap's flightEmphasis): the aircraft and routes it leaves out, dimmed.
+const FLIGHT_ROUTE_VIEWS = new Set(['world', 'region']);
+function flightRoutesShown({ layers, activeView }) {
+  return FLIGHT_ROUTE_VIEWS.has(activeView) && layers?.keys?.includes(FLIGHT_ROUTES_GROUP) === true
+    && layers?.values?.[FLIGHT_ROUTES_GROUP] === true;
+}
+function FlightRouteSwatch({ outside = false }) {
+  const { width, opacity, outsideOpacity } = FLIGHT_ROUTE_STYLE;
+  return (
+    <svg {...SWATCH_PROPS} data-swatch={outside ? 'board-filter' : 'flight-route'}>
+      <path d="M2 16 Q10 2 18 12" style={{ fill: 'none', stroke: tokenColour('--occ-accent'), strokeWidth: width * 1.5,
+        strokeLinecap: 'round', opacity: outside ? outsideOpacity * 2 : opacity * 1.5 }} />
+      {outside ? <circle cx="18" cy="12" r="2.5" style={{ fill: tokenColour('--occ-text'), opacity: 0.3 }} /> : null}
+    </svg>
+  );
+}
+
 // The world from afar on the globe (M8, style/worldBaseLayers.js): drawn in the Mundo and Región views. Its swatch is a
 // flat tile of the land with a lit dot (the night) or a darker band (the relief), never the image's own colours.
 const WORLD_BASE_VIEWS = new Set(['world', 'region']);
@@ -375,7 +395,7 @@ function WideEntry({ swatch, name, hint }) {
 export default function MapLegend({ stands, bounds = null, defaultOpen = true, foldKey = null, className = '' }) {
   const {
     standsOnScreen, chipsOnScreen, standMarksOnScreen, flightsOnScreen, airfieldOnScreen, trafficOnScreen, layers,
-    activeView, referencesOnScreen, layersMenuOpen = false, setLayersMenuOpen, follow, views,
+    activeView, referencesOnScreen, layersMenuOpen = false, setLayersMenuOpen, follow, views, boardFilter = false,
   } = useOccMap();
   const theme = useOptionalTheme()?.theme;
   const { t, language } = useTranslation(mapMessages);
@@ -420,10 +440,13 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, f
   const airports = stands === undefined && airportsShown({ layers, activeView })
     ? (globe ? [...AIRPORT_KINDS, 'rd'] : AIRPORT_KINDS) : [];
   const routes = stands === undefined && routesShown({ layers, activeView });
+  const flightRoutes = stands === undefined && flightRoutesShown({ layers, activeView });
+  const dimmed = stands === undefined && boardFilter === true;
   const worldBase = stands === undefined && globe && WORLD_BASE_VIEWS.has(activeView);
   const worldBaseKey = theme === 'light' ? 'light' : 'dark';
   const listsOthers = traffic.length > 0 || flights || chips || states.length > 0 || signals.length > 0
-    || marks.length > 0 || tags.length > 0 || airports.length > 0 || routes || worldBase;
+    || marks.length > 0 || tags.length > 0 || airports.length > 0 || routes || worldBase
+    || flightRoutes || dimmed;
   const framesMap = references.length > 0 || airfield.length > 0;
   const shown = listsOthers || framesMap;
   if (!shown) return null;
@@ -459,6 +482,12 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, f
             </li>
           ))}
           {routes && <WideEntry swatch={<RouteSwatch />} name={t('routes.name')} hint={t('routes.hint')} />}
+          {flightRoutes && (
+            <WideEntry swatch={<FlightRouteSwatch />} name={t('flightRoutes.name')} hint={t('flightRoutes.hint')} />
+          )}
+          {dimmed && (
+            <WideEntry swatch={<FlightRouteSwatch outside />} name={t('boardFilter.name')} hint={t('boardFilter.hint')} />
+          )}
           {worldBase && (
             <WideEntry swatch={<WorldBaseSwatch theme={theme} />} name={t(`worldBase.${worldBaseKey}.name`)}
               hint={t(`worldBase.${worldBaseKey}.hint`)} />

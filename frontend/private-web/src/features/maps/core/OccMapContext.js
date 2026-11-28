@@ -43,6 +43,8 @@ import { VIEW_NAMES } from './cameraPresets';
 //   «Seguir en 3D»: `{ on, view, auto, subject, start(), stop(), setView(view), rotate(sign), tilt(sign), zoom(sign),
 //   hold(kind, sign), reset(), setAuto(on) }`, `subject` a store of the followed aircraft as the frames draw it (the
 //   panel's, ui/Follow3dPanel.jsx); outside an OccMap there is none.
+// - board filter (M8, OccMap's `flightEmphasis`): `boardFilter`, whether the filter of Monitoreo's board dims AVIAM
+//   aircraft on the map, for the legend.
 // Outside an OccMap the value is a map that does nothing and shows nothing.
 
 const doNothing = () => {};
@@ -74,6 +76,7 @@ export const OCC_MAP_IDLE = Object.freeze({
   registerLayersMenu: () => doNothing,
   motion: Object.freeze({ available: false, paused: false, pausedAt: null, dataAt: null, pause: doNothing, resume: doNothing }),
   follow: Object.freeze({ available: false, following: false, canFollow: false, toggle: doNothing }),
+  boardFilter: false,
 });
 
 export const OccMapContext = createContext(OCC_MAP_IDLE);

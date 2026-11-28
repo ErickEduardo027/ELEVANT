@@ -51,7 +51,11 @@ const NOT_PARKED = isNot('parkedOnStand');
 const NOT_3D = isNot('model3d');
 // A stale position is dimmed to half; an aircraft fading out (PR M6: a cancelled demo, traffic that lost its signal)
 // carries its own opacity, which multiplies it, so the icon, its ring, its tag and its plate fade together.
-const DIMMED = ['*', ['case', is('stale'), 0.5, 1], ['coalesce', get('opacity'), 1]];
+// M8: on Monitoreo, an AVIAM aircraft the board's filter leaves out is dimmed as well, by the feature state `outside`
+// (OccMap's flightEmphasis), so a new filter writes no data.
+export const OUTSIDE_FILTER_OPACITY = 0.3;
+const OUTSIDE = ['case', ['boolean', ['feature-state', 'outside'], false], OUTSIDE_FILTER_OPACITY, 1];
+const DIMMED = ['*', ['case', is('stale'), 0.5, 1], ['coalesce', get('opacity'), 1], OUTSIDE];
 const FADED = ['coalesce', get('opacity'), 1];
 const bold = () => ['literal', [...FONT_STACKS.bold]];
 

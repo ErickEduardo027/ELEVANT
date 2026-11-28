@@ -531,6 +531,10 @@ const standPointOf = stand => stand?.geometry?.center ?? lngLatOf(stand);
  *   Mercator reads `view=world` as no view. Under the globe the three.js aircraft wait until the zoom where the globe is
  *   Mercator again (GLOBE_MERCATOR_ZOOM): their frames are Mercator's until M2 makes them follow the projection.
  *   `defaultView` may also be 'rd', the framing of the Dominican Republic and Puerto Rico (core/cameraPresets.js).
+ * - `flightEmphasis` (M8, Monitoreo's board filter): `null` (no filter) or the flight keys of the map flights the board
+ *   keeps. Every other AVIAM aircraft of `traffic` is dimmed through the feature state `outside` of the traffic source
+ *   (traffic/trafficLayers.js: OUTSIDE_FILTER_OPACITY), so a new filter writes no data; OccMapContext's `boardFilter`
+ *   says whether a filter dims anything, for the legend.
  * - `traffic` (PR M5): `{ aircraft, trails, route, source, flights }` from the map situation (useMapSituation: the
  *   aircraft of traffic/situationModel.js, the trails FeatureCollection, the chosen flight's route, the air picture's
  *   source and, from PR M8, the rows of the map flights, whose counterparts the references emphasise).
@@ -634,6 +638,7 @@ const OccMapView = forwardRef(function OccMapView({
   isShortcutBlocked,
   focusStandOnStart = false,
   projection = 'mercator',
+  flightEmphasis = null,
   className = '',
   children,
 }, ref) {
@@ -2180,6 +2185,30 @@ const OccMapView = forwardRef(function OccMapView({
     engine.setAttribution(buildAttribution(weatherSource === null ? [] : [weatherSource], { aircraftDataLabel }));
   }, [aircraftDataLabel, weatherCreditKey, weatherLabel, weatherSource]);
 
+  // The board's filter (M8): the AVIAM aircraft it leaves out are dimmed by feature state, written only for the keys
+  // whose state changes (a filter taken away clears every key it dimmed).
+  const emphasisKey = Array.isArray(flightEmphasis) ? [...new Set(flightEmphasis.map(String))].sort().join('|') : null;
+  const mapFlightKeys = (Array.isArray(traffic?.flights) ? traffic.flights : EMPTY)
+    .map(row => row?.flightKey).filter(key => typeof key === 'string' && key !== '').sort().join('|');
+  // What this engine was given: a map started again (after a lost engine) starts with nothing dimmed.
+  const dimmedRef = useRef({ engine: null, ids: new Set() });
+  const dimmedKey = useMemo(() => {
+    if (emphasisKey === null || mapFlightKeys === '') return '';
+    const kept = new Set(emphasisKey === '' ? [] : emphasisKey.split('|'));
+    return mapFlightKeys.split('|').filter(key => !kept.has(key)).join('|');
+  }, [emphasisKey, mapFlightKeys]);
+  const boardFilter = dimmedKey !== '';
+  const engineState = snapshot.engineStatus;
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    const next = new Set(dimmedKey === '' ? [] : dimmedKey.split('|').map(key => `f:${key}`));
+    const previous = dimmedRef.current.engine === engine ? dimmedRef.current.ids : new Set();
+    for (const id of previous) if (!next.has(id)) engine.setFeatureState(TRAFFIC_SOURCE, id, { outside: false });
+    for (const id of next) if (!previous.has(id)) engine.setFeatureState(TRAFFIC_SOURCE, id, { outside: true });
+    dimmedRef.current = { engine, ids: next };
+  }, [dimmedKey, engineState]);
+
   // A screen's own overlays: one setData for each source whose features changed, keyed like the stands and flights.
   useEffect(() => {
     const engine = engineRef.current;
@@ -2454,9 +2483,9 @@ const OccMapView = forwardRef(function OccMapView({
     [motionSnapshot, pauseMotion, resumeMotion]);
   const mapContext = useMemo(() => ({
     ...context, trafficOnScreen: trafficShown, trafficSource, layers, setLayer, layersMenuOpen, setLayersMenuOpen,
-    registerLayersMenu, motion, follow: followInfo, referencesOnScreen, view3d,
+    registerLayersMenu, motion, follow: followInfo, referencesOnScreen, view3d, boardFilter,
   }), [context, trafficShown, trafficSource, layers, setLayer, layersMenuOpen, setLayersMenuOpen, registerLayersMenu,
-    motion, followInfo, referencesOnScreen, view3d]);
+    motion, followInfo, referencesOnScreen, view3d, boardFilter]);
 
   // The list of the fallback: the adapter's own items, else the stands of the screen, else those that frame the views.
   const listedStands = stands.length > 0 ? stands : referenceStands;

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { useOptionalOccShellChannel } from '../../admin-occ/shell/occShellContext';
 import { useOccStation } from '../../admin-occ/useOccStation';
+import { counterpartPoint } from '../../maps/airport/worldAirports';
 import { PUJ_ARP, defaultFlightView, lngLatOf } from '../../maps/core/cameraPresets';
 import { matchFlight } from '../../maps/core/mapSelection';
 import OccMap from '../../maps/core/OccMap';
@@ -10,6 +11,7 @@ import { useOccMap } from '../../maps/core/OccMapContext';
 import { useMapSelection } from '../../maps/core/useMapSelection';
 import { mapMessages } from '../../maps/mapMessages';
 import { STAND_REFERENCE } from '../../maps/stands/standReference';
+import { FLIGHT_ROUTES_SOURCE, flightRouteFeatures, flightRoutesOverlay } from '../../maps/style/flightRouteLayers';
 import { isDrawn } from '../../maps/traffic/trafficFeatures';
 import FlightDataBlock from '../../maps/ui/FlightDataBlock';
 import Follow3dPanel from '../../maps/ui/Follow3dPanel';
@@ -22,6 +24,7 @@ import MapPresetSwitcher from '../../maps/ui/MapPresetSwitcher';
 import MapSourceStatus from '../../maps/ui/MapSourceStatus';
 import { RAIL_ICON_TOOL, RAIL_TOOL_ROW } from '../../maps/ui/railClasses';
 import { useMapSituation } from '../../maps/useMapSituation';
+import { useOptionalTheme } from '../../shell/useTheme';
 import { useMdpcWeather } from '../../weather/useMdpcWeather';
 import { flightMonitoringMessages } from '../flightMonitoringMessages';
 import { CrosshairIcon, RotateCcwIcon } from './icons';
@@ -50,7 +53,7 @@ const findFlight = (flights, id) => (id == null ? null : flights.find(flight => 
 // OCC maps follow the shell theme on their own (OccMap).
 function FlightMapView({
   flights = EMPTY, selectedFlightId = null, onSelectFlight, traffic, weather, drawnFlights, selection: chosen,
-  onSelect, framePoints = EMPTY, children,
+  onSelect, framePoints = EMPTY, overlays, overlayData, flightEmphasis = null, children,
 }) {
   const { t } = useTranslation(flightMonitoringMessages);
   const { t: tMap } = useTranslation(mapMessages);
@@ -97,6 +100,9 @@ function FlightMapView({
       projection="globe"
       mapOptions={MONITORING_MAP_OPTIONS}
       presetStands={STAND_REFERENCE}
+      overlays={overlays}
+      overlayData={overlayData}
+      flightEmphasis={flightEmphasis}
       flights={drawnFlights ?? flights}
       traffic={traffic}
       weather={weather}
@@ -152,6 +158,7 @@ function FlightMapView({
  */
 function LiveFlightMap({
   flights = EMPTY, selectedFlightId = null, onSelectFlight, detail = null, onSelectionFlights, dataBlockSlot = null,
+  emphasisedFlightIds = null,
 }) {
   const { stationId } = useOccStation();
   const { selection: urlSelection, selectAircraft, clear } = useMapSelection();
@@ -186,6 +193,25 @@ function LiveFlightMap({
     if (selectedFlightId != null && selectedHex !== null) clear();
   }, [clear, selectedFlightId, selectedHex]);
 
+  // The board's filter on the map (M8): the map flights of the strips it keeps, by key, and the chosen flight always;
+  // `null` while the board keeps every flight.
+  const chosenKey = chosenMapFlight?.flightKey ?? null;
+  const emphasis = useMemo(() => {
+    if (!Array.isArray(emphasisedFlightIds)) return null;
+    const keys = emphasisedFlightIds.map(id => matchFlight(mapFlights, String(id))?.flightKey).filter(Boolean);
+    return chosenKey === null ? keys : [...keys, chosenKey];
+  }, [emphasisedFlightIds, mapFlights, chosenKey]);
+  // The great circles of every AVIAM flight (M8), the chosen one's left to its own route; the board's filter dims the
+  // others. Written again only when the map flights, the filter or the chosen flight change.
+  const theme = useOptionalTheme()?.theme === 'light' ? 'light' : 'dark';
+  const routeOverlays = useMemo(() => [flightRoutesOverlay({ theme })], [theme]);
+  const stationAirport = live.flights?.stationAirport ?? null;
+  const routeData = useMemo(() => ({
+    [FLIGHT_ROUTES_SOURCE]: flightRouteFeatures(mapFlights, {
+      station: counterpartPoint(stationAirport) ?? PUJ_ARP, emphasised: emphasis, exclude: chosenKey,
+    }),
+  }), [mapFlights, stationAirport, emphasis, chosenKey]);
+
   const handleSelect = next => {
     if (next?.kind === 'aircraft') {
       onSelectFlight?.(null);
@@ -207,7 +233,8 @@ function LiveFlightMap({
   const pageDetail = selectedFlightId != null && live.status !== 'loading' ? detail : null;
   return (
     <FlightMapView flights={flights} selectedFlightId={selectedFlightId} onSelectFlight={onSelectFlight} traffic={traffic}
-      weather={weather} drawnFlights={drawnFlights} selection={selection} onSelect={handleSelect} framePoints={framePoints}>
+      weather={weather} drawnFlights={drawnFlights} selection={selection} onSelect={handleSelect} framePoints={framePoints}
+      overlays={routeOverlays} overlayData={routeData} flightEmphasis={emphasis}>
       <MapSourceStatus status={live.status} picture={live.picture} sourceState={live.sourceState} clock={live.clock}
         onRetry={live.retry} />
       <SelectionCard target={target} detail={pageDetail} telemetry={live.telemetry} slot={dataBlockSlot}
@@ -239,6 +266,8 @@ function SelectionCard({ target, detail, slot = null, ...block }) {
  * of its selected flight (`detail`). `onSelectionFlights({ flight, flights })` (U5) hears, inside the shell, the chosen
  * flight as the map flights know it (`null` when they do not) and the map flights themselves, after each read.
  * `dataBlockSlot` (CN-32), an element of the page's side panel, receives the chosen flight's live data block.
+ * `emphasisedFlightIds` (M8), the ids of the page's flights the board's filter keeps (`null` for every flight): inside
+ * the shell the map dims the other AVIAM aircraft and their routes.
  */
 export default function FlightMap({ detail = null, ...props }) {
   const channel = useOptionalOccShellChannel();
