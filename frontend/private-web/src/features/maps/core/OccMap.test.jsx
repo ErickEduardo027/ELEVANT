@@ -30,7 +30,9 @@ import {
 import { serverClock } from '../../../services/serverClock';
 import { toWeatherReading } from '../../../services/weatherService';
 import { runwayEnds } from '../airport/runwayInUse';
-import { createAerodromeWeather, WEATHER_NOON } from '../testing/weatherFixtures';
+import {
+  createAerodromeWeather, createRadarFrames, createRegionWeather, createSigmets, WEATHER_NOON,
+} from '../testing/weatherFixtures';
 import { nightShadeFeatures } from '../traffic/nightShade';
 import { createMotionStore } from '../traffic/motionStore';
 import { buildSituation, toFlightsModel, toPictureModel } from '../traffic/situationModel';
@@ -3176,6 +3178,32 @@ describe('OccMap weather (PR M8)', () => {
     // The browser's choices were not touched by the scene's.
     expect(window.localStorage.getItem('elevant-occ-map-layers:v1')).toBe('{"weather.goes":false}');
     window.localStorage.clear();
+  });
+
+  // Hotfix of 2026-11-28 (VPS e17a01d1): the loop asked GeoColor for the infrared's latest time (16:50) when GeoColor's
+  // latest was 16:20, and four of its six frames answered 404. It now pins the images GeoColor has, skipping its holes.
+  it('pins the satellite loop to the images GIBS has of the band it shows, never to the infrared time', async () => {
+    const afternoon = Date.parse('2026-11-28T17:20:00Z');
+    const geocolor = ['2026-11-28T15:10:00Z', '2026-11-28T15:20:00Z', '2026-11-28T15:30:00Z', '2026-11-28T15:40:00Z',
+      '2026-11-28T15:50:00Z', '2026-11-28T16:10:00Z', '2026-11-28T16:20:00Z'];
+    const service = createSimulatedSatelliteImagery({ goes: { time: '2026-11-28T16:50:00Z' },
+      domains: { geocolor, ir: ['2026-11-28T16:50:00Z'] } });
+    const read = data => ({ status: 'success', data });
+    const regionWeather = { region: read(createRegionWeather()), sigmets: read(createSigmets()),
+      wind: { status: 'loading', data: null }, radar: read(createRadarFrames()), demo: false };
+    render(<OccMap defaultView="region" frozenAt={afternoon} weather={weatherAt()} regionWeather={regionWeather}
+      satelliteService={service} layerOverrides={{ 'weather.loop': true, 'weather.goes': false }} />);
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    await settle();
+    await settle();
+    // Only the domain of GeoColor, the band of the afternoon at PUJ, is read; not the infrared's header.
+    expect(service.calls).toEqual([{ loop: true, read: 'domain', band: 'geocolor' }]);
+    const pinned = Array.from({ length: 6 }, (_, index) => map.getSource(`occ-weather-loop-${index}`).setTilesCalls.at(-1)?.[0]);
+    expect(pinned).toEqual(['15:20', '15:30', '15:40', '15:50', '16:10', '16:20'].map(time =>
+      `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-East_ABI_GeoColor/default/2026-11-28T${time}:00Z/`
+      + 'GoogleMapsCompatible_Level7/{z}/{y}/{x}.png'));
+    expect(pinned.join(' ')).not.toContain('16:50');
   });
 
   it('credits NOAA while the wind is on screen', () => {
