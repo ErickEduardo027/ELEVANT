@@ -6,9 +6,10 @@ import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { destinationPoint, METRES_PER_NM } from '../airport/geo';
 import { thresholdsFromFits } from '../core/cameraPresets';
 import {
-  AIRCRAFT_3D_COLORS, AIRCRAFT_3D_RADIUS_NM, DROP_LINE_MIN_M, SHADOW, TYPE_MEMO_LIMIT, instanceKey, linearRgb,
-  mercatorFrame, planInstances, typeMemoSizeForTests, pivotOf, poseMatrix,
+  AIRCRAFT_3D_COLORS, AIRCRAFT_3D_RADIUS_NM, DROP_LINE_MIN_M, GROUND_TRAFFIC_3D_RADIUS_M, SHADOW, TYPE_MEMO_LIMIT,
+  instanceKey, linearRgb, liveryInstanceColours, mercatorFrame, planInstances, typeMemoSizeForTests, pivotOf, poseMatrix,
 } from './instancePlan';
+import { DEFAULT_LIVERY, LIVERIES, LIVERY_ZONES } from './liveries';
 import { AIRCRAFT_TYPES, CATEGORY_FALLBACKS } from './types';
 
 // Synthetic aircraft around the ARP of Punta Cana: invented ids and places, the shape of the map's RenderAircraft
@@ -393,5 +394,81 @@ describe('poseMatrix and attitudes (CN-30)', () => {
     // Left out when the detailed model draws it.
     expect(planInstances([climbing], [], { zoom: 16, minZoom: 15, originLngLat: MDPC_LAYOUT.meta.arp,
       excludeId: 'f:climb' }).size).toBe(0);
+  });
+});
+
+// M9: the liveries of Mapa de posiciones and the other traffic on the ground near the field.
+describe('the 3D instance plan with liveries (M9)', () => {
+  const zoneOf = (entry, zone, index) => (zone === 'fuselage'
+    ? colourOf(entry, index)
+    : Array.from(entry.zoneColors[zone].slice(3 * index, 3 * index + 3)));
+  const expectZones = (entry, index, colours) => {
+    for (const zone of LIVERY_ZONES) expect(zoneOf(entry, zone, index), zone).toEqual(float32(colours[zone]));
+  };
+
+  it("liveryInstanceColours gives each zone of the airline's livery in linear colour, the default livery otherwise", () => {
+    const copa = liveryInstanceColours({ callsign: 'CMP893' });
+    expect(Object.keys(copa)).toEqual(LIVERY_ZONES);
+    expect(copa).toEqual({ fuselage: linearRgb(LIVERIES.CMP.fuselage), belly: linearRgb(LIVERIES.CMP.belly),
+      tail: linearRgb(LIVERIES.CMP.tail), engine: linearRgb(LIVERIES.CMP.engine), wing: linearRgb(LIVERIES.CMP.wing) });
+    // The same frozen object for the same livery, however it is named.
+    expect(liveryInstanceColours({ airlineIata: 'CM' })).toBe(copa);
+    expect(Object.isFrozen(copa)).toBe(true);
+    expect(liveryInstanceColours({ callsign: 'N123AB' }).tail).toEqual(linearRgb(DEFAULT_LIVERY.tail));
+  });
+
+  it('without livery every zone of an aircraft is its monochrome colour, and the shadows are the shadow colour', () => {
+    const plan = planInstances([aircraft('f:p:mono', { bearing: 90, metres: 300, callsign: 'CMP893' })], [], OPTIONS);
+    const entry = plan.get('A320');
+    expect(Object.keys(entry.zoneColors)).toEqual(LIVERY_ZONES.filter(zone => zone !== 'fuselage'));
+    expectZones(entry, 0, Object.fromEntries(LIVERY_ZONES.map(zone => [zone, AIRCRAFT_3D_COLORS.aviam])));
+    expectZones(entry, 1, Object.fromEntries(LIVERY_ZONES.map(zone => [zone, AIRCRAFT_3D_COLORS.shadow])));
+  });
+
+  it("with livery parked and nearby aircraft wear their airline's colours; the chosen one and the shadows do not", () => {
+    const parked = { id: 's:B20', lon: ARP[0] + 0.001, lat: ARP[1], headingDeg: 200, typeIcao: 'A320', model: 'A320',
+      kind: 'aviam', flightNumber: 'CM 893' };
+    const taxiing = aircraft('f:p:taxi', { bearing: 45, metres: 600, callsign: 'JBU1234' });
+    const chosen = aircraft('f:p:chosen', { bearing: 135, metres: 600, callsign: 'DAL455' });
+    const plan = planInstances([taxiing, chosen], [parked], { ...OPTIONS, livery: true, selectedId: 'f:p:chosen' });
+    const entry = plan.get('A320');
+    expect(entry.ids).toEqual(['f:p:chosen', 'f:p:taxi', 's:B20', null, null, null]);
+    expectZones(entry, 0, Object.fromEntries(LIVERY_ZONES.map(zone => [zone, AIRCRAFT_3D_COLORS.selected])));
+    expectZones(entry, 1, liveryInstanceColours({ airlineIcao: 'JBU' }));
+    expectZones(entry, 2, liveryInstanceColours({ airlineIcao: 'CMP' }));
+    // A livery has a hue: jetBlue's fin is not its white body.
+    expect(zoneOf(entry, 'tail', 1)).not.toEqual(zoneOf(entry, 'fuselage', 1));
+    for (const index of [3, 4, 5]) {
+      expectZones(entry, index, Object.fromEntries(LIVERY_ZONES.map(zone => [zone, AIRCRAFT_3D_COLORS.shadow])));
+    }
+    // Its stand's scale for the parked one, the traffic's floor for the rest; the livery moves no matrix.
+    expect(Array.from(entry.floorLengths)).toEqual(float32([AIRCRAFT_TYPES.A320.lengthM, AIRCRAFT_TYPES.A320.lengthM, 0,
+      AIRCRAFT_TYPES.A320.lengthM, AIRCRAFT_TYPES.A320.lengthM, 0]));
+    const plain = planInstances([taxiing, chosen], [parked], { ...OPTIONS, selectedId: 'f:p:chosen' }).get('A320');
+    expect(Array.from(entry.matrices)).toEqual(Array.from(plain.matrices));
+  });
+
+  it('draws other traffic on the ground in 3D within groundRadiusM of the ARP only, at its heading on the ground', () => {
+    const near = aircraft('h:7a7b7c', { kind: 'other', onGround: true, bearing: 300, metres: 1_500, trackDeg: 75,
+      typeIcao: 'B738', callsign: 'AAL1234' });
+    const beyond = aircraft('h:8a8b8c', { kind: 'other', onGround: true, bearing: 300,
+      metres: GROUND_TRAFFIC_3D_RADIUS_M + 500, typeIcao: 'B738' });
+    const hidden = aircraft('h:9a9b9c', { kind: 'other', onGround: true, metres: 200, hiddenInStand: true });
+    expect(GROUND_TRAFFIC_3D_RADIUS_M).toBe(4_000);
+    // Without the radius it stays 2D (contracts 2.4), with or without livery.
+    expect(planInstances([near, beyond], [], { ...OPTIONS, livery: true }).size).toBe(0);
+    const plan = planInstances([near, beyond, hidden], [], { ...OPTIONS, livery: true,
+      groundRadiusM: GROUND_TRAFFIC_3D_RADIUS_M });
+    expect([...plan.keys()]).toEqual(['B738']);
+    const entry = plan.get('B738');
+    expect(entry.ids).toEqual(['h:7a7b7c', null]);
+    const [x, y] = local([near.lon, near.lat]);
+    expect(translationOf(entry, 0)).toEqual(float32([x, y, 0]));
+    const nose = new Vector3(0, 1, 0).transformDirection(matrixOf(entry, 0));
+    expect(Math.atan2(nose.x, nose.y) * (180 / Math.PI)).toBeCloseTo(75, 4);
+    expectZones(entry, 0, liveryInstanceColours({ airlineIcao: 'AAL' }));
+    expect(entry.dropLines.length).toBe(0);
+    // A radius that is not a number is none.
+    expect(planInstances([near], [], { ...OPTIONS, groundRadiusM: Number.NaN }).size).toBe(0);
   });
 });

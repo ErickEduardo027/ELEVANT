@@ -1,7 +1,9 @@
 import { mapStandCode } from '../../positions-map/positionsMapMappers';
 import { METRES_PER_NM, haversineM } from '../airport/geo';
 import { createAttitudeTracker } from '../aircraft/attitude';
-import { AIRCRAFT_3D_RADIUS_NM, aircraft3dColors, instanceKey, planInstances } from '../aircraft/instancePlan';
+import {
+  AIRCRAFT_3D_RADIUS_NM, GROUND_TRAFFIC_3D_RADIUS_M, aircraft3dColors, instanceKey, planInstances,
+} from '../aircraft/instancePlan';
 import { resolveLivery } from '../aircraft/liveries';
 import { loadAircraft3d } from '../aircraft/loadAircraft3d';
 import { resolveAircraftType } from '../aircraft/types';
@@ -128,7 +130,9 @@ export function writeMode3d(storage, on) {
  * aircraft on it to scale (its footprint `solid`: Ocupada or Por liberar with a known type), at the stand's centre, nose
  * along its heading. Its id is that of the ELEVANT aircraft parked there (`parkedIds`, the stands' own, by its
  * turnaround), else `s:<code>`; a stand whose visit has an aircraft of the traffic that is not parked (still moving)
- * draws none, so no aircraft is drawn twice.
+ * draws none, so no aircraft is drawn twice. M9: it carries what names its airline for its livery
+ * (aircraft/liveries.js: resolveLivery), the owner's `airlineIcao`, `airlineIata` and `callsign`, and the stand's
+ * flight number.
  */
 export function parkedFromStands(stands = [], aircraft = [], parkedIds = NO_IDS) {
   const byTurnaround = new Map();
@@ -157,6 +161,10 @@ export function parkedFromStands(stands = [], aircraft = [], parkedIds = NO_IDS)
       typeIcao: type,
       model: type,
       kind: 'aviam',
+      airlineIcao: owner?.airlineIcao ?? null,
+      airlineIata: owner?.airlineIata ?? null,
+      callsign: owner?.callsign ?? null,
+      flightNumber: owner?.flightNumber ?? display.flightNumber ?? null,
     });
   }
   return parked;
@@ -243,7 +251,10 @@ export function createGovernor({ limits = GOVERNOR, following = false } = {}) {
  * `theme` the colours of the aircraft (aircraft/instancePlan.js: aircraft3dColors), `getNow()` the instant of the
  * map's render clock (the sun is read at it), `onChange()` hears every change of what the 3D draws or says (OccMap then
  * writes its traffic again and shows the notice), `governor` false switches the governor off (the map lab), and
- * `load`, `now` and `webgl` (whether the browser has WebGL2) are for tests.
+ * `load`, `now` and `webgl` (whether the browser has WebGL2) are for tests. `liveries` (M9, Mapa de posiciones): every
+ * aircraft the 3D draws wears its airline's livery (aircraft/instancePlan.js: liveryInstanceColours), and other traffic
+ * on the ground within GROUND_TRAFFIC_3D_RADIUS_M of the ARP is drawn in 3D too while the governor is at full quality
+ * (its first step down, the lighter scene, gives it back to 2D).
  *
  * - `setEnabled(on)`: the 3D mode; off removes the layer (and its renderer) from the map;
  * - `plan({ aircraft, parked, zoom, minZoom, selectedId, followedId })`: the aircraft of a write of the traffic; plans
@@ -264,7 +275,7 @@ export function createGovernor({ limits = GOVERNOR, following = false } = {}) {
 export function createAircraft3dController({
   engine, originLngLat, fieldElevationM = 0, theme = 'dark', getNow = () => Date.now(), onChange,
   governor: governed = true, load = loadAircraft3d, now = () => globalThis.performance?.now() ?? Date.now(),
-  webgl = supportsWebgl2,
+  webgl = supportsWebgl2, liveries = false,
 } = {}) {
   const colors = aircraft3dColors(theme);
   const governor = createGovernor();
@@ -356,6 +367,7 @@ export function createAircraft3dController({
     const dt = lastFrameAt === null ? null : at - lastFrameAt;
     lastFrameAt = at;
     if (!governed || dt === null) return;
+    const before = governor.level;
     const step = governor.sample(dt, at);
     if (step === 0) return;
     if (governor.level >= GOVERNOR_PAUSED) {
@@ -363,6 +375,8 @@ export function createAircraft3dController({
       return;
     }
     applyLevel(governor.level);
+    // M9: the ground traffic's 3D follows the full quality; after this frame the map writes its traffic again.
+    if (liveries === true && (before === 0) !== (governor.level === 0)) Promise.resolve().then(changed);
   }
 
   function createLayer() {
@@ -547,7 +561,8 @@ export function createAircraft3dController({
       attitudes.retain(kept);
       const plan = enabled && status !== 'paused'
         ? planInstances(aircraft, parked, { zoom, minZoom, originLngLat, fieldElevationM, selectedId, colors,
-          attitudes: eased, excludeId: detail?.id ?? null })
+          attitudes: eased, excludeId: detail?.id ?? null, livery: liveries === true,
+          groundRadiusM: liveries === true && governor.level === 0 ? GROUND_TRAFFIC_3D_RADIUS_M : 0 })
         : new Map();
       revision += 1;
       current = { revision, plan, detail };

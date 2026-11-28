@@ -69,17 +69,19 @@ test.describe('Mapa de posiciones as a work map', () => {
     test(`A11 chosen beside A10, in 2D and 3D, at ${size}`, async ({ page, isolation }, testInfo) => {
       const { map } = await openPositions(page, isolation, { viewport, query: '?stand=A11' });
       await expect(inspector(page).getByText('A11').first()).toBeVisible();
-      await settled(map);
-      await shoot(page, testInfo, `n29-posiciones-a11-2d-${viewport.width}`);
-      await expectOneToolBlock(page);
-
-      await page.getByRole('button', { name: 'Cambiar a vista 3D' }).click();
+      // The screen opens in 3D (M9, 27 de noviembre de 2026): 3D first, then 2D.
       await expect(page.getByRole('button', { name: 'Cambiar a vista 2D' })).toHaveAttribute('aria-pressed', 'true');
       // The compass of the map's own controls leans with the camera (visualizePitch): the tilt of 3D has been applied.
       await expect(map.locator('.maplibregl-ctrl-compass .maplibregl-ctrl-icon'))
         .toHaveAttribute('style', /rotateX\([3-9]\d(?:\.\d+)?deg\)/);
       await settled(map);
       await shoot(page, testInfo, `n29-posiciones-a11-3d-${viewport.width}`);
+      await expectOneToolBlock(page);
+
+      await page.getByRole('button', { name: 'Cambiar a vista 2D' }).click();
+      await expect(page.getByRole('button', { name: 'Cambiar a vista 3D' })).toHaveAttribute('aria-pressed', 'false');
+      await settled(map);
+      await shoot(page, testInfo, `n29-posiciones-a11-2d-${viewport.width}`);
       await expectOneToolBlock(page);
     });
 

@@ -1,12 +1,13 @@
 import { createRef } from 'react';
-import { act, cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GPUInitializationError, sharedFakeMapLibre } from '../../../../tests/fakeMapLibre';
 import { LanguageScope } from '../../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../../i18n/languageStore';
 import { MDPC_LAYOUT } from '../../maps/airport/airportLayout';
-import { presetTargets } from '../../maps/core/cameraPresets';
+import { AIRPORT_FOLLOW_MAX_ZOOM, airportLockOptions, presetTargets, PUJ_ARP } from '../../maps/core/cameraPresets';
+import { ENGINE_MAX_ZOOM, ENGINE_MIN_ZOOM } from '../../maps/core/mapEngine';
 import { attachStandGeometry } from '../../maps/stands/standModel';
 import { STAND_REFERENCE } from '../../maps/stands/standReference';
 import { createMapStands, standPoint } from '../../maps/testing/mapFixtures';
@@ -18,9 +19,15 @@ import {
 } from '../../maps/testing/trafficFixtures';
 import { createMotionStore } from '../../maps/traffic/motionStore';
 import { buildSituation, toFlightsModel, toPictureModel } from '../../maps/traffic/situationModel';
+import { createAircraft3dController } from '../../maps/core/aircraft3d';
 import PositionMap from './PositionMap';
 
 vi.mock('maplibre-gl', async () => (await import('../../../../tests/fakeMapLibre.js')).sharedFakeMapLibre().module);
+// M9: what the map asks of its 3D aircraft, read through the real controller.
+vi.mock('../../maps/core/aircraft3d', async importOriginal => {
+  const actual = await importOriginal();
+  return { ...actual, createAircraft3dController: vi.fn(actual.createAircraft3dController) };
+});
 
 const fake = sharedFakeMapLibre();
 // Synthetic states over the reference points: A1 occupied, A2 free and A3 planned (placed by OCC), B21 disabled and
@@ -144,6 +151,17 @@ describe('PositionMap on the map engine', () => {
     expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-view', 'ramp');
     expect(within(screen.getByTestId('map-preset-switcher')).getByRole('button', { name: /Rampa/ }))
       .toHaveAttribute('aria-pressed', 'true');
+    // Planificación and the console keep the four views and a free camera (M9 is opt-in): no bounds, no «Capas».
+    expect(within(screen.getByTestId('map-preset-switcher')).getAllByRole('button')).toHaveLength(4);
+    expect(view.map.options.maxBounds).toBeUndefined();
+    expect(view.map.options.minZoom).toBe(4.5);
+    // Nor the airport in 3D.
+    loadStyle(view.map);
+    expect(view.map.getLayer('occ-airfield-building-3d')).toBeFalsy();
+    expect(view.map.getSource('occ-airfield-structures')).toBeFalsy();
+    // Nor the liveries and the ground traffic of its 3D aircraft.
+    expect(createAircraft3dController.mock.calls.at(-1)[0]).toMatchObject({ liveries: false });
+    expect(screen.queryByTestId('map-layers-menu')).not.toBeInTheDocument();
     // The default view is not written in the URL.
     expect(window.location.search).toBe('?stationId=s-1');
     view.unmount();
@@ -400,5 +418,108 @@ describe('PositionMap with the live traffic (PR M6)', () => {
     expect(screen.queryByRole('button', { name: 'Seguir' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Pausar movimiento' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Leyenda' })).toBeInTheDocument();
+  });
+});
+
+describe('PositionMap fixed on PUJ (M9, Mapa de posiciones)', () => {
+  // Aeródromo centred on the ARP: the smallest box centred there that holds the airfield box.
+  const CENTRED = presetTargets({ stands: STAND_REFERENCE, layout: MDPC_LAYOUT, airfieldCentre: PUJ_ARP });
+  const CENTRED_FIT = fitWidth(CENTRED.airfield.bounds);
+
+  it('opens on «Aeródromo» in 3D centred on the ARP, with its camera held over the airport', () => {
+    const { map } = renderPositions({ fixedOnAirport: true, viewMode: '3d', onViewModeChange: () => {} });
+    expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-view', 'airfield');
+    expect(map.getZoom()).toBeCloseTo(CENTRED_FIT, 6);
+    expect(map.getCenter().lng).toBeCloseTo(PUJ_ARP[0], 9);
+    expect(map.getCenter().lat).toBeCloseTo(PUJ_ARP[1], 9);
+    expect([map.getPitch(), map.getBearing()]).toEqual([40, -17]);
+    const lock = airportLockOptions({ stands: STAND_REFERENCE, layout: MDPC_LAYOUT });
+    expect(map.options).toMatchObject({ maxBounds: lock.maxBounds, minZoom: 13 });
+    // The default view is not written in the URL.
+    expect(window.location.search).toBe('?stationId=s-1');
+    // The airport in 3D: the raised terminals, the jet bridges and the taxiway pavement, from the MDPC dataset.
+    loadStyle(map);
+    for (const id of ['occ-airfield-taxiway-pavement', 'occ-airfield-building-3d', 'occ-airfield-jet-bridge']) {
+      expect(map.getLayer(id), id).toBeTruthy();
+    }
+    expect(map.getSource('occ-airfield-structures').data.features.length).toBeGreaterThan(0);
+    // Its 3D aircraft wear their airlines' liveries, with the ground traffic near the field (M9).
+    expect(createAircraft3dController.mock.calls.at(-1)[0]).toMatchObject({ liveries: true, governor: true });
+  });
+
+  it('offers only Aeródromo and Rampa: 1 and 2 do nothing, and a `view=` of another view is ignored', () => {
+    window.history.replaceState({}, '', `${PAGE}&view=region`);
+    const { map } = renderPositions({ fixedOnAirport: true, viewMode: '3d', onViewModeChange: () => {} });
+    loadStyle(map);
+    expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-view', 'airfield');
+    const buttons = within(screen.getByTestId('map-preset-switcher')).getAllByRole('button');
+    expect(buttons.map(button => button.getAttribute('aria-keyshortcuts'))).toEqual(['3', '4']);
+    const calls = map.cameraCalls.length;
+    fireEvent.keyDown(map.getCanvas(), { key: '1' });
+    fireEvent.keyDown(map.getCanvas(), { key: '2' });
+    expect(map.cameraCalls).toHaveLength(calls);
+    expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-view', 'airfield');
+    fireEvent.keyDown(map.getCanvas(), { key: '4' });
+    expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-view', 'ramp');
+  });
+
+  it("D changes the page's 2D/3D, L opens «Capas» and «Centrar PUJ» flies back to the ARP", () => {
+    const onViewModeChange = vi.fn();
+    const { map, ref, rerender } = renderPositions({ fixedOnAirport: true, viewMode: '3d', onViewModeChange });
+    loadStyle(map);
+    // The screen's own 2D/3D is in its rail tools: the rail shows no second one.
+    expect(screen.queryByTestId('map-3d-toggle')).not.toBeInTheDocument();
+    fireEvent.keyDown(map.getCanvas(), { key: 'd' });
+    expect(onViewModeChange).toHaveBeenLastCalledWith('2d');
+    rerender({ viewMode: '2d' });
+    fireEvent.keyDown(map.getCanvas(), { key: 'd' });
+    expect(onViewModeChange).toHaveBeenLastCalledWith('3d');
+
+    expect(screen.getByTestId('map-layers-menu')).toBeInTheDocument();
+    fireEvent.keyDown(map.getCanvas(), { key: 'l' });
+    expect(screen.getByRole('group', { name: 'Capas del mapa' })).toBeInTheDocument();
+
+    act(() => map.jumpTo({ center: [-68.35, 18.57], zoom: 17 }));
+    act(() => ref.current.flyToPuj());
+    expect(map.getZoom()).toBeCloseTo(CENTRED_FIT, 6);
+    expect(map.getCenter().lng).toBeCloseTo(PUJ_ARP[0], 9);
+    expect(map.getCenter().lat).toBeCloseTo(PUJ_ARP[1], 9);
+  });
+
+  // Review of 2026-11-28: the held camera clamped every frame of follow mode, so a departure climbing out left the screen
+  // while the map still said it followed it. Following lets the lock go (no bounds, the engine's minimum zoom, zoom 22);
+  // the lock comes back when following ends, after the move on its way.
+  it('lets the held camera go while it follows an aircraft, with zoom 22, and holds it again when following ends', () => {
+    const frames = [];
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => frames.push(callback));
+    vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => {});
+    const runFrames = () => act(() => frames.splice(0).forEach(callback => callback(0)));
+    const lock = airportLockOptions({ stands: STAND_REFERENCE, layout: MDPC_LAYOUT });
+    const { map } = renderPositions({
+      fixedOnAirport: true, viewMode: '3d', onViewModeChange: () => {}, traffic: liveTraffic(),
+      trafficSelection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.arrival }, onSelectTraffic: () => {},
+    });
+    loadStyle(map);
+    runFrames();
+    expect(map.options).toMatchObject({ maxBounds: lock.maxBounds, minZoom: 13 });
+
+    fireEvent.keyDown(map.getCanvas(), { key: 's' });
+    expect(new URLSearchParams(window.location.search).get('follow')).toBe('1');
+    runFrames();
+    expect(map.options).toMatchObject({ maxBounds: null, minZoom: ENGINE_MIN_ZOOM, maxZoom: AIRPORT_FOLLOW_MAX_ZOOM });
+    // Every frame of follow mode keeps it released: once is enough.
+    const released = map.calls.filter(call => call.method === 'setMaxBounds').length;
+    expect(released).toBe(1);
+    runFrames();
+    expect(map.calls.filter(call => call.method === 'setMaxBounds')).toHaveLength(released);
+
+    // A move on its way when following ends: the lock waits for its end, then comes back.
+    map.moving = true;
+    fireEvent.keyDown(map.getCanvas(), { key: 's' });
+    expect(new URLSearchParams(window.location.search).get('follow')).toBeNull();
+    expect(map.options.maxBounds).toBeNull();
+    map.moving = false;
+    act(() => fake.state.emit(map, 'moveend'));
+    expect(map.options).toMatchObject({ maxBounds: lock.maxBounds, minZoom: 13, maxZoom: ENGINE_MAX_ZOOM });
   });
 });

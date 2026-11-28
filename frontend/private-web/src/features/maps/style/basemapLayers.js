@@ -38,10 +38,10 @@ const LABEL_SIZE = 12;
 const ROAD_WIDTH = ['interpolate', ['exponential', 1.4], ['zoom'], 8, 0.5, 12, 1.2, 16, 4];
 const COAST_WIDTH = ['interpolate', ['linear'], ['zoom'], 4, 0.6, 12, 1.2];
 // Pavement drawn close to its real width from zoom 14 (a 45 m runway, a 23 m taxiway at 18.6° N), and never thinner
-// than a line that still reads when the map is zoomed out. The airfield of the own dataset (airfieldLayers.js) draws
+// than a line that still reads when the map is zoomed out; up to zoom 22, the ultra-close zoom of the airfield (M9). The airfield of the own dataset (airfieldLayers.js) draws
 // its runways and taxiways with the same widths, so the hand-over from the tiles shows no jump.
-export const RUNWAY_WIDTH = Object.freeze(['interpolate', ['exponential', 2], ['zoom'], 9, 1, 12, 3, 14, 6, 16, 20, 18, 80, 19.5, 226]);
-export const TAXIWAY_WIDTH = Object.freeze(['interpolate', ['exponential', 2], ['zoom'], 12, 1, 14, 2.5, 16, 10, 18, 40, 19.5, 113]);
+export const RUNWAY_WIDTH = Object.freeze(['interpolate', ['exponential', 2], ['zoom'], 9, 1, 12, 3, 14, 6, 16, 20, 18, 80, 19.5, 226, 22, 1278]);
+export const TAXIWAY_WIDTH = Object.freeze(['interpolate', ['exponential', 2], ['zoom'], 12, 1, 14, 2.5, 16, 10, 18, 40, 19.5, 113, 22, 639]);
 
 // The tile aeroway is context only: from the derived airfield threshold (the boundary of the Aeródromo view, contracts
 // 2.3) the own dataset draws the airfield instead.
@@ -222,7 +222,8 @@ export function basemapLayers({ theme = 'dark', colors = basemapColorsFor(theme)
     }),
   ];
 
-  // Only buildings with a published height are raised; none is guessed.
+  // Only buildings with a published height are raised; none is guessed. From the derived airfield threshold the own
+  // structures of the airport (airfieldLayers.js, M9) take over: the tile buildings would rise through them.
   const extrusions = [
     tileLayer('building', 'buildings-3d', {
       id: 'building-3d',
@@ -236,6 +237,7 @@ export function basemapLayers({ theme = 'dark', colors = basemapColorsFor(theme)
         'fill-extrusion-base': ['coalesce', ['to-number', ['get', 'render_min_height']], 0],
         'fill-extrusion-opacity': 0.85,
       },
+      metadata: UNTIL_AIRFIELD,
     }),
   ];
 

@@ -24,6 +24,12 @@ export const AIRFIELD_MARGIN_M = 300;
 export const FALLBACK_AIRFIELD_RADIUS_NM = 1.5;
 // Only for a station without one located stand: the ramp then frames a small ring around the ARP.
 export const RAMP_FALLBACK_RADIUS_NM = 0.6;
+// The camera of a map fixed on the airport (M9, Mapa de posiciones): the airfield box plus 3 km bounds it, and it never
+// zooms out past 13, so the screen keeps PUJ in sight.
+export const AIRPORT_LOCK_MARGIN_M = 3000;
+export const AIRPORT_LOCK_MIN_ZOOM = 13;
+// While it follows an aircraft (M9), a map fixed on the airport may zoom in this far (the engine stops at 19.5).
+export const AIRPORT_FOLLOW_MAX_ZOOM = 22;
 
 /**
  * The tilt of the 3D mode by view (contracts 2.3): the ramp keeps today's values of the positions map, the airfield
@@ -175,22 +181,59 @@ export function airfieldBounds({ stands = [], layout = null } = {}) {
   return padBounds(box, AIRFIELD_MARGIN_M);
 }
 
+/**
+ * The smallest bounds centred on `centre` (`[lng, lat]`) that hold `bounds`, or `bounds` as they are without a centre.
+ */
+export function centredBounds(bounds, centre) {
+  if (!isBounds(bounds) || !Array.isArray(centre) || !isCoordinate(centre[0]) || !isCoordinate(centre[1])) return bounds;
+  const [[west, south], [east, north]] = bounds;
+  const [lng, lat] = centre;
+  const dLng = Math.max(Math.abs(lng - west), Math.abs(east - lng));
+  const dLat = Math.max(Math.abs(lat - south), Math.abs(north - lat));
+  return [[lng - dLng, lat - dLat], [lng + dLng, lat + dLat]];
+}
+
+/**
+ * The bounds a map fixed on the airport keeps its camera in (M9): the airfield box (the layout's, else the 1.5 NM ring
+ * with the stands) plus 3 km, as MapLibre's `maxBounds` takes them.
+ */
+export function airportLockBounds({ stands = [], layout = null } = {}) {
+  const box = layoutBounds(layout) ?? unionBounds(ringBounds(PUJ_ARP, FALLBACK_AIRFIELD_RADIUS_NM), standBounds(stands));
+  return padBounds(box, AIRPORT_LOCK_MARGIN_M);
+}
+
+/** The MapLibre options of a map fixed on the airport (M9): `maxBounds` (airportLockBounds) and `minZoom` 13. */
+export function airportLockOptions({ stands = [], layout = null } = {}) {
+  return { maxBounds: airportLockBounds({ stands, layout }), minZoom: AIRPORT_LOCK_MIN_ZOOM };
+}
+
+/**
+ * The camera limits of a map fixed on the airport while it follows an aircraft (M9, OccMap `followLimits`): no bounds
+ * and the engine's own minimum zoom, so a departure climbing out or an arrival further out than the airfield box plus
+ * 3 km stays framed, and zoom 22 at most; the lock of airportLockOptions comes back when following ends.
+ */
+export function airportFollowLimits() {
+  return { maxBounds: null, minZoom: null, maxZoom: AIRPORT_FOLLOW_MAX_ZOOM };
+}
+
 const northUp = bounds => ({ bounds, pitch: 0, bearing: 0 });
 
 /**
  * What each view frames, 2D and north-up: `{ region, approach, airfield, ramp, terminals: { A, B, FBO } }`, each
  * `{ bounds, pitch: 0, bearing: 0 }`. With an airport layout the airfield is its box plus 300 m, the ramp its active
  * stand polygons plus 120 m and each terminal its own polygons plus 120 m; without one, the stand points frame them
- * (each plus its margin). A terminal without a stand to frame is `null` and falls back to the ramp.
+ * (each plus its margin). A terminal without a stand to frame is `null` and falls back to the ramp. `airfieldCentre`
+ * (`[lng, lat]`, M9: the ARP on Mapa de posiciones) centres the airfield on that point: its box grows to the smallest
+ * one centred there that holds it.
  */
-export function presetTargets({ stands = [], layout = null } = {}) {
+export function presetTargets({ stands = [], layout = null, airfieldCentre = null } = {}) {
   const ramp = standPolygonPresetBounds(layout)
     ?? standBounds(stands)
     ?? padBounds(ringBounds(PUJ_ARP, RAMP_FALLBACK_RADIUS_NM), STAND_MARGIN_M);
   return {
     region: northUp(ringBounds(PUJ_ARP, REGION_RADIUS_NM)),
     approach: northUp(ringBounds(PUJ_ARP, APPROACH_RADIUS_NM)),
-    airfield: northUp(airfieldBounds({ stands, layout })),
+    airfield: northUp(centredBounds(airfieldBounds({ stands, layout }), airfieldCentre)),
     ramp: northUp(ramp),
     terminals: Object.fromEntries(TERMINALS.map(code => {
       const bounds = layout ? standPolygonPresetBounds(layout, { terminal: code }) : standBounds(stands, { terminal: code });

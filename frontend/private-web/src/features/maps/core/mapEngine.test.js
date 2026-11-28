@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GPUInitializationError, createFakeMapLibre } from '../../../../tests/fakeMapLibre';
 import { createImageResolver } from '../style/mapImages';
 import { buildOccStyle, groupLayerIds } from '../style/occStyle';
-import { BASEMAP_TIMEOUT_MS, createMapEngine, liveEngineCount } from './mapEngine';
+import { BASEMAP_TIMEOUT_MS, createMapEngine, ENGINE_MAX_ZOOM, ENGINE_MIN_ZOOM, liveEngineCount } from './mapEngine';
 import { MAPLIBRE_WORKER_URL } from './workerUrl';
 
 // Point stands with clusters, their codes behind a derived threshold, and flights: enough to exercise every call.
@@ -281,6 +281,25 @@ describe('map engine', () => {
     engine.setInsets({ top: -4, right: 'wide', bottom: null });
     expect(map.getPadding()).toEqual({ top: 0, right: 0, bottom: 0, left: 0 });
     expect(insetOf('top')).toBe('0px');
+  });
+
+  it('setCameraLimits sets the bounds and zoom range, null for the engine defaults, and waits for a move with afterMove', () => {
+    const { engine, map } = setup();
+    expect(map.options).toMatchObject({ minZoom: ENGINE_MIN_ZOOM, maxZoom: ENGINE_MAX_ZOOM });
+    const box = [[-68.42, 18.53], [-68.32, 18.6]];
+    engine.setCameraLimits({ maxBounds: box, minZoom: 13 });
+    expect(map.options).toMatchObject({ maxBounds: box, minZoom: 13, maxZoom: ENGINE_MAX_ZOOM });
+    engine.setCameraLimits({ maxBounds: null, minZoom: null, maxZoom: 22 });
+    expect(map.options).toMatchObject({ maxBounds: null, minZoom: ENGINE_MIN_ZOOM, maxZoom: 22 });
+    // A move on its way: the limits wait for its end; a later call replaces a wait not yet applied.
+    map.moving = true;
+    engine.setCameraLimits({ maxBounds: box, minZoom: 12 }, { afterMove: true });
+    engine.setCameraLimits({ maxBounds: box, minZoom: 13 }, { afterMove: true });
+    expect(map.options.maxBounds).toBeNull();
+    map.moving = false;
+    map._fire('moveend', {});
+    expect(map.options).toMatchObject({ maxBounds: box, minZoom: 13, maxZoom: ENGINE_MAX_ZOOM });
+    expect(map.calls.filter(call => call.method === 'setMinZoom').map(call => call.args[0])).toEqual([13, ENGINE_MIN_ZOOM, 13]);
   });
 
   it('setGroupVisibility toggles only the layers of that group', () => {

@@ -425,6 +425,58 @@ describe('MapLegend', () => {
     expect(legendItems()).not.toContain('Pista');
   });
 
+  it('on a map with the airport in 3D (M9) lists the pavement, the raised terminals and the jet bridges, as estimates', () => {
+    const drawn = (layer, kind) => ({ layer: { id: layer }, properties: { kind, id: `${kind}-1` } });
+    const STRUCTURES = [
+      drawn('occ-airfield-terminal', 'terminal'), drawn('occ-airfield-taxiway', 'taxiway'),
+      drawn('occ-airfield-taxiway-pavement', 'taxiwayPavement'), drawn('occ-airfield-building-3d', 'building'),
+      drawn('occ-airfield-jet-bridge', 'jetBridgeTunnel'), drawn('occ-airfield-jet-bridge', 'jetBridgeRotunda'),
+    ];
+    render(<OccMap stands={STANDS} structures><MapLegend /></OccMap>);
+    const map = fake.state.liveMaps().at(-1);
+    fake.state.setRenderedFeatures(map, (_geometry, options) => STRUCTURES.filter(feature => options.layers.includes(feature.layer.id)));
+    act(() => fake.state.emit(map, 'style.load'));
+    // The map has the structures and their source is filled from the dataset of MDPC.
+    for (const id of ['occ-airfield-taxiway-pavement', 'occ-airfield-building-3d', 'occ-airfield-jet-bridge']) {
+      expect(map.getLayer(id), id).toBeTruthy();
+    }
+    const structures = map.getSource('occ-airfield-structures').data;
+    expect(structures.features.some(feature => feature.properties.kind === 'jetBridgeTunnel')).toBe(true);
+    act(() => fake.state.emit(map, 'idle'));
+    // The raised terminal stands in for its flat footprint; each structure says it is an estimate.
+    expect(legendItems().slice(-4)).toEqual([
+      'Calle de rodaje', 'Calle de rodaje (pavimento, ancho est.)', 'Terminal (altura est.)', 'Finger (pasarela, est.)',
+    ]);
+    expect(legendItems()).not.toContain('Terminal');
+    const legend = screen.getByTestId('map-legend');
+    expect([...legend.querySelectorAll('li svg[data-swatch]')].map(svg => svg.dataset.swatch).filter(kind => kind !== 'state'))
+      .toEqual(['taxiway', 'taxiwayPavement', 'building', 'jetBridge']);
+    // The bridge's swatch is the slate the map raises it in.
+    expect(legend.querySelector('svg[data-swatch="jetBridge"] circle').style.fill).toBe('var(--occ-line-strong)');
+    cleanup();
+
+    // In English.
+    window.history.replaceState({}, '', PAGE);
+    resetLanguageForTests('en');
+    render(<LanguageScope><OccMap stands={STANDS} structures><MapLegend /></OccMap></LanguageScope>);
+    const english = fake.state.liveMaps().at(-1);
+    fake.state.setRenderedFeatures(english, (_geometry, options) => STRUCTURES.filter(feature => options.layers.includes(feature.layer.id)));
+    act(() => fake.state.emit(english, 'style.load'));
+    act(() => fake.state.emit(english, 'idle'));
+    expect(legendItems().slice(-3)).toEqual(['Taxiway (pavement, est. width)', 'Terminal (est. height)', 'Jet bridge (est.)']);
+    cleanup();
+
+    // A map without them (Planificación, the console) has no such layers.
+    resetLanguageForTests('es');
+    render(<OccMap stands={STANDS}><MapLegend /></OccMap>);
+    const plain = fake.state.liveMaps().at(-1);
+    act(() => fake.state.emit(plain, 'style.load'));
+    expect(plain.getLayer('occ-airfield-taxiway')).toBeTruthy();
+    expect(plain.getLayer('occ-airfield-building-3d')).toBeFalsy();
+    expect(plain.getSource('occ-airfield-structures')).toBeFalsy();
+
+  });
+
   it('explains the ring of the stands the selected one\'s agent covers and the boxes of a stand being placed', () => {
     const stands = scenarioStands();
     const view = render(

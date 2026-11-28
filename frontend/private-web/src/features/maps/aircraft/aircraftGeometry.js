@@ -1,6 +1,7 @@
 import {
   fuselageHalfWidth, fuselageProfile, nacelles, silhouetteOutline, tailplanePlanform, wingPlanform,
 } from './silhouette';
+import { LIVERY_ZONES, PART_ZONES } from './liveries';
 
 // The 3D model of an aircraft type, built from its dimensions (aircraft/types.js) and its plan view
 // (aircraft/silhouette.js), so the model and the 2D silhouette share their numbers (design G2): the fuselage turns the
@@ -478,6 +479,32 @@ export function buildAircraftGeometry(three, spec) {
   merged.computeBoundingBox();
   merged.computeBoundingSphere();
   return merged;
+}
+
+// A fuselage's face that looks down more than this (its normal's z) is the belly: under the window line.
+const BELLY_NORMAL_Z = -0.2;
+
+/**
+ * Gives a model of buildAircraftGeometry its `liveryZone` vertex attribute (M9): per vertex, the index in LIVERY_ZONES
+ * of the zone its part paints (PART_ZONES), the fuselage's faces that look down (normal z below BELLY_NORMAL_Z) the
+ * belly. A geometry without `userData.parts` is all fuselage. Answers the same geometry, changed once.
+ */
+export function withLiveryZones(three, geometry) {
+  if (geometry.getAttribute('liveryZone') !== undefined) return geometry;
+  const count = geometry.getAttribute('position').count;
+  const normal = geometry.getAttribute('normal');
+  const zones = new Float32Array(count);
+  const index = name => LIVERY_ZONES.indexOf(name);
+  const fuselage = index('fuselage');
+  const belly = index('belly');
+  for (const { name, start, count: vertices } of geometry.userData?.parts ?? []) {
+    const zone = index(PART_ZONES[name] ?? 'wing');
+    for (let vertex = start; vertex < start + vertices && vertex < count; vertex += 1) {
+      zones[vertex] = zone === fuselage && normal !== undefined && normal.getZ(vertex) < BELLY_NORMAL_Z ? belly : zone;
+    }
+  }
+  geometry.setAttribute('liveryZone', new three.Float32BufferAttribute(zones, 1));
+  return geometry;
 }
 
 /** The triangles of a geometry, indexed or not. */

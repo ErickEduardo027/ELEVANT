@@ -153,3 +153,46 @@ describe('MapPresetSwitcher', () => {
     expect(query().has('view')).toBe(false);
   });
 });
+
+describe('MapPresetSwitcher on a map fixed on the airport (M9)', () => {
+  it('shows only the views its map offers, and the keys of the others do nothing', () => {
+    render(
+      <OccMap stands={STANDS} defaultView="airfield" views={['airfield', 'ramp']}>
+        <div className="occ-map-dock"><MapPresetSwitcher /></div>
+      </OccMap>,
+    );
+    const map = fake.state.liveMaps().at(-1);
+    act(() => fake.state.emit(map, 'style.load'));
+    expect(within(group()).getAllByRole('button').map(wideText)).toEqual(['3Aeródromo', '4Rampa']);
+    expect(pressed()).toEqual(['3Aeródromo']);
+    const airfield = map.getZoom();
+    const calls = map.cameraCalls.length;
+    // 1 and 2 belong to views this map does not offer: no flight and no `view=`.
+    fireEvent.keyDown(map.getCanvas(), { key: '1' });
+    fireEvent.keyDown(map.getCanvas(), { key: '2' });
+    expect(map.cameraCalls).toHaveLength(calls);
+    expect(map.getZoom()).toBe(airfield);
+    expect(query().has('view')).toBe(false);
+    // 4 still flies to the ramp.
+    fireEvent.keyDown(map.getCanvas(), { key: '4' });
+    expect(query().get('view')).toBe('ramp');
+    expect(map.getZoom()).toBeGreaterThan(airfield);
+  });
+
+  it('a `views` prop narrows the buttons, and toggle3d={false} leaves the 2D/3D control to the screen', () => {
+    render(
+      <OccMap stands={STANDS}>
+        <div className="occ-map-dock"><MapPresetSwitcher views={['ramp']} toggle3d={false} /></div>
+      </OccMap>,
+    );
+    act(() => fake.state.emit(fake.state.liveMaps().at(-1), 'style.load'));
+    expect(within(group()).getAllByRole('button').map(wideText)).toEqual(['4Rampa']);
+    expect(screen.queryByTestId('map-3d-toggle')).not.toBeInTheDocument();
+    cleanup();
+
+    // By default every rail with the views offers the 2D/3D control.
+    renderSwitcher();
+    expect(within(group()).getAllByRole('button')).toHaveLength(4);
+    expect(screen.getByTestId('map-3d-toggle')).toBeInTheDocument();
+  });
+});

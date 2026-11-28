@@ -1,6 +1,7 @@
 import { occColor } from '../../occ-ui/occPalette';
 import { EARTH_RADIUS_M, METRES_PER_NM, haversineM } from '../airport/geo';
 import { isDrawn } from '../traffic/trafficFeatures';
+import { LIVERY_ZONES, liveryZones, resolveLivery } from './liveries';
 import { resolveAircraftType } from './types';
 
 // What the 3D layer draws (design G1 and G3, contracts 2.3 and 2.4): one entry per aircraft type present, with the
@@ -15,6 +16,16 @@ import { resolveAircraftType } from './types';
 
 /** Only aircraft this close to the ARP are drawn in 3D (design G1): the airfield and its approaches. */
 export const AIRCRAFT_3D_RADIUS_NM = 6;
+
+// Note of 2026-11-27 (M9, approved plan): on Mapa de posiciones only, contracts 2.4 give way twice. Its 3D aircraft wear
+// their airlines' liveries (brand colours of aircraft/liveries.js, the chosen one still in the accent), and other
+// traffic on the ground near the field is drawn in 3D too, while the governor is at full quality. Every other map keeps
+// the monochrome aircraft and its ground traffic in 2D: both are options of planInstances, off by default.
+/**
+ * With the liveries on (M9, Mapa de posiciones), other traffic on the ground this close to the ARP is drawn in 3D too:
+ * the airfield, its aprons and its taxiways, not an aircraft parked at a field nearby.
+ */
+export const GROUND_TRAFFIC_3D_RADIUS_M = 4_000;
 
 /** Above this height an airborne aircraft gets a drop line to the ground, so its position on the map reads. */
 export const DROP_LINE_MIN_M = 3;
@@ -120,6 +131,29 @@ export function aircraft3dColors(theme) {
   return theme === 'light' ? LIGHT_3D_COLORS : AIRCRAFT_3D_COLORS;
 }
 
+// The zones an instance paints besides its base colour (`colors`, the fuselage), in LIVERY_ZONES order.
+const EXTRA_ZONES = Object.freeze(LIVERY_ZONES.filter(zone => zone !== 'fuselage'));
+const liveryMemo = new Map();
+
+/**
+ * The instance colours of an aircraft's livery (M9): the linear `[r, g, b]` of each zone of LIVERY_ZONES
+ * (aircraft/liveries.js: liveryZones) of the airline resolveLivery finds for `item`, frozen, kept per livery. The one
+ * helper both the instanced procedural models and the models from files (lane M5) paint with.
+ */
+export function liveryInstanceColours(item) {
+  const livery = resolveLivery(item);
+  let colours = liveryMemo.get(livery.id);
+  if (colours === undefined) {
+    const zones = liveryZones(livery);
+    colours = Object.freeze(Object.fromEntries(LIVERY_ZONES.map(zone => [zone, linearRgb(zones[zone])])));
+    liveryMemo.set(livery.id, colours);
+  }
+  return colours;
+}
+
+// Every zone in one colour: the monochrome aircraft, the chosen one and the shadows.
+const uniformZones = colour => Object.fromEntries(LIVERY_ZONES.map(zone => [zone, colour]));
+
 /** The key of a resolved type in the plan: its ICAO designator, or `@` and its category for a generic airframe. */
 export function instanceKey(resolved) {
   return resolved.code ?? `@${resolved.iconCategory}`;
@@ -215,12 +249,18 @@ function writeMatrix(target, offset, { x, y, z, headingDeg, flatten, pitchDeg = 
   target.set([cos, -sin, 0, 0, sin, cos, 0, 0, 0, 0, flatten, 0, x, y, z, 1], offset);
 }
 
-// What the layer can place, or null: other traffic on the ground stays 2D (contracts 2.4), and an aircraft in the air
-// without an altitude too, because no height is made up for it.
-function placeable(item, { fieldElevationM }) {
+// What the layer can place, or null: other traffic on the ground stays 2D (contracts 2.4) unless it is within
+// `groundRadiusM` of the ARP (M9), and an aircraft in the air without an altitude too, because no height is made up
+// for it.
+function placeable(item, { fieldElevationM, originLngLat, groundRadiusM }) {
   if (!isDrawn(item) || item.id == null) return null;
   const aviam = item.kind === 'aviam';
-  if (item.onGround === true) return aviam ? { item, aviam, z: 0 } : null;
+  if (item.onGround === true) {
+    if (aviam) return { item, aviam, z: 0 };
+    const near = groundRadiusM > 0 && finite(item.lon) && finite(item.lat)
+      && haversineM(originLngLat, [item.lon, item.lat]) <= groundRadiusM;
+    return near ? { item, aviam, z: 0 } : null;
+  }
   if (!finite(item.altM)) return null;
   return { item, aviam, z: Math.max(0, item.altM - fieldElevationM) };
 }
@@ -235,7 +275,8 @@ const byId = (a, b) => {
  * (traffic/situationModel.js: RenderAircraft); `parkedAircraft` the aircraft standing on their stands,
  * `{ id, lon, lat, headingDeg, typeIcao, model, sizeCategory, kind? }`, each owning the aircraft of the map with its id.
  *
- * Answers `Map<key, { spec, approximate, aircraftCount, count, matrices, colors, floorLengths, ids, dropLines }>`, the keys
+ * Answers `Map<key, { spec, approximate, aircraftCount, count, matrices, colors, zoneColors, floorLengths, ids,
+ * dropLines }>`, the keys
  * (instanceKey) sorted, empty below `minZoom` (the caller's 3D threshold: the airfield fit − 0.3, contracts 2.3):
  * - only aircraft within AIRCRAFT_3D_RADIUS_NM of `originLngLat` (the ARP) that the 2D layers draw (isDrawn); other
  *   traffic on the ground stays 2D, and so does an aircraft in the air without an altitude;
@@ -248,7 +289,12 @@ const byId = (a, b) => {
  * - `floorLengths` (PR M7) holds, per instance, the model's length in metres for an aircraft of the traffic and its
  *   shadow, which the layer may draw larger at a far zoom (aircraft3dLayer.js: minModelPx), and 0 for one on its stand;
  * - colours (`colors` option, AIRCRAFT_3D_COLORS by default): the chosen aircraft (`selectedId`) in `selected`, AVIAM
- *   aircraft in `aviam`, other traffic in `other`, shadows in `shadow`;
+ *   aircraft in `aviam`, other traffic in `other`, shadows in `shadow`; `colors` paints the fuselage and `zoneColors`
+ *   (`{ belly, tail, engine, wing }`, 3 linear floats per instance each) the other zones of aircraft/liveries.js:
+ *   LIVERY_ZONES, in the same colour unless `livery`;
+ * - M9: with `livery`, every aircraft but the chosen one and the shadows wears its airline's livery
+ *   (liveryInstanceColours: fuselage, belly, fin, engines and wings), and with `groundRadiusM` other traffic on the
+ *   ground within that many metres of the ARP is drawn too (GROUND_TRAFFIC_3D_RADIUS_M), as the traffic is;
  * - `spec` and `approximate` come from resolveAircraftType: a type the table lacks takes its category's generic
  *   airframe under the category's own key, approximate.
  * - CN-30: `attitudes` (`Map<id, { heightM, pitchDeg, bankDeg }>`, aircraft/attitude.js) pitch and bank an aircraft of
@@ -258,7 +304,7 @@ const byId = (a, b) => {
  */
 export function planInstances(renderAircraft = [], parkedAircraft = [], {
   zoom, minZoom, originLngLat, fieldElevationM = 0, selectedId = null, colors = AIRCRAFT_3D_COLORS,
-  attitudes = null, excludeId = null,
+  attitudes = null, excludeId = null, livery = false, groundRadiusM = 0,
 } = {}) {
   const plan = new Map();
   if (!(zoom >= minZoom)) return plan;
@@ -274,9 +320,19 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
   const placed = [...parked.values()];
   for (const item of list(renderAircraft)) {
     if (item?.id == null || parked.has(item.id) || item.id === excludeId) continue;
-    const entry = placeable(item, { fieldElevationM: field });
+    const entry = placeable(item, { fieldElevationM: field, originLngLat,
+      groundRadiusM: finite(groundRadiusM) ? groundRadiusM : 0 });
     if (entry !== null) placed.push(entry);
   }
+
+  const plain = { aviam: uniformZones(colors.aviam), other: uniformZones(colors.other) };
+  const selectedZones = uniformZones(colors.selected);
+  const shadowZones = uniformZones(colors.shadow);
+  const paintOf = entry => {
+    if (entry.item.id === selectedId) return selectedZones;
+    if (livery === true) return liveryInstanceColours(entry.item);
+    return plain[entry.aviam ? 'aviam' : 'other'];
+  };
 
   const groups = new Map();
   for (const entry of placed) {
@@ -296,7 +352,7 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
     group.members.push({ id: entry.item.id, x, y, z, headingDeg: heading, onStand: entry.onStand === true,
       pitchDeg: finite(attitude?.pitchDeg) ? attitude.pitchDeg : 0, bankDeg: finite(attitude?.bankDeg) ? attitude.bankDeg : 0,
       pivot: pivotOf(resolved.spec),
-      colour: entry.item.id === selectedId ? colors.selected : colors[entry.aviam ? 'aviam' : 'other'] });
+      zones: paintOf(entry) });
     groups.set(key, group);
   }
 
@@ -306,6 +362,7 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
     const aircraftCount = members.length;
     const matrices = new Float32Array(32 * aircraftCount);
     const instanceColors = new Float32Array(6 * aircraftCount);
+    const zoneColors = Object.fromEntries(EXTRA_ZONES.map(zone => [zone, new Float32Array(6 * aircraftCount)]));
     // The length a model may grow from (aircraft3dLayer.js: minModelPx): an aircraft of the traffic, as its 2D symbol,
     // is never drawn smaller than a few pixels; one on its stand keeps the stand's scale, as its footprint does.
     const floorLengths = new Float32Array(2 * aircraftCount);
@@ -315,8 +372,12 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
       writeMatrix(matrices, 16 * index, { ...member, flatten: 1 });
       writeMatrix(matrices, 16 * (aircraftCount + index), { ...member, z: SHADOW.heightM, flatten: SHADOW.flatten,
         pitchDeg: 0, bankDeg: 0 });
-      instanceColors.set(member.colour, 3 * index);
-      instanceColors.set(colors.shadow, 3 * (aircraftCount + index));
+      instanceColors.set(member.zones.fuselage, 3 * index);
+      instanceColors.set(shadowZones.fuselage, 3 * (aircraftCount + index));
+      for (const zone of EXTRA_ZONES) {
+        zoneColors[zone].set(member.zones[zone], 3 * index);
+        zoneColors[zone].set(shadowZones[zone], 3 * (aircraftCount + index));
+      }
       ids[index] = member.id;
       ids[aircraftCount + index] = null;
       const floor = member.onStand ? 0 : resolved.spec.lengthM;
@@ -331,6 +392,7 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
       count: 2 * aircraftCount,
       matrices,
       colors: instanceColors,
+      zoneColors: Object.freeze(zoneColors),
       floorLengths,
       ids: Object.freeze(ids),
       dropLines: Float32Array.from(drops),

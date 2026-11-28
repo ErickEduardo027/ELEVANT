@@ -1174,3 +1174,50 @@ El plan de mapas del 27 de noviembre trae, en su carril M6 «Meteorología regio
 - **M7, «Panorama meteorológico»**: las capas de radar, de estaciones METAR con su categoría y barbas de viento, de polígonos SIGMET y de la malla de viento, cada una en el menú Capas y en la leyenda con su escala y su crédito, y el panel «Meteorología PUJ». Sus lecturas cuentan en el presupuesto de 40 peticiones por minuto por pantalla de CN-19.
 - **El uso fuera de Development**: el plan comercial de Open-Meteo y las condiciones de AWC e IEM, antes de encender cualquiera de las tres fuentes en Production.
 - **La forma real del JSON**: las respuestas de las pruebas son sintéticas. De las cuatro lecturas nuevas, solo el índice de IEM se comparó una vez con una respuesta real; ninguna prueba compara las otras con el servicio.
+
+## Actualización (27 de noviembre de 2026). M9: Mapa de posiciones fijado en PUJ y aeropuerto en 3D
+
+Plan aprobado del 27 de noviembre (carril M9). Esta nota cambia solo el Mapa de posiciones. Planificación, la consola y Monitoreo usan el mismo `OccMap` sin estas opciones y se ven igual que antes, y sus pruebas lo comprueban. No cambian la API, lo que lee la pantalla ni su cadencia (CN-18 y el límite de 40 peticiones por minuto de CN-19 siguen igual).
+
+**1. Cámara fijada sobre el aeródromo.**
+- `PositionMap` acepta `fixedOnAirport`, y solo `PositionsMapPage` lo pasa.
+- La pantalla abre en 3D sobre «Aeródromo», centrada en el ARP de MDPC (`presetTargets({ airfieldCentre })`).
+- La cámara no sale del recuadro del plano de MDPC más 3 km (`airportLockOptions`: `maxBounds` y zoom mínimo 13; `AIRPORT_LOCK_MARGIN_M`, `AIRPORT_LOCK_MIN_ZOOM` en `core/cameraPresets.js`).
+- Revisión del 28 de noviembre: mientras sigue un avión («Seguir» o «Seguir en 3D»), la cámara se suelta. No tiene límites, vuelve al zoom mínimo del motor y llega hasta el zoom 22 (`OccMap followLimits`, `airportFollowLimits`, `mapEngine.setCameraLimits`). Antes, MapLibre recortaba cada cuadro del seguimiento contra el recuadro: un despegue salía de la pantalla y el mapa seguía diciendo que lo seguía. Al dejar de seguir, la cámara se vuelve a fijar cuando termina el movimiento en curso (el vuelo de regreso de «Seguir en 3D» o un arrastre). La órbita de «Seguir en 3D» sigue limitada a 19,5 por `kinematics/orbitCamera.js`; el zoom 22 vale para la rueda con «Seguir». `PositionMap.test.jsx` y `mapEngine.test.js` lo fijan.
+- El riel ofrece solo Aeródromo y Rampa: `OccMap` acepta `views`, y su contexto las reparte.
+  - Región y Aproximación no aparecen.
+  - Sus teclas (1 y 2) no hacen nada.
+  - Un `view=region` o `view=approach` en la URL se ignora.
+- D inclina la cámara con el mismo 2D/3D de la pantalla (`onPitchModeChange`), y L abre «Capas», que ahora está en el riel.
+- El «3D» propio del riel se oculta (`MapPresetSwitcher toggle3d={false}`), porque la pantalla conserva su botón 2D/3D. «Centrar PUJ» vuelve a la vista centrada en el ARP.
+
+**2. Estructuras estimadas.** `maps/airport/data/mdpc.structures.json` (esquema 1) está escrito a mano y `maps/airport/structures.js` (puro, sin turf) lo convierte en GeoJSON. Cada valor es una estimación (`source: 'estimate'`, `reviewedBy: null`). Nada sale del AIP ni de cartas, y el dueño puede corregirlo en el archivo.
+- Alturas de las cinco huellas de terminal del plano (salidas y llegadas de la Terminal A 12 m, Terminal A 14 m, Terminal B 15 m, edificio al oeste de la B 13 m). Las huellas de OSM que se solapan tienen alturas distintas para que no parpadeen.
+- Valores por defecto por clase (terminal 12 m, FBO 8 m, hangar 14 m). El plano no tiene huellas de FBO ni de hangar, así que no se dibuja ninguno: añadirlos pide un extracto nuevo de OSM por el generador, nunca una geometría inventada.
+- Fingers procedurales de B20 a B26 sobre la cara del muelle de la Terminal B que mira a cada posición:
+  - rotonda de 2,3 m de radio;
+  - túnel de 2,6 × 3 m sobre una base de 3,4 m;
+  - el túnel llega a la puerta delantera izquierda de un A320 de referencia estacionado en el centro de la posición.
+- Pavimento de las calles de rodaje: un polígono por eje, con 23 m de ancho estimado.
+
+**3. Capas.** `airfieldOverlay({ structures: true })`, opt-in con `OccMap structures`, añade la fuente `occ-airfield-structures` y cuatro capas:
+- el pavimento, opaco, bajo las líneas de rodaje;
+- las terminales extruidas;
+- los fingers, extruidos en `--occ-line-strong`;
+- el rótulo de cada terminal con su altura («15 m est.»).
+
+Ninguna capa se puede elegir con un clic. Todas empiezan en el umbral del aeródromo, menos los rótulos de las terminales, que empiezan donde se ven los códigos de posición: en la revisión visual, a la escala de Aeródromo se amontonaban sobre las posiciones. El `building-3d` del mapa base se oculta desde ese umbral en todos los mapas (`occ:maxThreshold: 'airfield'`; la prueba de `occStyle.test.js` lo fija). Los anchos de pista y rodaje, los designadores, los glifos de las posiciones y los desplazamientos de señal y reloj tienen paradas hasta el zoom 22. Los códigos de posición siguen en 12 px.
+
+La leyenda añade «Calle de rodaje (pavimento, ancho est.)», «Terminal (altura est.)» y «Finger (pasarela, est.)». Con una terminal elevada a la vista, la «Terminal» plana no se repite.
+
+**4. Aviones estacionados con librea.** Con `OccMap aircraft3d={{ liveries: true }}`, solo en esta pantalla, los aviones 3D instanciados se pintan por zonas (fuselaje, panza, cola, motores y alas) con los colores de su aerolínea, en una llamada de dibujo por tipo (`aircraft3dLayer.js: patchLiveryShader`, `instancePlan.js: liveryInstanceColours`). El otro tráfico en tierra a menos de 4 km del ARP se dibuja en 3D (`GROUND_TRAFFIC_3D_RADIUS_M`) mientras el regulador está en calidad completa; en el primer escalón hacia abajo vuelve a 2D. Es la excepción a los contratos 2.4 que anota `instancePlan.js` el mismo día. Las libreas son colores de marca aproximados, sin logos de terceros.
+
+**5. Verificación.**
+- Pruebas unitarias: `cameraPresets.test.js`, `MapPresetSwitcher.test.jsx`, `PositionMap.test.jsx`, `structures.test.js`, `airfieldLayers.test.js`, `legendEntries.test.js`, `MapLegend.test.jsx`, `standLayers.test.js`, `occStyle.test.js`, `instancePlan.test.js`, `liveries.test.js`, `aircraftGeometry.test.js`, `aircraft3dLayer.test.js` (contra el shader Lambert real de three) y `core/aircraft3d.test.js`.
+- Suite visual: `positions-map.airport3d.spec.mjs` (Chrome con SwiftShader y `next dev`) fotografía el aeródromo en 3D, la Terminal B en Rampa y sus fingers de cerca, a 1366 × 768 y 1920 × 1080, en oscuro y en claro. `positions-map.spec.mjs` y `positions-map.screens.spec.mjs` abren Rampa por la URL y empiezan en 3D.
+- Pendiente:
+  - huellas de FBO y hangar;
+  - el aviso de marcas de las libreas en «Créditos y licencias»;
+  - una medición con GPU real.
+
+Nada de esto acredita un despliegue.

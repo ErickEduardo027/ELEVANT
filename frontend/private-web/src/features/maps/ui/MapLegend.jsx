@@ -260,13 +260,36 @@ const AIRFIELD_SWATCHES = Object.freeze({
   terminal: (
     <rect x="4.5" y="5.5" width="11" height="9" style={{ fill: 'var(--occ-swatch-building)', stroke: tokenColour('--occ-line-strong'), strokeWidth: 1 }} />
   ),
+  // The structures of M9 (estimated sizes): the pavement band of a taxiway with its line along it, a raised terminal
+  // seen from above and to the side (its roof in the building colour, its face in the extrusion colour), and a jet
+  // bridge: the tunnel and its round rotunda in the slate the map raises them in.
+  taxiwayPavement: (
+    <>
+      <rect x="1" y="5" width="18" height="10" rx="5" style={{ fill: 'var(--occ-swatch-taxiway)' }} />
+      <path d="M3 10 H17" style={{ fill: 'none', stroke: tokenColour('--occ-line-strong'), strokeWidth: 1 }} />
+    </>
+  ),
+  building: (
+    <>
+      <path d="M4.5 15.5 V8.5 H13.5 V15.5 Z" style={{ fill: 'var(--occ-swatch-buildingExtrusion)', stroke: tokenColour('--occ-line-strong'), strokeWidth: 1 }} />
+      <path d="M4.5 8.5 L7.5 4.5 H16.5 L13.5 8.5 Z" style={{ fill: 'var(--occ-swatch-building)', stroke: tokenColour('--occ-line-strong'), strokeWidth: 1 }} />
+      <path d="M13.5 8.5 L16.5 4.5 V11.5 L13.5 15.5 Z" style={{ fill: 'var(--occ-swatch-buildingExtrusion)', stroke: tokenColour('--occ-line-strong'), strokeWidth: 1 }} />
+    </>
+  ),
+  jetBridge: (
+    <>
+      <path d="M5 13 L15 6" style={{ fill: 'none', stroke: tokenColour('--occ-line-strong'), strokeWidth: 3, strokeLinecap: 'butt' }} />
+      <circle cx="5" cy="13" r="3" style={{ fill: tokenColour('--occ-line-strong') }} />
+    </>
+  ),
 });
 const AIRFIELD_MESSAGES = Object.freeze({
   runway: 'legend.runway', taxiway: 'legend.taxiway', holdBar: 'legend.hold', apron: 'legend.apron', terminal: 'legend.terminal',
+  taxiwayPavement: 'legend.taxiwayPavement', building: 'legend.building', jetBridge: 'legend.jetBridge',
 });
 
 // The base-map colours of the shell theme (light or dark) reach the swatches as variables of the svg.
-const SWATCH_KEYS = Object.freeze(['runway', 'taxiway', 'apron', 'building']);
+const SWATCH_KEYS = Object.freeze(['runway', 'taxiway', 'apron', 'building', 'buildingExtrusion']);
 
 function AirfieldSwatch({ kind }) {
   const colours = basemapColorsFor(useOptionalTheme()?.theme);

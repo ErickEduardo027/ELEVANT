@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_LIVERY, LIVERIES, liveryName, resolveLivery } from './liveries';
+import {
+  DEFAULT_LIVERY, LIVERIES, LIVERY_ZONES, PART_ZONES, liveryName, liveryZones, resolveLivery,
+} from './liveries';
 
 // The liveries of the detailed aircraft (CN-30): brand colours and the airline's words, resolved from what the map
 // knows of an aircraft; no artwork.
@@ -53,5 +55,24 @@ describe('liveries (CN-30)', () => {
     expect(liveryName(LIVERIES.AAL)).toBe('AMERICAN');
     expect(liveryName(LIVERIES.JBU)).toBe('jetBlue');
     expect(liveryName(DEFAULT_LIVERY)).toBe('');
+  });
+});
+
+describe('livery zones (M9)', () => {
+  it('names the five zones an instanced model paints and the zone of every part of the procedural models', () => {
+    expect(LIVERY_ZONES).toEqual(['fuselage', 'belly', 'tail', 'engine', 'wing']);
+    expect(Object.isFrozen(LIVERY_ZONES)).toBe(true);
+    for (const zone of Object.values(PART_ZONES)) expect(LIVERY_ZONES).toContain(zone);
+    expect(PART_ZONES).toMatchObject({ fuselage: 'fuselage', fin: 'tail', nacelle: 'engine', wing: 'wing' });
+  });
+
+  it("liveryZones gives each zone's colour of a livery, or of the livery an aircraft resolves to", () => {
+    expect(liveryZones(LIVERIES.SWA)).toEqual({ fuselage: '#304cb2', belly: '#304cb2', tail: '#304cb2',
+      engine: '#304cb2', wing: LIVERIES.SWA.wing });
+    expect(liveryZones({ callsign: 'DAL455' })).toEqual({ fuselage: '#ffffff', belly: '#0a2c5c', tail: '#0a2c5c',
+      engine: '#0a2c5c', wing: LIVERIES.DAL.wing });
+    expect(liveryZones()).toEqual(liveryZones(DEFAULT_LIVERY));
+    for (const colour of Object.values(liveryZones(LIVERIES.CMP))) expect(colour).toMatch(HEX);
+    expect(Object.isFrozen(liveryZones(LIVERIES.CMP))).toBe(true);
   });
 });

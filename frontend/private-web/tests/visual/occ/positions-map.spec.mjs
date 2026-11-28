@@ -21,7 +21,10 @@ const PAGE = '/admin-occ/positions-map';
 const target = production ? 'production' : 'development';
 const SIZES = Object.freeze([{ width: 1440, height: 900 }, { width: 1920, height: 1080 }]);
 // The airfield items of the MDPC dataset the ramp view draws (PR M3), after a rule across the legend.
-const AIRFIELD = Object.freeze(['Pista', 'Calle de rodaje', 'Punto de espera', 'Plataforma', 'Terminal']);
+// Since M9 (27 de noviembre de 2026) Mapa de posiciones draws the airport in 3D: the taxiway pavement, the raised
+// terminals (which take the place of the flat «Terminal») and the jet bridges, all estimated.
+const AIRFIELD = Object.freeze(['Pista', 'Calle de rodaje', 'Calle de rodaje (pavimento, ancho est.)', 'Punto de espera',
+  'Plataforma', 'Terminal (altura est.)', 'Finger (pasarela, est.)']);
 // The legend's entries for the stands and the airfield: the traffic's (PR M5) come first and are listed apart.
 const standEntries = map => map.getByRole('list', { name: 'Leyenda' })
   .locator('li:not([data-legend-traffic]):not([role="presentation"])');
@@ -88,7 +91,8 @@ test.describe('Mapa de posiciones on the map engine', () => {
     test.use({ reducedMotion: 'no-preference' });
 
     test('the zoom buttons and a view preset move the camera', async ({ page, isolation }, testInfo) => {
-      const { map } = await openPositionsMap(page, isolation);
+      // The screen opens on Aeródromo (M9, 27 de noviembre de 2026): Rampa through the URL, as a link to it opens it.
+      const { map } = await openPositionsMap(page, isolation, '?view=ramp');
       await expect(map).toHaveAttribute('data-occ-view', 'ramp');
       await expect(map).toHaveAttribute('data-occ-basemap', 'ok');
       await shoot(page, testInfo, `positions-map-${target}`);
@@ -135,7 +139,7 @@ test.describe('Mapa de posiciones on the map engine', () => {
   });
 
   test('the map\'s legend is the only one in the screen and lists the states on screen', async ({ page, isolation }) => {
-    const { map } = await openPositionsMap(page, isolation);
+    const { map } = await openPositionsMap(page, isolation, '?view=ramp');
     // One «Leyenda» in the screen, the map's: the page no longer adds its own squares in colours the map does not draw.
     // The status bar keeps the frame's own «Leyenda» (PR U2), reachable from every screen, outside the content.
     await expect(page.locator('#main-content').getByRole('button', { name: 'Leyenda', exact: true })).toHaveCount(1);
@@ -159,7 +163,7 @@ test.describe('Mapa de posiciones on the map engine', () => {
   for (const size of SIZES) {
     test(`Mapa de posiciones at Rampa, one terminal and Aeródromo, ${size.width}×${size.height}`, async ({ page, isolation }, testInfo) => {
       await page.setViewportSize(size);
-      const { map } = await openPositionsMap(page, isolation);
+      const { map } = await openPositionsMap(page, isolation, '?view=ramp');
       await expect(map).toHaveAttribute('data-occ-view', 'ramp');
       await settled(page);
       // The aircraft on the ramp, the stands' aircraft to scale and the notice of A6 (PR M6).

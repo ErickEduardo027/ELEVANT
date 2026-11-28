@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { THREE_PARTS } from './aircraft3dChunk';
-import { buildAircraftGeometry, TRIANGLE_BUDGET, triangleCount } from './aircraftGeometry';
+import { buildAircraftGeometry, TRIANGLE_BUDGET, triangleCount, withLiveryZones } from './aircraftGeometry';
+import { LIVERY_ZONES, PART_ZONES } from './liveries';
 import { fuselageProfile, outlineBox, silhouetteOutline } from './silhouette';
 import { AIRCRAFT_TYPES, CATEGORY_FALLBACKS } from './types';
 
@@ -253,5 +254,49 @@ describe('procedural aircraft geometry (design G2)', () => {
       expect(() => buildAircraftGeometry(THREE_PARTS, { ...AIRCRAFT_TYPES.A320, spanM }), String(spanM)).toThrow(RangeError);
     }
     expect(() => buildAircraftGeometry(THREE_PARTS, null)).toThrow(RangeError);
+  });
+});
+
+// M9: the zones of a livery on the instanced models.
+describe('withLiveryZones (M9)', () => {
+  it("paints each part in its zone, the fuselage's underside as the belly, every model of the map", () => {
+    for (const [name, spec] of AIRFRAMES) {
+      const geometry = withLiveryZones(THREE_PARTS, buildAircraftGeometry(THREE_PARTS, spec));
+      const zones = geometry.getAttribute('liveryZone');
+      expect(zones.itemSize, name).toBe(1);
+      expect(zones.count, name).toBe(geometry.getAttribute('position').count);
+      const normal = geometry.getAttribute('normal');
+      for (const part of geometry.userData.parts) {
+        const zone = PART_ZONES[part.name];
+        expect(zone, `${name} ${part.name}`).toBeDefined();
+        for (let vertex = part.start; vertex < part.start + part.count; vertex += 1) {
+          const expected = zone === 'fuselage' && normal.getZ(vertex) < -0.2 ? 'belly' : zone;
+          if (LIVERY_ZONES[zones.getX(vertex)] !== expected) {
+            throw new Error(`${name} ${part.name} vertex ${vertex}: ${LIVERY_ZONES[zones.getX(vertex)]}, not ${expected}`);
+          }
+        }
+      }
+    }
+  });
+
+  it("an airliner shows every zone; the belly is under the fuselage's axis; a second call changes nothing", () => {
+    const geometry = withLiveryZones(THREE_PARTS, buildAircraftGeometry(THREE_PARTS, AIRCRAFT_TYPES.A320));
+    const zones = geometry.getAttribute('liveryZone');
+    const used = new Set(Array.from(zones.array, value => LIVERY_ZONES[value]));
+    expect([...used].sort()).toEqual([...LIVERY_ZONES].sort());
+    const [fuselage] = partsOf(geometry, 'fuselage');
+    const position = geometry.getAttribute('position');
+    const heights = { belly: [], fuselage: [] };
+    for (let vertex = fuselage.start; vertex < fuselage.start + fuselage.count; vertex += 1) {
+      heights[LIVERY_ZONES[zones.getX(vertex)]].push(position.getZ(vertex));
+    }
+    const mean = values => values.reduce((sum, value) => sum + value, 0) / values.length;
+    expect(heights.belly.length).toBeGreaterThan(0);
+    expect(mean(heights.belly)).toBeLessThan(mean(heights.fuselage) - AIRCRAFT_TYPES.A320.fuselageDiaM / 4);
+    expect(withLiveryZones(THREE_PARTS, geometry).getAttribute('liveryZone')).toBe(zones);
+    // Without parts, all fuselage.
+    const bare = new THREE_PARTS.BufferGeometry();
+    bare.setAttribute('position', new THREE_PARTS.Float32BufferAttribute(new Float32Array(9), 3));
+    expect(Array.from(withLiveryZones(THREE_PARTS, bare).getAttribute('liveryZone').array)).toEqual([0, 0, 0]);
   });
 });

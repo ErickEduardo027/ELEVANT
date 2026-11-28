@@ -19,7 +19,7 @@ import { buildStandFeatures } from './standFeatures';
 import { ghostFeatures, placingGhost } from './placing';
 import {
   FOOTPRINT_GROUP, FOOTPRINT_PAINT, PLACING_PAINT, PROGRESS_PAINT, STAND_AUX_SOURCE, STAND_CHIP_LAYER, STAND_FEATURE_STATES,
-  STAND_FILL_LAYER, STAND_FOOTPRINT_SOURCE, STAND_GHOST_SOURCE, STAND_GROUP_SOURCE, STAND_LABEL_LAYER_IDS, STAND_LABEL_MODES,
+  STAND_FILL_LAYER, STAND_FOOTPRINT_SOURCE, STAND_GLYPH_SIZE, STAND_GHOST_SOURCE, STAND_GROUP_SOURCE, STAND_LABEL_LAYER_IDS, STAND_LABEL_MODES,
   STAND_LABEL_SOURCE, STAND_SOURCE, STAND_SOURCES, standDisplayAt, standFill, standLabelFilter, standOverlay, standPaint,
 } from './standLayers';
 import { attachStandGeometry } from './standModel';
@@ -541,6 +541,21 @@ describe('standOverlay', () => {
     expect(SIGNALS.notice.colorToken).toBeNull();
     expect(isSdfImage('signal-notice')).toBe(true);
     expect(passes(signal, { signal: 'notice' }, { type: 1 })).toBe(true);
+  });
+
+  it('keeps the aircraft glyph to scale and the signal and clock outside the stand up to zoom 22 (M9)', () => {
+    // The glyph doubles with every zoom step past 19.5, as the ground does.
+    const glyph = STAND_GLYPH_SIZE.slice(3);
+    expect(glyph.at(-2)).toBe(22);
+    expect(glyph.at(-1) / glyph.at(-3)).toBeCloseTo(2 ** 2.5, 2);
+    const layers = standLayers();
+    for (const id of ['occ-stand-clock', 'occ-stand-signal']) {
+      const offset = layers.find(layer => layer.id === id).layout['icon-offset'];
+      const stops = offset.slice(3);
+      // The last stops: 220 px out at zoom 20, then twice as far for each step to 22.
+      expect(stops.slice(-6).map(stop => (Array.isArray(stop) ? Math.abs(stop[1][1]) : stop)), id)
+        .toEqual([20, 220, 21, 440, 22, 880]);
+    }
   });
 
   it('never imports the dataset (source text guard)', () => {

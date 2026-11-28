@@ -19,6 +19,9 @@ import { ensureWorkerUrl } from './workerUrl';
 
 /** How long the vector base map may go without a first tile before the engine reports it degraded. */
 export const BASEMAP_TIMEOUT_MS = 8000;
+/** The zoom range every OCC map starts with; `setCameraLimits` goes back to it for a limit given as `null`. */
+export const ENGINE_MIN_ZOOM = 4.5;
+export const ENGINE_MAX_ZOOM = 19.5;
 
 const PICK_TOLERANCE_PX = 4;
 const CLUSTER_EASE_MS = 500;
@@ -170,6 +173,7 @@ export function createMapEngine({
   // Settles every call that waits for the style and every wait for an idle frame as never happening, then removes the
   // map. The engine's listeners go first, so nothing the map fires while it goes reaches the engine.
   function releaseMap() {
+    dropLimitsWaiter();
     const dropped = pending;
     pending = [];
     for (const { drop } of dropped) drop?.();
@@ -315,6 +319,20 @@ export function createMapEngine({
 
   // The gestures and limits «Seguir en 3D» took from MapLibre (setOrbitMode), to give back.
   let orbitSaved = null;
+  // The camera limits setCameraLimits waits to apply until the move on the way ends (M9), and the listener that does it.
+  let limitsWaiter = null;
+
+  function dropLimitsWaiter() {
+    if (limitsWaiter === null) return;
+    map?.off?.('moveend', limitsWaiter);
+    limitsWaiter = null;
+  }
+
+  function applyLimits({ maxBounds = null, minZoom = null, maxZoom = null }) {
+    map.setMaxBounds?.(maxBounds ?? null);
+    map.setMinZoom?.(Number.isFinite(minZoom) ? minZoom : ENGINE_MIN_ZOOM);
+    map.setMaxZoom?.(Number.isFinite(maxZoom) ? maxZoom : ENGINE_MAX_ZOOM);
+  }
 
   function listen(type, handler) {
     map.on(type, handler);
@@ -327,8 +345,8 @@ export function createMapEngine({
       attributionControl: false,
       pixelRatio: Math.min(globalThis.devicePixelRatio || 1, 2),
       maxPitch: 65,
-      minZoom: 4.5,
-      maxZoom: 19.5,
+      minZoom: ENGINE_MIN_ZOOM,
+      maxZoom: ENGINE_MAX_ZOOM,
       renderWorldCopies: false,
       canvasContextAttributes: { antialias: true },
       validateStyle: process.env.NODE_ENV !== 'production',
@@ -614,6 +632,28 @@ export function createMapEngine({
       map.setCenterClampedToGround?.(saved.clamped ?? true);
       if (Number.isFinite(saved.maxPitch)) map.setMaxPitch?.(saved.maxPitch);
       for (const name of saved.handlers) map[name]?.enable?.();
+    },
+
+    /**
+     * The camera's limits (M9: a map fixed on the airport lets its camera go while it follows an aircraft):
+     * `{ maxBounds, minZoom, maxZoom }`, each `null` for none (bounds) or the engine's own (zoom). With `afterMove`, a
+     * move on the way (the flight back of «Seguir en 3D», a drag) ends first, so the new bounds do not cut it short; a
+     * later call replaces a wait not yet applied. Nothing without a map.
+     */
+    setCameraLimits(limits = {}, { afterMove = false } = {}) {
+      if (!live()) return;
+      dropLimitsWaiter();
+      if (afterMove && map.isMoving?.() === true) {
+        limitsWaiter = () => {
+          limitsWaiter = null;
+          map.off('moveend', handler);
+          if (live()) applyLimits(limits);
+        };
+        const handler = limitsWaiter;
+        map.on('moveend', handler);
+        return;
+      }
+      applyLimits(limits);
     },
 
     /** Whether a person is moving the map now (see `onUserGesture`): a move then must not take the camera from them. */

@@ -1,14 +1,16 @@
-import { Matrix4, PerspectiveCamera, Vector3 } from 'three';
+import { Matrix4, PerspectiveCamera, ShaderLib, Vector3 } from 'three';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OCC_PALETTE } from '../../occ-ui/occPalette';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { destinationPoint } from '../airport/geo';
 import { THREE_PARTS } from './aircraft3dChunk';
 import {
-  AIRCRAFT_3D_LAYER_ID, MAX_MODEL_SCALE, SUN_STEP_DEG, UNUSED_MESH_MS, createAircraft3dLayer, sceneLighting,
+  AIRCRAFT_3D_LAYER_ID, LIVERY_ZONE_ATTRIBUTES, MAX_MODEL_SCALE, SUN_STEP_DEG, UNUSED_MESH_MS, createAircraft3dLayer,
+  patchLiveryShader, sceneLighting,
 } from './aircraft3dLayer';
 import { triangleCount } from './aircraftGeometry';
-import { linearRgb, mercatorFrame, planInstances } from './instancePlan';
+import { linearRgb, liveryInstanceColours, mercatorFrame, planInstances } from './instancePlan';
+import { LIVERY_ZONES } from './liveries';
 import { AIRCRAFT_TYPES } from './types';
 
 // The layer's life with the real three, in Node, and an injected renderer: three's scene, meshes, lights and raycaster
@@ -717,5 +719,57 @@ describe('the 3D aircraft layer (design G1, G3 and G4)', () => {
     map.zoom = 11;
     layer.render(fakeContext('gl'), input);
     expect(scaleOf(0)).toBeCloseTo(MAX_MODEL_SCALE, 6);
+  });
+});
+
+// M9: the instanced models wear their airlines' liveries, per zone, in the same draw call.
+describe("the 3D aircraft layer's liveries (M9)", () => {
+  it("patches three's Lambert vertex shader to pick the instance colour of each vertex's zone", () => {
+    expect(LIVERY_ZONE_ATTRIBUTES).toEqual(['instanceBelly', 'instanceTail', 'instanceEngine', 'instanceWing']);
+    const shader = patchLiveryShader({ vertexShader: ShaderLib.lambert.vertexShader, uniforms: {} });
+    const source = shader.vertexShader;
+    expect(source).toContain('attribute float liveryZone;');
+    for (const name of LIVERY_ZONE_ATTRIBUTES) expect(source).toContain(`attribute vec3 ${name};`);
+    // Three's own chunks stay, and the zone's colour comes after them, for instanced colours only.
+    expect(source.indexOf('#include <color_vertex>')).toBeLessThan(source.indexOf('vColor.rgb = liveryZone < 0.5'));
+    expect(source).toContain('vColor.rgb = liveryZone < 0.5 ? instanceColor.rgb : liveryZone < 1.5 ? instanceBelly : '
+      + 'liveryZone < 2.5 ? instanceTail : liveryZone < 3.5 ? instanceEngine : instanceWing;');
+    expect(() => patchLiveryShader({ vertexShader: 'void main() {}' })).toThrow(/colour chunks/);
+  });
+
+  it("gives each model its zones and copies the plan's zone colours into the instance attributes", () => {
+    const { createRenderer, made } = fakeRenderers();
+    const traffic = [aircraft('f:p:jbu', { bearing: 100, metres: 600, callsign: 'JBU1234' }),
+      aircraft('f:p:cmp', { bearing: 160, metres: 700, callsign: 'CMP893' })];
+    let state = { revision: 1, plan: planInstances(traffic, [], { zoom: 16, minZoom: 14, originLngLat: ARP, livery: true }) };
+    const layer = createAircraft3dLayer({ three: THREE_PARTS, originLngLat: ARP, createRenderer, getInstances: () => state });
+    const gl = fakeContext('gl');
+    const { input } = viewOf();
+    layer.onAdd(fakeMap(), gl);
+    layer.render(gl, input);
+    const a320 = meshOf(made[0].scene, 'A320');
+    expect(a320.material.onBeforeCompile).toBe(patchLiveryShader);
+    expect(a320.material.customProgramCacheKey()).toBe('occ-aircraft-livery-zones');
+    // Every zone of the livery is somewhere on the model: the fin is the tail, the nacelles the engines…
+    const zones = new Set(a320.geometry.getAttribute('liveryZone').array);
+    expect([...zones].sort()).toEqual(LIVERY_ZONES.map((zone, index) => index));
+    const entry = state.plan.get('A320');
+    LIVERY_ZONE_ATTRIBUTES.forEach((name, index) => {
+      const attribute = a320.geometry.getAttribute(name);
+      expect(attribute.isInstancedBufferAttribute, name).toBe(true);
+      expect(attribute.count, name).toBe(a320.instanceMatrix.count);
+      expect(Array.from(attribute.array), name).toEqual(Array.from(entry.zoneColors[LIVERY_ZONES[index + 1]]));
+    });
+    // cmp sorts first: its fin is Copa's blue.
+    expect(Array.from(a320.geometry.getAttribute('instanceTail').array.slice(0, 3)))
+      .toEqual(Array.from(Float32Array.from(liveryInstanceColours({ airlineIcao: 'CMP' }).tail)));
+
+    // A plan without zones paints every zone in its instance colour.
+    const { zoneColors: _ignored, ...older } = entry;
+    state = { revision: 2, plan: new Map([['A320', older]]) };
+    layer.render(gl, input);
+    for (const name of LIVERY_ZONE_ATTRIBUTES) {
+      expect(Array.from(a320.geometry.getAttribute(name).array)).toEqual(Array.from(entry.colors));
+    }
   });
 });

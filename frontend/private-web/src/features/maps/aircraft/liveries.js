@@ -135,3 +135,34 @@ export function liveryName(item) {
   const name = typeof item?.name === 'string' ? item.name : '';
   return item?.nameStyle === 'lower' ? name : name.toUpperCase();
 }
+
+/**
+ * The zones of a livery that an instanced model paints (M9, aircraft on their stands and near the airfield), in the
+ * order of the models' `liveryZone` vertex attribute (aircraft/aircraftGeometry.js: withLiveryZones) and of the
+ * layer's instance attributes (aircraft/aircraft3dLayer.js): 0 the upper body, 1 the belly, 2 the fin, 3 the engines,
+ * 4 the wings, the tailplane and the gear. A model from a file (the L1 glTF of lane M5) paints the same zones.
+ */
+export const LIVERY_ZONES = Object.freeze(['fuselage', 'belly', 'tail', 'engine', 'wing']);
+
+/**
+ * The zone of each part of the procedural models (aircraft/aircraftGeometry.js: userData.parts); a fuselage's
+ * underside is its belly (withLiveryZones). A part not listed is painted as the wings.
+ */
+export const PART_ZONES = Object.freeze({
+  fuselage: 'fuselage', cabin: 'fuselage', boom: 'fuselage', fin: 'tail', tailRotor: 'tail', nacelle: 'engine',
+  propeller: 'wing', wing: 'wing', tailplane: 'wing', pylon: 'wing', gear: 'wing', skid: 'wing', mast: 'wing',
+  rotor: 'wing',
+});
+
+/**
+ * The sRGB `#rrggbb` colour of each zone of LIVERY_ZONES for `item` (a livery of LIVERIES, DEFAULT_LIVERY, or anything
+ * resolveLivery reads), frozen: `{ fuselage, belly, tail, engine, wing }`. The one place the instanced models and a
+ * model from a file take their paint from.
+ */
+export function liveryZones(item = {}) {
+  const paint = Object.hasOwn(item ?? {}, 'fuselage') && Object.hasOwn(item, 'tail') ? item : resolveLivery(item);
+  return Object.freeze({
+    fuselage: paint.fuselage, belly: paint.belly ?? paint.fuselage, tail: paint.tail, engine: paint.engine,
+    wing: paint.wing,
+  });
+}
