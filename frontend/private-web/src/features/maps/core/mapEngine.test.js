@@ -744,6 +744,28 @@ describe('map engine', () => {
     expect(quiet.map.listenerCount('click') + quiet.map.listenerCount('mousemove')).toBe(0);
   });
 
+  it('reports a double click with what is under it; prevented, MapLibre does not zoom, else it zooms in (M4)', () => {
+    let prevent = true;
+    const onDoubleClick = vi.fn(event => { if (prevent) event.preventDefault(); });
+    const { engine, map, state } = ready(setup({ onDoubleClick }));
+    engine.jumpTo({ center: [-68.36, 18.57], zoom: 16 });
+    const feature = { id: 1, layer: { id: 'occ-stand-points' }, properties: { code: 'B21' } };
+    state.setRenderedFeatures(map, () => [feature]);
+    const at = { point: { x: 10, y: 20 }, lngLat: { lng: -68.36, lat: 18.57 } };
+    expect(state.doubleClick(map, at)).toBe(true);
+    expect(onDoubleClick).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      point: { x: 10, y: 20 }, lngLat: [-68.36, 18.57], hit: { kind: 'stand', id: 'B21', feature },
+      preventDefault: expect.any(Function),
+    }));
+    expect(map.getZoom()).toBe(16);
+    // Not prevented (nothing to follow under it): MapLibre's own zoom, one level in.
+    prevent = false;
+    expect(state.doubleClick(map, at)).toBe(false);
+    expect(map.getZoom()).toBe(17);
+    // Without the handler the engine does not listen to double clicks.
+    expect(setup().map.listenerCount('dblclick')).toBe(0);
+  });
+
   it('onUserGesture hears a person pan, zoom, rotate and tilt the map, never a move the code makes', () => {
     const onUserGesture = vi.fn();
     const onCamera = vi.fn();

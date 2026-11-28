@@ -61,7 +61,7 @@ function Follow3dProbe() {
 const threeProbe = () => JSON.parse(screen.getByTestId('three-probe').textContent);
 
 // The demo flight on its approach, chosen, on a map whose frames and server time the test moves.
-function renderFollow3d({ appearS = 200 } = {}) {
+function renderFollow3d({ appearS = 200, selection: initial = { kind: 'flight', id: KEY.demoArrival }, onSelect } = {}) {
   const frames = controlledFrames();
   const block = createDemoBlock({ appearAt: Date.parse(TRAFFIC_NOON) - appearS * 1_000, imported: true });
   const response = createDemoFlights(block, { imported: true, standCode: 'A6' });
@@ -78,13 +78,13 @@ function renderFollow3d({ appearS = 200 } = {}) {
     source: null, motion };
   const element = selection => (
     <LanguageScope>
-      <OccMap defaultView="airfield" basemap={false} traffic={traffic} selection={selection}>
+      <OccMap defaultView="airfield" basemap={false} traffic={traffic} selection={selection} onSelect={onSelect}>
         <Follow3dProbe />
         <Follow3dPanel flights={flightsModel.flights} />
       </OccMap>
     </LanguageScope>
   );
-  const view = render(element({ kind: 'flight', id: KEY.demoArrival }));
+  const view = render(element(initial));
   const map = fake.state.liveMaps().at(-1);
   act(() => fake.state.emit(map, 'style.load'));
   frames.run();
@@ -204,3 +204,66 @@ describe('OccMap «Seguir en 3D» (CN-30)', () => {
     expect(threeProbe().on).toBe(false);
   });
 });
+
+describe('OccMap double click on an aircraft (M4)', () => {
+  const AT = { point: { x: 100, y: 100 }, lngLat: { lng: -68.36, lat: 18.57 } };
+  const demoUnder = { layer: { id: 'occ-traffic-aviam' }, properties: { id: DEMO_ID, flightKey: KEY.demoArrival } };
+  const under = (map, features) => fake.state.setRenderedFeatures(map,
+    (_geometry, options) => features.filter(feature => options.layers.includes(feature.layer.id)));
+
+  it('chooses the aircraft and starts «Seguir en 3D» without MapLibre's zoom; on empty map it zooms as always', () => {
+    const onSelect = vi.fn();
+    const { map, rerender, seconds } = renderFollow3d({ selection: null, onSelect });
+    // On empty map the double click is MapLibre's: one level in, nothing chosen, nothing followed.
+    under(map, []);
+    const zoom = map.getZoom();
+    let prevented;
+    act(() => { prevented = fake.state.doubleClick(map, AT); });
+    expect(prevented).toBe(false);
+    expect(map.getZoom()).toBeCloseTo(zoom + 1, 5);
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(threeProbe().on).toBe(false);
+    // On the aircraft: chosen through the page's onSelect, no zoom, and once the page chooses it, the orbit starts.
+    under(map, [demoUnder]);
+    const before = map.getZoom();
+    act(() => { prevented = fake.state.doubleClick(map, AT); });
+    expect(prevented).toBe(true);
+    expect(map.getZoom()).toBe(before);
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith({ kind: 'flight', id: KEY.demoArrival });
+    expect(threeProbe().on).toBe(false);
+    act(() => rerender({ kind: 'flight', id: KEY.demoArrival }));
+    expect(threeProbe()).toEqual({ on: true, view: 'chase', following: true });
+    expect(query().get('follow')).toBe('1');
+    // Orbiting, MapLibre's double-click zoom is the orbit's; a double click on the followed aircraft changes nothing.
+    seconds(1);
+    expect(map.doubleClickZoom.isEnabled()).toBe(false);
+    act(() => { prevented = fake.state.doubleClick(map, AT); });
+    expect(threeProbe().on).toBe(true);
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it('on the aircraft already chosen (the first click of the double click chose it) it starts at once', () => {
+    const onSelect = vi.fn();
+    const { map } = renderFollow3d({ onSelect });
+    under(map, [demoUnder]);
+    const zoom = map.getZoom();
+    let prevented;
+    act(() => { prevented = fake.state.doubleClick(map, AT); });
+    expect(prevented).toBe(true);
+    expect(map.getZoom()).toBe(zoom);
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(threeProbe()).toEqual({ on: true, view: 'chase', following: true });
+  });
+
+  it('another choice before the page chooses the aircraft forgets the waiting «Seguir en 3D»', () => {
+    const onSelect = vi.fn();
+    const { map, rerender } = renderFollow3d({ selection: null, onSelect });
+    // Asked for the aircraft, then the page chose something else first: the waiting «Seguir en 3D» is forgotten.
+    under(map, [demoUnder]);
+    act(() => { fake.state.doubleClick(map, AT); });
+    act(() => rerender({ kind: 'stand', id: 'A6' }));
+    act(() => rerender({ kind: 'flight', id: KEY.demoArrival }));
+    expect(threeProbe().on).toBe(false);
+  });
+});
+
