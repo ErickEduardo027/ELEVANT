@@ -25,7 +25,7 @@ describe('selection layers', () => {
     const ids = style.layers.map(layer => layer.id);
     // The stand casing is the feature state of the stand polygons now: only the ring is left here.
     expect(ids.slice(ids.indexOf('slot-selection') + 1)).toEqual(['occ-selection-ring']);
-    expect(style.sources[SELECTION_SOURCE]).toEqual({ type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    expect(style.sources[SELECTION_SOURCE]).toEqual({ type: 'geojson', maxzoom: 16, data: { type: 'FeatureCollection', features: [] } });
     const ring = style.layers.at(-1);
     expect(ring.filter).toEqual(['!=', ['get', 'kind'], 'stand']);
     expect(ring.paint).toMatchObject({ 'circle-opacity': 0, 'circle-stroke-width': 2, 'circle-stroke-color': occColor('accent') });

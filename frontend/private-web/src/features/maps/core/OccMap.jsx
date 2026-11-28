@@ -2474,6 +2474,7 @@ const OccMapView = forwardRef(function OccMapView({
     return () => renderListenersRef.current.delete(listener);
   }, []);
   const rendererInfo = useCallback(() => engineRef.current?.rendererInfo?.() ?? null, []);
+  const renderStats = useCallback(() => engineRef.current?.renderStats?.() ?? null, []);
   const readFrameMeter = useCallback(() => {
     const applied = appliedRef.current;
     const framed = applied.aircraft3d?.framedCount?.() ?? 0;
@@ -2497,9 +2498,9 @@ const OccMapView = forwardRef(function OccMapView({
 
   useImperativeHandle(ref, () => ({
     flyToPreset, flyToStand, flyToFlight, flyToBounds, flyToAll, flyToPuj, resetNorth, getCamera, jumpTo, project, whenIdle,
-    aircraft3d, drawnPosition, framePosition, onRender, rendererInfo, frameMeter: readFrameMeter,
+    aircraft3d, drawnPosition, framePosition, onRender, rendererInfo, renderStats, frameMeter: readFrameMeter,
   }), [flyToPreset, flyToStand, flyToFlight, flyToBounds, flyToAll, flyToPuj, resetNorth, getCamera, jumpTo, project, whenIdle,
-    aircraft3d, drawnPosition, framePosition, onRender, rendererInfo, readFrameMeter]);
+    aircraft3d, drawnPosition, framePosition, onRender, rendererInfo, renderStats, readFrameMeter]);
 
   // The overlays read only these: the tooltip, which changes with the pointer, renders here and re-renders none of them.
   const {

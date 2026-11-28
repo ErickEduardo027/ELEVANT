@@ -724,6 +724,22 @@ export function createMapEngine({
       return { renderer: typeof renderer === 'string' ? renderer : null, vendor: typeof vendor === 'string' ? vendor : null };
     },
 
+    /**
+     * What MapLibre has to go through each frame (PR M2, 2026-11-28: the map lab's CPU profile of «Seguir en 3D»), or
+     * null without a style: `{ zoom, pitch, layers, sources: [{ id, tiles }] }`, the layers it draws at this zoom and,
+     * for each source one of them reads, the tiles it holds for the frame. Read from MapLibre's internals, for the lab.
+     */
+    renderStats() {
+      const style = live() ? map.style : null;
+      if (!style?._layers) return null;
+      const zoom = map.getZoom();
+      const layers = Object.values(style._layers).filter(layer => layer.type !== 'custom' && !layer.isHidden?.(zoom));
+      const used = new Set(layers.map(layer => layer.source).filter(Boolean));
+      const managers = style.tileManagers ?? style.sourceCaches ?? {};
+      const sources = [...used].map(id => ({ id, tiles: managers[id]?.getRenderableIds?.().length ?? null }));
+      return { zoom, pitch: map.getPitch(), layers: layers.length, sources };
+    },
+
     /** The pixel ratio the map draws at, or null without a map (PR M7: the 3D governor lowers it). */
     getPixelRatio() {
       return live() && typeof map.getPixelRatio === 'function' ? map.getPixelRatio() : null;

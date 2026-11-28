@@ -277,6 +277,8 @@ function LabScene({ scene, basemap, frozenAt, governed = false }) {
       frameAt: id => mapRef.current?.framePosition?.(id) ?? null,
       onRender: listener => mapRef.current?.onRender?.(listener) ?? (() => {}),
       renderer: () => mapRef.current?.rendererInfo?.() ?? null,
+      // What MapLibre goes through each frame: the layers it draws and the tiles of each source they read (the profile).
+      renderStats: () => mapRef.current?.renderStats?.() ?? null,
       frameMeter: () => mapRef.current?.frameMeter?.() ?? null,
       // Where the scene's wind stands by the airfield (PR M8), as `[lng, lat]`, or null without weather.
       windAt: () => (scene.weather ? windPoint() : null),

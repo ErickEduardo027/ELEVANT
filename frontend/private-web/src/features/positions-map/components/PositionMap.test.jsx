@@ -156,7 +156,7 @@ describe('PositionMap on the map engine', () => {
     const codes = view.map.zoomRangeCalls.findLast(call => call.id === 'occ-stand-labels');
     expect(codes.minzoom).toBeCloseTo(AIRFIELD_FIT - 0.3, 6);
     expect(view.map.options.style.sources['occ-stands']).toEqual({
-      type: 'geojson', promoteId: 'code', data: { type: 'FeatureCollection', features: [] },
+      type: 'geojson', promoteId: 'code', maxzoom: 16, data: { type: 'FeatureCollection', features: [] },
     });
   });
 

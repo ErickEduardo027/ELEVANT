@@ -926,7 +926,7 @@ describe('OccMap', () => {
     // One setData per source when the map starts, and no clustering any more.
     expect(sources.map(source => source.setDataCalls.length)).toEqual([1, 1, 1, 1]);
     expect(sources.map(source => source.updateDataCalls.length)).toEqual([0, 0, 0, 0]);
-    expect(sources[0].spec).toEqual({ type: 'geojson', promoteId: 'code', data: { type: 'FeatureCollection', features: [] } });
+    expect(sources[0].spec).toEqual({ type: 'geojson', promoteId: 'code', maxzoom: 16, data: { type: 'FeatureCollection', features: [] } });
     const [polygons, , labels, groups] = sources;
     expect(polygons.data.features).toHaveLength(41);
     expect(polygons.data.features.every(feature => feature.geometry.type === 'Polygon')).toBe(true);
