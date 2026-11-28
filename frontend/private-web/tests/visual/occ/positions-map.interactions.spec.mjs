@@ -60,10 +60,14 @@ async function centreOn(page, code) {
   await settled(page);
 }
 
-// The pixel of the middle of the map, plus `dx` and `dy`.
+// The pixel of the middle of the area in sight, plus `dx` and `dy`: since M1 the panels float over the map and the
+// camera centres what it brings in the area they leave (the map's insets, --occ-map-inset-*), not in the canvas.
 async function mapPoint(page, dx = 0, dy = 0) {
   const box = await canvas(page).boundingBox();
-  return { x: box.x + box.width / 2 + dx, y: box.y + box.height / 2 + dy };
+  const inset = await page.getByTestId('occ-map').evaluate(node => Object.fromEntries(['top', 'right', 'bottom', 'left']
+    .map(side => [side, Number.parseFloat(node.style.getPropertyValue(`--occ-map-inset-${side}`)) || 0])));
+  return { x: box.x + inset.left + (box.width - inset.left - inset.right) / 2 + dx,
+    y: box.y + inset.top + (box.height - inset.top - inset.bottom) / 2 + dy };
 }
 
 async function foldLegend(page) {

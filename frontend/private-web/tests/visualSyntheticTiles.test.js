@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { basemapLayers } from '../src/features/maps/style/basemapLayers';
 import { WORLD_BASE_TILES } from '../src/features/maps/style/worldBaseLayers';
 import { GOES_TILE_TEMPLATE, IMERG_TILE_TEMPLATE } from '../src/services/satelliteService';
-import { GIBS_ORIGIN, gibsTileRequest, isolate } from './visual/support/isolate.mjs';
+import { GIBS_ORIGIN, gibsProbeRequest, gibsTileRequest, isolate, latestGibsTime } from './visual/support/isolate.mjs';
 import {
   SYNTHETIC_LAYERS, clipLine, clipRing, encodePng, syntheticSatelliteTile, syntheticTile, tilePixelLngLat, toTileUnits,
 } from './visual/support/syntheticTiles.mjs';
@@ -115,6 +115,24 @@ describe('synthetic satellite images of the visual suite (PR M8)', () => {
       const alphas = Array.from({ length: width * height }, (_, index) => pixels[index * 4 + 3]);
       expect(new Set(alphas)).toEqual(new Set([255]));
     }
+  });
+
+  // Integration of 2026-11-28: Panorama in Región reads the time of the latest image (satelliteService.js) before it
+  // pins the loop of lane M7; only that tile of the latest image is answered, with a recent time in its header.
+  it('answers the read of the time of the latest GOES-East or IMERG image over PUJ, and no other latest tile', () => {
+    expect(gibsProbeRequest(gibsUrl(GOES_TILE_TEMPLATE, 'default', { z: 6, y: 28, x: 19 }))).toEqual({
+      layer: 'GOES-East_ABI_Band13_Clean_Infrared', image: 'goes', z: 6, y: 28, x: 19,
+    });
+    expect(gibsProbeRequest(gibsUrl(IMERG_TILE_TEMPLATE, 'default', { z: 6, y: 28, x: 19 }))).toMatchObject({ image: 'imerg' });
+    expect(gibsProbeRequest(gibsUrl(GOES_TILE_TEMPLATE, 'default', { z: 6, y: 28, x: 20 }))).toBeNull();
+    expect(gibsProbeRequest(gibsUrl(GOES_TILE_TEMPLATE, '2026-11-13T14:50:00Z', { z: 6, y: 28, x: 19 }))).toBeNull();
+    expect(gibsTileRequest(gibsUrl(GOES_TILE_TEMPLATE, 'default', { z: 6, y: 28, x: 19 }))).toBeNull();
+    const now = Date.parse('2026-11-28T13:57:12.345Z');
+    expect(latestGibsTime('goes', now)).toBe('2026-11-28T13:40:00Z');
+    expect(latestGibsTime('imerg', now)).toBe('2026-11-28T13:00:00Z');
+    // By day the loop draws GOES-East GeoColor (level 7), answered with the same synthetic clouds.
+    expect(gibsTileRequest(new URL(`${GIBS_ORIGIN}/wmts/epsg3857/best/GOES-East_ABI_GeoColor/default/`
+      + '2026-11-28T13:40:00Z/GoogleMapsCompatible_Level7/7/56/38.png'))).toMatchObject({ image: 'goes', z: 7 });
   });
 
   it('answers the satellite images of NASA GIBS pinned to their time with a synthetic PNG, and nothing else', () => {

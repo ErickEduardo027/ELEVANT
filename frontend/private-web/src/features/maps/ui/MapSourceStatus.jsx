@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useLayoutEffect, useRef, useSyncExternalStore } from 'react';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import OccGlyph from '../../occ-ui/OccGlyph';
 import { httpsUrl } from '../core/attribution';
@@ -127,14 +127,39 @@ function Chip({ label, signal = null, words, reason = null, retryLabel, onRetry 
   );
 }
 
+// The custom property of the map root that says how tall the credit is (occ-map.css), so the altitude scale over it
+// clears it when a narrow area in sight wraps it on two or more lines (INT, 2026-11-28: Panorama at 1366 px with
+// «Meteorología PUJ» open).
+export const CREDIT_HEIGHT_PROPERTY = '--occ-map-credit-height';
+
+// Writes the height of the credit on the map that holds it, and takes it away with the credit.
+function useCreditHeight() {
+  const ref = useRef(null);
+  useLayoutEffect(() => {
+    const credit = ref.current;
+    const root = credit?.closest('.occ-map');
+    if (!credit || !root) return undefined;
+    const write = () => root.style.setProperty(CREDIT_HEIGHT_PROPERTY, `${Math.ceil(credit.getBoundingClientRect().height)}px`);
+    write();
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(write) : null;
+    observer?.observe(credit);
+    return () => {
+      observer?.disconnect();
+      root.style.removeProperty(CREDIT_HEIGHT_PROPERTY);
+    };
+  }, []);
+  return ref;
+}
+
 function Credit({ source, label }) {
+  const ref = useCreditHeight();
   const name = source.name.trim();
   const home = httpsUrl(source.homeUrl);
   const license = typeof source.licenseName === 'string' && source.licenseName.trim() !== '' ? source.licenseName.trim() : null;
   const licenseHref = httpsUrl(source.licenseUrl);
   const link = (href, text) => (href === null ? text : <a href={href} target="_blank" rel="noopener noreferrer" className="text-occ-accent underline-offset-2 hover:underline">{text}</a>);
   return (
-    <p data-map-credit className="occ-map-credit rounded-sm bg-occ-panel-float px-2 py-1 text-xs text-occ-muted">
+    <p ref={ref} data-map-credit className="occ-map-credit rounded-sm bg-occ-panel-float px-2 py-1 text-xs text-occ-muted">
       {label}: {link(home, name)}
       {license !== null && <> ({link(licenseHref, license)})</>}
     </p>

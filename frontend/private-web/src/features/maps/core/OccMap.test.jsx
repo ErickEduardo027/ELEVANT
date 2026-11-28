@@ -1650,7 +1650,8 @@ describe('OccMap', () => {
     // ticks of a narrow altitude scale and keep the credit of a narrow map on one line.
     expect(preludes.filter(prelude => prelude.startsWith('@'))).toEqual(['@media (pointer: coarse)',
       '@media (forced-colors: active)', '@container (max-width: 27rem)', '@container (max-width: 18rem)',
-      '@container occ-map (max-width: 36rem)']);
+      '@container (max-width: 12rem)',
+      '@container occ-map (min-width: 36.0625rem)', '@container occ-map (max-width: 36rem)']);
     const selectors = preludes.filter(prelude => !prelude.startsWith('@')).flatMap(prelude => prelude.split(',').map(part => part.trim()));
     expect(selectors.length).toBeGreaterThan(10);
     for (const selector of selectors) expect(selector.startsWith('.occ-map'), selector).toBe(true);
@@ -1689,7 +1690,9 @@ describe('OccMap', () => {
       return [...parent.querySelectorAll('*')];
     };
     const root = container.firstElementChild;
-    root.innerHTML = '<div class="occ-map-host"></div><div data-occ-console-status=""><div><div class="nested"></div></div></div>';
+    // With the panel of «Seguir en 3D» open, for the rule that moves the bottom right corner left of it (INT).
+    root.innerHTML = '<div class="occ-map-host"></div><div class="occ-map-follow-panel" data-open="true"></div>'
+      + '<div data-occ-console-status=""><div><div class="nested"></div></div></div>';
     const own = controls(root.querySelector('.occ-map-host'));
     const nested = controls(root.querySelector('.nested'));
     for (const selector of selectors) {
@@ -1755,11 +1758,11 @@ describe('OccMap', () => {
       right: 'var(--occ-map-clear-right)', bottom: 'var(--occ-map-inset-bottom, 0px)',
       left: 'var(--occ-map-inset-left, 0px)' }]);
     // A menu of the rail opens under the panels floating along the top (Mapa de posiciones' bar), never over them,
-    // and still ends at the bottom of the column.
+    // and ends over the panels floating along the bottom (the stand band), never over their controls (INT).
     const [flyout] = all('.occ-map .occ-map-flyout');
     expect(flyout).toMatchObject({
       top: 'calc(max(var(--occ-map-gap), var(--occ-map-inset-top, 0px)) - var(--occ-map-gap) - var(--occ-map-zoom-height) - 8px)',
-      'max-height': 'calc(100% + var(--occ-map-zoom-height) + 8px + var(--occ-map-gap) - max(var(--occ-map-gap), var(--occ-map-inset-top, 0px)))',
+      'max-height': 'calc(100% + var(--occ-map-zoom-height) + 8px + var(--occ-map-gap) - max(var(--occ-map-gap), var(--occ-map-inset-top, 0px)) - var(--occ-map-inset-bottom, 0px))',
     });
   });
 });

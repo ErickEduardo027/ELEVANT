@@ -27,6 +27,29 @@ import { componentWords, flightCategoryOf, runwayRows, tafBand } from './weather
 
 const SECTION = 'space-y-1.5';
 
+// «dom 29»: the weekday and the day at the station of an instant, and its date as a key, to say on which day a TAF
+// that runs past midnight ends (a 24 h TAF otherwise reads «de las 08:00 a las 08:00»). `null` without an instant.
+function stationDay(at, locale) {
+  if (!Number.isFinite(at)) return null;
+  try {
+    const parts = new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', timeZone: BUSINESS_TIME_ZONE })
+      .formatToParts(new Date(at));
+    const part = type => parts.find(item => item.type === type)?.value ?? '';
+    const key = new Intl.DateTimeFormat('en-CA', { timeZone: BUSINESS_TIME_ZONE }).format(new Date(at));
+    return { key, label: `${part('weekday')} ${part('day')}` };
+  } catch {
+    return null;
+  }
+}
+
+function tafValidity(t, model, locale) {
+  const from = stationTime(model.validFrom, locale);
+  const to = stationTime(model.validTo, locale);
+  const [fromDay, toDay] = [stationDay(model.validFrom, locale), stationDay(model.validTo, locale)];
+  if (fromDay && toDay && fromDay.key !== toDay.key) return t('weather.panel.tafValidUntilDay', { from, to, day: toDay.label });
+  return t('weather.panel.tafValid', { from, to });
+}
+
 function Section({ title, meta, children }) {
   return (
     <section className={SECTION}>
@@ -62,7 +85,7 @@ function Forecast({ t, language, locale, weather, nowMs }) {
   if (!model) return <Section title={t('weather.panel.taf')}><p className="text-xs text-occ-muted">{t('weather.panel.tafNone')}</p></Section>;
   const band = tafBand(model, nowMs, { language });
   const readout = tafReadout(model, nowMs);
-  const meta = t('weather.panel.tafValid', { from: stationTime(model.validFrom, locale), to: stationTime(model.validTo, locale) });
+  const meta = tafValidity(t, model, locale);
   let lines;
   if (readout.state === 'expired') lines = [mapT('weather.taf.expired')];
   else if (readout.state === 'none') lines = [mapT('weather.taf.none')];

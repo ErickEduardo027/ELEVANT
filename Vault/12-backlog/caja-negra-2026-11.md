@@ -7,10 +7,11 @@ status: documented
 maturity: evolving
 evidence: operator-recorded
 owner: equipo-elevant
-last_verified: "2026-11-24"
-verified_commit: "ccf028fa73fa1c056dc303f32c36887e4d0fe0d8"
+last_verified: "2026-11-28"
+verified_commit: "517bf8e68f6950a1ed77355e01446425362c374a"
 sources:
   - docs/adr/0043-occ-maps-one-engine.md
+  - docs/adr/0044-occ-noc-visual-system.md
   - frontend/private-web/src/features/maps/core/frameLoop.js
   - frontend/mobile-agent/src/app/flight/[id].tsx
   - database/DevelopmentDB/Elevant.Persistence/Persistence/Seed/DevelopmentDataSeeder.cs
@@ -76,7 +77,7 @@ asignación en OCC → operación completa en la tablet → revisión OCC → e-
 | CN-30 | Seguir al avión en 3D con un panel de vuelo y operación | «Seguir en 3D»: cámara que orbita el avión (vistas, gestos y botones), panel lateral, modelos 3D detallados con libreas y actitud real | En PR |
 | CN-31 | Los aviones reales deben verse donde están, también en rodaje | Mezcla de 1,5 s, sin rodaje estimado para un avión real, estacionamiento en su posición, calzos de la tablet, aviso de posición distinta; lectura del aeródromo cada 3 s | En PR |
 | CN-32 | Monitoreo OCC más profesional: paneles y controles dispersos sobre el mapa | Una columna de control por mapa, paneles acoplados en Panorama, detalle acoplado con los datos en vivo y tablero ordenable con demoras en Monitoreo | En PR |
-| CN-32 (M1) | Refinamiento del 27 de noviembre: los paneles acoplados restan mapa; el dueño pide el mapa a pantalla completa con todo flotando dentro | Mapa a pantalla completa en Panorama, Monitoreo y Mapa de posiciones, con paneles flotantes medidos y la columna de control fija en el borde derecho | En PR |
+| CN-32 (M1) | Refinamiento del 27 de noviembre: los paneles acoplados restan mapa; el dueño pide el mapa a pantalla completa con todo flotando dentro | Mapa a pantalla completa en Panorama, Monitoreo y Mapa de posiciones, con paneles flotantes medidos y la columna de control fija en el borde derecho | En Development (#242 por #243); sin desplegar |
 
 ### Medición del NOC (base, antes de CN-18/19)
 
@@ -92,6 +93,52 @@ Chromium sin GPU, un minuto por pantalla con un vuelo demo en curso.
 | Revisión | 1,8 s | 32 | 0 s | 60 |
 
 Meta tras los arreglos: bloqueo menor de 10 s por minuto, 40 FPS o más y como máximo 40 peticiones por minuto.
+
+## Refinamiento definitivo de los mapas (27–28-nov)
+
+Plan de mapas del 27 de noviembre, en nueve líneas. M3 (#235) y M6 (#236) se fusionaron en `Development` por su
+cuenta; las demás se unieron en la rama de integración `feat/occ-mapas-integracion`, que entró por la PR #243 y cierra
+las PRs de cada línea (#237 a #242; M7 no tuvo PR propia). La verificación final de esa rama (batería completa, capturas
+revisadas, medición en GPU real y esta documentación) va en una PR aparte hacia `Development`. Nada está desplegado. El
+detalle y las decisiones de la integración están en las notas fechadas del
+[ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md) y del [ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md).
+
+| Línea | Qué entrega | PR |
+| --- | --- | --- |
+| M1 | Mapa a pantalla completa en Panorama, Monitoreo y Mapa de posiciones; paneles flotantes medidos y columna de control fija en el borde derecho (revierte el acoplado de CN-32) | #242 (por #243) |
+| M2 | Capa de tráfico animada: cada cuadro interpola los aviones a la vista en three.js; regulador corregido, GeoJSON del tráfico a 2 Hz o menos y medidor Ctrl+Alt+F | #240 (por #243) |
+| M3 | Seguimiento ampliado: lectura de 25 NM cada 2 s, búsqueda mundial de vuelos de AVIAM y rodaje continuo | #235 (fusionada) |
+| M4 | «Seguir en 3D» ultra cerca: doble clic o botón en las tres pantallas, zoom 22 y vista «Muy cerca» con cielo, sol y sombra de contacto | #238 (por #243) |
+| M5 | Modelos 3D de terceros con licencia GPL (L1 y L2), libreas propias, logotipos de dominio público con aviso de marcas y «Créditos y licencias» | #241 (por #243) |
+| M6 | Meteorología regional en el servidor: METAR y TAF de la región (NOAA AWC), SIGMET, malla de viento (Open-Meteo) e índice del radar (IEM), sin SQL ni migración | #236 (fusionada) |
+| M7 | Panorama meteorológico: abre en Región; bucle GOES-East, radar, estaciones METAR por categoría de vuelo y SIGMET en el mapa, y el panel «Meteorología PUJ» | Sin PR propia (por #243) |
+| M8 | Monitoreo mundial en globo con la vista «Mundo», apertura en RD, base mundial de GIBS, rutas de los vuelos de AVIAM y filtros del tablero enlazados al mapa | #239 (por #243) |
+| M9 | Mapa de posiciones fijado en PUJ, aeropuerto en 3D (terminales, fingers y calles de rodaje) y aviones estacionados con librea | #237 (por #243) |
+
+### Medición en GPU real tras la integración
+
+Laboratorio de mapas de M2 sobre la rama de integración (`a0c7ce23`), 28-nov: Intel UHD (el piso), ANGLE sobre
+Direct3D 11, 1920 × 1080, densidad 1, `next dev` en la laptop de desarrollo. Entre paréntesis, la segunda corrida.
+
+| Escena | Cuadros/s | p50 / p95 (ms) | Cuadros de más de 33,3 ms | Bloqueo del hilo (s/min) |
+| --- | --- | --- | --- | --- |
+| Aproximación (`perf-approach-feed`) | 120,7 | 7,5 / 12,5 | 0,1 % | 0 |
+| Aeródromo (`perf-airfield-feed`) | 129,5 | 7,1 / 11,6 | 0,1 % | 0 |
+| Aeródromo reproducido en 3D | 135,3 (120,6) | 6,9 / 11,4 (7,2 / 14,4) | 0,1 % (0,7 %) | 0,17 (0,20) |
+| «Seguir en 3D» en el aeródromo reproducido | 136,3 (129,2) | 7,0 / 10,0 (7,1 / 10,8) | 0,2 % (0,3 %) | 0 (0) |
+
+Todas pasan los pisos (30 cuadros/s o más y p95 de 33 ms o menos), con cifras iguales o mejores que las de M2 en la
+misma GPU. No se volvieron a medir la RTX 3060, el globo de Monitoreo ni el Mapa de posiciones con el aeropuerto en 3D;
+la medición del NOC en el VPS queda para después del despliegue.
+
+### Límites conocidos
+
+- En el globo no hay modelos 3D por debajo del zoom 12: ahí los aviones se dibujan con los iconos GeoJSON.
+- El filtro del tablero atenúa siluetas, placas y rótulos, pero no los modelos 3D instanciados.
+- El radar es el de TJUA (IEM), y PUJ queda en el borde de su alcance.
+- Open-Meteo y adsb.fi son de uso no comercial y solo se usan en Development; Production necesita el plan comercial de
+  Open-Meteo y revisar las condiciones de las demás fuentes.
+- Las alturas de las estructuras del aeropuerto en 3D son estimadas y se rotulan como tales.
 
 ## Propuestas aplazadas
 
