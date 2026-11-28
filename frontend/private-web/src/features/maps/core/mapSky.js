@@ -16,6 +16,12 @@ export const OCC_SKY_BLENDS = Object.freeze({
   'atmosphere-blend': Object.freeze(['interpolate', ['linear'], ['zoom'], 0, 1, 10, 1, 12, 0]),
 });
 
+// The sky changes at once, without MapLibre's 300 ms transition (2026-11-28): under the map lab's frozen clock
+// (MapLibre's setNow) a transition never ends and the map never goes idle, as with the fades of the weather layers.
+export const SKY_TRANSITION = Object.freeze({ duration: 0, delay: 0 });
+const SKY_PROPERTIES = Object.freeze(['sky-color', 'horizon-color', 'fog-color', 'sky-horizon-blend', 'horizon-fog-blend',
+  'fog-ground-blend', 'atmosphere-blend']);
+
 // The palette's tokens of each theme: in dark a slate sky over a blue-grey horizon, in light a pale blue sky
 // over a white horizon; the fog is the map's canvas, so the far ground melts into it.
 const SKY_TOKENS = Object.freeze({
@@ -35,6 +41,7 @@ export function occSky(theme = 'dark') {
     'horizon-fog-blend': OCC_SKY_BLENDS['horizon-fog-blend'],
     'fog-ground-blend': OCC_SKY_BLENDS['fog-ground-blend'],
     'atmosphere-blend': structuredClone([...OCC_SKY_BLENDS['atmosphere-blend']]),
+    ...Object.fromEntries(SKY_PROPERTIES.map(name => [`${name}-transition`, { ...SKY_TRANSITION }])),
   };
 }
 
