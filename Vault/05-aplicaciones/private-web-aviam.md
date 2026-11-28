@@ -2056,9 +2056,16 @@ tampoco.
   cifras en una franja arriba y el «Inspector» a la derecha desde 1536 px; los
   controles del mapa forman una columna a la derecha (ver
   [Monitoreo OCC más profesional](#monitoreo-occ-más-profesional-cn-32)).
-  «Posiciones» abre plegada, «Cifras de la jornada» también por debajo de
-  1600 px, y «Tablero» y «Alertas» por debajo de 1280 px. «Ocultar paneles»,
-  bajo el mapa, deja solo el mapa (`focus=map`), y «Mostrar paneles» los
+  *Posterior (M1, 27 de noviembre de 2026):* los paneles vuelven a flotar
+  dentro del mapa a pantalla completa, a 12 px de sus bordes, y la columna de
+  control queda fija en el borde derecho; la barra de estado, con «Ocultar
+  paneles», flota al pie dentro del mapa. Por debajo de 1440 px solo abre
+  «Tablero»: las cifras y «Alertas» abren plegadas, y «Posiciones» abre
+  siempre plegada (ver
+  [Mapa a pantalla completa con paneles flotantes](#mapa-a-pantalla-completa-con-paneles-flotantes-m1)).
+  Antes de M1, «Posiciones» abría plegada, «Cifras de la jornada» también por
+  debajo de 1600 px, y «Tablero» y «Alertas» por debajo de 1280 px.
+  «Ocultar paneles» deja solo el mapa (`focus=map`), y «Mostrar paneles» los
   devuelve. Los paneles son casi opacos y sin desenfoque. La consola los mide y
   el mapa encuadra sus vistas en lo que queda a la vista. Lo elegido no queda
   debajo de un panel: la cámara se mueve después de medir el inspector que se
@@ -2791,7 +2798,9 @@ API, lo que leen las pantallas ni su cadencia.
   línea arriba; «Posiciones» abajo. El «Inspector» ocupa una columna propia a la
   derecha desde 1536 px; en un portátil de 1366 o 1440 px se acopla bajo el
   «Tablero» y «Alertas» se pliega mientras está abierto, así el mapa conserva
-  su ancho.
+  su ancho. *Posterior (M1):* los paneles vuelven a flotar dentro del mapa, en
+  los mismos lugares (ver
+  [Mapa a pantalla completa con paneles flotantes](#mapa-a-pantalla-completa-con-paneles-flotantes-m1)).
 - **Monitoreo de vuelos**
   ([vista](../../frontend/private-web/src/features/flight-monitoring/FlightMonitoringPage.jsx)).
   El tablero es más denso y se ordena por Hora, Vuelo, Estado, Ruta o Posición.
@@ -2799,10 +2808,13 @@ API, lo que leen las pantallas ni su cadencia.
   por debajo, en lugar del tablero, que vuelve al cerrarlo. El panel reúne lo que
   el mapa sabe del avión («En vivo», con «Seguir»), los horarios con su demora,
   la escala con sus hitos y los enlaces a Planificación y Mapa de posiciones;
-  ninguna tarjeta flota sobre el mapa.
+  ninguna tarjeta flota sobre el mapa. *Posterior (M1):* el tablero y el
+  detalle flotan sobre el mapa a pantalla completa, a la izquierda y a la
+  derecha.
 - **Mapa de posiciones.** 2D/3D, «Centrar PUJ» y pantalla completa pasan al riel
   del mapa. El detalle de la posición usa el mismo panel acoplado, y sus rótulos
-  ya no van en mayúsculas.
+  ya no van en mayúsculas. *Posterior (M1):* la barra, la lista, el detalle y
+  la banda flotan sobre el mapa a pantalla completa.
 - **Demora.** Cada tira de los tableros y el detalle del vuelo muestran «+N»
   cuando el vuelo va 5 minutos o más tarde de su hora programada, con el
   triángulo ámbar desde 15 minutos
@@ -2811,7 +2823,60 @@ API, lo que leen las pantallas ni su cadencia.
 - **Panel acoplado común**
   ([`MapSidePanel`](../../frontend/private-web/src/features/maps/ui/MapSidePanel.jsx)):
   el detalle de Monitoreo y de Mapa de posiciones, y el lugar previsto para el
-  panel de un vuelo en modo seguimiento.
+  panel de un vuelo en modo seguimiento. *Posterior (M1):* tiene también una
+  variante flotante, la que usan ahora los dos detalles.
+
+Las capturas se revisaron en local con la API simulada de la suite visual, a
+1366×768, 1440×900 y 1920×1080, en oscuro y en claro; nada de esto acredita un
+despliegue ni una revisión visual en el VPS.
+
+## Mapa a pantalla completa con paneles flotantes (M1)
+
+Posterior al commit verificado de esta nota: describe el código de la rama
+`feat/occ-mapa-completo`, que esa verificación no cubre. Lo pidió el dueño al
+cerrar la ronda 1 de la
+[caja negra](../12-backlog/caja-negra-2026-11.md): el mapa a pantalla completa
+en Panorama, Monitoreo de vuelos y Mapa de posiciones, con todo flotando
+dentro. Revierte el acoplado de CN-32. Las decisiones están en la nota del 27 de
+noviembre de 2026 de [ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md).
+No cambian la API, lo que leen las pantallas, su cadencia ni el presupuesto de
+peticiones.
+
+- **El mapa llena el marco**
+  ([marco](../../frontend/private-web/src/features/admin-occ/AdminOccLayout.jsx)).
+  Las tres pantallas de mapa ocupan el área de trabajo sin margen ni
+  desplazamiento. Las demás pantallas del OCC no cambian.
+- **Paneles flotantes.** Flotan dentro del mapa a 12 px de sus bordes, casi
+  opacos, sin sombra ni desenfoque, y cada uno se pliega a su pastilla. Están
+  debajo de la columna de control y de sus menús, y debajo de «Seguir en 3D».
+- **La columna de control queda en el borde derecho**
+  ([estilos del mapa](../../frontend/private-web/src/styles/occ-map.css)). El
+  zoom y el riel no se mueven con los paneles. Un panel de la derecha flota a su
+  izquierda, a 112 px del borde, y las franjas de arriba y de abajo terminan
+  antes de la columna. «Capas» y «Leyenda» abren debajo de lo que flota arriba
+  del mapa. Los avisos quedan a la izquierda de la columna.
+- **Los márgenes del mapa**
+  ([medida](../../frontend/private-web/src/features/maps/ui/stageInsets.js)).
+  Cada pantalla mide lo que tapan sus paneles, y el mapa encuadra sus vistas y
+  trae lo elegido al área que queda a la vista. La medida pasó de la consola a
+  los componentes comunes de los mapas.
+- **Panorama.** «Tablero» y «Alertas» van a la izquierda, las cifras arriba,
+  «Posiciones» abajo y el «Inspector» a la derecha desde 1536 px. La barra de
+  estado, con la procedencia, «Ocultar paneles», el clima y las demoras, flota
+  al pie dentro del mapa.
+- **Monitoreo de vuelos.** El tablero flota a la izquierda y el detalle del
+  vuelo a la derecha. Por debajo de 1536 px, abrir el detalle pliega el tablero,
+  que se puede desplegar, y «Cerrar detalle» lo devuelve. En tablet, «Ver
+  vuelos» flota arriba a la izquierda del mapa.
+- **Mapa de posiciones.** La barra flota arriba a la izquierda, la lista a la
+  izquierda, el detalle a la derecha y la banda abajo. Sus avisos son chips
+  arriba al centro, y «Pantalla completa» agranda todo el escenario.
+  Planificación no cambia.
+- **Sin motor de mapa,** la lista que lo reemplaza ocupa el área que dejan los
+  paneles, así que se siguen usando a su lado.
+- **A 1366 px** abre lo esencial: en Panorama, solo «Tablero»; en Monitoreo, el
+  tablero, o el detalle si hay un vuelo elegido; en Mapa de posiciones, la barra
+  y la lista, que se pliega mientras el detalle está abierto.
 
 Las capturas se revisaron en local con la API simulada de la suite visual, a
 1366×768, 1440×900 y 1920×1080, en oscuro y en claro; nada de esto acredita un

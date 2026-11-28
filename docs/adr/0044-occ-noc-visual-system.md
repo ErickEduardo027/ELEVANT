@@ -915,3 +915,101 @@ Esta nota amplía las decisiones de arriba sin reescribirlas. Del [ADR-0043](004
 **9. Pruebas.** Nuevas: `OccDelayChip.test.jsx` (con `occDelay.js`), `OccBoardLegend.test.jsx`, `MapSidePanel.test.jsx` y `ConsoleOverlay.test.jsx`. Casos nuevos en `OccFloatingPanel` (la fila y `shortTitle`), `consoleInsets` (`side` y las pastillas), `boardModel` (la demora en la leyenda), `flightBoardModel` (el orden y la demora), `FlightBoard` (el encabezado y el chip), `FlightInspector` (la demora), `FlightDataBlock` (la variante `embedded`), `FlightMap` (el portal al panel) y `MapLegend` (el menú del riel, el lugar compartido con «Capas» y el modo seguimiento). Cambian las de `MapPresetSwitcher`, `MapLayersMenu`, `MapControls`, `PositionsMapPage`, `FlightMonitoringPage`, `ConsolePage`, `consoleMessages`, `AltitudeLegend` y la lista de reglas de `occ-map.css` en `OccMap.test.jsx`. En la suite visual, `tests/visual/occ/occ-monitoring.spec.mjs` fotografía las tres pantallas a 1366×768, 1440×900 y 1920×1080 (al abrir, con un vuelo o una posición elegidos y con la leyenda abierta), y cambian `console.spec.mjs` (los paneles a ras y el inspector bajo el tablero a 1440 px) y `flight-monitoring.spec.mjs` (el inspector en la columna del tablero o a la derecha, y el bloque de datos dentro del inspector). Como el resto de la suite, corre fuera del CI.
 
 **10. Límites.** Las capturas se revisaron en local, con la API simulada de la suite visual, en oscuro y en claro; nada de esto acredita un despliegue ni una revisión visual en el VPS. La rama del motor de mapas en curso (CN-29/30, la ruta y «Seguir en 3D») toca `core/OccMap.jsx`, la cinemática y el tráfico, que este cambio no edita; su panel de seguimiento debería montarse sobre `MapSidePanel`, en el hueco derecho del punto 6.
+
+## Nota del 27 de noviembre de 2026: «Mapa a pantalla completa con paneles flotantes» (M1)
+
+Pedido del dueño al cerrar la ronda 1 de la caja negra: Panorama, Monitoreo de vuelos y Mapa de posiciones muestran el mapa a pantalla completa, con todos los botones y paneles flotando dentro. Revierte el acoplado de CN-32. Esta nota amplía las decisiones de arriba y reemplaza solo esto:
+- de la nota de CN-32, el lugar de la columna de control «dentro de los `insets`» (punto 1) y los puntos 2 (Panorama acoplado), 3 (el inspector acoplado de Monitoreo) y 6 (`MapSidePanel` que la pantalla acopla en una columna);
+- de U3, que solo Panorama llene el espacio sin margen (punto 1 y «Consecuencias de U3»);
+- de U5, la plantilla B, «Mapa de trabajo» (punto 1), con la lista y el inspector acoplados y nunca encima del mapa, y el lugar de los avisos de Monitoreo «abajo a la derecha del área de trabajo» (punto 2).
+
+Lo demás de CN-32 sigue: el riel y sus menús, la clave del mapa, la demora, el tablero ordenable y el bloque de datos dentro del inspector.
+
+**1. El escenario: el mapa llena el marco.**
+- `AdminOccLayout` pasa `mainVariant: 'fill'` (punto 9 de la nota de U2) a las tres rutas de mapa, `OCC_MAP_PATHS`: `/admin-occ/dashboard`, `/admin-occ/flight-monitoring` y `/admin-occ/positions-map`. Las demás pantallas del OCC siguen con `'scroll'`.
+- Cada pantalla tiene un escenario `relative h-full` con su `OccMap` a ras, sin esquinas redondeadas.
+- Los paneles son hijos de `OccMap`, nunca hermanos del mapa en la página. `OccMap` es su propio contexto de apilamiento (`isolation: isolate`), y así los menús del riel abren encima de los paneles.
+- Sin mapa (cargando, con error u otra estación sin fuente en vivo), la pantalla se desplaza dentro de su escenario (`overflow-y-auto p-3`) con los paneles en cuadrícula.
+
+**2. La columna de control queda en el borde derecho real del mapa** (`src/styles/occ-map.css`).
+- El grupo de zoom y brújula y el riel ya no se mueven con los `insets`. Van a 12 px del borde derecho del mapa, con el riel de 5,5 rem, así que no vuelven los botones a media pantalla.
+- Un panel de la derecha flota a la izquierda de la columna, a `--occ-map-rail-reserve` del borde: el riel y dos huecos de 12 px, 112 px en total.
+  - Su margen derecho es su ancho más esa reserva y el hueco, para que la cámara centre en el área que queda a la izquierda de los dos.
+  - Las franjas de arriba y de abajo terminan antes de la columna.
+- `--occ-map-clear-right` marca dónde termina por la derecha el área a la vista: en la columna o, si hay un panel derecho, en ese panel. Lo usan los avisos del mapa arriba al centro, los avisos de la pantalla y la lista de un mapa que no puede dibujar.
+- La lista sin motor de mapa (`.occ-map-unavailable`, en `core/MapUnavailable.jsx`) ocupa el área que dejan los paneles, no el mapa entero, así que los paneles siguen a mano a su lado.
+- Los menús del riel («Capas» y «Leyenda», `.occ-map-flyout`) abren debajo de lo que flota arriba del mapa: la barra de Mapa de posiciones y las cifras de Panorama. Una leyenda abierta al inicio no tapa la barra de la pantalla.
+- Los avisos del OCC (`OccToastStack`) quedan a la izquierda de la columna (`right-28`, 112 px):
+  - arriba, bajo la barra de estado (`statusBar`);
+  - o abajo del área de trabajo (`workArea`), en Monitoreo y Mapa de posiciones.
+
+**3. Los márgenes del mapa** (`maps/ui/stageInsets.js` y `maps/ui/useStageInsets.js`).
+- `consoleInsets.js` y `useConsoleInsets.js` salen de `dashboard/noc/` y pasan a `maps/ui/` como `stageInsets.js` y `useStageInsets.js`, ahora sin bordes por defecto. `CONSOLE_SIDE_EDGE` pasa a ser `STAGE_SIDE_EDGE`.
+- Cada pantalla declara su mapa de bordes, `{ [panelId]: borde }`, y llama a `useStageInsets({ edges, enabled })`. El `rootRef` va al escenario y `measure(panelId)` a cada panel:
+  - Panorama usa `CONSOLE_PANEL_EDGES`, que ahora vive en `ConsoleOverlay.jsx`. «Tablero», «Alertas» y el «Inspector» toman el borde `side`; las cifras, el de arriba; «Posiciones» y la barra de estado, el de abajo. Con el mapa maximizado (`focus=map`), «Mostrar paneles» toma el de arriba.
+  - Monitoreo usa `FLIGHT_MONITORING_PANEL_EDGES`: el tablero a la izquierda, el inspector a la derecha y «Ver vuelos» arriba.
+  - Mapa de posiciones usa `POSITIONS_MAP_PANEL_EDGES`: la barra arriba, la lista a la izquierda, el inspector a la derecha y la banda abajo.
+- Cómo se miden:
+  - un panel abierto toma su ancho o su alto más 8 px;
+  - una pastilla plegada solo toma alto, del borde de arriba o del de abajo;
+  - los márgenes nunca dejan menos de 240×160 px de mapa.
+- Con esos márgenes se encuadran las vistas, se coloca la clave y lo elegido se trae al área a la vista. `consoleCamera.js` no cambia.
+- «Seguir en 3D» (`Follow3dPanel`, `.occ-map-follow-panel`) ocupa la ranura derecha, a la izquierda de la columna, sin sombra. No se mide en los márgenes, porque es una tarjeta del mapa.
+
+**4. El orden de las capas.**
+- La columna de control y sus menús van en `z-30`, encima de todo lo que muestra el mapa.
+- La barra de estado de Panorama va en `z-[25]`, para que sus detalles (el clima y las demoras) abran sobre las tarjetas del mapa.
+- Las tarjetas del mapa van en `z-20`: «Seguir en 3D» y la pastilla de una llegada nueva.
+- Los paneles van en `z-10`.
+
+**5. Paneles flotantes, planos y casi opacos.**
+- Los paneles flotan a 12 px de los bordes del mapa, sobre la losa casi opaca de `OccFloatingPanel` (`layout="float"`), sin sombra, desenfoque ni degradado.
+- Plegado, cada panel es su pastilla con su título, y el pliegue se recuerda como antes (`occPanelMemory`).
+- `MapSidePanel` suma la variante `floating`, la losa flotante que acepta `ref`, junto a `framed` y `flush`. La usan el inspector de Monitoreo y el de Mapa de posiciones.
+- Ninguna pantalla usa ya la disposición `dock` de `OccFloatingPanel`; solo la fijan sus pruebas.
+
+**6. Pantalla por pantalla.**
+- **Panorama** (`dashboard/noc/ConsoleOverlay.jsx`, disposición `float`). El escenario deja 12 px a cada lado y, a la derecha, la reserva de la columna.
+  - «Tablero» va en la columna izquierda (24 rem; 26 rem desde 1920 px), con «Alertas» al pie.
+  - «Cifras de la jornada» va en la franja de arriba y «Posiciones» en la de abajo.
+  - El «Inspector» tiene columna propia a la derecha desde 1536 px (22 rem; 24 rem desde 1920 px). Por debajo va bajo «Tablero», y «Alertas» se oculta mientras está abierto.
+  - La barra de estado (la procedencia, «Ocultar paneles», el clima y las demoras) entra al mapa como barra flotante al pie, medida en el borde de abajo.
+  - `FiguresPanel` y `PositionsPanel` ya no dependen de `dock`.
+- **Monitoreo de vuelos** (`flight-monitoring/FlightMonitoringPage.jsx`).
+  - El tablero flota a la izquierda (`fm-board`, 24 rem) y se pliega a su pastilla arriba a la izquierda.
+  - El inspector flota a la derecha (`fm-inspector`, 22,5 rem) y sigue llevando el bloque de datos del vuelo elegido. El bloque de otro tráfico va arriba a la izquierda del área libre.
+  - Por debajo de 1024 px, «Ver vuelos» flota arriba a la izquierda del mapa y abre el cajón.
+- **Mapa de posiciones** (`positions-map/PositionsMapPage.jsx`).
+  - La barra flota arriba a la izquierda, en una fila desde 1280 px.
+  - La lista va a la izquierda (24 rem; 28 rem desde 1536 px) y el inspector a la derecha, los dos entre la barra y la banda.
+  - La banda va abajo y abre plegada.
+  - Los avisos de la pantalla (la nota de planificación, «Ubicar en el mapa», el resultado de guardar y la desconexión) son chips arriba al centro del área libre (`.occ-map-page-chips`).
+  - «Pantalla completa» agranda el escenario entero.
+  - `PositionMap` recibe `insets` y `className` opcionales, así que Planificación no cambia.
+
+**7. Lo que abre a 1366 px**, el portátil de la auditoría.
+- Panorama: por debajo de 1440 px solo abre «Tablero». Las cifras y las alertas abren plegadas, y la banda abre siempre plegada.
+- Monitoreo: abre el tablero. Por debajo de 1536 px, un inspector abierto pliega el tablero a su pastilla; la persona puede desplegarlo para ese vuelo, y «Cerrar detalle» lo devuelve con el foco en su tira.
+- Mapa de posiciones: abren la barra y la lista. Por debajo de 1536 px, la lista se pliega mientras el inspector está abierto.
+
+**8. Lo que no cambia.**
+- La API, el OpenAPI, el cliente compartido y la base.
+- Lo que leen las pantallas, su cadencia y el presupuesto de CN-19.
+- El bucle de cuadros y la escritura del tráfico (CN-18).
+- Las teclas, los nombres accesibles y los `data-testid` que usan el E2E del ciclo y la guía (punto 8 de la nota de CN-32).
+
+**9. Pruebas.**
+- Nuevas: `stageInsets.test.js` y `useStageInsets.test.jsx` en `maps/ui/`, que reemplazan las de la consola.
+- Cambian las que fijan la disposición:
+  - `AdminOccLayout`, con las tres rutas en `'fill'`;
+  - `ConsoleOverlay` y `ConsolePage`: la disposición flotante, la barra de estado medida y los márgenes de 52/0/60/0 px con el mapa maximizado;
+  - `FlightMonitoringPage` y `PositionsMapPage`, con sus pruebas de leyenda;
+  - `FlightMap`, `PositionMap`, `MapSidePanel`, `PositionDetailDrawer`, `PositionsBand`, `PositionsTable` y `OccToastStack`;
+  - `Follow3dPanel`, en `OccMap.follow3d.test.jsx`;
+  - las reglas de `occ-map.css`, en `OccMap.test.jsx`.
+- La suite visual comprueba el mapa completo, con los paneles a 12 px y libres de la columna (`expectFloatingLayout` en `tests/visual/occ/occScreen.mjs`). Corrieron `console`, `flight-monitoring`, `positions-map.screens` y `occ-monitoring` a 1366×768, 1440×900 y 1920×1080, en oscuro y en claro; Monitoreo también a 2560×1440. Como el resto de la suite, corre fuera del CI.
+
+**10. Límites.**
+- Las capturas se revisaron en local, con la API simulada de la suite visual. Nada de esto acredita un despliegue ni una revisión visual en el VPS.
+- `positions-map.spec.mjs` y `positions-map.interactions.spec.mjs` no se corrieron con la disposición flotante.
+- La prueba de Monitoreo a 2560×1440 pasó en claro. En oscuro agotó su tiempo una vez, mientras `next dev` compilaba en frío.
