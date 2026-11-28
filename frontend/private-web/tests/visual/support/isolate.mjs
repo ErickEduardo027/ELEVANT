@@ -17,6 +17,9 @@ import { syntheticSatelliteTile, syntheticTile } from './syntheticTiles.mjs';
 //   latest image) is not answered, so a map that asks for one fails the spec. The world base of the globe (M8,
 //   src/features/maps/style/worldBaseLayers.js) is answered the same way: Black Marble pinned to its 2016 image, and
 //   Blue Marble, a static layer whose template names no time;
+// - Iowa Environmental Mesonet (lane M7, integration of 2026-11-28): a radar tile of TJUA's N0B scan pinned to the
+//   minute of its frame (the template GET occ/weather/radar answers) answers the synthetic echoes of
+//   support/syntheticTiles.mjs (`radar`); any other IEM request is not answered here;
 // - anything else is aborted and listed in `unexpected`, which every spec expects to end empty.
 // The suite's Chrome also resolves no host but localhost (playwright.occ.config.mjs), so nothing these routes miss
 // can reach the network.
@@ -37,6 +40,9 @@ const GIBS_STATIC_LAYERS = new Set(['BlueMarble_ShadedRelief_Bathymetry']);
 // A WMTS tile of GIBS in Web Mercator, pinned to the time of its image (an instant or a day, never `default`), or with
 // no time at all for a static layer; PNG or JPEG.
 const GIBS_TILE = /^\/wmts\/epsg3857\/best\/([^/]+)\/default\/(?:(\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}Z)?)\/)?GoogleMapsCompatible_Level\d+\/(\d+)\/(\d+)\/(\d+)\.(?:png|jpeg)$/;
+export const IEM_ORIGIN = 'https://mesonet.agron.iastate.edu';
+// A radar tile of IEM's ridge service for TJUA's N0B scan of one minute (yyyymmddhhmm), never the placeholder `-0`.
+const IEM_RADAR_TILE = /^\/c\/tile\.py\/1\.0\.0\/ridge::JUA-N0B-(\d{12})\/(\d+)\/(\d+)\/(\d+)\.png$/;
 export const TILEJSON_URL = `${OPENFREEMAP_ORIGIN}/planet`;
 export const GLYPH_STACKS = Object.freeze(['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic']);
 export const GLYPH_RANGE = '0-255';
@@ -99,6 +105,13 @@ export function gibsTileRequest(url) {
     x: Number(match[5]) };
 }
 
+/** `{ time, z, x, y }` of an IEM radar tile of TJUA pinned to the minute of its frame, or `null` for any other URL. */
+export function radarTileRequest(url) {
+  if (url.origin !== IEM_ORIGIN) return null;
+  const match = IEM_RADAR_TILE.exec(url.pathname);
+  return match ? { time: match[1], z: Number(match[2]), x: Number(match[3]), y: Number(match[4]) } : null;
+}
+
 function assertTileMode(mode) {
   if (!TILE_MODES.includes(mode)) throw new RangeError(`Unknown tiles mode: ${mode}`);
   return mode;
@@ -108,7 +121,7 @@ function assertTileMode(mode) {
  * Routes the page's foreign requests. `origin` is the page's own origin (the suite's baseURL); `tiles` is one of
  * TILE_MODES; `api(request, url)` may return `{ status, json, headers }` for an API request (or nothing for the
  * 404). Returns the log of what happened: `unexpected` (requests and WebSockets to any other origin), `requests`
- * (every answered request with its `kind`: tilejson, glyph, tile, api, stylesheet or satellite), `glyphMisses`, `count(kind)`,
+ * (every answered request with its `kind`: tilejson, glyph, tile, api, stylesheet, satellite or radar), `glyphMisses`, `count(kind)`,
  * and `setTiles(mode)` / `setApi(handler)` to change the answers for the next requests.
  */
 export async function isolate(page, { origin, tiles = 'synthetic', api = null } = {}) {
@@ -172,6 +185,7 @@ export async function isolate(page, { origin, tiles = 'synthetic', api = null } 
     const request = route.request();
     const url = new URL(request.url());
     const satellite = gibsTileRequest(url);
+    const radar = radarTileRequest(url);
     if (url.origin === OPENFREEMAP_ORIGIN) {
       const handled = await openFreeMap(route, request, url);
       if (handled !== null) return handled;
@@ -185,6 +199,12 @@ export async function isolate(page, { origin, tiles = 'synthetic', api = null } 
       return route.fulfill({
         status: 200, headers: corsHeaders(request, origin), contentType: 'image/png',
         body: syntheticSatelliteTile(satellite.image, satellite.z, satellite.x, satellite.y),
+      });
+    } else if (radar !== null) {
+      answered('radar', request);
+      return route.fulfill({
+        status: 200, headers: corsHeaders(request, origin), contentType: 'image/png',
+        body: syntheticSatelliteTile('radar', radar.z, radar.x, radar.y),
       });
     }
     log.unexpected.push(`${request.method()} ${request.url()}`);

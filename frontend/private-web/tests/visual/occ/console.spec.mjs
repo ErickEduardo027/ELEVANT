@@ -18,7 +18,8 @@ const PAGE = '/admin-occ/dashboard';
 const SIZES = Object.freeze([{ width: 1920, height: 1080 }, { width: 1440, height: 900 }]);
 // The panels open and folded are checked at the 1366 × 768 laptop of the audit too (M1).
 const LAYOUT_SIZES = Object.freeze([...SIZES, { width: 1366, height: 768 }]);
-const IEM = 'https://mesonet.agron.iastate.edu/**';
+// Only IEM's JSON API: its radar tiles fall through to support/isolate.mjs, which answers them with synthetic echoes.
+const IEM = 'https://mesonet.agron.iastate.edu/api/**';
 const PANELS = Object.freeze(['Tablero', 'Alertas', 'Cifras de la jornada', 'Posiciones']);
 
 const panel = (page, name) => page.getByRole('region', { name, exact: true });

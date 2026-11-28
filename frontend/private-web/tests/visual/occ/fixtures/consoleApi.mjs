@@ -1,4 +1,5 @@
 import { OCC_ACCESS, STATION, aerodromeWeather } from './occApi.mjs';
+import { regionWeatherAnswer } from './regionWeatherApi.mjs';
 
 // Synthetic answers of the ELEVANT API for the OCC console of the visual suite (tests/visual/occ/console.spec.mjs): one
 // coherent day at Punta Cana for the console's reads (contratos 1.3 and 2.7), the planning snapshot, the positions
@@ -14,6 +15,8 @@ import { OCC_ACCESS, STATION, aerodromeWeather } from './occApi.mjs';
 // approach, B21 suggested) and the change feed announces `occ_planning`, as when the superadministrator fires it. With
 // `openAfterDeparture` (N30) the day also has ZZ800, which left A4 80 minutes ago while its agent never handed the
 // operation off: «Pendientes de la jornada» lists it and «En operación» says it is open after its departure.
+// The regional weather of Panorama (lane M7) answers live from fixtures/regionWeatherApi.mjs; with
+// `regionWeather: false` its four reads answer the suite's Problem Details 404 instead.
 
 export const CONSOLE_PATHS = Object.freeze({
   access: '/api/v1/governance/me/access',
@@ -409,7 +412,7 @@ export function ping({ now = Date.now() } = {}) {
  * pair and the change feed announces `occ_planning` once. `openAfterDeparture` adds ZZ800, whose operation is still open
  * after its departure, to the planning and the map flights. `reads` counts what was served, by path name.
  */
-export function createConsoleApi({ demo = false, openAfterDeparture = false } = {}) {
+export function createConsoleApi({ demo = false, openAfterDeparture = false, regionWeather = true } = {}) {
   const state = { demo, changes: [], received: new Set() };
   const api = { reads: {}, acknowledged: [] };
   const count = name => { api.reads[name] = (api.reads[name] ?? 0) + 1; };
@@ -434,6 +437,11 @@ export function createConsoleApi({ demo = false, openAfterDeparture = false } = 
     if (track) {
       count('track');
       return { status: 200, json: aircraftTrack({ now, hex: track[1] }) };
+    }
+    const regional = regionWeather ? regionWeatherAnswer(url.pathname, { now, stationId }) : null;
+    if (regional) {
+      count(`regionWeather.${url.pathname.split('/').at(-1)}`);
+      return { status: 200, json: regional };
     }
     switch (url.pathname) {
       case CONSOLE_PATHS.access: count('access'); return { status: 200, json: OCC_ACCESS };

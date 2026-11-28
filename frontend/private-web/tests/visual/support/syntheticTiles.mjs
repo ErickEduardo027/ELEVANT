@@ -328,6 +328,16 @@ const RAIN_SCALE = Object.freeze([
   [0, [77, 166, 255]], [0.25, [38, 191, 89]], [0.45, [245, 222, 41]], [0.6, [252, 145, 28]], [0.75, [222, 41, 41]],
   [0.92, [166, 51, 199]],
 ]);
+// The radar of IEM's TJUA (lane M7, integration of 2026-11-28): a few invented echoes around Puerto Rico and the east of
+// Hispaniola, the part the San Juan radar reaches, in the hues of the NWS reflectivity scale (green, yellow, orange,
+// red). Nothing here is radar data; the map draws the tiles as IEM's own PNG at their opacity.
+const ECHOES = Object.freeze([
+  [-66.9, 18.75, 0.28, 1], [-67.9, 18.95, 0.22, 0.85], [-68.6, 18.2, 0.16, 0.7], [-65.9, 18.05, 0.25, 0.9],
+]);
+const REFLECTIVITY_SCALE = Object.freeze([
+  [0, [4, 233, 231]], [0.2, [1, 197, 1]], [0.4, [0, 142, 0]], [0.55, [253, 248, 2]], [0.7, [253, 149, 0]],
+  [0.85, [253, 0, 0]],
+]);
 // The world base of the globe (M8): an opaque ground (`base`, RGB) with blobs over it. Blue Marble's relief is a deep
 // blue sea with green-brown land on the invented island; Black Marble's night a near-black ground with the lights of a
 // few invented cities. The map greys and dims both (src/features/maps/style/worldBaseLayers.js).
@@ -339,6 +349,7 @@ const LIGHTS = Object.freeze([
 const SATELLITE_LOOKS = Object.freeze({
   goes: { blobs: CLOUDS, colour: () => [236, 240, 242], maxAlpha: 225 },
   imerg: { blobs: RAIN, colour: cover => RAIN_SCALE.findLast(([from]) => cover >= from)[1], maxAlpha: 235 },
+  radar: { blobs: ECHOES, colour: cover => REFLECTIVITY_SCALE.findLast(([from]) => cover >= from)[1], maxAlpha: 220 },
   bluemarble: { base: [18, 52, 96], blobs: RELIEF, colour: () => [104, 122, 70], maxAlpha: 255 },
   blackmarble: { base: [6, 8, 14], blobs: LIGHTS, colour: () => [250, 214, 140], maxAlpha: 255 },
 });
@@ -395,8 +406,8 @@ export function tilePixelLngLat(z, x, y, px, py) {
 const satelliteTiles = new Map();
 
 /**
- * The PNG tile `z/x/y` of the synthetic satellite image `layer` (`goes` or `imerg`), 256 px a side: transparent where
- * there is no cloud or rain; or of the world base (`bluemarble` or `blackmarble`, M8), opaque. Kept once made. `null` for
+ * The PNG tile `z/x/y` of the synthetic satellite image `layer` (`goes` or `imerg`, or IEM's radar, `radar`), 256 px a
+ * side: transparent where there is no cloud, rain or echo; or of the world base (`bluemarble` or `blackmarble`, M8), opaque. Kept once made. `null` for
  * another layer.
  */
 export function syntheticSatelliteTile(layer, z, x, y) {

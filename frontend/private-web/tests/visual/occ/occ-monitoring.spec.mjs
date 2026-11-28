@@ -19,7 +19,8 @@ const SIZES = Object.freeze([
   Object.freeze({ width: 1440, height: 900 }),
   Object.freeze({ width: 1920, height: 1080 }),
 ]);
-const IEM = 'https://mesonet.agron.iastate.edu/**';
+// Only IEM's JSON API: its radar tiles fall through to support/isolate.mjs, which answers them with synthetic echoes.
+const IEM = 'https://mesonet.agron.iastate.edu/api/**';
 const prefix = process.env.OCC_SHOT_PREFIX ?? 'm1';
 
 const settled = map => expect(map).toHaveAttribute('data-occ-settled', 'true', { timeout: 60_000 });
