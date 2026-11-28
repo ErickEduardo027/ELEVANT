@@ -399,6 +399,33 @@ export function liveryFont(root = typeof document === 'undefined' ? null : docum
   }
 }
 
+/** The longest side, in pixels, of a logo tinted for the fin (tintLogo). */
+export const LOGO_MAX_PX = 1024;
+
+/**
+ * A logo in one colour (PR M5): the text logos are drawn on the fin in its text colour (`colour`, `#rrggbb`), not in
+ * their brand colours, so they read on any fin. Answers a canvas from `createCanvas(width, height)` the logo's shape
+ * filled with the colour (its longest side at most LOGO_MAX_PX), or the image itself when no 2D canvas can be made.
+ */
+export function tintLogo(image, colour, createCanvas) {
+  const width = image?.naturalWidth || image?.width || 0;
+  const height = image?.naturalHeight || image?.height || 0;
+  if (!(width > 0 && height > 0) || typeof createCanvas !== 'function') return image;
+  const scale = Math.min(1, LOGO_MAX_PX / Math.max(width, height));
+  const w = Math.max(1, Math.round(width * scale));
+  const h = Math.max(1, Math.round(height * scale));
+  const canvas = createCanvas(w, h);
+  const context = canvas?.getContext?.('2d') ?? null;
+  if (!context) return image;
+  context.clearRect(0, 0, w, h);
+  context.drawImage(image, 0, 0, w, h);
+  context.globalCompositeOperation = 'source-in';
+  context.fillStyle = colour;
+  context.fillRect(0, 0, w, h);
+  context.globalCompositeOperation = 'source-over';
+  return canvas;
+}
+
 /**
  * Paints the lettering atlas (LIVERY_ATLAS) on a 2D context: per row of `rows` (liveries), the airline's name as it
  * sets it (liveries.js: liveryName) centred in the name's cell in its text colour, and in the mark's cell its logo

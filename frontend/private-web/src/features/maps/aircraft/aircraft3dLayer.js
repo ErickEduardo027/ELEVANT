@@ -4,7 +4,7 @@ import { buildDetailedAircraft, nextBlinkInMs } from './aircraftDetail';
 import { buildAircraftGeometry, triangleCount } from './aircraftGeometry';
 import { createGltfModels } from './gltfModels';
 import { SHADOW, linearRgb, mercatorFrame, poseMatrix } from './instancePlan';
-import { LIVERY_ROWS, createLiveryMaterial, createLiveryTextures, liveryFont } from './liveryMaterial';
+import { LIVERY_ROWS, createLiveryMaterial, createLiveryTextures, liveryFont, tintLogo } from './liveryMaterial';
 import { buildModelAirframe, instancedModelGeometry, modelFrame, writeLiveryInstances } from './modelAircraft';
 import { detailLevel, instancedLevel, metresPerPixel, wantsL1 } from './modelLevels';
 
@@ -288,17 +288,19 @@ export function createAircraft3dLayer({
   function sharedLiveryTextures() {
     if (liveryTextures === null) {
       liveryTextures = createLiveryTextures(three, { createCanvas, font: liveryFont() });
-      for (const livery of LIVERY_ROWS) requestLogo(livery.logoTexture);
+      for (const livery of LIVERY_ROWS) requestLogo(livery);
     }
     return liveryTextures;
   }
 
-  // A livery's logo (its logoTexture, a path of the application), read once; the atlas and the detailed model's fin
-  // are painted again when it loads.
-  function requestLogo(url) {
+  // A livery's logo (its logoTexture, a path of the application), read once and tinted in its fin's text colour
+  // (aircraft/liveryMaterial.js: tintLogo); the atlas and the detailed model's fin are painted again when it loads.
+  function requestLogo(livery) {
+    const url = livery?.logoTexture;
     if (typeof url !== 'string' || url === '' || logos.has(url)) return;
     logos.set(url, null);
-    loadImage(url).then(image => {
+    loadImage(url).then(loaded => {
+      const image = tintLogo(loaded, livery.tailText, createCanvas);
       logos.set(url, image);
       const atlas = liveryTextures?.refresh(logos) === true;
       const fin = detailHeld?.model.refreshLogo(image) === true;
@@ -551,7 +553,7 @@ export function createAircraft3dLayer({
     shadow.frustumCulled = false;
     detailScene.add(model.object, shadow);
     detailHeld = { key: detail.key, level, model, shadow, idleSince: null, builtAt: time };
-    requestLogo(detail.livery.logoTexture);
+    requestLogo(detail.livery);
     return detailHeld;
   }
 

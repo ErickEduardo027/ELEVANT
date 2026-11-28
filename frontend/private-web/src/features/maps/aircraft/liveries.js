@@ -1,9 +1,11 @@
 // The liveries of the detailed 3D aircraft (CN-30): per airline, the colours of its paint and the words it carries,
-// rendered by the detailed model (aircraft/aircraftDetail.js) as generated textures in our own typography. No logo
-// artwork and no image of an airline's livery is copied or downloaded: each entry holds brand colours and plain text
-// (the airline's name on the fuselage, its IATA code on the fin). `logoTexture` is an empty slot by default: a path
-// under the application's own origin (for example `/liveries/cmp-tail.png`, a file in `public/liveries/`) to a logo
-// the owner has the licence to use, drawn on the fin instead of the code, with no change of code. Pure.
+// rendered by the detailed model (aircraft/aircraftDetail.js) as generated textures in our own typography. No image
+// of an airline's livery is copied: each entry holds brand colours and plain text (the airline's name on the fuselage,
+// its IATA code on the fin). `logoTexture` is a path under the application's own origin to a logo drawn on the fin
+// instead of the code, in the fin's text colour; empty for none. PR M5: the airlines whose text logo is public domain
+// on Wikimedia Commons ({{PD-textlogo}} or {{PD-shape}}, and trademarked) carry it from public/models/liveries/logos/
+// (its README lists each file, its tags and the trademark notice); no symbol under copyright (no American "AA", no
+// United globe, no Frontier animal tails) and no logo of Copa or Arajet (Commons has no SVG of either). Pure.
 
 function deepFreeze(value) {
   if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -27,8 +29,16 @@ const livery = (id, icao, iata, name, colours) => ({
   ...colours,
 });
 
+/** Where the public-domain text logos are served (PR M5). */
+export const LOGO_BASE_URL = '/models/liveries/logos/';
+
+/** The airlines (IATA) with a text logo in LOGO_BASE_URL: public/models/liveries/logos/<IATA>.svg. */
+export const LOGO_IATA = Object.freeze(['AA', 'AC', 'AV', 'B6', 'DL', 'F9', 'NK', 'P5', 'UA', 'UX', 'WG', 'WS']);
+
+const withLogo = entry => (LOGO_IATA.includes(entry.iata) ? { ...entry, logoTexture: `${LOGO_BASE_URL}${entry.iata}.svg` } : entry);
+
 /** The liveries of the airlines seen at Punta Cana, by ICAO designator. */
-export const LIVERIES = deepFreeze({
+export const LIVERIES = deepFreeze(Object.fromEntries(Object.entries({
   CMP: livery('CMP', 'CMP', 'CM', 'COPA', {
     fuselage: '#ffffff', belly: '#ffffff', cheatline: '#0b2d6b', tail: '#0b2d6b', tailAccent: '#c8a24a',
     engine: '#0b2d6b', text: '#0b2d6b', tailText: '#c8a24a',
@@ -97,7 +107,7 @@ export const LIVERIES = deepFreeze({
     fuselage: '#ffffff', belly: '#00843d', tail: '#00843d', tailAccent: '#9bc23c', engine: '#00843d',
     text: '#00843d', tailText: '#ffffff',
   }),
-});
+}).map(([icao, entry]) => [icao, withLogo(entry)])));
 
 /** The livery of an aircraft whose airline is not in the table: a white body with a slate fin and no words. */
 export const DEFAULT_LIVERY = deepFreeze(livery('DEFAULT', null, null, '', {
