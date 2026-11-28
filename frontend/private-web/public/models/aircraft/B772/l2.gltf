@@ -1,0 +1,253 @@
+{
+  "asset": {
+    "generator": "ELEVANT scripts/models/build-aircraft-models.mjs (glTF-Transform 4.5.1, meshoptimizer 1.2.0)",
+    "version": "2.0",
+    "copyright": "GPL-2.0-only; véanse LICENSE y NOTICE.md en esta carpeta"
+  },
+  "accessors": [
+    {
+      "type": "SCALAR",
+      "componentType": 5123,
+      "count": 29208,
+      "bufferView": 0,
+      "byteOffset": 0
+    },
+    {
+      "type": "SCALAR",
+      "componentType": 5123,
+      "count": 3906,
+      "bufferView": 0,
+      "byteOffset": 58416
+    },
+    {
+      "type": "SCALAR",
+      "componentType": 5123,
+      "count": 18873,
+      "bufferView": 0,
+      "byteOffset": 66228
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5122,
+      "count": 9666,
+      "max": [
+        30999,
+        32767,
+        8793
+      ],
+      "min": [
+        -30999,
+        -32767,
+        -8793
+      ],
+      "normalized": true,
+      "bufferView": 1,
+      "byteOffset": 0
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5120,
+      "count": 9666,
+      "normalized": true,
+      "bufferView": 1,
+      "byteOffset": 8
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5122,
+      "count": 1494,
+      "max": [
+        3152,
+        31407,
+        -2768
+      ],
+      "min": [
+        -3156,
+        -16570,
+        -6632
+      ],
+      "normalized": true,
+      "bufferView": 2,
+      "byteOffset": 0
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5120,
+      "count": 1494,
+      "normalized": true,
+      "bufferView": 2,
+      "byteOffset": 8
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5122,
+      "count": 4910,
+      "max": [
+        20214,
+        31447,
+        8649
+      ],
+      "min": [
+        -20214,
+        -31691,
+        -8645
+      ],
+      "normalized": true,
+      "bufferView": 3,
+      "byteOffset": 0
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5120,
+      "count": 4910,
+      "normalized": true,
+      "bufferView": 3,
+      "byteOffset": 8
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 103976,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 103976,
+      "byteLength": 115992,
+      "byteStride": 12,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 219968,
+      "byteLength": 17928,
+      "byteStride": 12,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 237896,
+      "byteLength": 58920,
+      "byteStride": 12,
+      "target": 34962
+    }
+  ],
+  "buffers": [
+    {
+      "name": "buffer",
+      "uri": "l2.bin",
+      "byteLength": 296816
+    }
+  ],
+  "materials": [
+    {
+      "name": "body",
+      "doubleSided": true,
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.9,
+          0.91,
+          0.92,
+          1
+        ],
+        "roughnessFactor": 0.7,
+        "metallicFactor": 0
+      }
+    },
+    {
+      "name": "glass",
+      "doubleSided": true,
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.1,
+          0.13,
+          0.17,
+          1
+        ],
+        "roughnessFactor": 0.7,
+        "metallicFactor": 0
+      }
+    },
+    {
+      "name": "dark",
+      "doubleSided": true,
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.24,
+          0.25,
+          0.27,
+          1
+        ],
+        "roughnessFactor": 0.7,
+        "metallicFactor": 0
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "name": "B772",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 3,
+            "NORMAL": 4
+          },
+          "mode": 4,
+          "material": 0,
+          "indices": 0
+        },
+        {
+          "attributes": {
+            "POSITION": 5,
+            "NORMAL": 6
+          },
+          "mode": 4,
+          "material": 1,
+          "indices": 1
+        },
+        {
+          "attributes": {
+            "POSITION": 7,
+            "NORMAL": 8
+          },
+          "mode": 4,
+          "material": 2,
+          "indices": 2
+        }
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "B772",
+      "translation": [
+        0,
+        0,
+        9.650509655475616
+      ],
+      "scale": [
+        31.864999771118164,
+        31.864999771118164,
+        31.864999771118164
+      ],
+      "mesh": 0
+    }
+  ],
+  "scenes": [
+    {
+      "name": "B772",
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "scene": 0,
+  "extensionsUsed": [
+    "KHR_mesh_quantization"
+  ],
+  "extensionsRequired": [
+    "KHR_mesh_quantization"
+  ]
+}
