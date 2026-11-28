@@ -242,64 +242,6 @@ test.describe('route, follow mode in 3D and real positions (CN-29, CN-30, CN-31)
       expectGpuGates(result, 'followed in 3D');
     } else expect(result.renderFps).toBeGreaterThan(5);
   });
-
-  // HOTFIX-3D (2026-11-28): the cold entry into «Seguir en 3D». A fresh page, the parked Copa B738 (its glTF models)
-  // chosen, and «Seguir en 3D» from the data block: for OCC_COLD_ENTRY_SECONDS (15) from that click, every long task the
-  // page reports (PerformanceObserver 'longtask') and the programs three holds before and after (aircraft3d().stats). On
-  // the real GPU (OCC_VISUAL_GPU) no task may block the page for more than 200 ms (OCC_COLD_ENTRY_MAX_TASK_MS);
-  // SwiftShader compiles in software, so there the numbers are printed only. Chrome's GPU process keeps the programs it
-  // linked for the whole run: run it alone (--grep "cold") for a cold GPU too.
-  test('enters follow mode in 3D cold without blocking the page', async ({ page }, testInfo) => {
-    const seconds = Number(process.env.OCC_COLD_ENTRY_SECONDS ?? 15);
-    test.setTimeout(seconds * 1_000 + 300_000);
-    await page.emulateMedia({ reducedMotion: 'no-preference' });
-    await openLab(page, `scene=airfield-3d-replay&t=${at(ON_BLOCK_S + 30)}&flightId=${ARRIVAL}`);
-    const gpu = await gpuReport(page, testInfo);
-    await labIdle(page);
-    const stats = () => page.evaluate(() => window.__occMapLab.aircraft3d()?.stats ?? null);
-    await expect.poll(async () => (await stats())?.instances ?? 0, { message: 'the 3D aircraft drawn' }).toBeGreaterThan(0);
-    const before = await stats();
-    // The observer from the instant of the click on.
-    await page.evaluate(() => {
-      const entries = [];
-      const observer = new PerformanceObserver(list => list.getEntries()
-        .forEach(entry => entries.push({ at: entry.startTime, ms: Math.round(entry.duration) })));
-      observer.observe({ type: 'longtask', buffered: false });
-      window.__coldEntry = { entries, observer, start: performance.now() };
-    });
-    await followButton(page).first().click();
-    await expect(panel(page)).toBeVisible();
-    await expect.poll(async () => (await stats())?.detail?.key ?? null, { message: 'the detailed aircraft drawn' })
-      .not.toBeNull();
-    const shownMs = await page.evaluate(() => Math.round(performance.now() - window.__coldEntry.start));
-    await page.waitForFunction(ms => performance.now() - window.__coldEntry.start >= ms, seconds * 1_000,
-      { timeout: seconds * 1_000 + 60_000, polling: 500 });
-    const after = await stats();
-    const tasks = await page.evaluate(() => {
-      const { entries, observer, start } = window.__coldEntry;
-      observer.disconnect();
-      return entries.map(entry => ({ at: Math.round(entry.at - start), ms: entry.ms }));
-    });
-    const durations = tasks.map(task => task.ms);
-    const result = {
-      seconds,
-      detailShownMs: shownMs,
-      detail: after?.detail ?? null,
-      longTasks: tasks.length,
-      maxLongTaskMs: Math.max(0, ...durations),
-      blockedMs: durations.reduce((total, ms) => total + ms, 0),
-      over100Ms: durations.filter(ms => ms > 100).length,
-      programsBefore: before?.programs ?? null,
-      programsAfter: after?.programs ?? null,
-      tasks,
-    };
-    console.log(`HOTFIX-3D cold entry into follow 3D: ${JSON.stringify(result)}`);
-    recordPerf('follow3d-cold-entry', result, gpu);
-    await testInfo.attach('follow3d-cold-entry.json', { body: JSON.stringify(result, null, 2),
-      contentType: 'application/json' });
-    expect(after).toMatchObject({ failed: false, lost: false });
-    if (process.env.OCC_FLUENCY_REPORT_ONLY === '1' || !gpuRun) return;
-    expect(result.maxLongTaskMs, 'the longest task from the entry into «Seguir en 3D» (ms)')
-      .toBeLessThanOrEqual(Number(process.env.OCC_COLD_ENTRY_MAX_TASK_MS ?? 200));
-  });
+  // HOTFIX-3D: the cold entry into «Seguir en 3D» is measured in map-lab.follow3d-cold.spec.mjs, each test in a
+  // browser of its own with a cold GPU.
 });

@@ -53,12 +53,15 @@ import { createSimulatedSatelliteImagery } from '../useSatelliteImagery';
 // The 3D aircraft (PR M7): each scene opens in its own 2D or 3D (`pitchMode`), which the dock's control and D change
 // while it is open (never remembered, so every run opens the same); the governor stays off unless `?governor=on`, so a
 // slow software GPU never lightens a picture; and the handle adds aircraft3d(), the 3D's state and the governor's pause.
+// HOTFIX-3D: `?pitch=2d` (or `3d`) opens a scene in that mode instead of its own, so the visual suite enters «Seguir en
+// 3D» from the 2D map, where the click itself adds the 3D layer (the path of Panorama).
 // The perf runs on a real GPU (PR M2): the handle adds frameAt(id), where the last frame drew an aircraft, onRender, the
 // renderer and the frame meter's reading.
 
 /** On the root of the lab only: scripts/verify-map-chunks.mjs fails a production build whose chunks carry it. */
 export const MAP_LAB_MARKER = 'data-occ-map-lab';
 
+const PITCH_MODES = new Set(['2d', '3d']);
 const WEBGL_CONTEXTS = new Set(['webgl', 'webgl2', 'experimental-webgl']);
 // The scene whose base map does not load: every request for the OpenFreeMap TileJSON or its tiles goes to this
 // protocol of the lab, which always fails, so the map shows its notice without a request leaving the browser.
@@ -123,14 +126,14 @@ function useBasemapCut(cut) {
   }, [cut]);
 }
 
-function LabScene({ scene, basemap, frozenAt, governed = false }) {
+function LabScene({ scene, basemap, frozenAt, governed = false, pitch = null }) {
   const mapRef = useRef(null);
   const openedRef = useRef(false);
   const [stands, setStands] = useState(() => copyStands(scene.stands));
   // The stands read at the frozen instant of the URL, else at the scene's own: the same states on every run.
   const standClock = frozenAt ?? scene.at ?? null;
   const displayed = useStandDisplay(stands, { nowMs: standClock, flightsByTurnaround: scene.standFlights });
-  const [pitchMode, setPitchMode] = useState(() => scene.pitchMode ?? '2d');
+  const [pitchMode, setPitchMode] = useState(() => pitch ?? scene.pitchMode ?? '2d');
   const { selection, follow, selectStand, selectFlight, selectAircraft, clear, setFollow } = useMapSelection();
   // The render clock of the scene's traffic (PR M6): frozen at `?t=`, else running from the scene's own instant; and
   // its motion store, one for the scene's whole life, as useMapSituation keeps one.
@@ -404,13 +407,14 @@ export default function MapLab() {
   const searchParams = useSearchParams();
   const { sceneId, scene, basemap, frozenAt } = readLabQuery(searchParams);
   const governed = searchParams?.get('governor') === 'on';
-  const sceneKey = scene === null ? null : `${scene.id}|${basemap}|${frozenAt ?? ''}`;
+  const pitch = PITCH_MODES.has(searchParams?.get('pitch')) ? searchParams.get('pitch') : null;
+  const sceneKey = scene === null ? null : `${scene.id}|${basemap}|${frozenAt ?? ''}|${pitch ?? ''}`;
   // The review scene of the airport layout is a screen of its own; every other scene is the map with its stands.
   let screen = <SceneIndex unknownId={sceneId} />;
   if (scene?.kind === 'layout-qa') {
     screen = <LayoutQaScene key={sceneKey} scene={scene} basemap={basemap} frozenAt={frozenAt} />;
   } else if (scene !== null) {
-    screen = <LabScene key={sceneKey} scene={scene} basemap={basemap} frozenAt={frozenAt} governed={governed} />;
+    screen = <LabScene key={sceneKey} scene={scene} basemap={basemap} frozenAt={frozenAt} governed={governed} pitch={pitch} />;
   }
 
   // The OCC's theme (dark unless the account chose light): ThemeProvider sets it on the document, as in the OCC.
