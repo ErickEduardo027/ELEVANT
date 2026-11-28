@@ -170,12 +170,22 @@ test.describe('route, follow mode in 3D and real positions (CN-29, CN-30, CN-31)
 
   test('keeps the frame budget while following in 3D', async ({ page }, testInfo) => {
     const seconds = Number(process.env.OCC_FLUENCY_SECONDS ?? 20);
+    test.setTimeout(seconds * 2_000 + 420_000);
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     await openLab(page, `scene=airfield-3d-replay&flightId=${ARRIVAL}`);
     const gpu = await gpuReport(page, testInfo);
     // The same running replay first without following (the airfield in 3D), then followed in 3D (PR M2: the frames
     // MapLibre draws, support/perf.mjs, and where each drew the followed aircraft).
     const ids = { arrival: `f:${ARRIVAL}` };
+    // At the scene's own instant the arrival is still beyond the airfield's view and nothing in sight moves, so the map
+    // rests and draws no frames: the measurement starts once the running replay brings it into sight.
+    await expect.poll(() => page.evaluate(id => {
+      const lab = window.__occMapLab;
+      const lngLat = lab.frameAt(id);
+      const point = lngLat ? lab.project(lngLat) : null;
+      const box = document.querySelector('[data-testid="occ-map"]').getBoundingClientRect();
+      return point !== null && point.x >= 0 && point.y >= 0 && point.x <= box.width && point.y <= box.height;
+    }, ids.arrival), { timeout: 240_000, intervals: [1_000] }).toBe(true);
     const before = await measureFrames(page, seconds, ids);
     console.log(`CN-30 replay without follow: ${JSON.stringify(before)}`);
     recordPerf('airfield-3d-replay', before, gpu);
