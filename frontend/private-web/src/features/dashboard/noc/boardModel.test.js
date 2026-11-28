@@ -7,7 +7,7 @@ import {
 import { buildSituation, toFlightsModel, toPictureModel } from '../../maps/traffic/situationModel';
 import { readSelection, writeSelection } from '../../maps/core/mapSelection';
 import {
-  BOARD_LEGEND_KEYS, bestTime, boardLegendKeys, buildBoard, filterVisits, flightStatus, providerArrivalStatusKey,
+  BOARD_HOURS_BACK, BOARD_LEGEND_KEYS, bestTime, boardFlightsOf, boardLegendKeys, buildBoard, filterVisits, flightStatus, providerArrivalStatusKey,
   selectionIdOf, VISIT_FILTERS,
 } from './boardModel';
 import { consoleMessages } from './consoleMessages';
@@ -222,6 +222,42 @@ describe('boardModel', () => {
     // Still one visit per turnaround, and the departure stays off «Salidas», which lists the map's window.
     expect(withDeparture.visits.filter(item => item.turnaroundId === id500)).toHaveLength(1);
     expect(numbers(withDeparture.departures)).not.toContain('ZZ501');
+  });
+
+  it('lists the map flights of the last two hours only, though the map reads six back (M3)', () => {
+    expect(BOARD_HOURS_BACK).toBe(2);
+    // A visit that ended three hours ago: in the map's wider read (MAP_FLIGHTS_WINDOW, 6 h back), off the board.
+    const oldTurnaround = '5d000000-0000-4000-8000-000000000090';
+    const done = {
+      ...legOf(TRAFFIC_FLIGHT_KEY.parkedArrival), flightKey: 'l:old-arrival', legId: 'old-arrival',
+      flightNumber: 'ZZ90', turnaroundId: oldTurnaround, scheduledAt: trafficInstant(-200 * 60),
+      estimatedAt: null, actualAt: trafficInstant(-195 * 60),
+    };
+    const gone = {
+      ...legOf(TRAFFIC_FLIGHT_KEY.parkedArrival), direction: 'Departure', flightKey: 'l:old-departure',
+      legId: 'old-departure', flightNumber: 'ZZ91', phase: 'departed', turnaroundId: oldTurnaround,
+      scheduledAt: trafficInstant(-185 * 60),
+      estimatedAt: null, actualAt: trafficInstant(-180 * 60),
+    };
+    // Two hours ago to the minute stays: the server's own window (2 hours back) is inclusive.
+    const edge = { ...done, flightKey: 'l:edge', legId: 'edge', flightNumber: 'ZZ92', turnaroundId: null,
+      scheduledAt: trafficInstant(-120 * 60), actualAt: null };
+    const wide = [...FLIGHTS, done, gone, edge];
+    expect(boardFlightsOf(wide, NOW).map(item => item.flightNumber)).toEqual([...numbers(FLIGHTS), 'ZZ92']);
+    const board = buildBoard({ flights: wide, nowMs: NOW, t });
+    const before = buildBoard({ flights: FLIGHTS, nowMs: NOW, t });
+    expect(numbers(board.arrivals)).toEqual(['ZZ92', ...numbers(before.arrivals)]);
+    expect(numbers(board.departures)).toEqual(numbers(before.departures));
+    expect(board.visits.map(item => item.turnaroundId)).not.toContain(oldTurnaround);
+    expect(board.counts).toEqual({ ...before.counts, arrivals: before.counts.arrivals + 1 });
+    // An aircraft still on its stand keeps both legs, however old its arrival, as the server keeps them.
+    const parked = { ...done, phase: 'arrived', milestones: [] };
+    const waiting = { ...gone, phase: 'scheduled', actualAt: null, milestones: [] };
+    expect(boardFlightsOf([parked, waiting], NOW).map(item => item.flightNumber)).toEqual(['ZZ90', 'ZZ91']);
+    // Without a best time a row stays; without a valid now, every row.
+    expect(boardFlightsOf([{ flightKey: 'l:none' }], NOW)).toHaveLength(1);
+    expect(boardFlightsOf(wide, Number.NaN)).toBe(wide);
+    expect(boardFlightsOf(null, NOW)).toEqual([]);
   });
 
   it('filters visits by derived resource state', () => {

@@ -2817,6 +2817,57 @@ Las capturas se revisaron en local con la API simulada de la suite visual, a
 1366×768, 1440×900 y 1920×1080, en oscuro y en claro; nada de esto acredita un
 despliegue ni una revisión visual en el VPS.
 
+## Seguimiento ampliado (M3)
+
+Posterior al commit verificado de esta nota: describe el código de la rama
+`feat/occ-seguimiento-rd` (27 de noviembre de 2026), que esa verificación no
+cubre y que no está desplegado. Sus decisiones están en la nota del 27 de
+noviembre de 2026 «Seguimiento ampliado (M3)» de
+[ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md). Amplía lo
+que [CN-29 a CN-31](#ruta-prevista-seguir-en-3d-y-posiciones-reales-cn-29-a-cn-31)
+describe sin cambiarlo: no hay endpoints nuevos, el contrato no cambia y las
+pantallas siguen preguntando por la imagen aérea cada 5 s mientras ven
+posiciones más nuevas que ella.
+
+- **Lo que lee el servidor.** En Development la API lee el aeródromo y la
+  aproximación, 25 NM alrededor de Punta Cana, cada 2 s, y el círculo completo
+  de 250 NM cada 10 s, solo contra adsb.fi y solo mientras alguien mira un
+  mapa. Además busca por su indicativo OACI en adsb.fi los vuelos de AVIAM que
+  deberían estar en el aire y que el círculo no ve, y los suma a la misma
+  imagen aérea con su vuelo (`matchedBy` = `Callsign`). Un cubo común deja
+  salir como mucho 0,8 peticiones por segundo y nunca dos en menos de 1,25 s:
+  son 36 por minuto con búsquedas y 30 sin ellas. Lo encontrado vive solo en
+  memoria y se olvida 15 minutos después de la última búsqueda que lo vio. En
+  Production el tráfico sigue apagado.
+- **Rodaje continuo (enmienda de CN-31).** En tierra, la última señal de un
+  avión real se prolonga 1,5 veces el intervalo entre sus dos últimas señales,
+  de 3 s a 6 s, y 3 s en un giro
+  ([`handoff.js`](../../frontend/private-web/src/features/maps/kinematics/handoff.js)).
+  Un avión que rueda y se lee cada 5 s avanza sin pararse hasta su señal
+  siguiente. Sigue sin moverse nunca por una ruta de rodaje estimada; donde el
+  rodaje gira entre dos señales sigue recto hasta la siguiente y se aparta como
+  mucho 15 m de la cuerda del giro.
+- **Salidas hasta su destino.** Una salida estimada con destino ya no se corta
+  a 250 NM: sube, va en crucero con su perfil y desciende hasta 10 NM antes del
+  destino, por el círculo máximo
+  ([`legPlans.js`](../../frontend/private-web/src/features/maps/kinematics/legPlans.js)).
+  Sin destino sigue a lo sumo 250 NM con su rumbo. Sigue rotulada «est.», y los
+  vuelos demo hacen lo mismo.
+- **Ventana de vuelos.** El mapa pide los vuelos de 6 h atrás a 12 h adelante
+  ([`occMapService.js`](../../frontend/private-web/src/services/occMapService.js)),
+  así una salida larga sigue en el mapa durante sus primeras seis horas. El
+  «Tablero» de Panorama sigue con las 2 h atrás del servidor: lista los vuelos
+  de las últimas 2 h y las dos piernas de una visita cuyo avión sigue en tierra
+  ([`boardModel.js`](../../frontend/private-web/src/features/dashboard/noc/boardModel.js):
+  `boardFlightsOf`), nunca los vuelos que terminaron antes.
+- **Presupuesto (CN-19).** A 5 s, Monitoreo de vuelos y Mapa de posiciones leen
+  la imagen aérea 12 veces por minuto y siguen en 40 peticiones por minuto o
+  menos, en reposo y en el minuto demo
+  ([prueba](../../frontend/private-web/src/features/admin-occ/live/occRequestBudget.test.js)).
+
+Todo se probó con redes simuladas: no se midió contra adsb.fi, en un navegador
+ni en el VPS.
+
 ## Estado de integración
 
 | Capa | Actual | Límite |

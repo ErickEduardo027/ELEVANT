@@ -80,7 +80,15 @@ public sealed record AirPictureAircraft(AirTrafficAircraft Aircraft, IReadOnlyLi
 /// is the credit every map shows, null only while nothing is configured.
 /// </summary>
 public sealed record AirPictureSnapshot(string Status, string? Reason, DateTimeOffset ServerTime, DateTimeOffset? ObservedAt,
-    int? AgeSeconds, int RefreshAfterSeconds, AirTrafficAttribution? Source, IReadOnlyList<AirPictureAircraft> Aircraft);
+    int? AgeSeconds, int RefreshAfterSeconds, AirTrafficAttribution? Source, IReadOnlyList<AirPictureAircraft> Aircraft)
+{
+    /// <summary>
+    /// M3: the flight key of each aircraft of <see cref="Aircraft"/> that a callsign lookup found, by address: the flight
+    /// it was looked up for. Empty when none.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> FoundFlightKeys { get; init; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+}
 
 /// <summary>
 /// The trail of one aircraft from memory (contracts 1.3): its last segment only, at most 600 points, oldest first. The

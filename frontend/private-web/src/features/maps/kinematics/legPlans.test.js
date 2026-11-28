@@ -4,7 +4,8 @@ import { haversineM, pointAlong, pointToPolylineM } from '../airport/geo.js';
 import { runwayEnd } from '../airport/runwayInUse.js';
 import { legDurationS } from './legs.js';
 import {
-  MIN_START_M, arrivalAirLegs, backOutAir, climbLegs, departureGroundLegs, groundLegs,
+  DEPARTURE_END_FT, DEPARTURE_END_M, MIN_START_M, arrivalAirLegs, backOutAir, climbLegs, climbLegsFrom, departureGroundLegs,
+  groundLegs,
 } from './legPlans.js';
 import { GATE_NM, HOLD_LEG_S, centrelinePoint, holdingPatternPath } from './pathBuilder.js';
 import { perfFor } from './perfProfiles.js';
@@ -209,7 +210,7 @@ describe('leg plans', () => {
     expect(departureGroundLegs({ layout: MDPC_LAYOUT, runwayEnd: null, stand: A5, perf: PERF })).toBeNull();
   });
 
-  it('the climb reaches the cruise level and is drawn 250 NM at most', () => {
+  it('the climb reaches the cruise level and flies on to its destination (M3)', () => {
     const liftoff = pointAlong(END_08.centerline, 1_500).p;
     const legs = climbLegs({ runwayEnd: END_08, liftoff, destination: MIA, perf: PERF });
     expectJoined(legs, 'climb');
@@ -218,13 +219,69 @@ describe('leg plans', () => {
     expect(legs[0].alt0).toBeCloseTo(ftToM(END_08.elevationFt), 6);
     // 1 500 ft above the runway at the end of the first leg, then up to the cruise at the climb rate.
     expect(legs[0].alt1 - legs[0].alt0).toBeCloseTo(ftToM(1_500), 6);
-    expect(legs.every(leg => leg.alt1 >= leg.alt0 - 1e-9)).toBe(true);
+    expect(legs.filter(leg => leg.phase !== 'descent').every(leg => leg.alt1 >= leg.alt0 - 1e-9)).toBe(true);
     const climbing = legs.filter(leg => leg.phase === 'climb');
     expect(climbing[climbing.length - 1].alt1).toBeCloseTo(PERF.cruise.altM, 6);
-    expect(legs[legs.length - 1].phase).toBe('enroute');
     const rate = (climbing[1].alt1 - climbing[1].alt0) / legDurationS(climbing[1]);
     expect(rate).toBeCloseTo(PERF.climb.rateMs, 6);
-    expect(legs.reduce((sum, leg) => sum + leg.lengthM, 0)).toBeLessThanOrEqual(250 * NM + 1);
     expect(legs.every(leg => leg.part === 'climb' && leg.onGround === false)).toBe(true);
+    // M3: past 250 NM along the great circle, level at the cruise, then down at 3 NM per 1 000 ft to 3 000 ft 10 NM
+    // short of MIA, where the estimate ends.
+    expect([...new Set(legs.map(leg => leg.phase))]).toEqual(['climb', 'enroute', 'descent']);
+    const drawnM = legs.reduce((sum, leg) => sum + leg.lengthM, 0);
+    expect(drawnM).toBeGreaterThan(250 * NM);
+    const last = legs[legs.length - 1];
+    const end = last.path.coords[last.path.coords.length - 1];
+    expect(haversineM(end, MIA)).toBeCloseTo(DEPARTURE_END_M, -2);
+    expect(last.alt1).toBeCloseTo(ftToM(DEPARTURE_END_FT), 6);
+    expect(last.v1).toBeCloseTo(PERF.approach.speedMs, 6);
+    const enroute = legs.filter(leg => leg.phase === 'enroute');
+    expect(enroute.every(leg => Math.abs(leg.alt0 - PERF.cruise.altM) < 1e-6 && Math.abs(leg.alt1 - PERF.cruise.altM) < 1e-6)).toBe(true);
+    const descent = legs.filter(leg => leg.phase === 'descent');
+    const descentM = descent.reduce((sum, leg) => sum + leg.lengthM, 0);
+    expect(descentM).toBeCloseTo((PERF.cruise.altM - ftToM(DEPARTURE_END_FT)) * PERF.descent.ratio, -2);
+    expect(descent.every(leg => leg.alt1 <= leg.alt0 + 1e-9)).toBe(true);
+  });
+
+  it('a long-haul departure is estimated all the way across, and one without a destination 250 NM at most (M3)', () => {
+    const MAD = [-3.5676, 40.4983];
+    const liftoff = pointAlong(END_08.centerline, 1_500).p;
+    const legs = climbLegs({ runwayEnd: END_08, liftoff, destination: MAD, perf: perfFor({ typeIcao: 'B789' }) });
+    expectJoined(legs, 'MAD');
+    const drawnM = legs.reduce((sum, leg) => sum + leg.lengthM, 0);
+    expect(drawnM).toBeGreaterThan(3_000 * NM);
+    const last = legs[legs.length - 1];
+    expect(haversineM(last.path.coords[last.path.coords.length - 1], MAD)).toBeCloseTo(DEPARTURE_END_M, -2);
+    // At the cruise speed most of the way: about seven hours, not the 40 minutes of the old 250 NM.
+    expect(seconds(legs)).toBeGreaterThan(6 * 3_600);
+    const nowhere = climbLegs({ runwayEnd: END_08, liftoff, destination: null, perf: PERF });
+    expect(nowhere.reduce((sum, leg) => sum + leg.lengthM, 0)).toBeLessThanOrEqual(250 * NM + 1);
+    expect(nowhere[nowhere.length - 1].phase).toBe('enroute');
+    // A short sector (SDQ, about 70 NM) keeps its climb, cut at the destination, as before.
+    const short = climbLegs({ runwayEnd: END_08, liftoff, destination: SDQ, perf: PERF });
+    expect(short.some(leg => leg.phase === 'descent')).toBe(false);
+    const shortEnd = short[short.length - 1].path.coords.at(-1);
+    expect(haversineM(shortEnd, SDQ)).toBeLessThan(1);
+  });
+
+  it('an airborne departure rebuilt from a fix flies on to its destination, or down when it already descends near it (M3)', () => {
+    const MAD = [-3.5676, 40.4983];
+    // Found by its callsign 1 500 NM out at the cruise: on along the great circle to MAD and down near it.
+    const far = { lon: -40, lat: 32, altM: ftToM(37_000), gsMs: ktToMs(480), trackDeg: 70, vrateMs: 0 };
+    const across = climbLegsFrom({ fix: far, destination: MAD, perf: PERF });
+    expectJoined(across, 'across');
+    expect(haversineM(across[0].path.coords[0], [far.lon, far.lat])).toBeLessThan(0.01);
+    expect(across[0].alt0).toBeCloseTo(far.altM, 6);
+    expect(across.at(-1).phase).toBe('descent');
+    expect(haversineM(across.at(-1).path.coords.at(-1), MAD)).toBeCloseTo(DEPARTURE_END_M, -2);
+    expect(across.at(-1).alt1).toBeCloseTo(ftToM(DEPARTURE_END_FT), 6);
+    // 60 NM from MAD and sinking at FL150: straight down to the same end, never back up to the cruise.
+    const near = { lon: -4.9, lat: 40.6, altM: ftToM(15_000), gsMs: ktToMs(300), trackDeg: 90, vrateMs: -8 };
+    const down = climbLegsFrom({ fix: near, destination: MAD, perf: PERF });
+    expect(down.every(leg => leg.phase === 'descent' && leg.alt1 <= leg.alt0 + 1e-9)).toBe(true);
+    expect(down.at(-1).alt1).toBeCloseTo(ftToM(DEPARTURE_END_FT), 6);
+    // Without a destination: on its track, 250 NM at most.
+    const lost = climbLegsFrom({ fix: far, destination: null, perf: PERF });
+    expect(lost.reduce((sum, leg) => sum + leg.lengthM, 0)).toBeLessThanOrEqual(250 * NM + 1);
   });
 });

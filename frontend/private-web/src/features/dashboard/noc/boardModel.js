@@ -20,6 +20,13 @@ const MINUTE_MS = 60_000;
  */
 export const DUE_SOON_MS = 60 * MINUTE_MS;
 
+/**
+ * How far back the board lists the map flights: the server's own default window (2 hours, GetOccMapFlightsHandler). M3
+ * (28-11-2026): the map reads 6 hours back (occMapService.js: MAP_FLIGHTS_WINDOW) only so a long-haul departure stays
+ * estimated on its way; «Llegadas», «Salidas», «Escalas» and their counts keep the 2 hours they had (boardFlightsOf).
+ */
+export const BOARD_HOURS_BACK = 2;
+
 /** The filters of «Escalas», the old turnaround table's. */
 export const VISIT_FILTERS = Object.freeze(['all', 'inOperation', 'needsResources', 'completed']);
 
@@ -335,12 +342,44 @@ function planningVisit(turnaround, context) {
   });
 }
 
+// Whether the legs of one turnaround (the map flights') say that its aircraft is still on the ground at the station:
+// the arrival has its actual time and no leg ended the visit (endsItsVisit) nor departed. The server keeps both legs of
+// such a visit whatever its window (EfOccMapFlightStore), and so does the board.
+function onTheGround(legs) {
+  return legs.some(leg => leg.direction === 'Arrival' && leg.actualAt != null)
+    && !legs.some(leg => endsItsVisit(leg) || (leg.direction === 'Departure' && leg.actualAt != null));
+}
+
+/**
+ * The map flights the board lists at `nowMs`, as the server's own window would send them: those whose best time is at
+ * most BOARD_HOURS_BACK before now, and both legs of a visit whose aircraft is still on the ground, so the wider read
+ * of the map (M3) adds no finished flights to the board. A row without a best time stays (the server sent it); without
+ * a valid now, every row stays.
+ */
+export function boardFlightsOf(rows, nowMs) {
+  if (!Array.isArray(rows)) return NO_ROWS;
+  if (!Number.isFinite(nowMs)) return rows;
+  const from = nowMs - BOARD_HOURS_BACK * 60 * MINUTE_MS;
+  const legsOf = new Map();
+  for (const row of rows) {
+    if (!isObject(row) || typeof row.turnaroundId !== 'string' || row.turnaroundId === '') continue;
+    if (!legsOf.has(row.turnaroundId)) legsOf.set(row.turnaroundId, []);
+    legsOf.get(row.turnaroundId).push(row);
+  }
+  const grounded = new Set([...legsOf].filter(([, legs]) => onTheGround(legs)).map(([id]) => id));
+  return rows.filter(row => {
+    const time = bestTime(row);
+    return time === null || time.at >= from || grounded.has(row?.turnaroundId);
+  });
+}
+
 const byVisitTime = (left, right) => (left.sortAt !== right.sortAt ? (left.sortAt < right.sortAt ? -1 : 1)
   : String(left.id).localeCompare(String(right.id)));
 
 /**
  * The board of the console at `nowMs`:
- * - `arrivals` and `departures`: the map flights of the station (`flights`, contratos 1.3) as strips sorted by their
+ * - `arrivals` and `departures`: the map flights of the station (`flights`, contratos 1.3) whose best time is at most
+ *   BOARD_HOURS_BACK before now (boardFlightsOf: the map reads further back, M3) as strips sorted by their
  *   best time, each `{ id, flightKey, visitKey, legId, turnaroundId, proposalId, imported, direction, flightNumber,
  *   counterpartIata, time: { at, kind } | null, standCode, status: { key, label, signal }, demo, estimated, sortAt }`
  *   (the shape of OccFlightStrip). `standCode` is the assigned stand, never the suggestion of a demo flight; `demo` is
@@ -365,7 +404,7 @@ const byVisitTime = (left, right) => (left.sortAt !== right.sortAt ? (left.sortA
  * `t` translates consoleMessages (the status words).
  */
 export function buildBoard({ flights = NO_ROWS, aircraft = NO_ROWS, planningTurnarounds = null, nowMs, t } = {}) {
-  const rows = (Array.isArray(flights) ? flights : []).filter(row => isObject(row) && typeof row.flightKey === 'string');
+  const rows = boardFlightsOf(flights, nowMs).filter(row => isObject(row) && typeof row.flightKey === 'string');
   const estimatedKeys = new Set((Array.isArray(aircraft) ? aircraft : [])
     .filter(item => item?.quality === 'estimated' && typeof item.flightKey === 'string').map(item => item.flightKey));
   const context = { nowMs, t, estimatedKeys };

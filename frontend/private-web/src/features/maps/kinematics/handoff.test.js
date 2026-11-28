@@ -428,7 +428,7 @@ describe('hand-off between live positions and estimates', () => {
   it('limits widen to 1.5 × refreshAfterSeconds for a slower feed', () => {
     expect(TRACK_CONFIG).toEqual({
       liveMaxAgeS: 15, coastMaxAgeS: 60, groundCoastMaxAgeS: 20, blendS: 6, fixBlendS: 1.5, groundReckonMaxS: 3,
-      snapAirM: 3_704, snapGroundM: 150,
+      groundReckonFactor: 1.5, groundReckonCapS: 6, snapAirM: 3_704, snapGroundM: 150,
       dropOtherAfterS: 120, dropAviamAfterS: 600, snapFadeS: 1,
     });
     expect(Object.isFrozen(TRACK_CONFIG)).toBe(true);

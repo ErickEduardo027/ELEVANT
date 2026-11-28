@@ -417,14 +417,15 @@ public sealed class OccMapEndpointsTests(ElevantApiFactory factory) : IClassFixt
             return builder.Build();
         }
 
-        // Development (the VPS image and the local stack): adsb.fi first, adsb.lol as its relief, and 600 requests a
-        // minute, all inside the image: the VPS needs no new variable.
+        // Development (the VPS image and the local stack): adsb.fi first, adsb.lol as its relief, the airfield and approach
+        // read of 25 NM every 2 s (M3) and 600 requests a minute, all inside the image: the VPS needs no new variable.
         var development = Compose("appsettings.json", "appsettings.Development.json");
         var options = development.GetSection(AirTrafficOptions.SectionName).Get<AirTrafficOptions>()!;
         Assert.True(options.Enabled);
         Assert.Equal(["AdsbFi", "AdsbLol"], options.Providers);
         Assert.Equal(("PUJ", 18.5674, -68.3634, 250, 10, 900, 180), (options.StationCode, options.CenterLatitude,
             options.CenterLongitude, options.RadiusNm, options.IntervalSeconds, options.IdleAfterSeconds, options.TrailMinutes));
+        Assert.Equal((true, 25, 2), (options.AirfieldReadsEnabled, options.AirfieldRadiusNm, options.AirfieldIntervalSeconds));
         Assert.Null(options.ApiKey);
         Assert.Equal(600, development.GetValue<int>("RateLimiting:PermitLimit"));
         Assert.Equal(10, development.GetValue<int>("RateLimiting:SessionPermitLimit"));
@@ -436,7 +437,10 @@ public sealed class OccMapEndpointsTests(ElevantApiFactory factory) : IClassFixt
             .AddInMemoryCollection(new Dictionary<string, string?> { ["environment"] = "Development" })
             .Build());
         Assert.Equal(new AirTrafficSettings(true, "PUJ", 18.5674, -68.3634, 250, TimeSpan.FromSeconds(10),
-                TimeSpan.FromSeconds(900), TimeSpan.FromMinutes(180)),
+                TimeSpan.FromSeconds(900), TimeSpan.FromMinutes(180))
+            {
+                AirfieldReadsEnabled = true, AirfieldRadiusNm = 25, AirfieldInterval = TimeSpan.FromSeconds(2),
+            },
             Assert.Single(services, item => item.ServiceType == typeof(AirTrafficSettings)).ImplementationInstance);
         var descriptor = Assert.Single(services, item => item.ServiceType == typeof(IAirTrafficProvider));
         using (var provider = (FailoverAirTrafficProvider)descriptor.ImplementationFactory!(new OnlyTime()))
@@ -453,6 +457,8 @@ public sealed class OccMapEndpointsTests(ElevantApiFactory factory) : IClassFixt
                 defaults.IntervalSeconds, defaults.IdleAfterSeconds, defaults.TrailMinutes),
             (sharedOptions.StationCode, sharedOptions.CenterLatitude, sharedOptions.CenterLongitude, sharedOptions.RadiusNm,
                 sharedOptions.IntervalSeconds, sharedOptions.IdleAfterSeconds, sharedOptions.TrailMinutes));
+        Assert.Equal((defaults.AirfieldReadsEnabled, defaults.AirfieldRadiusNm, defaults.AirfieldIntervalSeconds),
+            (sharedOptions.AirfieldReadsEnabled, sharedOptions.AirfieldRadiusNm, sharedOptions.AirfieldIntervalSeconds));
         Assert.Equal(100, shared.GetValue<int>("RateLimiting:PermitLimit"));
 
         // Testing adds no AirTraffic of its own, and Production says off explicitly: neither raises the limit.

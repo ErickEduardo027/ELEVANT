@@ -124,6 +124,47 @@ public sealed class AirTrafficConfigurationTests
     }
 
     [Fact]
+    public void TheAirfieldAndApproachReadTakesItsValuesFromTheSection()
+    {
+        // M3: the widest radius (25 NM, the approach) and the shortest interval (2 s) are allowed: the values of Development.
+        var (_, approach) = Composed(Compose(new()
+        {
+            ["AirTraffic:Enabled"] = "true",
+            ["AirTraffic:Providers:0"] = "AdsbFi",
+            ["AirTraffic:AirfieldRadiusNm"] = "25",
+            ["AirTraffic:AirfieldIntervalSeconds"] = "2",
+        }));
+        Assert.Equal((true, new AirTrafficArea(18.5674, -68.3634, 25), TimeSpan.FromSeconds(2)),
+            (approach.AirfieldReadsEnabled, approach.AirfieldArea, approach.AirfieldInterval));
+
+        // It can be switched off; left out, the defaults of the code stay: on, 5 NM, every 3 s.
+        var (_, off) = Composed(Compose(new()
+        {
+            ["AirTraffic:Enabled"] = "true",
+            ["AirTraffic:Providers:0"] = "AdsbFi",
+            ["AirTraffic:AirfieldReadsEnabled"] = "false",
+        }));
+        Assert.False(off.AirfieldReadsEnabled);
+        var (_, defaults) = Composed(Compose(new()
+        {
+            ["AirTraffic:Enabled"] = "true",
+            ["AirTraffic:Providers:0"] = "AdsbFi",
+        }));
+        Assert.Equal((true, 5, TimeSpan.FromSeconds(3)),
+            (defaults.AirfieldReadsEnabled, defaults.AirfieldRadiusNm, defaults.AirfieldInterval));
+
+        // M3: the callsign lookups are on by default and can be switched off.
+        Assert.True(defaults.CallsignLookupsEnabled);
+        var (_, noLookups) = Composed(Compose(new()
+        {
+            ["AirTraffic:Enabled"] = "true",
+            ["AirTraffic:Providers:0"] = "AdsbFi",
+            ["AirTraffic:CallsignLookupsEnabled"] = "false",
+        }));
+        Assert.False(noLookups.CallsignLookupsEnabled);
+    }
+
+    [Fact]
     public void TheListOrderBuildsTheFailoverChain()
     {
         var key = "synthetic-lol-key";

@@ -27,6 +27,22 @@ public interface IAirTrafficProvider
     /// network without a daily limit (adsb.fi, at most one request a second). False by default.
     /// </summary>
     bool AllowsFrequentReads => false;
+
+    /// <summary>
+    /// M3 (the map refinement of 27 November 2026): whether the network that answers now can be asked for the aircraft
+    /// that fly with one callsign, wherever they are (adsb.fi's <c>/api/v2/callsign</c>). False by default, and for a
+    /// network with a daily limit.
+    /// </summary>
+    bool SupportsCallsignLookups => false;
+
+    /// <summary>
+    /// M3: one read of the aircraft that broadcast <paramref name="callsign"/> now (upper case, two to eight letters or
+    /// digits), anywhere the network sees them. Like <see cref="ReadAsync"/>, a refusal, a timeout or an answer that cannot
+    /// be read comes back as its outcome; only the caller's own cancellation is thrown. A network that cannot be asked
+    /// answers Failed and calls nothing.
+    /// </summary>
+    Task<AirTrafficReadResult> ReadCallsignAsync(string callsign, CancellationToken cancellationToken = default) =>
+        Task.FromResult(AirTrafficReadResult.Failure(AirTrafficOutcome.Failed, Attribution));
 }
 
 /// <summary>The circle a read asks for: its centre in decimal degrees and its radius in nautical miles.</summary>

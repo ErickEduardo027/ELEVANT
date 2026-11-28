@@ -307,9 +307,15 @@ describe('approach and departure paths', () => {
       const at = pointAlong(measured, distance);
       expect(angleBetween(at.bearingDeg, initialBearing(at.p, MIA)), String(distance)).toBeLessThan(0.5);
     }
-    // Drawn 250 NM at most; without a destination it keeps runway heading.
-    expect(climb.lengthM).toBeLessThanOrEqual(250 * NM + 1);
-    expect(climb.lengthM).toBeGreaterThan(249 * NM);
+    // M3: with a destination it flies on to it (MIA is more than 250 NM away); cut where asked; without a destination
+    // it keeps runway heading, 250 NM at most.
+    expect(climb.lengthM).toBeGreaterThan(250 * NM);
+    expect(haversineM(climb.coords[climb.coords.length - 1], MIA)).toBeLessThan(0.01);
+    const cut = climbPath({ runwayEnd: end08, liftoff, destination: MIA, straightM, turnSpeedMs: speed, maxDistanceM: 250 * NM });
+    expect(cut.lengthM).toBeLessThanOrEqual(250 * NM + 1);
+    expect(cut.lengthM).toBeGreaterThan(249 * NM);
+    const noDestination = climbPath({ runwayEnd: end08, liftoff, destination: null, straightM, turnSpeedMs: speed });
+    expect(noDestination.lengthM).toBeCloseTo(250 * NM, 0);
     const straightOut = climbPath({ runwayEnd: end08, liftoff, destination: null, straightM, turnSpeedMs: speed, maxDistanceM: 50_000 });
     expect(straightOut.lengthM).toBeCloseTo(50_000, 3);
     expect(angleBetween(initialBearing(liftoff, straightOut.coords[straightOut.coords.length - 1]), end08.headingTrue)).toBeLessThan(0.01);
