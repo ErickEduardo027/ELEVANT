@@ -86,7 +86,8 @@ describe('WeatherPanel «Meteorología PUJ» (M7)', () => {
     expect(within(readout).getByText('Ahora: 08:00–18:00 · 090° 12 kt · 10 km · FEW020 SCT040')).toBeInTheDocument();
     expect(within(readout).getByText('Después: Temporal 12:00–16:00 · 100° 15 kt G25 · 4 km · SHRA · BKN015'))
       .toBeInTheDocument();
-    expect(within(panel).getByText('Válido de las 08:00 a las 08:00, hora local')).toBeInTheDocument();
+    // A 24 h TAF ends the next day at the same time: the panel names that day (INT, 2026-11-28).
+    expect(within(panel).getByText('Válido de las 08:00 a las 08:00 del sáb 14, hora local')).toBeInTheDocument();
     expect(within(panel).getByText('Emitido a las 07:00')).toBeInTheDocument();
   });
 
@@ -133,6 +134,7 @@ describe('WeatherPanel «Meteorología PUJ» (M7)', () => {
     expect(title).toHaveAttribute('aria-expanded', 'true');
     expect(within(panel).getByText('Wind per runway')).toBeInTheDocument();
     expect(within(panel).getByText('In use: Runway 08 (estimated from the wind)')).toBeInTheDocument();
+    expect(within(panel).getByText('Valid from 08:00 to 08:00 on Sat 14, local time')).toBeInTheDocument();
     fireEvent.click(title);
     expect(panel).toHaveAttribute('data-folded', 'true');
   });

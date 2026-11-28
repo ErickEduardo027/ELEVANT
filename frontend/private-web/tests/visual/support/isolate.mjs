@@ -14,7 +14,12 @@ import { syntheticSatelliteTile, syntheticTile } from './syntheticTiles.mjs';
 //   every protected route) answers an empty stylesheet, so no font is fetched from Google;
 // - NASA GIBS (PR M8): a tile of the GOES-East clouds or the IMERG rain pinned to the time of its image answers the
 //   synthetic picture of support/syntheticTiles.mjs (`satellite`); a tile that is not pinned (`…/default/default/…`, the
-//   latest image) is not answered, so a map that asks for one fails the spec. The world base of the globe (M8,
+//   latest image) is not answered, so a map that asks for one fails the spec. The one exception is the read of the time
+//   of the latest image (src/services/satelliteService.js: loadSatelliteImageInfo, the latest tile over PUJ, 6/28/19 at
+//   level 6, whose `Layer-Time-Actual` header names the time the map then pins its tiles to): it answers the same
+//   picture with a recent time (`satelliteProbe`; integration of 2026-11-28, so Panorama in Región, where the satellite
+//   loop of lane M7 shows by default, never asks GIBS). By day the loop draws GOES-East GeoColor, answered as the
+//   clouds. The world base of the globe (M8,
 //   src/features/maps/style/worldBaseLayers.js) is answered the same way: Black Marble pinned to its 2016 image, and
 //   Blue Marble, a static layer whose template names no time;
 // - Iowa Environmental Mesonet (lane M7, integration of 2026-11-28): a radar tile of TJUA's N0B scan pinned to the
@@ -31,6 +36,8 @@ export const GIBS_ORIGIN = 'https://gibs.earthdata.nasa.gov';
 // The GIBS layers the maps draw (src/services/satelliteService.js), by the name of the synthetic image that answers them.
 const GIBS_LAYERS = Object.freeze({
   'GOES-East_ABI_Band13_Clean_Infrared': 'goes',
+  // The loop of lane M7 by day (traffic/weatherLayers.js: LOOP_BANDS.geocolor), drawn with the same synthetic clouds.
+  'GOES-East_ABI_GeoColor': 'goes',
   IMERG_Precipitation_Rate_30min: 'imerg',
   BlueMarble_ShadedRelief_Bathymetry: 'bluemarble',
   VIIRS_Black_Marble: 'blackmarble',
@@ -40,6 +47,11 @@ const GIBS_STATIC_LAYERS = new Set(['BlueMarble_ShadedRelief_Bathymetry']);
 // A WMTS tile of GIBS in Web Mercator, pinned to the time of its image (an instant or a day, never `default`), or with
 // no time at all for a static layer; PNG or JPEG.
 const GIBS_TILE = /^\/wmts\/epsg3857\/best\/([^/]+)\/default\/(?:(\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}Z)?)\/)?GoogleMapsCompatible_Level\d+\/(\d+)\/(\d+)\/(\d+)\.(?:png|jpeg)$/;
+// The read of the time of the latest image: the tile over PUJ of the latest GOES-East or IMERG image, at level 6.
+const GIBS_PROBE = /^\/wmts\/epsg3857\/best\/(GOES-East_ABI_Band13_Clean_Infrared|IMERG_Precipitation_Rate_30min)\/default\/default\/GoogleMapsCompatible_Level6\/6\/28\/19\.png$/;
+// How far back the answered latest image is, and the step its times are rounded down to: GOES-East every 10 minutes,
+// IMERG every 30.
+const GIBS_PROBE_STEP_MINUTES = Object.freeze({ goes: 10, imerg: 30 });
 export const IEM_ORIGIN = 'https://mesonet.agron.iastate.edu';
 // A radar tile of IEM's ridge service for TJUA's N0B scan of one minute (yyyymmddhhmm), never the placeholder `-0`.
 const IEM_RADAR_TILE = /^\/c\/tile\.py\/1\.0\.0\/ridge::JUA-N0B-(\d{12})\/(\d+)\/(\d+)\/(\d+)\.png$/;
@@ -105,6 +117,25 @@ export function gibsTileRequest(url) {
     x: Number(match[5]) };
 }
 
+/**
+ * `{ layer, image, z, x, y }` of the read of the time of the latest GOES-East or IMERG image (the latest tile over PUJ,
+ * src/services/satelliteService.js), or `null` for any other URL.
+ */
+export function gibsProbeRequest(url) {
+  if (url.origin !== GIBS_ORIGIN) return null;
+  const match = GIBS_PROBE.exec(url.pathname);
+  return match ? { layer: match[1], image: GIBS_LAYERS[match[1]], z: 6, y: 28, x: 19 } : null;
+}
+
+/**
+ * The time the latest `image` (`goes` or `imerg`) answers in its `Layer-Time-Actual` header at `nowMs`: the step of
+ * the image before the current one (`yyyy-mm-ddThh:mm:ssZ`), so the map pins its tiles to a recent instant.
+ */
+export function latestGibsTime(image, nowMs = Date.now()) {
+  const step = (GIBS_PROBE_STEP_MINUTES[image] ?? 10) * 60_000;
+  return new Date((Math.floor(nowMs / step) - 1) * step).toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
 /** `{ time, z, x, y }` of an IEM radar tile of TJUA pinned to the minute of its frame, or `null` for any other URL. */
 export function radarTileRequest(url) {
   if (url.origin !== IEM_ORIGIN) return null;
@@ -121,7 +152,7 @@ function assertTileMode(mode) {
  * Routes the page's foreign requests. `origin` is the page's own origin (the suite's baseURL); `tiles` is one of
  * TILE_MODES; `api(request, url)` may return `{ status, json, headers }` for an API request (or nothing for the
  * 404). Returns the log of what happened: `unexpected` (requests and WebSockets to any other origin), `requests`
- * (every answered request with its `kind`: tilejson, glyph, tile, api, stylesheet, satellite or radar), `glyphMisses`, `count(kind)`,
+ * (every answered request with its `kind`: tilejson, glyph, tile, api, stylesheet, satellite, satelliteProbe or radar), `glyphMisses`, `count(kind)`,
  * and `setTiles(mode)` / `setApi(handler)` to change the answers for the next requests.
  */
 export async function isolate(page, { origin, tiles = 'synthetic', api = null } = {}) {
@@ -185,6 +216,7 @@ export async function isolate(page, { origin, tiles = 'synthetic', api = null } 
     const request = route.request();
     const url = new URL(request.url());
     const satellite = gibsTileRequest(url);
+    const probe = gibsProbeRequest(url);
     const radar = radarTileRequest(url);
     if (url.origin === OPENFREEMAP_ORIGIN) {
       const handled = await openFreeMap(route, request, url);
@@ -199,6 +231,15 @@ export async function isolate(page, { origin, tiles = 'synthetic', api = null } 
       return route.fulfill({
         status: 200, headers: corsHeaders(request, origin), contentType: 'image/png',
         body: syntheticSatelliteTile(satellite.image, satellite.z, satellite.x, satellite.y),
+      });
+    } else if (probe !== null) {
+      answered('satelliteProbe', request);
+      const headers = corsHeaders(request, origin);
+      return route.fulfill({
+        status: 200, contentType: 'image/png',
+        headers: { ...headers, 'layer-time-actual': latestGibsTime(probe.image),
+          'access-control-expose-headers': `${headers['access-control-expose-headers']}, Layer-Time-Actual` },
+        body: syntheticSatelliteTile(probe.image, probe.z, probe.x, probe.y),
       });
     } else if (radar !== null) {
       answered('radar', request);

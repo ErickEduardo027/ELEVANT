@@ -1318,7 +1318,7 @@ En la rama de integración de los mapas, M4 («Seguir en 3D» ultra cerca) se un
 
 ## Actualización (28 de noviembre de 2026). Línea M7: clima regional en el motor y Panorama en Región
 
-Decisiones del dueño del 26 y 27 de noviembre de 2026 (excepción de color para las capas de clima y las categorías de vuelo), aplicadas en la rama `feat/occ-panorama-clima`:
+Decisiones del dueño del 26 y 27 de noviembre de 2026 (excepción de color para las capas de clima y las categorías de vuelo), aplicadas en la rama `feat/occ-panorama-clima`. Esta nota cumple el primer punto de «Queda pendiente» de la nota del plan M6 (las capas y el panel «Meteorología PUJ»), salvo la malla de viento, que todavía no se dibuja (punto 2). El lugar del panel en Panorama lo fija después la nota de ADR-0044 sobre la línea M1 en la rama de integración:
 
 **1. Capas nuevas, solo en un mapa que las pide** (`traffic/weatherLayers.js`: `weatherOverlay({ regional: true })`, `core/regionalWeather.js`). OccMap las añade cuando recibe al arrancar `weather` y `regionWeather` (lo que responde `features/weather/useRegionWeather.js`). Se dibujan en Región y Aproximación, encendidas por defecto en el menú Capas («Meteorología») y con su entrada en la leyenda:
 - bucle de GOES-East de NASA GIBS: seis fotogramas fijados una vez a su hora, terminando en la última que GIBS informa; GeoColor de día en PUJ y la banda 13 infrarroja (en grises) de noche. El bucle cambia la opacidad de las capas, nunca las teselas por fotograma; con movimiento reducido o reloj congelado queda en el último;
@@ -1384,7 +1384,7 @@ Nada de esto acredita un despliegue ni una revisión visual en el VPS.
 
 ## Actualización (28 de noviembre de 2026). Integración de la capa animada (M2) con M4, M8 y M9
 
-La rama de integración une la capa de tráfico animada de M2 con «Seguir en 3D» de cerca (M4), el globo de Monitoreo (M8) y el Mapa de posiciones con librea (M9). Sin cambios en la API ni en el esquema.
+La rama de integración une la capa de tráfico animada de M2 con «Seguir en 3D» de cerca (M4), el globo de Monitoreo (M8) y el Mapa de posiciones con librea (M9). Sin cambios en la API ni en el esquema. El punto 3 reemplaza el *Pendiente* de la nota «M8 del plan de mapas: verificación del carril»: en el globo los aviones animados ya se atenúan con el filtro del tablero, y lo que sigue sin hacerse es lo que ese punto dice (ningún modelo 3D por debajo del zoom 12 y modelos 3D que no se atenúan).
 
 1. **Doble clic (M4).** El doble clic pasa por la misma elección que el clic (`with3dHit`): mientras la capa anima, la elección en la CPU de M2 (modelos, siluetas y rótulos) encuentra al avión aunque sus iconos GeoJSON no se dibujen; un avión estacionado en su posición sigue entrando por la posición (`three.parkedAt`).
 2. **Muy cerca (M4).** Pasado el zoom 19,5 la capa animada tampoco dibuja rótulos ni el anillo del elegido, y el avión seguido no lleva su anillo de estimado ni su placa «Demo» (`planLabels({ closeUp })` y `planSprites({ closeUpId })`, leídos de `engine.isCloseUp()` en cada cuadro), como las capas GeoJSON. Las sombras de contacto y la luz del sol siguen en los cuadros animados: cada cuadro planifica los modelos con `planInstances`, que lleva sus sombras; el búfer de las sombras se reutiliza mientras cabe.
@@ -1434,3 +1434,18 @@ En el VPS, Panorama se quedaba sin tierra ni rótulos con el aviso del mapa base
 4. **Pestaña oculta y cierre.** Con la pestaña oculta no hay intentos; al volver a mostrarse se reanudan desde la primera espera. `destroy()` y un mapa `unavailable` paran todos los temporizadores y dejan de escuchar `visibilitychange`.
 5. **Glifos.** Si fallan los PBF de las fuentes, MapLibre ya dibuja los rótulos con su tipografía local: no hace falta nada.
 6. **Verificación.** `core/mapEngine.test.js` (error, espera creciente y vuelta a `ok`; plazo de la primera tesela; `setTiles` para una lista; espera del estilo; solo las teselas que fallaron, con `refreshTiles` y sin `setUrl`, cada 10 s; pestaña oculta; `destroy` y `unavailable`) y `tests/fakeMapLibre.test.js` (`setUrl` y `setTiles` de una fuente vectorial, `refreshTiles`). Nada de esto acredita un despliegue ni una revisión en el VPS.
+
+## Actualización (28 de noviembre de 2026). Medición tras la integración
+
+La rama de integración de los mapas (Development con M3 y M6, más M9, M8, M4, M7, M2, M5 y M1, en `a0c7ce23`) se midió en la GPU real con las dos pruebas de rendimiento del laboratorio de M2: `OCC_VISUAL_GPU=1`, ventana visible, ANGLE sobre Direct3D 11, Intel UHD (el piso), Chrome 159.0.8154.13, 1920 × 1080 y densidad 1, con `next dev` en la laptop de desarrollo, compartida con otras tareas. `map-lab.fluency.spec.mjs` pasa (2 pruebas) y `map-lab.follow3d.spec.mjs` también (12 pruebas, más una segunda corrida de la prueba del presupuesto); las cifras completas quedan fuera del repositorio, en `perf-final.json`.
+
+| Escena | GPU | Cuadros/s | p50 / p95 (ms) | Cuadros de más de 33,3 ms | Tareas largas | Bloqueado (s/min) | Paso más largo en pantalla |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `perf-approach-feed` | Intel UHD | 120,7 | 7,5 / 12,5 | 0,1 % | 0 | 0 | 0,13 px (el que gira) |
+| `perf-airfield-feed` | Intel UHD | 129,5 | 7,1 / 11,6 | 0,1 % | 0 | 0 | 0,22 px |
+| `airfield-3d-replay` | Intel UHD | 135,3 (120,6) | 6,9 / 11,4 (7,2 / 14,4) | 0,1 % (0,7 %) | 1 (1) | 0,17 (0,20) | 1,6 px (2,1 px) |
+| `airfield-3d-replay` con «Seguir en 3D» | Intel UHD | 136,3 (129,2) | 7,0 / 10,0 (7,1 / 10,8) | 0,2 % (0,3 %) | 0 (0) | 0 (0) | 0 px (fijo en pantalla) |
+
+Entre paréntesis, la segunda corrida. Todas las escenas pasan las puertas (al menos 30 cuadros por segundo y un p95 de 33 ms como mucho), con cifras iguales o mejores que las de M2 en la misma Intel (113,6, 121,8, 91,0 y 84,2 cuadros por segundo): la planificación por cuadro de libreas y sombras de contacto (M4, M9) y las instancias glTF L1 (M5) no rompen el presupuesto, y no hizo falta perfilar con `map-lab.follow3d-profile.spec.mjs`. Una primera corrida de `map-lab.follow3d` falló antes de medir, en la espera de 240 s a que la llegada reproducida entrara en la vista; las dos corridas siguientes pasaron. La RTX 3060 no se volvió a medir. Nada de esto acredita un despliegue ni una medición en el VPS.
+
+Esta nota, junto con la batería de la rama (vitest, lint, typecheck, `next build` y `test:delivery`) y la suite visual con sus capturas revisadas ([ADR-0044](0044-occ-noc-visual-system.md), nota «la suite visual sobre la rama de integración de los mapas»), reemplaza el *Sin verificar* de la nota «M8 del plan de mapas: verificación del carril» y el «una medición con GPU real» del *Pendiente* de la nota de M9, en lo que cubren: la suite visual fotografió el globo de Monitoreo con «Mundo» y el Mapa de posiciones con el aeropuerto en 3D. Las escenas medidas son las del laboratorio de M2: el globo y el Mapa de posiciones con el aeropuerto en 3D siguen sin una medición propia con GPU real.
