@@ -19,6 +19,8 @@ const EMPTY = Object.freeze([]);
 const AIRPORT_VIEWS = Object.freeze(['airfield', 'ramp']);
 // Its camera stays over PUJ: the MDPC box plus 3 km, never under zoom 13 (cameraPresets.js: airportLockOptions).
 const AIRPORT_LOCK_OPTIONS = Object.freeze(airportLockOptions({ stands: STAND_REFERENCE, layout: MDPC_LAYOUT }));
+// Mapa de posiciones' 3D aircraft (M9): in their airlines' liveries, with the ground traffic near the field.
+const AIRPORT_AIRCRAFT_3D = Object.freeze({ liveries: true });
 
 // The stands map of Mapa de posiciones, Planificación and the console's apron, on the one map engine: a thin adapter
 // over OccMap that keeps the props, the imperative handle, the test id and the fallback strings of the map it
@@ -45,6 +47,8 @@ const AIRPORT_LOCK_OPTIONS = Object.freeze(airportLockOptions({ stands: STAND_RE
 // Aeródromo and Rampa (keys 1 and 2 do nothing) and its rail adds «Capas» (L); its 2D/3D is the screen's own, in
 // `railTools`, so the rail shows no second one. `onViewModeChange(next)` lets the D key change the page's `viewMode`.
 // It also draws the airport in 3D (OccMap `structures`): taxiway pavement, raised terminals and jet bridges, all est.
+// Its 3D aircraft wear their airlines' liveries, and other traffic on the ground near the field is drawn in 3D too
+// (OccMap `aircraft3d.liveries`).
 const PositionMap = forwardRef(function PositionMap({
   positions = EMPTY, selectedPositionId = null, onSelectPosition, viewMode = '2d', initialCamera, onCameraChange,
   allowBuildingExtrusion = false, dashboardLabels = false, onMapClick, placing = false, placingCode = null,
@@ -101,6 +105,7 @@ const PositionMap = forwardRef(function PositionMap({
       airfieldCentre={fixedOnAirport ? PUJ_ARP : null}
       mapOptions={fixedOnAirport ? AIRPORT_LOCK_OPTIONS : undefined}
       structures={fixedOnAirport}
+      aircraft3d={fixedOnAirport ? AIRPORT_AIRCRAFT_3D : undefined}
       presetStands={STAND_REFERENCE}
       stands={positions}
       traffic={traffic}

@@ -530,6 +530,9 @@ const standPointOf = stand => stand?.geometry?.center ?? lngLatOf(stand);
  *   `mapOptions` then carries its bounds and minimum zoom (cameraPresets.js: airportLockOptions); and `structures`
  *   (read at start): the airfield also draws the airport in 3D, its taxiway pavement, raised terminals and jet bridges
  *   at their estimated sizes (airport/structures.js, style/airfieldLayers.js), listed in the legend.
+ * - `aircraft3d` (read at start): `{ governor }` false switches the 3D governor off (the map lab), and `{ liveries }`
+ *   (M9, Mapa de posiciones) dresses the 3D aircraft in their airlines' liveries and draws the other traffic on the
+ *   ground near the airfield in 3D too (core/aircraft3d.js: createAircraft3dController).
  * - `traffic` (PR M5): `{ aircraft, trails, route, source, flights }` from the map situation (useMapSituation: the
  *   aircraft of traffic/situationModel.js, the trails FeatureCollection, the chosen flight's route, the air picture's
  *   source and, from PR M8, the rows of the map flights, whose counterparts the references emphasise).
@@ -1792,6 +1795,7 @@ const OccMapView = forwardRef(function OccMapView({
       theme: props.theme,
       getNow: () => sunClock.now(),
       governor: props.aircraft3dOptions?.governor !== false,
+      liveries: props.aircraft3dOptions?.liveries === true,
       onChange: () => {
         if (appliedRef.current.aircraft3d !== aircraft3d) return;
         store.set({ view3d: aircraft3d.state() });

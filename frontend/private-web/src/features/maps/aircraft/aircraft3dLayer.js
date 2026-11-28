@@ -1,7 +1,8 @@
 import { OCC_PALETTE } from '../../occ-ui/occPalette';
 import { CIVIL_TWILIGHT_DEG, dayPhase } from '../traffic/solar';
 import { buildDetailedAircraft, nextBlinkInMs } from './aircraftDetail';
-import { buildAircraftGeometry, triangleCount } from './aircraftGeometry';
+import { buildAircraftGeometry, triangleCount, withLiveryZones } from './aircraftGeometry';
+import { LIVERY_ZONES } from './liveries';
 import { SHADOW, linearRgb, mercatorFrame, poseMatrix } from './instancePlan';
 
 // The 3D aircraft as one MapLibre custom layer (design G1, G3 and G4): three draws the instance plan
@@ -11,7 +12,10 @@ import { SHADOW, linearRgb, mercatorFrame, poseMatrix } from './instancePlan';
 // - Frame: the scene is the local frame of the ARP (x east, y north, z up, in metres); the projection is the map's
 //   mainMatrix times the frame's matrix, so no camera moves and the models stand where the 2D layers draw them.
 // - One InstancedMesh per type present, each with its own model (aircraft/aircraftGeometry.js) and one white Lambert
-//   material shared by all, tinted per instance: a handful of draw calls and no model files (Decision G-1).
+//   material shared by all, tinted per instance: a handful of draw calls and no model files (Decision G-1). M9: the
+//   tint is per zone of the livery (aircraft/liveries.js: LIVERY_ZONES), the fuselage in three's instanceColor and the
+//   belly, fin, engines and wings in instance attributes of their own, chosen by the model's `liveryZone`
+//   (patchLiveryShader), so an aircraft wears its airline's colours in the same single draw call.
 // - The matrices are copied only when the plan's revision changes; a type that leaves the plan keeps its mesh for
 //   five minutes, in case it comes back, and then gives it and its model up.
 // - Light: a hemisphere light and a directional light from the sun by day; by night a dim cool ambient and a fixed
@@ -29,6 +33,39 @@ import { SHADOW, linearRgb, mercatorFrame, poseMatrix } from './instancePlan';
 //
 // `three` is a parameter (aircraft/aircraft3dChunk.js: THREE_PARTS), so this module imports neither three nor
 // maplibre-gl. It names three's renderer, so only the 3D chunk may import it (scripts/verify-map-chunks.mjs).
+
+// The zones besides the fuselage, each an instance attribute of the model: `instanceBelly`, `instanceTail`…
+const EXTRA_ZONES = Object.freeze(LIVERY_ZONES.filter(zone => zone !== 'fuselage'));
+const zoneAttribute = zone => `instance${zone[0].toUpperCase()}${zone.slice(1)}`;
+
+/** The instance attributes of the zones of a livery besides the fuselage (three's instanceColor), in LIVERY_ZONES order. */
+export const LIVERY_ZONE_ATTRIBUTES = Object.freeze(EXTRA_ZONES.map(zoneAttribute));
+
+// The vertex colour of a zone: liveryZone < 0.5 the fuselage, < 1.5 the belly, … the last zone otherwise.
+const ZONE_COLOURS = ['instanceColor.rgb', ...LIVERY_ZONE_ATTRIBUTES];
+const ZONE_CHOICE = ZONE_COLOURS.slice(0, -1).map((name, index) => `liveryZone < ${index + 0.5} ? ${name} : `).join('')
+  + ZONE_COLOURS.at(-1);
+const LIVERY_PARS_VERTEX = ['#include <color_pars_vertex>', 'attribute float liveryZone;',
+  ...LIVERY_ZONE_ATTRIBUTES.map(name => `attribute vec3 ${name};`)].join('\n');
+const LIVERY_COLOR_VERTEX = ['#include <color_vertex>', '#ifdef USE_INSTANCING_COLOR', `  vColor.rgb = ${ZONE_CHOICE};`,
+  '#endif'].join('\n');
+
+/**
+ * The instanced models' material reads the livery (M9): `shader` (three's onBeforeCompile argument) gets the
+ * `liveryZone` vertex attribute and the instance attributes of LIVERY_ZONE_ATTRIBUTES, and its vertex colour is the
+ * instance colour of the vertex's zone (0 the fuselage, instanceColor). A shader without three's colour chunks throws,
+ * so an upgrade of three that renames them fails the tests, not the map. Answers the shader.
+ */
+export function patchLiveryShader(shader) {
+  const source = shader?.vertexShader;
+  if (typeof source !== 'string' || !source.includes('#include <color_pars_vertex>')
+    || !source.includes('#include <color_vertex>')) {
+    throw new Error('The 3D aircraft shader has no colour chunks to paint the livery with');
+  }
+  shader.vertexShader = source.replace('#include <color_pars_vertex>', LIVERY_PARS_VERTEX)
+    .replace('#include <color_vertex>', LIVERY_COLOR_VERTEX);
+  return shader;
+}
 
 /** The id of the layer in the map's style. */
 export const AIRCRAFT_3D_LAYER_ID = 'occ-aircraft-3d';
@@ -273,6 +310,8 @@ export function createAircraft3dLayer({
     scene = new three.Scene();
     camera = new three.Camera();
     material = new three.MeshLambertMaterial({ color: 0xffffff });
+    material.onBeforeCompile = patchLiveryShader;
+    material.customProgramCacheKey = () => 'occ-aircraft-livery-zones';
     hemisphere = new three.HemisphereLight();
     // three's lights point along +y by default; up is +z here.
     hemisphere.position.set(0, 0, 1);
@@ -307,6 +346,12 @@ export function createAircraft3dLayer({
     mesh.instanceMatrix.setUsage(three.DynamicDrawUsage);
     mesh.instanceColor = new three.InstancedBufferAttribute(new Float32Array(3 * capacity), 3);
     mesh.instanceColor.setUsage(three.DynamicDrawUsage);
+    // The livery's other zones (M9), on the model's geometry, sized as the mesh.
+    for (const name of LIVERY_ZONE_ATTRIBUTES) {
+      const attribute = new three.InstancedBufferAttribute(new Float32Array(3 * capacity), 3);
+      attribute.setUsage(three.DynamicDrawUsage);
+      geometry.setAttribute(name, attribute);
+    }
     mesh.count = 0;
     // The projection is the map's, not a camera's: three's frustum test would cull on a wrong box.
     mesh.frustumCulled = false;
@@ -358,7 +403,7 @@ export function createAircraft3dLayer({
     for (const [key, entry] of plan) {
       let held = meshes.get(key);
       if (held === undefined) {
-        const geometry = buildGeometry(three, entry.spec);
+        const geometry = withLiveryZones(three, buildGeometry(three, entry.spec));
         held = { geometry, triangles: triangleCount(geometry), mesh: null, capacity: 0, aircraftCount: 0, instances: 0,
           ids: NO_IDS, idleSince: null };
         meshes.set(key, held);
@@ -375,6 +420,12 @@ export function createAircraft3dLayer({
       held.floors = entry.floorLengths ?? null;
       held.mesh.instanceMatrix.array.set(entry.matrices);
       held.mesh.instanceColor.array.set(entry.colors);
+      EXTRA_ZONES.forEach((zone, index) => {
+        const attribute = held.geometry.getAttribute(LIVERY_ZONE_ATTRIBUTES[index]);
+        // A plan without zones (one of before M9) paints every zone in the instance colour.
+        attribute.array.set(entry.zoneColors?.[zone] ?? entry.colors);
+        attribute.needsUpdate = true;
+      });
       held.mesh.instanceMatrix.needsUpdate = true;
       held.mesh.instanceColor.needsUpdate = true;
       held.aircraftCount = entry.aircraftCount;
