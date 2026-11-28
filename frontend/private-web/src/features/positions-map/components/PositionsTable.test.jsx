@@ -72,3 +72,11 @@ it('names who covers the stand now when the board brought its coverage windows (
   // Another date: the names of the day.
   expect(standAgentOf({ ...ended, display: { coverage: { ...live([]), live: false } } })).toBe('Elena Soto');
 });
+
+it('takes the panel slab in a drawer and the floating slab over the full-screen map (M1)', () => {
+  const view = render(<PositionsTable positions={STANDS} onSelectPosition={() => {}} />);
+  expect(screen.getByTestId('positions-side-panel')).toHaveClass('rounded-md', 'bg-occ-panel');
+  view.rerender(<PositionsTable positions={STANDS} onSelectPosition={() => {}} floating />);
+  expect(screen.getByTestId('positions-side-panel')).toHaveClass('rounded-[var(--occ-radius-overlay)]', 'bg-occ-panel-float');
+  expect(screen.getByTestId('positions-side-panel')).not.toHaveClass('bg-occ-panel');
+});

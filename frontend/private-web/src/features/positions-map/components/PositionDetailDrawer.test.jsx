@@ -1,3 +1,4 @@
+import { createRef } from 'react';
 import { act, cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -32,6 +33,20 @@ const press = key => {
 afterEach(() => {
   cleanup();
   act(() => resetLanguageForTests('es'));
+});
+
+it('is framed by default and floats over the full-screen map with a ref the page measures it by (M1)', () => {
+  const view = render(<PositionDetailDrawer position={POSITION} onClose={() => {}} onViewFlightInMonitoring={() => {}} />);
+  expect(screen.getByTestId('position-detail-drawer')).toHaveAttribute('data-map-side-panel', 'framed');
+  view.unmount();
+  const ref = createRef();
+  render(<PositionDetailDrawer ref={ref} variant="floating" position={POSITION} onClose={() => {}}
+    onViewFlightInMonitoring={() => {}} className="absolute" />);
+  const panel = screen.getByRole('complementary', { name: /A5/ });
+  expect(panel).toBe(screen.getByTestId('position-detail-drawer'));
+  expect(panel).toHaveAttribute('data-map-side-panel', 'floating');
+  expect(panel).toHaveClass('bg-occ-panel-float', 'absolute');
+  expect(ref.current).toBe(panel);
 });
 
 it('calls preventDefault when Escape closes the drawer', () => {
