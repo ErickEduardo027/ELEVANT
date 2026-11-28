@@ -208,7 +208,7 @@ describe('FlightMap', () => {
     expect(root).toHaveAttribute('data-occ-basemap', 'degraded');
     expect(map.options.style.sources['occ-stands']).toBeUndefined();
     const notice = screen.getByRole('status');
-    expect(notice).toHaveTextContent('No se pudo cargar el mapa base. Los datos de ELEVANT siguen en el mapa.');
+    expect(notice).toHaveTextContent('No se pudo cargar el mapa base; reintentando… Los datos de ELEVANT siguen en el mapa.');
     expect(notice.textContent).not.toMatch(/posici/i);
     // It is a notice, not a fallback: the flight is still drawn and its legend still explains it.
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
@@ -222,7 +222,7 @@ describe('FlightMap', () => {
     const english = fake.state.liveMaps().at(-1);
     loadStyle(english);
     act(() => fake.state.emit(english, 'error', { sourceId: 'openmaptiles', error: new Error('Failed to fetch') }));
-    expect(screen.getByRole('status')).toHaveTextContent('The base map could not be loaded. ELEVANT data is still on the map.');
+    expect(screen.getByRole('status')).toHaveTextContent('The base map could not be loaded; retrying… ELEVANT data is still on the map.');
   });
 
   it('opens on approach when the linked flight is within 40 NM', () => {

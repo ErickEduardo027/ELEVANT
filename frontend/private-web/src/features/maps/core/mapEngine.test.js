@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GPUInitializationError, createFakeMapLibre } from '../../../../tests/fakeMapLibre';
 import { createImageResolver } from '../style/mapImages';
 import { buildOccStyle, groupLayerIds } from '../style/occStyle';
-import { BASEMAP_TIMEOUT_MS, createMapEngine, ENGINE_MAX_ZOOM, ENGINE_MIN_ZOOM, liveEngineCount } from './mapEngine';
+import {
+  BASEMAP_RETRY_DELAYS_MS, BASEMAP_TILE_RELOAD_MS, BASEMAP_TIMEOUT_MS, createMapEngine, ENGINE_MAX_ZOOM, ENGINE_MIN_ZOOM,
+  liveEngineCount,
+} from './mapEngine';
 import { occSky } from './mapSky';
 import { MAPLIBRE_WORKER_URL } from './workerUrl';
 
@@ -166,13 +169,18 @@ describe('map engine', () => {
     expect(engine.container.isConnected).toBe(true);
     expect(engine.container.style.display).toBe('');
 
-    // A tile of the base map brings it back; an error of another source does not touch it; one of the base map does.
+    // A tile of the base map brings it back; an error of another source does not touch it; once the base map is up, one
+    // of its own is a hole to fill (2026-11-28: a reload of the source), not a missing base map.
     state.emit(map, 'sourcedata', { sourceId: 'openmaptiles', tile: {} });
     expect(engine.status().basemap).toBe('ok');
     state.emit(map, 'error', { sourceId: 'occ-stands', error: new Error('Bad GeoJSON') });
     expect(engine.status().basemap).toBe('ok');
     state.emit(map, 'error', { sourceId: 'openmaptiles', error: new Error('Failed to fetch') });
-    expect(engine.status()).toEqual({ engine: 'ready', basemap: 'degraded', reason: null });
+    expect(engine.status()).toEqual({ engine: 'ready', basemap: 'ok', reason: null });
+    // An error before the first tile is a missing base map.
+    const failing = ready(setup());
+    failing.state.emit(failing.map, 'error', { sourceId: 'openmaptiles', error: new Error('Failed to fetch') });
+    expect(failing.engine.status()).toEqual({ engine: 'ready', basemap: 'degraded', reason: null });
 
     // A first tile in time means the timer never fires.
     const early = ready(setup());
@@ -183,6 +191,147 @@ describe('map engine', () => {
     const metadataOnly = setup();
     metadataOnly.state.emit(metadataOnly.map, 'sourcedata', { sourceId: 'openmaptiles', sourceDataType: 'metadata' });
     expect(metadataOnly.engine.status().basemap).toBe('loading');
+  });
+
+  describe('base-map recovery (2026-11-28)', () => {
+    const TILEJSON = 'https://tiles.openfreemap.org/planet';
+    const basemapSource = map => map.getSource('openmaptiles');
+    const reloads = map => map.calls.filter(call => call.method === 'setUrl' || call.method === 'setTiles');
+    const fail = (state, map, extra = {}) =>
+      state.emit(map, 'error', { sourceId: 'openmaptiles', error: new Error('net::ERR_CONNECTION_RESET'), ...extra });
+    const setVisibility = value => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => value });
+      document.dispatchEvent(new Event('visibilitychange'));
+    };
+    afterEach(() => {
+      delete document.visibilityState;
+    });
+
+    it('retries a failing base map with back-off through setUrl and goes back to ok on its first tile', () => {
+      vi.useFakeTimers();
+      const onStatus = vi.fn();
+      const { engine, map, state } = ready(setup({ onStatus }));
+      fail(state, map);
+      expect(engine.status().basemap).toBe('degraded');
+
+      // 2 s, 5 s, 10 s, then every 30 s: the same TileJSON URL again, and nothing else.
+      const calls = map.calls.length;
+      const delays = [...BASEMAP_RETRY_DELAYS_MS, 30000, 30000];
+      expect(delays).toEqual([2000, 5000, 10000, 30000, 30000, 30000]);
+      for (const [index, delay] of delays.entries()) {
+        vi.advanceTimersByTime(delay - 1);
+        expect(basemapSource(map).setUrlCalls, `before attempt ${index + 1}`).toHaveLength(index);
+        vi.advanceTimersByTime(1);
+        expect(basemapSource(map).setUrlCalls, `attempt ${index + 1}`).toHaveLength(index + 1);
+        // Another error while an attempt is planned does not bring the next one forward.
+        fail(state, map);
+      }
+      expect(basemapSource(map).setUrlCalls.every(url => url === TILEJSON)).toBe(true);
+      expect(map.calls.slice(calls).map(call => call.method)).toEqual(Array(6).fill('setUrl'));
+      expect(engine.status().basemap).toBe('degraded');
+
+      // A tile brings it back and stops the attempts.
+      state.emit(map, 'sourcedata', { sourceId: 'openmaptiles', tile: {} });
+      expect(onStatus).toHaveBeenLastCalledWith({ engine: 'ready', basemap: 'ok', reason: null });
+      vi.advanceTimersByTime(120000);
+      expect(basemapSource(map).setUrlCalls).toHaveLength(6);
+    });
+
+    it('retries after the first-tile timeout, and reloads a tile list with setTiles', () => {
+      vi.useFakeTimers();
+      const { engine, map } = ready(setup());
+      vi.advanceTimersByTime(BASEMAP_TIMEOUT_MS);
+      expect(engine.status().basemap).toBe('degraded');
+      vi.advanceTimersByTime(BASEMAP_RETRY_DELAYS_MS[0]);
+      expect(basemapSource(map).setUrlCalls).toEqual([TILEJSON]);
+
+      const tiles = ['https://tiles.example.test/{z}/{x}/{y}.pbf'];
+      const style = { ...STYLE, sources: { ...STYLE.sources, openmaptiles: { type: 'vector', tiles } } };
+      const listed = ready(setup({ style }));
+      fail(listed.state, listed.map);
+      vi.advanceTimersByTime(BASEMAP_RETRY_DELAYS_MS[0]);
+      expect(basemapSource(listed.map).setTilesCalls).toEqual([tiles]);
+      expect(basemapSource(listed.map).setUrlCalls).toEqual([]);
+    });
+
+    it('waits for the style before reloading, and touches neither the style nor an OCC source', () => {
+      vi.useFakeTimers();
+      const { engine, map, state } = setup();
+      fail(state, map);
+      vi.advanceTimersByTime(BASEMAP_RETRY_DELAYS_MS[0]);
+      expect(reloads(map)).toEqual([]);
+      state.emit(map, 'style.load');
+      vi.advanceTimersByTime(BASEMAP_RETRY_DELAYS_MS[1]);
+      expect(reloads(map).map(call => call.args)).toEqual([['openmaptiles', TILEJSON]]);
+      expect(map.calls.some(call => call.method === 'setStyle')).toBe(false);
+      expect(engine.status().basemap).toBe('degraded');
+    });
+
+    it('reloads a base map that is up when single tiles fail, at most once every 10 s', () => {
+      vi.useFakeTimers();
+      const { engine, map, state } = ready(setup());
+      state.emit(map, 'sourcedata', { sourceId: 'openmaptiles', tile: {} });
+      fail(state, map, { tile: {} });
+      fail(state, map, { tile: {} });
+      vi.advanceTimersByTime(0);
+      expect(basemapSource(map).setUrlCalls).toHaveLength(1);
+      // The base map is up: a hole is no notice.
+      expect(engine.status().basemap).toBe('ok');
+      fail(state, map, { tile: {} });
+      vi.advanceTimersByTime(BASEMAP_TILE_RELOAD_MS - 1);
+      expect(basemapSource(map).setUrlCalls).toHaveLength(1);
+      fail(state, map, { tile: {} });
+      vi.advanceTimersByTime(1);
+      expect(basemapSource(map).setUrlCalls).toHaveLength(2);
+      vi.advanceTimersByTime(BASEMAP_TILE_RELOAD_MS * 3);
+      expect(basemapSource(map).setUrlCalls).toHaveLength(2);
+    });
+
+    it('makes no attempt while the page is hidden and resumes when it is shown', () => {
+      vi.useFakeTimers();
+      const { engine, map, state } = ready(setup());
+      fail(state, map);
+      setVisibility('hidden');
+      vi.advanceTimersByTime(120000);
+      expect(basemapSource(map).setUrlCalls).toEqual([]);
+      expect(engine.status().basemap).toBe('degraded');
+      setVisibility('visible');
+      vi.advanceTimersByTime(BASEMAP_RETRY_DELAYS_MS[0]);
+      expect(basemapSource(map).setUrlCalls).toEqual([TILEJSON]);
+
+      // A first-tile timeout of a hidden page waits for it too.
+      setVisibility('hidden');
+      const late = ready(setup());
+      vi.advanceTimersByTime(BASEMAP_TIMEOUT_MS + 120000);
+      expect(late.engine.status().basemap).toBe('degraded');
+      expect(basemapSource(late.map).setUrlCalls).toEqual([]);
+      setVisibility('visible');
+      vi.advanceTimersByTime(BASEMAP_RETRY_DELAYS_MS[0]);
+      expect(basemapSource(late.map).setUrlCalls).toEqual([TILEJSON]);
+    });
+
+    it('stops every attempt on destroy and when the map becomes unavailable', () => {
+      vi.useFakeTimers();
+      const { engine, map, state } = ready(setup());
+      fail(state, map);
+      const source = basemapSource(map);
+      engine.destroy();
+      vi.advanceTimersByTime(120000);
+      setVisibility('hidden');
+      setVisibility('visible');
+      vi.advanceTimersByTime(120000);
+      expect(source.setUrlCalls).toEqual([]);
+      expect(vi.getTimerCount()).toBe(0);
+
+      const lost = ready(setup());
+      fail(lost.state, lost.map);
+      const lostSource = basemapSource(lost.map);
+      lost.state.emit(lost.map, 'error', { error: new GPUInitializationError('WebGL2 is gone') });
+      expect(lost.engine.status().engine).toBe('unavailable');
+      vi.advanceTimersByTime(120000);
+      expect(lostSource.setUrlCalls).toEqual([]);
+      expect(vi.getTimerCount()).toBe(0);
+    });
   });
 
   it('reports the base map off when the style has no vector source', () => {

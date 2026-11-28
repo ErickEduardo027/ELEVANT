@@ -13,6 +13,8 @@
 //   properties that come with it;
 // - a raster source has `setTiles` (a list of URL templates, anything else throws) and `serialize`, and a context loss
 //   rebuilds it with the tiles it was last given, as MapLibre 6.16 does;
+// - a vector source has `setUrl` (a string, anything else throws), `setTiles` and `serialize`, as MapLibre 6.16's
+//   VectorTileSource: each call is recorded and kept in the options it serializes;
 // - `setFilter` replaces a layer's filter (a missing layer throws), and a context loss keeps it, as MapLibre 6.16 does.
 // Camera moves are applied at once and fire their events synchronously: movestart, zoomstart, rotatestart and
 // pitchstart for what changes, moveend. A person's gesture is `emit(map, 'dragstart', { originalEvent })` and the like,
@@ -248,6 +250,32 @@ function rasterMethods(map, id, spec) {
   };
 }
 
+// What a vector source adds, as MapLibre 6.16's VectorTileSource: setUrl asks for the TileJSON again and setTiles takes
+// a list of URL templates; both reload the source and are kept in the options it serializes.
+function vectorMethods(map, id, spec) {
+  return {
+    setUrlCalls: [],
+    setTilesCalls: [],
+    setUrl(url) {
+      if (typeof url !== 'string') throw new TypeError(`setUrl of ${id} takes a TileJSON URL, not ${JSON.stringify(url)}`);
+      map._record('setUrl', [id, url]);
+      this.setUrlCalls.push(url);
+      this.spec = { ...this.spec, url };
+      return this;
+    },
+    setTiles(tiles) {
+      if (!Array.isArray(tiles)) throw new TypeError(`setTiles of ${id} takes a list of tile URLs, not ${JSON.stringify(tiles)}`);
+      map._record('setTiles', [id, tiles]);
+      this.setTilesCalls.push(tiles);
+      this.spec = { ...this.spec, tiles: [...tiles] };
+      return this;
+    },
+    serialize() {
+      return clone(this.spec);
+    },
+  };
+}
+
 // What a source keeps of itself in a snapshot of the style: its options, and its data when it is GeoJSON.
 const sourceSnapshot = source => (source.type === 'geojson' ? { ...source.spec, data: source.data } : { ...source.spec });
 
@@ -302,7 +330,8 @@ function createModule(state) {
         return Promise.resolve(this.expansionZoom);
       },
     };
-    return spec.type === 'raster' ? Object.assign(source, rasterMethods(map, id, spec)) : source;
+    if (spec.type === 'raster') return Object.assign(source, rasterMethods(map, id, spec));
+    return spec.type === 'vector' ? Object.assign(source, vectorMethods(map, id, spec)) : source;
   }
 
   const normalizeLayer = layer => ({ ...layer, layout: { ...layer.layout }, paint: { ...layer.paint } });

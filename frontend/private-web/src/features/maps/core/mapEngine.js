@@ -9,7 +9,8 @@ import { ORBIT } from '../kinematics/orbitCamera.js';
 // - only a throwing constructor, or a WebGL context that comes back without WebGL2, is fatal (`unavailable`, which is
 //   terminal: the map is gone and the screen shows its fallback); the map is `ready` on `style.load`, because the
 //   airfield and the stands are own data and work without the base map, whose health is reported apart (`degraded`
-//   is a chip);
+//   is a chip) and which recovers by itself: a missing base map is loaded again with back-off while the page is
+//   visible, and one that is up reloads its source when single tiles fail (2026-11-28);
 // - calls that need the style (data, feature state, visibility, filters, zoom ranges, clusters, custom layers) wait
 //   until it has loaded and then run in the order they were made;
 // - after a WebGL context loss or a worker restart MapLibre 6.16 rebuilds the style with its data and images, but not
@@ -20,6 +21,13 @@ import { ORBIT } from '../kinematics/orbitCamera.js';
 
 /** How long the vector base map may go without a first tile before the engine reports it degraded. */
 export const BASEMAP_TIMEOUT_MS = 8000;
+/**
+ * The waits before each new attempt to load a missing base map (2026-11-28): 2 s, 5 s, 10 s, then every 30 s while the
+ * page is visible, until a tile arrives.
+ */
+export const BASEMAP_RETRY_DELAYS_MS = Object.freeze([2000, 5000, 10000, 30000]);
+/** A base map that is up reloads its source at most this often when single tiles fail, so the holes fill in. */
+export const BASEMAP_TILE_RELOAD_MS = 10000;
 /** The zoom range every OCC map starts with; `setCameraLimits` goes back to it for a limit given as `null`. */
 export const ENGINE_MIN_ZOOM = 4.5;
 export const ENGINE_MAX_ZOOM = 19.5;
@@ -118,6 +126,14 @@ export function createMapEngine({
   let loadedOnce = false;
   let pending = [];
   let basemapTimer = null;
+  // The recovery of the base map (2026-11-28): the next attempt while it is missing, how many came before it, and the
+  // light reload of a base map that is up when its tiles fail. A hidden page makes no attempt; it resumes when shown.
+  let basemapRetryTimer = null;
+  let basemapAttempts = 0;
+  let basemapRetryPaused = false;
+  let tileReloadTimer = null;
+  let tileReloadPaused = false;
+  let lastTileReloadAt = -Infinity;
   let attributionControl = null;
   let scaleControl = null;
   let customAttribution = attribution;
@@ -175,6 +191,118 @@ export function createMapEngine({
     basemapTimer = null;
   }
 
+  const ownerDocument = host.ownerDocument;
+  const pageHidden = () => ownerDocument.visibilityState === 'hidden';
+
+  // Loads the base map again through MapLibre's public API, never setStyle: the same TileJSON URL again (setUrl asks
+  // for the TileJSON and then its tiles), or the same tile list (setTiles). Only the base-map source is touched.
+  function reloadBasemap() {
+    if (!live() || !styleReady) return;
+    try {
+      const source = map.getSource(BASEMAP_SOURCE_ID);
+      const spec = typeof source?.serialize === 'function' ? source.serialize() : null;
+      if (typeof spec?.url === 'string' && typeof source.setUrl === 'function') source.setUrl(spec.url);
+      else if (Array.isArray(spec?.tiles) && typeof source.setTiles === 'function') source.setTiles([...spec.tiles]);
+    } catch (error) {
+      console.error('The OCC map could not reload its base map.', error);
+    }
+  }
+
+  function clearBasemapRetry() {
+    if (basemapRetryTimer !== null) clearTimeout(basemapRetryTimer);
+    basemapRetryTimer = null;
+    if (tileReloadTimer !== null) clearTimeout(tileReloadTimer);
+    tileReloadTimer = null;
+  }
+
+  // While the base map is missing: one attempt after each wait of BASEMAP_RETRY_DELAYS_MS, the next one planned with it
+  // (a request that hangs fires no error), until a tile arrives. An error while an attempt is planned changes nothing.
+  function scheduleBasemapRetry() {
+    if (!live() || basemapRetryTimer !== null || status.basemap !== 'degraded') return;
+    if (pageHidden()) {
+      basemapRetryPaused = true;
+      return;
+    }
+    const delay = BASEMAP_RETRY_DELAYS_MS[Math.min(basemapAttempts, BASEMAP_RETRY_DELAYS_MS.length - 1)];
+    basemapAttempts += 1;
+    basemapRetryTimer = setTimeout(() => {
+      basemapRetryTimer = null;
+      if (!live() || status.basemap !== 'degraded') return;
+      if (pageHidden()) {
+        basemapRetryPaused = true;
+        return;
+      }
+      reloadBasemap();
+      scheduleBasemapRetry();
+    }, delay);
+  }
+
+  // A base map that is up and loses single tiles: one reload of its source, at most once every BASEMAP_TILE_RELOAD_MS.
+  function scheduleTileReload() {
+    if (!live() || tileReloadTimer !== null) return;
+    if (pageHidden()) {
+      tileReloadPaused = true;
+      return;
+    }
+    const delay = Math.max(0, lastTileReloadAt + BASEMAP_TILE_RELOAD_MS - Date.now());
+    tileReloadTimer = setTimeout(() => {
+      tileReloadTimer = null;
+      if (!live() || status.basemap !== 'ok') return;
+      if (pageHidden()) {
+        tileReloadPaused = true;
+        return;
+      }
+      lastTileReloadAt = Date.now();
+      reloadBasemap();
+    }, delay);
+  }
+
+  function basemapMissing() {
+    clearBasemapTimer();
+    if (tileReloadTimer !== null) clearTimeout(tileReloadTimer);
+    tileReloadTimer = null;
+    tileReloadPaused = false;
+    report({ basemap: 'degraded' });
+    scheduleBasemapRetry();
+  }
+
+  function basemapTile() {
+    clearBasemapTimer();
+    if (basemapRetryTimer !== null) clearTimeout(basemapRetryTimer);
+    basemapRetryTimer = null;
+    basemapAttempts = 0;
+    basemapRetryPaused = false;
+    report({ basemap: 'ok' });
+  }
+
+  function onVisibilityChange() {
+    if (!live()) return;
+    if (pageHidden()) {
+      // No attempt while nobody looks: the planned ones wait for the page to be shown again.
+      if (basemapRetryTimer !== null) basemapRetryPaused = true;
+      if (tileReloadTimer !== null) tileReloadPaused = true;
+      clearBasemapRetry();
+      return;
+    }
+    if (basemapRetryPaused) {
+      basemapRetryPaused = false;
+      basemapAttempts = 0;
+      scheduleBasemapRetry();
+    }
+    if (tileReloadPaused) {
+      tileReloadPaused = false;
+      if (status.basemap === 'ok') scheduleTileReload();
+    }
+  }
+
+  function stopBasemapRecovery() {
+    clearBasemapTimer();
+    clearBasemapRetry();
+    basemapRetryPaused = false;
+    tileReloadPaused = false;
+    ownerDocument.removeEventListener('visibilitychange', onVisibilityChange);
+  }
+
   // Settles every call that waits for the style and every wait for an idle frame as never happening, then removes the
   // map. The engine's listeners go first, so nothing the map fires while it goes reaches the engine.
   function releaseMap() {
@@ -204,7 +332,7 @@ export function createMapEngine({
   // is left under the screen's fallback, and later calls are dropped as after destroy().
   function becomeUnavailable(reason) {
     if (!live()) return;
-    clearBasemapTimer();
+    stopBasemapRecovery();
     report({ engine: 'unavailable', basemap: 'off', reason });
     releaseMap();
   }
@@ -424,8 +552,9 @@ export function createMapEngine({
     });
     listen('error', event => {
       if (event?.sourceId === BASEMAP_SOURCE_ID) {
-        clearBasemapTimer();
-        report({ basemap: 'degraded' });
+        // A base map that is up keeps it and fills its holes; one that is missing says so and tries again.
+        if (status.basemap === 'ok') scheduleTileReload();
+        else basemapMissing();
       } else if (isGpuError(maplibre, event?.error)) {
         becomeUnavailable('webgl');
       } else {
@@ -434,10 +563,7 @@ export function createMapEngine({
     });
     listen('sourcedata', event => {
       keepAttributionClosed();
-      if (event?.sourceId === BASEMAP_SOURCE_ID && event.tile) {
-        clearBasemapTimer();
-        report({ basemap: 'ok' });
-      }
+      if (event?.sourceId === BASEMAP_SOURCE_ID && event.tile) basemapTile();
     });
     listen('styledata', keepAttributionClosed);
     const gesture = kind => {
@@ -487,8 +613,9 @@ export function createMapEngine({
     if (hasBasemap) {
       basemapTimer = setTimeout(() => {
         basemapTimer = null;
-        if (status.basemap === 'loading') report({ basemap: 'degraded' });
+        if (status.basemap === 'loading') basemapMissing();
       }, BASEMAP_TIMEOUT_MS);
+      ownerDocument.addEventListener('visibilitychange', onVisibilityChange);
     }
   }
 
@@ -932,13 +1059,13 @@ export function createMapEngine({
     },
 
     /**
-     * Removes the map, its listeners, its timer and its container; safe to call twice. MapLibre observes the size of
+     * Removes the map, its listeners, its timers and its container; safe to call twice. MapLibre observes the size of
      * its own container, so the engine has no ResizeObserver of its own to disconnect.
      */
     destroy() {
       if (destroyed) return;
       destroyed = true;
-      clearBasemapTimer();
+      stopBasemapRecovery();
       releaseMap();
       customLayers.clear();
       featureStates.clear();
