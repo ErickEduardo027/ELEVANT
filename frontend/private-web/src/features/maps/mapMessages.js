@@ -288,6 +288,7 @@ export const mapMessages = {
         noLogo: 'Las aerolíneas sin logotipo aquí llevan su código IATA en la deriva.',
         commons: 'Archivo en Commons',
         empty: 'No hay logotipos en esta instalación.',
+        trademarked: 'marca registrada',
       },
       data: {
         title: 'Datos y mapas base',
@@ -815,6 +816,7 @@ export const mapMessages = {
         noLogo: 'Airlines without a logo here carry their IATA code on the fin.',
         commons: 'File on Commons',
         empty: 'There are no logos in this installation.',
+        trademarked: 'trademark',
       },
       data: {
         title: 'Data and base maps',

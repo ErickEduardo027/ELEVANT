@@ -102,7 +102,7 @@ describe('MapCreditsDialog (PR M5)', () => {
     expect(logosRegion).toHaveTextContent('Son marcas de sus titulares');
     expect(logosRegion).toHaveTextContent('como uso demostrativo y sin afiliación, patrocinio ni aval');
     expect(within(logosRegion).getAllByRole('link', { name: 'Archivo en Commons' })).toHaveLength(12);
-    expect(logosRegion).toHaveTextContent('Delta Air Lines (DL) · Archivo en Commons · PD-textlogo + Trademarked');
+    expect(logosRegion).toHaveTextContent('Delta Air Lines (DL) · Archivo en Commons · PD-textlogo · marca registrada');
     expect(logosRegion).toHaveTextContent('llevan su código IATA en la deriva');
 
     // The data and tiles, with the aircraft data's source of the traffic on screen.

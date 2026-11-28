@@ -165,7 +165,7 @@ export default function MapCreditsDialog({ open, onClose, aircraftSource = null,
                   {credits.logos.map(logo => (
                     <li key={logo.iata}>
                       {logo.airline} ({logo.iata}) · <External href={logo.page}>{t('credits.logos.commons')}</External>
-                      {logo.tag !== '' && <span className={MUTED}> · {logo.tag}{logo.trademarked ? ' + Trademarked' : ''}</span>}
+                      {logo.tag !== '' && <span className={MUTED}> · {logo.tag}{logo.trademarked ? ` · ${t('credits.logos.trademarked')}` : ''}</span>}
                     </li>
                   ))}
                 </ul>
