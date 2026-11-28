@@ -217,15 +217,17 @@ const plannedConsole = (script, observer) => simulate({
 
 // A screen as it is today: the frame plus every observer of that screen (each of its tabs and drawers open), what
 // re-reads on the shell's deliveries without one of its own, its useOccScreenRefresh and the map reads it mounts when
-// it opens. Panorama is the planned console.
-function screenToday(screen, script) {
+// it opens. Panorama is the planned console. `airPicturePollMs` replays the air picture at another pace (CN-31's airfield
+// pace).
+function screenToday(screen, script, { airPicturePollMs = null } = {}) {
   const own = SITES.filter(([, site]) => site.screen === screen && ['screen', 'shared-page'].includes(site.mode));
   const riding = [...SITES.filter(([, site]) => site.screen === screen && site.mode === 'outside-shell-fallback'),
     ...LISTENERS.filter(([, listener]) => listener.screen === screen)];
   const refreshed = REFRESHED.filter(([, site]) => site.screen === screen);
+  const paced = read => (airPicturePollMs !== null && read.key === 'airPicture' ? { ...read, pollMs: airPicturePollMs } : read);
   const maps = refreshed.flatMap(([, site]) => site.map.map(key => MAP_READS[key]));
   return simulate({
-    shellReads: [...OCC_REQUEST_PLAN.frame, ...(screen === CONSOLE_SCREEN ? OCC_REQUEST_PLAN.console : maps)],
+    shellReads: [...OCC_REQUEST_PLAN.frame, ...(screen === CONSOLE_SCREEN ? OCC_REQUEST_PLAN.console : maps)].map(paced),
     ownSites: own.map(([file, site]) => [fileLabel(file), site]),
     ridingSites: riding.map(([file, site]) => [fileLabel(file), site]),
     refreshed: refreshed.map(([file, site]) => [fileLabel(file), site]),
@@ -395,6 +397,25 @@ describe('OCC request budget', () => {
     const demo = fast(OCC_DEMO_MINUTE);
     expect(demo.total, breakdown(demo)).toBeLessThanOrEqual(OCC_REQUEST_BUDGET.demo);
     expect(demo.total - plannedConsole(OCC_DEMO_MINUTE).total).toBe(6);
+  });
+
+  it('M3: with the 25 NM approach read the airfield pace is on almost always, and every map screen keeps within 40', () => {
+    // The approach read places most aircraft after the picture's instant, so the pace of 5 s (CN-31) is the usual one
+    // while adsb.fi answers (27-11-2026): Monitoreo and the positions map, which mount the air picture, are replayed at
+    // it, as the console is above.
+    const mapScreens = REFRESHED.filter(([, site]) => site.map.includes('airPicture')).map(([, site]) => site.screen);
+    expect(mapScreens).toEqual(['flight-monitoring', 'positions-map']);
+    for (const screen of mapScreens) {
+      const slow = screenToday(screen, []);
+      for (const [minute, script] of [['rest', []], ['demo', OCC_DEMO_MINUTE]]) {
+        const fast = screenToday(screen, script, { airPicturePollMs: AIRFIELD_PICTURE_POLL_MS });
+        expect(fast.byKey.airPicture, `${screen} (${minute})`).toBe(12);
+        expect(fast.total, `${screen} (${minute}): ${breakdown(fast)}`).toBeLessThanOrEqual(OCC_REQUEST_BUDGET[minute]);
+      }
+      // Six more reads of the air picture than at its pace of 10 s, nothing else.
+      const fastRest = screenToday(screen, [], { airPicturePollMs: AIRFIELD_PICTURE_POLL_MS });
+      expect(fastRest.total - slow.total, screen).toBe(6);
+    }
   });
 
   it('the planned console stays within 40 requests during the demo minute', () => {

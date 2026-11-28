@@ -2506,7 +2506,13 @@ actualización del 24 de noviembre de 2026 «CN-29 a CN-31» de
   [`attitude.js`](../../frontend/private-web/src/features/maps/aircraft/attitude.js)).
   Se dibuja en 3D aunque el regulador pause el 3D del resto.
 - **Posiciones reales (CN-31).** Una señal nueva del avión se mezcla en 1,5 s
-  y en tierra se prolonga como mucho 3 s. Un avión real en tierra nunca se
+  y en tierra se prolonga como mucho 3 s. Desde la enmienda M3 del 27 de
+  noviembre de 2026, en la rama `feat/occ-seguimiento-rd` y todavía sin
+  desplegar, se prolonga 1,5 veces el intervalo entre las dos últimas señales
+  de ese avión, de 3 s a 6 s (3 s en un giro), para que el rodaje se vea
+  continuo; las salidas estimadas siguen hasta su destino en vez de cortarse a
+  250 NM, y el mapa pide los vuelos de 6 h atrás a 12 h adelante (nota del 27
+  de noviembre de 2026 en ADR-0042). Un avión real en tierra nunca se
   mueve por una ruta de rodaje estimada: sin señal se queda donde lo dio la
   última, atenuado. Un vuelo de AVIAM detenido en una posición se coloca en su
   punto de estacionamiento con su rumbo; con los calzos (BLOCK_ON) de la tablet
