@@ -71,6 +71,11 @@ describe('FlightMonitoringPage with its map', () => {
     const [button, ...others] = screen.getAllByRole('button', { name: 'Leyenda' });
     expect(others).toEqual([]);
     expect(screen.getByTestId('occ-map')).toContainElement(button);
+    // The board floats inside the map (M1), so the legend that flies out of the rail opens over it, never under it.
+    const board = screen.getByRole('region', { name: 'Tablero de vuelos' });
+    expect(screen.getByTestId('occ-map')).toContainElement(board);
+    expect(board).toHaveAttribute('data-layout', 'float');
+    expect(within(board).queryByRole('button', { name: 'Leyenda' })).not.toBeInTheDocument();
     expect(within(screen.getByTestId('map-legend')).getAllByRole('listitem', { hidden: true }).map(item => item.textContent))
       .toEqual(['VueloApunta según su rumbo; al norte si no se conoce']);
   });
