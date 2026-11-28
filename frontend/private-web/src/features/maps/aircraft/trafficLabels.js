@@ -65,11 +65,14 @@ const candidatesKey = tags => tags.map(item => `${item.id}:${item.priority}:${it
  *   `{ tags, marks, ring, rest }` in the frame's metres, or null) laid out again when due and written into the mesh;
  *   `toPixel(x, y, z)` answers the CSS pixel `{ x, y }` of a point of the frame, or null;
  * - `pick(x, y, toPixel)`: the id of the aircraft whose tag is under the CSS pixel, or null (the ring is no tag);
- * - `createCanvas(width, height)` makes the atlas's canvas; it throws, with nothing built, when there is none.
+ * - `createCanvas(width, height)` makes the atlas's canvas; it throws, with nothing built, when there is none;
+ * - `initialSlots` and `maxSlots` size the atlas (aircraft/labelAtlas.js: LABEL_SLOTS).
  */
-export function createTrafficLabels({ three, createCanvas, theme = 'dark', ratio = 2, fontFamily, makePath } = {}) {
+export function createTrafficLabels({
+  three, createCanvas, theme = 'dark', ratio = 2, fontFamily, makePath, initialSlots, maxSlots,
+} = {}) {
   const family = fontFamily ?? documentFontFamily();
-  const atlas = createLabelAtlas({ createCanvas, ratio, theme, fontFamily: family, makePath });
+  const atlas = createLabelAtlas({ createCanvas, ratio, theme, fontFamily: family, makePath, initialSlots, maxSlots });
   const measureContext = atlas.canvas.getContext('2d');
   let texture = null;
   const makeTexture = () => {
@@ -172,9 +175,13 @@ export function createTrafficLabels({ three, createCanvas, theme = 'dark', ratio
       obstacles.push({ id: mark.id, left: pixel.x - r, top: pixel.y - r, right: pixel.x + r, bottom: pixel.y + r });
     }
     anchors = placeTags(candidates, { obstacles, previous: anchors, viewport });
+    // The words in the order the tags were placed, so a full atlas (LABEL_SLOTS.max) leaves out the last placed; a tag
+    // it has no slot for is left out of the layout too, so it hides nothing.
+    const tagOf = new Map(labels.tags.map(item => [item.id, item.tag]));
     const words = new Map();
-    for (const item of labels.tags) if (anchors.has(item.id)) words.set(item.id, item.tag);
+    for (const id of anchors.keys()) words.set(id, tagOf.get(id));
     atlas.update(words);
+    for (const id of words.keys()) if (atlas.cellOf(id) === null) anchors.delete(id);
     if (atlas.takeResized()) {
       texture.dispose();
       texture = makeTexture();

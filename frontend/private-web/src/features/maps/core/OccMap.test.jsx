@@ -1832,7 +1832,9 @@ describe('OccMap traffic (PR M5)', () => {
     // Its ring, a circle of the traffic overlay in the selection slot, under the cyan aircraft, drawn from the chosen
     // aircraft's own feature: the selection source, which rings the stands and the flights a screen places, stays empty.
     const ring = map.getLayer('occ-traffic-selected-ring');
-    expect(ring).toMatchObject({ type: 'circle', source: 'occ-traffic', filter: ['==', ['get', 'selected'], true] });
+    // PR M2: one the layer animates is ringed there, moving with it; this ring is the fallback.
+    expect(ring).toMatchObject({ type: 'circle', source: 'occ-traffic',
+      filter: ['all', ['==', ['get', 'selected'], true], ['!=', ['get', 'animated'], true]] });
     expect(ring.paint['circle-stroke-color']).toBe(occColor('accent'));
     expect(ring.paint['circle-stroke-width']).toBe(2);
     expect(ids.indexOf('occ-traffic-selected-ring')).toBeGreaterThan(ids.indexOf('slot-selection'));

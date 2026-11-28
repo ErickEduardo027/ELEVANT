@@ -29,9 +29,9 @@ const item = (id, x, y, extra = {}) => ({
   ...extra,
 });
 
-function labelsWorld() {
+function labelsWorld(options = {}) {
   vi.stubGlobal('Path2D', class Path2D {});
-  const labels = createTrafficLabels({ three: THREE_PARTS, createCanvas: fakeCanvas, fontFamily: 'Manrope' });
+  const labels = createTrafficLabels({ three: THREE_PARTS, createCanvas: fakeCanvas, fontFamily: 'Manrope', ...options });
   const mesh = () => labels.object.children[0];
   const attribute = name => mesh().geometry.getAttribute(name);
   return { labels, mesh, attribute };
@@ -118,5 +118,16 @@ describe('createTrafficLabels', () => {
     expect(labels.pick(500, 400, toPixel)).toBeNull();
     labels.dispose();
     expect(labels.object.children).toHaveLength(0);
+  });
+
+  it('a full atlas gives its slots to the tags placed first; one without a slot hides nothing', () => {
+    // Room for three tags (slot 0 is the ring's): the chosen aircraft's, placed first, keeps its slot.
+    const { labels } = labelsWorld({ initialSlots: 4, maxSlots: 4 });
+    const tags = [item('d', 100, 100, { priority: 2 }), item('c', 100, 300, { priority: 1 }),
+      item('b', 100, 500, { priority: 1 }), item('a', 100, 700, { priority: 0, always: true })];
+    labels.frame({ tags, marks: [], ring: null }, { toPixel, viewport, nowMs: 0 });
+    expect(labels.stats()).toMatchObject({ count: 3, slots: 3 });
+    expect([...labels.anchors().keys()]).toEqual(['a', 'c', 'b']);
+    expect(labels.pick(100 + anchorOffset('left', 30, 20, 15)[0], 100, toPixel)).toBeNull();
   });
 });

@@ -376,7 +376,7 @@ describe('OccMap animated traffic (PR M2)', () => {
     server.at += 500;
     frames.run();
     const feature = trafficProperties(map).get(DEMO_ID);
-    // Its icon, its dashed ring and its «Demo» plate are the layer's now; its tag stays in the GeoJSON.
+    // Its icon, its dashed ring, its «Demo» plate and its tag are the layer's now (the GeoJSON ones are the fallback).
     expect(feature).toMatchObject({ model3d: true, animated: true, demo: true });
     const { getInstances } = hoisted.layers.at(-1).options;
     const first = getInstances();
@@ -384,6 +384,11 @@ describe('OccMap animated traffic (PR M2)', () => {
     expect(spriteXY(first.sprites, DEMO_ID)).not.toBeNull();
     // The plate travels with it.
     expect([...first.sprites.ids].filter(id => id === null).length).toBeGreaterThan(0);
+    // So does its tag: the layer anchors it where the frame draws the aircraft, with the words of the write.
+    const tagOf = answer => answer.labels.tags.find(tag => tag.id === DEMO_ID) ?? null;
+    expect(tagOf(first)?.tag).toMatchObject({ aviam: true, dir: 'arr' });
+    expect(tagOf(first).x).toBeCloseTo(spriteXY(first.sprites, DEMO_ID)[0], 3);
+    expect(tagOf(first).y).toBeCloseTo(spriteXY(first.sprites, DEMO_ID)[1], 3);
 
     // Every frame while it moves repaints the map once and draws it further along, without a write in between.
     const writes = map.getSource('occ-traffic').updateDataCalls.length;
@@ -395,6 +400,8 @@ describe('OccMap animated traffic (PR M2)', () => {
     expect(map.getSource('occ-traffic').updateDataCalls).toHaveLength(writes);
     expect(later.revision).toBeGreaterThan(first.revision);
     expect(spriteXY(later.sprites, DEMO_ID)).not.toEqual(spriteXY(first.sprites, DEMO_ID));
+    expect(tagOf(later).x).toBeCloseTo(spriteXY(later.sprites, DEMO_ID)[0], 3);
+    expect(Math.hypot(tagOf(later).x - tagOf(first).x, tagOf(later).y - tagOf(first).y)).toBeGreaterThan(1);
     renderOnce(hoisted.layers.at(-1).layer);
     expect(map.layers.find(item => item.id === LAYER_ID).stats()).toMatchObject({ sprites: first.sprites.count });
 
