@@ -424,6 +424,18 @@ function createModule(state) {
       return this;
     }
 
+    // M4: «Seguir en 3D» lifts the zoom limit to 22; as in MapLibre 6.16 a camera beyond a lowered limit comes back
+    // within it.
+    getMaxZoom() {
+      return this.options.maxZoom ?? 22;
+    }
+
+    setMaxZoom(maxZoom) {
+      this.options = { ...this.options, maxZoom: maxZoom ?? 22 };
+      if (this.camera.zoom > this.options.maxZoom) this.jumpTo({ zoom: this.options.maxZoom });
+      return this;
+    }
+
     getCenterClampedToGround() {
       return this.centerClampedToGround;
     }

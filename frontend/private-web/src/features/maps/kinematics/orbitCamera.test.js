@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { destinationPoint, initialBearing } from '../airport/geo.js';
 import {
-  ORBIT, ORBIT_VIEWS, PUJ_TOWER, createOrbit, orbitAdvance, orbitAuto, orbitDrag, orbitRotate, orbitTarget, orbitTilt,
+  CLOSE_CHASE, CLOSE_UP_ZOOM, ORBIT, ORBIT_VIEWS, ORBIT_VIEW_NAMES, PUJ_TOWER, closeChaseZoom, createOrbit, orbitAdvance, orbitAuto, orbitDrag, orbitRotate, orbitTarget, orbitTilt,
   orbitWheel, orbitZoom, stepOrbitCamera, wrap360,
 } from './orbitCamera.js';
 
@@ -96,5 +96,55 @@ describe('orbit camera (CN-30)', () => {
     expect(orbitAdvance(createOrbit('orbit'), 0.25, { rotate: 1 }).bearingDeg).toBeCloseTo(createOrbit('orbit').bearingDeg + 45 / 4, 9);
     expect(orbitAdvance(orbitAuto(createOrbit('orbit'), true), 0.25).bearingDeg).toBeCloseTo(2, 9);
     expect(orbitAdvance(createOrbit('orbit'), 0.25, { tilt: 1 }).pitch).toBeCloseTo(ORBIT_VIEWS.orbit.pitch + 7.5, 9);
+  });
+});
+
+describe('«Muy cerca» and the ultra zoom (M4)', () => {
+  // The metres from MapLibre's camera to the pivot at `zoom` (1.5 heights of the map, 512 px tiles).
+  const cameraDistanceM = (zoom, { latDeg = AIRCRAFT.lat, heightPx = 800 } = {}) =>
+    (1.5 * heightPx * (40_075_016.686 / 512) * Math.cos((latDeg * Math.PI) / 180)) / 2 ** zoom;
+
+  it('reaches zoom 22 and offers «Muy cerca» right after «Persecución»', () => {
+    expect(ORBIT.maxZoom).toBe(22);
+    expect(CLOSE_UP_ZOOM).toBe(19.5);
+    expect(ORBIT_VIEW_NAMES).toEqual(['chase', 'close', 'side', 'top', 'tower', 'orbit']);
+    expect(Object.keys(ORBIT_VIEWS).sort()).toEqual([...ORBIT_VIEW_NAMES].sort());
+    expect(orbitZoom(createOrbit('close'), 10).zoom).toBe(22);
+    // Close behind the tail and a little above it, on the aircraft's track.
+    const close = createOrbit('close', { trackDeg: 80 });
+    expect(close).toMatchObject({ view: 'close', mode: 'relative', offsetDeg: 0 });
+    expect(close.pitch).toBeGreaterThan(ORBIT_VIEWS.chase.pitch);
+    expect(close.zoom).toBeGreaterThan(CLOSE_UP_ZOOM);
+    expect(angle(orbitTarget(close, AIRCRAFT).bearing, 80)).toBeLessThan(1e-9);
+  });
+
+  it("stands 25–40 m behind the tail by the type's length, within the orbit's zoom", () => {
+    const behindTailM = (lengthM, options = {}) => {
+      const zoom = closeChaseZoom({ lengthM, latDeg: AIRCRAFT.lat, viewportHeightPx: options.heightPx ?? 800 });
+      return cameraDistanceM(zoom, options) - lengthM / 2;
+    };
+    // An A320 (37.6 m): 0.7 lengths, about 26 m; a B747 (70.7 m) is held at 40 m; a light aircraft (8 m) at 25 m.
+    expect(behindTailM(37.6)).toBeCloseTo(37.6 * CLOSE_CHASE.behindTailFactor, 6);
+    expect(behindTailM(70.7)).toBeCloseTo(CLOSE_CHASE.maxBehindTailM, 6);
+    expect(behindTailM(8.3)).toBeCloseTo(CLOSE_CHASE.minBehindTailM, 6);
+    // The same distance on a taller map.
+    expect(behindTailM(37.6, { heightPx: 1200 })).toBeCloseTo(37.6 * CLOSE_CHASE.behindTailFactor, 6);
+    // A longer aircraft: a wider view; unknown length and screen: the 38 m airliner on 800 px, the view's own zoom.
+    expect(closeChaseZoom({ lengthM: 70.7, latDeg: AIRCRAFT.lat })).toBeLessThan(closeChaseZoom({ lengthM: 37.6,
+      latDeg: AIRCRAFT.lat }));
+    expect(closeChaseZoom({ latDeg: AIRCRAFT.lat })).toBeCloseTo(ORBIT_VIEWS.close.zoom, 1);
+    expect(closeChaseZoom({ lengthM: -1, latDeg: Number.NaN, viewportHeightPx: 0 }))
+      .toBe(closeChaseZoom({ latDeg: 0 }));
+    // Never past the orbit's limits.
+    expect(closeChaseZoom({ lengthM: 0.01, viewportHeightPx: 4000 })).toBe(ORBIT.maxZoom);
+    expect(closeChaseZoom({ lengthM: 1e7 })).toBe(ORBIT.minZoom);
+  });
+
+  it("createOrbit takes a given zoom within the limits, and keeps the view's own without one", () => {
+    expect(createOrbit('close', { zoom: 21.3 }).zoom).toBe(21.3);
+    expect(createOrbit('close', { zoom: 30 }).zoom).toBe(ORBIT.maxZoom);
+    expect(createOrbit('close', { zoom: 3 }).zoom).toBe(ORBIT.minZoom);
+    expect(createOrbit('close', { zoom: Number.NaN }).zoom).toBe(ORBIT_VIEWS.close.zoom);
+    expect(createOrbit('chase').zoom).toBe(ORBIT_VIEWS.chase.zoom);
   });
 });

@@ -232,7 +232,7 @@ describe('OccMap double click on an aircraft (M4)', () => {
     expect(onSelect).toHaveBeenCalledExactlyOnceWith({ kind: 'flight', id: KEY.demoArrival });
     expect(threeProbe().on).toBe(false);
     act(() => rerender({ kind: 'flight', id: KEY.demoArrival }));
-    expect(threeProbe()).toEqual({ on: true, view: 'chase', following: true });
+    expect(threeProbe()).toEqual({ on: true, view: 'close', following: true });
     expect(query().get('follow')).toBe('1');
     // Orbiting, MapLibre's double-click zoom is the orbit's; a double click on the followed aircraft changes nothing.
     seconds(1);
@@ -252,7 +252,7 @@ describe('OccMap double click on an aircraft (M4)', () => {
     expect(prevented).toBe(true);
     expect(map.getZoom()).toBe(zoom);
     expect(onSelect).not.toHaveBeenCalled();
-    expect(threeProbe()).toEqual({ on: true, view: 'chase', following: true });
+    expect(threeProbe()).toEqual({ on: true, view: 'close', following: true });
   });
 
   it('another choice before the page chooses the aircraft forgets the waiting «Seguir en 3D»', () => {
