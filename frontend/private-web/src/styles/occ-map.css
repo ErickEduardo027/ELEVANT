@@ -255,7 +255,8 @@
 
 /* The key of the map at the bottom left of the area in sight: the credit of the aircraft data on the bottom line and,
    over it, the altitude scale of the traffic (ui/AltitudeLegend.jsx); both short of the control column and of the
-   nautical scale of the bottom right corner. */
+   nautical scale of the bottom right corner. The scale clears the credit by the height the credit writes on the map
+   (ui/MapSourceStatus.jsx: --occ-map-credit-height), one line when it does not say. */
 .occ-map .occ-map-credit {
   position: absolute;
   z-index: 10;
@@ -267,7 +268,7 @@
 .occ-map .occ-map-altitude {
   position: absolute;
   z-index: 9;
-  bottom: calc(var(--occ-map-inset-bottom, 0px) + var(--occ-map-gap) + 32px);
+  bottom: calc(var(--occ-map-inset-bottom, 0px) + var(--occ-map-gap) + var(--occ-map-credit-height, 24px) + 8px);
   left: calc(var(--occ-map-inset-left, 0px) + var(--occ-map-gap));
   width: min(30rem, calc(100% - var(--occ-map-inset-left, 0px) - var(--occ-map-clear-right) - 2 * var(--occ-map-gap)
     - 7rem));
@@ -403,6 +404,15 @@
 
 .occ-map .occ-map-follow-panel[data-open="false"] {
   bottom: auto;
+}
+
+/* While it is open in the right slot, the scale and the credits of the bottom right corner move left of it, so «i»
+   stays in reach and nothing shows through the panel (INT, 2026-11-28: «Muy cerca» at 1920 px). */
+@container occ-map (min-width: 36.0625rem) {
+  .occ-map:has(.occ-map-follow-panel[data-open="true"]) > .occ-map-host .maplibregl-ctrl-bottom-right {
+    right: max(var(--occ-map-clear-right),
+      calc(var(--occ-map-rail-reserve) + min(20rem, 100% - var(--occ-map-rail-reserve) - var(--occ-map-gap))));
+  }
 }
 
 /* A narrow map (beside a list and an inspector on a 1366 px laptop, or on a phone): the credit of the aircraft data

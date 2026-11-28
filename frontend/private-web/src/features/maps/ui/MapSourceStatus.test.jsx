@@ -6,7 +6,7 @@ import { resetLanguageForTests } from '../../../i18n/languageStore';
 import { OCC_MAP_IDLE, OccMapContext } from '../core/OccMapContext';
 import { createAirPicture, TRAFFIC_NOON, TRAFFIC_SOURCE } from '../testing/trafficFixtures';
 import { toPictureModel } from '../traffic/situationModel';
-import MapSourceStatus, { pictureAgeSeconds, sourceChip } from './MapSourceStatus';
+import MapSourceStatus, { CREDIT_HEIGHT_PROPERTY, pictureAgeSeconds, sourceChip } from './MapSourceStatus';
 
 const NOON = Date.parse(TRAFFIC_NOON);
 const picture = overrides => toPictureModel(createAirPicture(overrides));
@@ -187,6 +187,33 @@ describe('MapSourceStatus (design A7)', () => {
     expect(within(unsafe).getAllByRole('link').map(link => link.getAttribute('href')))
       .toEqual(['https://opendatacommons.org/licenses/odbl/']);
     expect(unsafe).toHaveTextContent('Datos de aeronaves: adsb.fi (ODbL)');
+  });
+
+  it('writes the height of the credit on its map, so the altitude scale over it clears a wrapped credit (INT)', () => {
+    const observers = [];
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback) { this.callback = callback; this.observe = vi.fn(); this.disconnect = vi.fn(); observers.push(this); }
+    });
+    const heights = [24, 56];
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => ({ height: heights[0] }));
+    const root = document.createElement('div');
+    root.className = 'occ-map';
+    document.body.append(root);
+    const view = render(
+      <OccMapContext.Provider value={{ ...OCC_MAP_IDLE, engineStatus: 'ready', trafficSource: TRAFFIC_SOURCE }}>
+        <MapSourceStatus status="success" picture={picture()} />
+      </OccMapContext.Provider>, { container: root });
+    expect(root.style.getPropertyValue(CREDIT_HEIGHT_PROPERTY)).toBe('24px');
+    // A narrow area in sight wraps the credit on more lines: the map is told its new height.
+    heights.shift();
+    act(() => observers[0].callback([]));
+    expect(root.style.getPropertyValue(CREDIT_HEIGHT_PROPERTY)).toBe('56px');
+    view.unmount();
+    expect(root.style.getPropertyValue(CREDIT_HEIGHT_PROPERTY)).toBe('');
+    expect(observers[0].disconnect).toHaveBeenCalled();
+    root.remove();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it('speaks English on the OCC screens', () => {
