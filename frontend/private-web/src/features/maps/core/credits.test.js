@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import manifest from '../../../../public/models/aircraft/manifest.json';
 import logos from '../../../../public/models/liveries/logos/logos.json';
+import { MODELS_BASE_URL as LOADER_BASE_URL } from '../aircraft/gltfModels';
 import { LOGO_IATA } from '../aircraft/liveries';
 import { AIRFIELD_ATTRIBUTION, FIXED_ATTRIBUTION, GIBS_ATTRIBUTION, OURAIRPORTS_ATTRIBUTION } from './attribution';
 import {
-  CREDITS_FILES, DATA_CREDITS, LOGO_AIRLINES, MODEL_NOTICES, loadCredits, logoCredits, modelCredits, resetCreditsForTests,
+  CREDITS_FILES, DATA_CREDITS, LOGO_AIRLINES, MODELS_BASE_URL, MODEL_NOTICES, loadCredits, logoCredits, modelCredits, resetCreditsForTests,
 } from './credits';
 
 afterEach(() => resetCreditsForTests());
@@ -86,6 +87,7 @@ describe('map credits (PR M5)', () => {
   });
 
   it('reads both files once, from the own origin, and again only after a failure', async () => {
+    expect(MODELS_BASE_URL).toBe(LOADER_BASE_URL);
     const fetchImpl = vi.fn(url => ok(url === CREDITS_FILES.models ? manifest : logos));
     const first = await loadCredits(fetchImpl);
     const second = await loadCredits(fetchImpl);

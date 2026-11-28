@@ -1,5 +1,4 @@
 import { LOGO_BASE_URL, LIVERIES } from '../aircraft/liveries';
-import { MODELS_BASE_URL } from '../aircraft/gltfModels';
 import { GIBS_URL, httpsUrl } from './attribution';
 
 // What the «Créditos y licencias» dialog of an OCC map lists (PR M5, ui/MapCreditsDialog.jsx), opened from the map's
@@ -8,6 +7,12 @@ import { GIBS_URL, httpsUrl } from './attribution';
 // on the fins (public/models/liveries/logos/logos.json, from Wikimedia Commons), and the data and tiles the map
 // already credits on its attribution line. Both files are static, under the application's own origin: they are read
 // when the dialog first opens, once, and again only after a failure. Pure, apart from loadCredits.
+
+/**
+ * Where the models are served: aircraft/gltfModels.js MODELS_BASE_URL, repeated here so the map's first load does not
+ * carry the loader of the lazy 3D chunk (credits.test.js pins that both are the same).
+ */
+export const MODELS_BASE_URL = '/models/aircraft/';
 
 /** The two files the dialog reads. */
 export const CREDITS_FILES = Object.freeze({

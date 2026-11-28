@@ -36,14 +36,17 @@ function useCredits(open, loader) {
   useEffect(() => {
     if (!open) return undefined;
     let live = true;
-    setState(current => (current.status === 'ready' ? current : LOADING));
     loader().then(
       credits => { if (live) setState({ status: 'ready', models: credits.models, logos: credits.logos }); },
       () => { if (live) setState({ status: 'error', models: [], logos: [] }); },
     );
     return () => { live = false; };
   }, [open, loader, attempt]);
-  const retry = useCallback(() => setAttempt(value => value + 1), []);
+  // «Reintentar» says it is loading again; a dialog opened again after a failure tries again on its own.
+  const retry = useCallback(() => {
+    setState(LOADING);
+    setAttempt(value => value + 1);
+  }, []);
   return [state, retry];
 }
 
