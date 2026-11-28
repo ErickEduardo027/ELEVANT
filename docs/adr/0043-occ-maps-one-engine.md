@@ -1269,3 +1269,13 @@ Cierre del carril M8 en la rama `feat/occ-monitoreo-mundial`, sin desplegar. Las
 - *Verificado con el MapLibre simulado.* En `frontend/private-web`, `vitest` sobre `src/features/maps`, `src/features/flight-monitoring` y `src/features/occ-ui` pasa entero (169 archivos, 1 300 pruebas); `npm run lint` no da errores ni avisos nuevos en los archivos del carril, y `npm run typecheck` pasa.
 - *Sin verificar.* No se vio en un navegador ni con GPU real cómo quedan el globo y su atmósfera, la base de GIBS, la densidad de los aeropuertos del mundo y de las rutas, ni la atenuación del filtro. No se corrieron Playwright, la suite visual (sus capturas de Monitoreo cambiarán), `next build` ni `test:delivery`.
 - *Pendiente.* En el globo la capa three.js no dibuja por debajo del zoom 12 (`core/aircraft3d.js: projected3d`) y sus aviones no se atenúan con el filtro del tablero; se integra cuando M2 haga la capa consciente de la proyección.
+
+## Actualización (28 de noviembre de 2026). Integración de M8 y M9: una sola lista de vistas
+
+En la rama de integración de los mapas, M8 (globo de Monitoreo con «0 Mundo») y M9 (Mapa de posiciones fijado en PUJ) traían cada uno su propia lista de vistas en `OccMap`, `OccMapContext` y `MapPresetSwitcher`. Quedan unidas en una sola API, sin desplegar.
+
+- *Las vistas que el mapa puede mostrar.* Con `projection="globe"` son `MAP_VIEWS` (Mundo y las cuatro); en Mercator, `VIEW_NAMES` (las cuatro). Mundo nunca existe en Mercator.
+- *`views` de `OccMap`.* Opcional: filtra esas vistas y conserva su orden. Sin él, el mapa ofrece todas las que puede mostrar. Si el filtro no deja ninguna, vuelven todas.
+- *Por pantalla.* Monitoreo (globo, sin `views`): Mundo y las cuatro, y abre con el encuadre `rd`, que no es una vista del selector. Panorama (Mercator, sin `views`): las cuatro. Mapa de posiciones (`views={['airfield', 'ramp']}`): solo Aeródromo y Rampa, fijado en PUJ.
+- *Efecto.* El contexto reparte esa misma lista (`views`). El selector muestra solo esos botones, salvo que la pantalla le pase su propio `views`. Las teclas 0 a 4 de una vista que no se ofrece no hacen nada, y un `view=` de ella en la URL se ignora.
+- *Pruebas.* `MapPresetSwitcher.test.jsx` suma un caso para el globo con `views` y para `world` pedido a un mapa en Mercator. Siguen pasando los casos de M8 y M9 en `MapPresetSwitcher.test.jsx`, `OccMap.test.jsx`, `cameraPresets.test.js` y `PositionMap.test.jsx`.
