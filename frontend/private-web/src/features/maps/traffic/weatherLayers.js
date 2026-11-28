@@ -180,11 +180,12 @@ export function weatherOverlay({ regional = false } = {}) {
       [WIND_SOURCE]: { type: 'geojson' },
     },
     layers: [
-      // The regional weather (lane M7) under the satellite images of PR M8: the loop, then the radar, the SIGMETs over
-      // them, and the stations over the references.
-      ...extra.layers,
+      // The regional weather (lane M7): the loop and the radar under the satellite images of PR M8, the SIGMETs over
+      // them, and the stations (in their own slot) over the references.
+      ...extra.layers.filter(layer => layer.type === 'raster'),
       rasterLayer('goes'),
       rasterLayer('imerg'),
+      ...extra.layers.filter(layer => layer.type !== 'raster'),
       {
         slot: WIND_SLOT,
         id: WIND_LAYER_IDS[0],

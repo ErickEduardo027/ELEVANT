@@ -94,7 +94,8 @@ describe('regional weather: the overlay', () => {
     // The radar and the loop under the SIGMETs, all under the references; the stations over the references.
     const ids = buildOccStyle({ overlays: [referenceOverlay(), weatherOverlay({ regional: true })] }).layers.map(layer => layer.id);
     expect(ids.indexOf(loopLayerId(5))).toBeLessThan(ids.indexOf(radarLayerId(0)));
-    expect(ids.indexOf(radarLayerId(5))).toBeLessThan(ids.indexOf(SIGMET_LAYER_IDS[0]));
+    expect(ids.indexOf(radarLayerId(5))).toBeLessThan(ids.indexOf('occ-weather-goes-image'));
+    expect(ids.indexOf('occ-weather-imerg-image')).toBeLessThan(ids.indexOf(SIGMET_LAYER_IDS[0]));
     expect(ids.indexOf(SIGMET_LAYER_IDS[2])).toBeLessThan(ids.indexOf('slot-reference'));
     expect(ids.indexOf(STATION_LAYER_IDS[0])).toBeGreaterThan(ids.indexOf('slot-standLabels'));
     expect(SLOT_ORDER.indexOf('standLabels')).toBeGreaterThan(SLOT_ORDER.indexOf('reference'));
