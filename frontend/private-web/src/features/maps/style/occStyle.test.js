@@ -7,8 +7,9 @@ import { createImageResolver } from './mapImages';
 import { BASEMAP_COLORS, BASEMAP_THEMES } from './mapTheme';
 import {
   BASEMAP_SOURCE_ID, FONT_STACKS, GLYPHS_URL, OPENFREEMAP_TILEJSON, SLOT_GROUP, SLOT_ORDER, THRESHOLD_NAMES,
-  buildOccStyle, groupLayerIds, nextSlot, slotMarkerId,
+  GLOBE_MERCATOR_ZOOM, PROJECTIONS, buildOccStyle, globeSky, groupLayerIds, nextSlot, slotMarkerId,
 } from './occStyle';
+import { MAP_COLORS } from './mapColors';
 
 // An overlay shaped like the stand polygons of the positions map: layers in three slots, state colours from the OCC
 // palette (one of them see-through), an icon and a pattern from mapImages.js, a pick target and a derived threshold.
@@ -374,5 +375,34 @@ describe('OCC map style', () => {
       .filter(([property]) => property.endsWith('-pattern')).map(([, value]) => value));
     expect(patterns).toEqual(['stand-hatch-pattern']);
     for (const id of patterns) expect(resolve(id), id).toMatchObject({ sdf: false });
+  });
+
+  it('a screen opts into the globe at start (M8): projection globe and a themed atmosphere; Mercator names neither', () => {
+    expect(PROJECTIONS).toEqual(['mercator', 'globe']);
+    expect(GLOBE_MERCATOR_ZOOM).toBe(12);
+    const mercator = buildOccStyle({ overlays: [STAND_OVERLAY] });
+    expect(mercator).not.toHaveProperty('projection');
+    expect(mercator).not.toHaveProperty('sky');
+    expect(buildOccStyle({ projection: 'mercator' })).toEqual(buildOccStyle());
+
+    for (const theme of ['dark', 'light']) {
+      const globe = buildOccStyle({ overlays: [STAND_OVERLAY], theme, projection: 'globe' });
+      expect(validateStyleMin(globe), theme).toEqual([]);
+      expect(globe.projection).toEqual({ type: 'globe' });
+      expect(globe.sky).toEqual(globeSky(theme));
+      expect(globe.sky['sky-color']).toBe(MAP_COLORS[theme].sky.space);
+      expect(globe.sky['horizon-color']).toBe(MAP_COLORS[theme].sky.horizon);
+      expect(globe.sky['fog-color']).toBe(MAP_COLORS[theme].sky.fog);
+      // Only the projection and the sky differ: the layers are the same as in Mercator.
+      expect(globe.layers).toEqual(buildOccStyle({ overlays: [STAND_OVERLAY], theme }).layers);
+    }
+    // The atmosphere shows from afar and is gone from zoom 7, before the Región view.
+    expect(globeSky()['atmosphere-blend']).toEqual(['interpolate', ['linear'], ['zoom'], 0, 1, 5, 1, 7, 0]);
+    expect(globeSky('light')['sky-color']).not.toBe(globeSky('dark')['sky-color']);
+    // A globe without the sky, or with one of its own; an unknown projection throws.
+    expect(buildOccStyle({ projection: 'globe', sky: false })).not.toHaveProperty('sky');
+    expect(buildOccStyle({ projection: 'globe', sky: { 'sky-color': '#000000' } }).sky).toEqual({ 'sky-color': '#000000' });
+    expect(buildOccStyle({ sky: { 'sky-color': '#000000' } })).not.toHaveProperty('sky');
+    expect(() => buildOccStyle({ projection: 'equal-earth' })).toThrow(/Unknown map projection/);
   });
 });

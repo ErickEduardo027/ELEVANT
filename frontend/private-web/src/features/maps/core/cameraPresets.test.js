@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { DASHBOARD_POSITIONS } from '../../dashboard/dashboardPositions';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import {
-  APPROACH_RADIUS_NM, CAMERA_3D, FALLBACK_AIRFIELD_RADIUS_NM, PUJ_ARP, REGION_RADIUS_NM, TERMINALS, VIEW_NAMES,
+  APPROACH_RADIUS_NM, CAMERA_3D, FALLBACK_AIRFIELD_RADIUS_NM, MAP_VIEWS, PUJ_ARP, RD_BOUNDS, RD_FRAMING, REGION_RADIUS_NM,
+  TERMINALS, VIEW_NAMES, WORLD_CAMERA, WORLD_VIEW, targetCenter,
   airfieldBounds, boundsCenter, cameraAngles, defaultFlightView, destinationPoint, distanceNm, fitZooms, isInBounds,
   presetForZoom, presetTargets, ringBounds, sameFits, standBounds, standPolygonPresetBounds, targetFor,
   thresholdsFromFits, transitionFor, unionBounds,
@@ -328,5 +329,62 @@ describe('camera presets', () => {
     // The answer is a copy: a caller that changes it changes no preset.
     cameraAngles('ramp', '3d').pitch = 10;
     expect(cameraAngles('ramp', '3d').pitch).toBe(55);
+  });
+
+  it('M8: the world view and the RD framing sit outside the four views, whose fits and thresholds stay the same', () => {
+    expect(WORLD_VIEW).toBe('world');
+    expect(MAP_VIEWS).toEqual(['world', 'region', 'approach', 'airfield', 'ramp']);
+    expect(VIEW_NAMES).toEqual(['region', 'approach', 'airfield', 'ramp']);
+    expect(RD_FRAMING).toBe('rd');
+    // The Dominican Republic and Puerto Rico; Punta Cana is inside.
+    expect(RD_BOUNDS).toEqual([[-72.1, 17.3], [-65.2, 20.1]]);
+    expect(isInBounds(PUJ_ARP, RD_BOUNDS)).toBe(true);
+    expect(isInBounds([-66.0018, 18.4394], RD_BOUNDS)).toBe(true);
+    // The world camera looks at the globe from afar, centred near the Dominican Republic.
+    expect(WORLD_CAMERA.zoom).toBeGreaterThanOrEqual(1.5);
+    expect(WORLD_CAMERA.zoom).toBeLessThanOrEqual(2);
+    expect(distanceNm(WORLD_CAMERA.center, PUJ_ARP)).toBeLessThan(150);
+
+    const targets = presetTargets({ stands: STANDS });
+    expect(targets.world).toEqual({ center: [...WORLD_CAMERA.center], zoom: WORLD_CAMERA.zoom, pitch: 0, bearing: 0 });
+    expect(targets.rd).toEqual({ bounds: [[-72.1, 17.3], [-65.2, 20.1]], pitch: 0, bearing: 0 });
+    expect(targetFor(targets, 'world')).toBe(targets.world);
+    expect(targetFor(targets, 'rd')).toBe(targets.rd);
+    expect(targetFor(targets, 'mars')).toBeNull();
+    expect(targetCenter(targets.world)).toEqual([...WORLD_CAMERA.center]);
+    expect(targetCenter(targets.rd)).toEqual(boundsCenter(RD_BOUNDS));
+    expect(targetCenter(null)).toBeNull();
+
+    // Without `world` the fits are the four, as before; with it they carry the world's fixed zoom too.
+    const four = fitZooms(cameraForWidth(1440), targets);
+    expect(Object.keys(four)).toEqual(VIEW_NAMES);
+    const five = fitZooms(cameraForWidth(1440), targets, { world: true });
+    expect(five).toEqual({ ...four, world: WORLD_CAMERA.zoom });
+    expect(thresholdsFromFits(five)).toEqual(thresholdsFromFits(four));
+    expect(sameFits(four, five)).toBe(false);
+    expect(sameFits(five, { ...five })).toBe(true);
+    expect(fitZooms(cameraForWidth(1440), { ...targets, world: null }, { world: true })).toBeNull();
+
+    // The selector: the world below half way between its zoom and the region fit; the four as before elsewhere.
+    const boundary = (five.world + five.region) / 2;
+    expect(presetForZoom(five.world, five)).toBe('world');
+    expect(presetForZoom(boundary - 0.01, five)).toBe('world');
+    expect(presetForZoom(boundary + 0.01, five)).toBe('region');
+    expect(presetForZoom(boundary - 0.01, four)).toBe('region');
+    for (const zoom of [five.region, five.approach, five.airfield, five.ramp, 22]) {
+      expect(presetForZoom(zoom, five)).toBe(presetForZoom(zoom, four));
+    }
+    // The RD framing reads as Región on the selector.
+    const rdZoom = cameraForWidth(1440)(targets.rd.bounds, { bearing: 0 }).zoom;
+    expect(presetForZoom(rdZoom, five)).toBe('region');
+    // Flat and north-up, also in 3D.
+    expect(cameraAngles('world', '3d')).toEqual({ pitch: 0, bearing: 0 });
+    expect(cameraAngles('rd', '3d')).toEqual({ pitch: 0, bearing: 0 });
+  });
+
+  it('M8: Monitoreo opens on the RD framing unless its flight is on approach', () => {
+    expect(defaultFlightView(null, { wide: 'rd' })).toBe('rd');
+    expect(defaultFlightView({ latitude: 18.6, longitude: -68.4 }, { wide: 'rd' })).toBe('approach');
+    expect(defaultFlightView(null)).toBe('region');
   });
 });

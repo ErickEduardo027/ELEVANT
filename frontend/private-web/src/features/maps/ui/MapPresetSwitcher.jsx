@@ -1,11 +1,13 @@
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { OCC_SHORTCUTS } from '../../occ-ui/occShortcuts';
+import { VIEW_NAMES } from '../core/cameraPresets';
 import { useOccMap } from '../core/OccMapContext';
 import { mapMessages } from '../mapMessages';
 import Map3dToggle from './Map3dToggle';
 import { RAIL_BUTTON, RAIL_KEY } from './railClasses';
 
-// The four views of the key table (1 Región · 2 Aproximación · 3 Aeródromo · 4 Rampa), with their own words.
+// The views of the key table (0 Mundo · 1 Región · 2 Aproximación · 3 Aeródromo · 4 Rampa), with their own words. «0 Mundo»
+// (M8) shows only on a map that has the world view (OccMapContext's `views`, Monitoreo's globe).
 const VIEW_BUTTONS = Object.freeze(OCC_SHORTCUTS
   .filter(({ action }) => action.startsWith('view.'))
   .map(({ key, action, es, en }) => Object.freeze({ view: action.slice('view.'.length), key, label: { es, en } })));
@@ -17,7 +19,8 @@ const SHORT_LABELS = Object.freeze({
 });
 
 /**
- * The view selector of an OccMap, at the head of its control rail (ui/MapDock.jsx, CN-32): one slab with the four views
+ * The view selector of an OccMap, at the head of its control rail (ui/MapDock.jsx, CN-32): one slab with the views of the
+ * map (the four, and «Mundo» first where the map has the globe, M8),
  * one under the other, each with its key and its word, the short one for «Aproximación» and «Aeródromo» (the full word
  * stays the button's name and its title). The pressed button is the view the camera really shows, so it stays truthful
  * after a free zoom; a click flies to the view and writes `view=` in the URL. The pressed view is told by its cyan frame
@@ -25,8 +28,9 @@ const SHORT_LABELS = Object.freeze({
  * so every rail with the views offers it.
  */
 export default function MapPresetSwitcher({ className = '' }) {
-  const { activeView, requestView, engineStatus } = useOccMap();
+  const { activeView, requestView, engineStatus, views = VIEW_NAMES } = useOccMap();
   const { t, language } = useTranslation(mapMessages);
+  const buttons = VIEW_BUTTONS.filter(({ view }) => views.includes(view));
 
   return (
     <>
@@ -36,7 +40,7 @@ export default function MapPresetSwitcher({ className = '' }) {
         data-testid="map-preset-switcher"
         className={`flex flex-col gap-px rounded border border-occ-line bg-occ-panel p-px ${className}`.trim()}
       >
-        {VIEW_BUTTONS.map(({ view, key, label }) => {
+        {buttons.map(({ view, key, label }) => {
           const pressed = activeView === view;
           const word = label[language] ?? label.es;
           return (

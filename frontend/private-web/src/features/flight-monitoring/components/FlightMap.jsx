@@ -32,11 +32,17 @@ const RESET_PADDING_PX = 60;
 // The data block is docked at the top left of the map, so it never follows the aircraft on screen.
 const DOCKED_BLOCK_STYLE = Object.freeze({ top: 12, left: 12 });
 
+// Monitoreo looks at the world (M8): the globe with its atmosphere, a zoom out to 1 (the engine's own limits stay for
+// the other screens) and an opening on the Dominican Republic and Puerto Rico.
+const MONITORING_MAP_OPTIONS = Object.freeze({ minZoom: 1 });
+const OPENING_VIEW = 'rd';
+
 const findFlight = (flights, id) => (id == null ? null : flights.find(flight => String(flight.id) === String(id)) ?? null);
 
 
-// The map of Monitoreo de vuelos on the one map engine: a thin adapter over OccMap over the NOC style. It opens on the
-// region, or on the approach when the linked flight is within 40 NM (contracts 2.3), draws the flights that carry a
+// The map of Monitoreo de vuelos on the one map engine: a thin adapter over OccMap over the NOC style, on the globe with
+// the world view «0 Mundo» (M8). It opens on the Dominican Republic and Puerto Rico (M8; the region before), or on the
+// approach when the linked flight is within 40 NM (contracts 2.3), draws the flights that carry a
 // position as symbols, which its legend explains while one is on screen, and keeps «Restablecer vista» and «Centrar
 // PUJ». Inside the OCC shell it also draws the live traffic, the data block of the chosen aircraft, the layers menu and
 // (PR M6) follow mode, «Seguir» beside the view selector (LiveFlightMap). `detail` is the page's own card of its selected
@@ -49,7 +55,7 @@ function FlightMapView({
   const { t } = useTranslation(flightMonitoringMessages);
   const { t: tMap } = useTranslation(mapMessages);
   const mapRef = useRef(null);
-  const [defaultView] = useState(() => defaultFlightView(findFlight(flights, selectedFlightId)));
+  const [defaultView] = useState(() => defaultFlightView(findFlight(flights, selectedFlightId), { wide: OPENING_VIEW }));
   // The flight the map last flew to; the one it opens with is framed by its view.
   const flownRef = useRef(selectedFlightId);
 
@@ -78,7 +84,7 @@ function FlightMapView({
 
   function resetView() {
     const points = [...flights.map(lngLatOf).filter(Boolean), ...framePoints];
-    if (points.length === 0) mapRef.current?.flyToPreset('region');
+    if (points.length === 0) mapRef.current?.flyToPreset(OPENING_VIEW);
     else mapRef.current?.flyToBounds([PUJ_ARP, ...points], { padding: RESET_PADDING_PX });
   }
 
@@ -88,6 +94,8 @@ function FlightMapView({
       testId="flight-map-container"
       className="rounded-md"
       defaultView={defaultView}
+      projection="globe"
+      mapOptions={MONITORING_MAP_OPTIONS}
       presetStands={STAND_REFERENCE}
       flights={drawnFlights ?? flights}
       traffic={traffic}

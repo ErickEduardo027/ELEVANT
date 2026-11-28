@@ -1,8 +1,10 @@
 import { createContext, useContext } from 'react';
+import { VIEW_NAMES } from './cameraPresets';
 
 // What OccMap shares with its DOM overlays and with the panels around it, so a list or a switcher needs no ref:
 // - state: `engineStatus` ('starting' | 'ready' | 'unavailable'), `basemapStatus` ('off' | 'loading' | 'ok' |
-//   'degraded'), `activeView` (the view the camera really shows, from presetForZoom), `fits` and `thresholds`;
+//   'degraded'), `activeView` (the view the camera really shows, from presetForZoom), `fits` and `thresholds`, and
+//   `views`, the views the map offers (the four, and the world first on a map with the globe, M8);
 // - meta: `standsOnScreen`, the stands whose polygon the map draws in the area the insets leave in sight (from the
 //   polygon threshold on; the legend lists their states, signals and tags), `chipsOnScreen`, the terminals whose chip
 //   it draws there (below that threshold), `standMarksOnScreen`, the stand marks it draws there (`chipArriving`, the
@@ -49,6 +51,7 @@ export const OCC_MAP_IDLE = Object.freeze({
   engineStatus: 'starting',
   basemapStatus: 'off',
   activeView: null,
+  views: VIEW_NAMES,
   fits: null,
   thresholds: null,
   standsOnScreen: Object.freeze([]),

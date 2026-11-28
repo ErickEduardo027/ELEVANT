@@ -152,4 +152,38 @@ describe('MapPresetSwitcher', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Rampa' }));
     expect(query().has('view')).toBe(false);
   });
+
+  it('M8: a map on the globe offers «0 Mundo» first; a map in Mercator neither shows it nor obeys 0 or view=world', () => {
+    render(
+      <OccMap stands={STANDS} projection="globe" mapOptions={{ minZoom: 1 }}>
+        <MapPresetSwitcher />
+      </OccMap>,
+    );
+    const globe = fake.state.liveMaps().at(-1);
+    act(() => fake.state.emit(globe, 'style.load'));
+    expect(globe.options.style.projection).toEqual({ type: 'globe' });
+    const buttons = within(group()).getAllByRole('button');
+    expect(buttons.map(wideText)).toEqual(['0Mundo', '1Región', '2Aproximación', '3Aeródromo', '4Rampa']);
+    fireEvent.click(buttons[0]);
+    expect(globe.getZoom()).toBeCloseTo(1.7, 6);
+    expect(pressed()).toEqual(['0Mundo']);
+    expect(query().get('view')).toBe('world');
+    // From the world, 1 flies back to the region.
+    fireEvent.keyDown(screen.getByTestId('occ-map'), { key: '1' });
+    expect(pressed()).toEqual(['1Región']);
+    fireEvent.keyDown(screen.getByTestId('occ-map'), { key: '0' });
+    expect(pressed()).toEqual(['0Mundo']);
+    cleanup();
+
+    // Mercator (Panorama, Mapa de posiciones): four views, and the key 0 and a link with view=world do nothing.
+    window.history.replaceState({}, '', `${PAGE}&view=world`);
+    const map = renderSwitcher();
+    expect(map.options.style).not.toHaveProperty('projection');
+    expect(within(group()).getAllByRole('button').map(wideText)).toEqual(['1Región', '2Aproximación', '3Aeródromo', '4Rampa']);
+    expect(pressed()).toEqual(['4Rampa']);
+    const zoom = map.getZoom();
+    fireEvent.keyDown(screen.getByTestId('occ-map'), { key: '0' });
+    expect(map.getZoom()).toBe(zoom);
+    expect(pressed()).toEqual(['4Rampa']);
+  });
 });

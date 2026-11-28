@@ -279,16 +279,18 @@ function AirfieldSwatch({ kind }) {
   );
 }
 
-// The region's airports (style/referenceLayers.js) while the map shows them: from the Región and Aproximación views,
-// with «Aeropuertos de la región» on. Each kind its dot as the map draws it, the home airport larger.
-const AIRPORT_VIEWS = new Set(['region', 'approach']);
+// The region's airports (style/referenceLayers.js) while the map shows them: from the Mundo (M8), Región and Aproximación
+// views, with «Aeropuertos de la región» on. Each kind its dot as the map draws it, the home airport larger.
+const AIRPORT_VIEWS = new Set(['world', 'region', 'approach']);
 function airportsShown({ layers, activeView }) {
   return AIRPORT_VIEWS.has(activeView) && layers?.keys?.includes('reference.airports') === true
     && layers?.values?.['reference.airports'] === true;
 }
-// The routes from Punta Cana (style/routeLayers.js) while the map shows them: in the Región view with the layer on.
+// The routes from Punta Cana (style/routeLayers.js) while the map shows them: in the Mundo (M8) and Región views with the
+// layer on.
+const ROUTE_VIEWS = new Set(['world', 'region']);
 function routesShown({ layers, activeView }) {
-  return activeView === 'region' && layers?.keys?.includes('reference.routes') === true
+  return ROUTE_VIEWS.has(activeView) && layers?.keys?.includes('reference.routes') === true
     && layers?.values?.['reference.routes'] === true;
 }
 function RouteSwatch() {

@@ -1,5 +1,5 @@
 import { mapStandCode } from '../../positions-map/positionsMapMappers';
-import { TERMINALS, VIEW_NAMES } from './cameraPresets';
+import { MAP_VIEWS, TERMINALS } from './cameraPresets';
 
 // The one selection of the OCC screens, kept in the URL (contracts 2.1): the map, the lists, the boards and the
 // drawers read it from here. Pure: useMapSelection.js writes it through useAppSearchParams with `replace`.
@@ -8,7 +8,8 @@ import { TERMINALS, VIEW_NAMES } from './cameraPresets';
 // | `flightId` | a flightKey, a visitKey, a leg id or a turnaround id (today's links with a leg id keep working) |
 // | `stand`    | the normalized stand code                                                                       |
 // | `hex`      | the ADS-B hex of an aircraft that is not an ELEVANT flight                                      |
-// | `view`     | region · approach · airfield · ramp (a terminal preset is `ramp` plus `terminal=A|B|FBO`)       |
+// | `view`     | world · region · approach · airfield · ramp (`ramp` plus `terminal=A|B|FBO` for a terminal; M8:  |
+// |            | `world` only on a map with the globe, any other map reads it as no view)                        |
 // | `follow`   | 1                                                                                               |
 // | `focus`    | map (the maximised map)                                                                         |
 
@@ -29,7 +30,7 @@ function normalizeId(kind, id) {
   return text;
 }
 
-const validView = view => (VIEW_NAMES.includes(view) ? view : null);
+const validView = view => (MAP_VIEWS.includes(view) ? view : null);
 
 function validTerminal(terminal) {
   const code = String(terminal ?? '').trim().toUpperCase();

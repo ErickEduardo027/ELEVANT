@@ -70,6 +70,20 @@ describe('layers menu', () => {
     });
   });
 
+  it('M8: the world view shows the traffic, the route, the airports, the routes from Punta Cana and day and night', () => {
+    expect(LAYER_DEFAULTS.world).toEqual({
+      'traffic.aviam': true, 'traffic.other': true, 'traffic.labels': false, 'traffic.trails': false, route: true,
+      'reference.airports': true, 'reference.routes': true, rings: false, centrelines: false, navaids: false,
+      daynight: true, 'weather.goes': false, 'weather.imerg': false, 'weather.wind': false,
+    });
+    expect(resolveLayers('world', { daynight: false })).toMatchObject({ daynight: false, 'reference.routes': true });
+    expect(setLayerOverride({}, 'world', 'rings', true)).toEqual({ rings: true });
+    expect(setLayerOverride({}, 'world', 'reference.routes', true)).toEqual({});
+    // The four views keep their defaults, and so does a map that does not know its view yet.
+    expect(Object.keys(LAYER_DEFAULTS)).toEqual(['world', ...VIEW_NAMES]);
+    expect(resolveLayers('rd', {})).toEqual(resolveLayers(null, {}));
+  });
+
   it('the Referencias group follows Tráfico with the defaults of design E7', () => {
     expect(LAYER_GROUPS.map(group => group.id)).toEqual(['traffic', 'reference', 'weather']);
     expect(LAYER_GROUPS[1].keys).toEqual(REFERENCE_KEYS);

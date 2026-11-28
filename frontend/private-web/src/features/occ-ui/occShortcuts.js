@@ -4,6 +4,8 @@
 
 /** `key` is compared with `event.key` without regard to case; `action` names the handler the caller provides. */
 export const OCC_SHORTCUTS = Object.freeze([
+  // M8: the world, only on a map that has it (Monitoreo's globe); elsewhere the key does nothing.
+  { key: '0', action: 'view.world', es: 'Mundo', en: 'World' },
   { key: '1', action: 'view.region', es: 'Región', en: 'Region' },
   { key: '2', action: 'view.approach', es: 'Aproximación', en: 'Approach' },
   { key: '3', action: 'view.airfield', es: 'Aeródromo', en: 'Airfield' },

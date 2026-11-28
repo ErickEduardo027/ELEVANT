@@ -5,10 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GPUInitializationError, SERVED_WORKER_URL, sharedFakeMapLibre } from '../../../../tests/fakeMapLibre';
 import { LanguageScope } from '../../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../../i18n/languageStore';
-import { PUJ_ARP, presetTargets } from '../../maps/core/cameraPresets';
+import { PUJ_ARP, RD_BOUNDS, WORLD_CAMERA, boundsCenter, presetTargets } from '../../maps/core/cameraPresets';
 import { liveEngineCount } from '../../maps/core/mapEngine';
 import { STAND_REFERENCE } from '../../maps/stands/standReference';
-import { OPENFREEMAP_TILEJSON } from '../../maps/style/occStyle';
+import { OPENFREEMAP_TILEJSON, globeSky } from '../../maps/style/occStyle';
 import { referenceFeatures } from '../../maps/style/referenceLayers';
 import { administratorAccess, DepartmentAccessProvider } from '../../access/DepartmentAccessContext';
 import { DepartmentPermissionCodes } from '../../access/testAccess';
@@ -120,7 +120,7 @@ describe('FlightMap', () => {
     expect(within(english).getByRole('button', { name: 'ZZ101' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('mounts one map on the NOC style (no demotiles) with the worker URL set and opens on the region view', () => {
+  it('mounts one map on the NOC style (no demotiles) with the worker URL set and opens on the Dominican Republic', () => {
     const { map } = renderFlights();
     expect(fake.state.liveMaps()).toEqual([map]);
     expect(fake.state.workerUrl).toBe(SERVED_WORKER_URL);
@@ -131,9 +131,15 @@ describe('FlightMap', () => {
     // Monitoreo draws no stands; PUJ is its reference point, not a DOM marker.
     expect(style.sources['occ-stands']).toBeUndefined();
     expect(style.sources['occ-reference']).toBeDefined();
-    expect(map.getZoom()).toBeCloseTo(fitWidth(TARGETS.region.bounds), 6);
-    expect(map.getCenter().lng).toBeCloseTo(PUJ_ARP[0], 9);
-    expect(map.getCenter().lat).toBeCloseTo(PUJ_ARP[1], 9);
+    // M8: the globe with its atmosphere (in the light theme of the shell's default here), and a zoom out to 1.
+    expect(style.projection).toEqual({ type: 'globe' });
+    expect(style.sky).toEqual(globeSky('light'));
+    expect(map.options.minZoom).toBe(1);
+    expect(map.options.maxZoom).toBe(19.5);
+    // It opens on the Dominican Republic and Puerto Rico, which the selector reads as Región.
+    expect(map.getZoom()).toBeCloseTo(fitWidth(RD_BOUNDS), 6);
+    expect(map.getCenter().lng).toBeCloseTo(boundsCenter(RD_BOUNDS)[0], 9);
+    expect(map.getCenter().lat).toBeCloseTo(boundsCenter(RD_BOUNDS)[1], 9);
     expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-view', 'region');
     expect(screen.getByTestId('flight-map-container').querySelectorAll('.maplibregl-canvas')).toHaveLength(1);
     expect(document.querySelector('.maplibregl-marker')).toBeNull();
@@ -146,6 +152,30 @@ describe('FlightMap', () => {
       .toHaveAttribute('aria-pressed', 'true');
     // With no flight on screen the legend has nothing to explain.
     expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
+  });
+
+  it('offers «0 Mundo» first on its selector: the key and the button fly to the globe, and view=world stays in the URL (M8)', async () => {
+    const user = userEvent.setup();
+    const { map } = renderFlights();
+    loadStyle(map);
+    const switcher = screen.getByTestId('map-preset-switcher');
+    const buttons = within(switcher).getAllByRole('button');
+    expect(buttons.map(button => button.getAttribute('aria-keyshortcuts'))).toEqual(['0', '1', '2', '3', '4']);
+    expect(buttons[0]).toHaveAccessibleName('Mundo');
+    expect(buttons[0]).toHaveAttribute('title', 'Mundo (0)');
+    expect(buttons[0]).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.keyDown(screen.getByTestId('occ-map'), { key: '0' });
+    expect(map.getZoom()).toBeCloseTo(WORLD_CAMERA.zoom, 6);
+    expect(map.getCenter().lng).toBeCloseTo(WORLD_CAMERA.center[0], 9);
+    expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-view', 'world');
+    expect(within(switcher).getByRole('button', { name: 'Mundo' })).toHaveAttribute('aria-pressed', 'true');
+    expect(new URLSearchParams(window.location.search).get('view')).toBe('world');
+
+    await user.click(within(switcher).getByRole('button', { name: /Región/ }));
+    expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-view', 'region');
+    await user.click(within(switcher).getByRole('button', { name: 'Mundo' }));
+    expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-view', 'world');
   });
 
   it('shows its legend, the only «Leyenda» of the map, while a flight is on screen', () => {
@@ -201,12 +231,12 @@ describe('FlightMap', () => {
     expect(view.map.cameraCalls.filter(call => call.method !== 'setPadding').map(call => call.method)).toEqual(['jumpTo']);
     view.unmount();
 
-    // A linked flight farther out, or none with a position, opens on the region.
+    // A linked flight farther out, or none with a position, opens on the Dominican Republic (M8).
     view = renderFlights({ flights: [flight({ id: 7, ...FAR })], selectedFlightId: 7 });
-    expect(view.map.getZoom()).toBeCloseTo(fitWidth(TARGETS.region.bounds), 6);
+    expect(view.map.getZoom()).toBeCloseTo(fitWidth(RD_BOUNDS), 6);
     view.unmount();
     view = renderFlights({ flights: [flight({ id: 7, latitude: null, longitude: null })], selectedFlightId: 7 });
-    expect(view.map.getZoom()).toBeCloseTo(fitWidth(TARGETS.region.bounds), 6);
+    expect(view.map.getZoom()).toBeCloseTo(fitWidth(RD_BOUNDS), 6);
   });
 
   it('flights with a position reach the flight source in one setData instead of markers, and a symbol click selects the flight', () => {
@@ -295,10 +325,10 @@ describe('FlightMap', () => {
     expect(map.getCenter().lat).toBeCloseTo((PUJ_ARP[1] + FAR.latitude) / 2, 9);
     expect(map.getPitch()).toBe(0);
 
-    // Without a flight on the map it goes back to the region.
+    // Without a flight on the map it goes back to the Dominican Republic it opened on (M8).
     rerender({ flights: [] });
     await user.click(screen.getByRole('button', { name: 'Restablecer vista' }));
-    expect(map.getZoom()).toBeCloseTo(fitWidth(TARGETS.region.bounds), 6);
+    expect(map.getZoom()).toBeCloseTo(fitWidth(RD_BOUNDS), 6);
     // Both buttons only fly: the URL keeps no view.
     expect(window.location.search).toBe('?stationId=s-1');
     expect(screen.getByRole('button', { name: 'Restablecer vista' })).toHaveAttribute('title', 'Restablecer vista');

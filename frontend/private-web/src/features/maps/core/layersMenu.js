@@ -1,4 +1,4 @@
-import { VIEW_NAMES } from './cameraPresets';
+import { MAP_VIEWS, VIEW_NAMES } from './cameraPresets';
 
 // The layers menu of the OCC maps (design E7, PR M5): the keys a person can show or hide, grouped as the menu lists
 // them, their defaults by view, and the choices kept in the browser. Only what the person changed from the defaults of
@@ -41,18 +41,20 @@ export const LOCKED_LAYERS = Object.freeze(['traffic.aviam']);
 export const LAYERS_STORAGE_KEY = 'elevant-occ-map-layers:v1';
 
 // The views in which each key is on until a person changes it («Default on in» of design E7).
+// The world view of M8 (Monitoreo's globe) shows the traffic, the chosen route, the airports, the routes from Punta Cana
+// and day and night; the rings, the centrelines and the navaids are too small to read from there.
 const ON_IN = Object.freeze({
-  'traffic.aviam': VIEW_NAMES,
-  'traffic.other': VIEW_NAMES,
+  'traffic.aviam': MAP_VIEWS,
+  'traffic.other': MAP_VIEWS,
   'traffic.labels': Object.freeze([]),
   'traffic.trails': Object.freeze([]),
-  route: VIEW_NAMES,
-  'reference.airports': Object.freeze(['region', 'approach']),
-  'reference.routes': Object.freeze(['region']),
+  route: MAP_VIEWS,
+  'reference.airports': Object.freeze(['world', 'region', 'approach']),
+  'reference.routes': Object.freeze(['world', 'region']),
   rings: Object.freeze(['region', 'approach']),
   centrelines: Object.freeze(['approach']),
   navaids: Object.freeze(['approach', 'airfield']),
-  daynight: Object.freeze(['region', 'approach']),
+  daynight: Object.freeze(['world', 'region', 'approach']),
   // The satellite images are off until a person turns them on; the wind shows in Aproximación and Aeródromo.
   'weather.goes': Object.freeze([]),
   'weather.imerg': Object.freeze([]),
@@ -60,17 +62,17 @@ const ON_IN = Object.freeze({
 });
 
 /**
- * Whether `key` is on by default while the map shows `preset` (a view of core/cameraPresets.js). Before the map knows
- * its view (no preset), a key is on only when every view has it on.
+ * Whether `key` is on by default while the map shows `preset` (a view of core/cameraPresets.js, the world of M8
+ * included). Before the map knows its view (no preset), a key is on only when each of the four views has it on.
  */
 export function layerDefault(preset, key) {
   if (LOCKED_LAYERS.includes(key)) return true;
   const views = ON_IN[key] ?? [];
-  return VIEW_NAMES.includes(preset) ? views.includes(preset) : VIEW_NAMES.every(view => views.includes(view));
+  return MAP_VIEWS.includes(preset) ? views.includes(preset) : VIEW_NAMES.every(view => views.includes(view));
 }
 
 /** The defaults of each view: `{ [view]: { [key]: boolean } }`. */
-export const LAYER_DEFAULTS = Object.freeze(Object.fromEntries(VIEW_NAMES.map(view => [view,
+export const LAYER_DEFAULTS = Object.freeze(Object.fromEntries(MAP_VIEWS.map(view => [view,
   Object.freeze(Object.fromEntries(LAYER_KEYS.map(key => [key, layerDefault(view, key)])))])));
 
 const isOverride = ([key, value]) => LAYER_KEYS.includes(key) && !LOCKED_LAYERS.includes(key) && typeof value === 'boolean';
