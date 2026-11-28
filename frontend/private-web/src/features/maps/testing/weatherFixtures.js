@@ -296,3 +296,19 @@ export function createWindGrid({ status = 'Live', serverTime } = {}) {
     grid: WITH_REPORTS.has(status) ? { lonMin, lonMax, latMin, latMax, columns: 3, rows: 3, points } : null,
   };
 }
+
+/**
+ * The four regional answers at noon, for services/regionWeatherService.js: createSimulatedRegionWeatherAdapter
+ * ({ scenario: createRegionWeatherScenario() }). `status` sets the state of all four; each answer can be replaced
+ * (`region`, `sigmets`, `wind`, `radar`), and `failure` is passed through.
+ */
+export function createRegionWeatherScenario({ status = 'Live', region, sigmets, wind, radar, failure } = {}) {
+  return {
+    at: WEATHER_NOON,
+    region: region ?? createRegionWeather({ status }),
+    sigmets: sigmets ?? createSigmets({ status }),
+    wind: wind ?? createWindGrid({ status }),
+    radar: radar ?? createRadarFrames({ status }),
+    ...(failure ? { failure } : {}),
+  };
+}

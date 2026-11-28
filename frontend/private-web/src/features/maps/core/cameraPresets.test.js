@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { DASHBOARD_POSITIONS } from '../../dashboard/dashboardPositions';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import {
-  APPROACH_RADIUS_NM, CAMERA_3D, FALLBACK_AIRFIELD_RADIUS_NM, PUJ_ARP, REGION_RADIUS_NM, TERMINALS, VIEW_NAMES,
+  APPROACH_RADIUS_NM, CAMERA_3D, CAMERA_3D_WIDE, FALLBACK_AIRFIELD_RADIUS_NM, PUJ_ARP, REGION_RADIUS_NM, TERMINALS, VIEW_NAMES,
   airfieldBounds, boundsCenter, cameraAngles, defaultFlightView, destinationPoint, distanceNm, fitZooms, isInBounds,
   presetForZoom, presetTargets, ringBounds, sameFits, standBounds, standPolygonPresetBounds, targetFor,
   thresholdsFromFits, transitionFor, unionBounds,
@@ -328,5 +328,20 @@ describe('camera presets', () => {
     // The answer is a copy: a caller that changes it changes no preset.
     cameraAngles('ramp', '3d').pitch = 10;
     expect(cameraAngles('ramp', '3d').pitch).toBe(55);
+  });
+
+  it('a screen that opts in (lane M7, Panorama) tilts Región and Aproximación too in 3D, and only in 3D', () => {
+    expect(CAMERA_3D_WIDE).toEqual({ region: { pitch: 35, bearing: 0 }, approach: { pitch: 45, bearing: -17 } });
+    expect(cameraAngles('region', '3d', { wide: true })).toEqual({ pitch: 35, bearing: 0 });
+    expect(cameraAngles('approach', '3d', { wide: true })).toEqual({ pitch: 45, bearing: -17 });
+    // The airport views keep their own tilt, and 2D stays flat everywhere.
+    expect(cameraAngles('airfield', '3d', { wide: true })).toEqual({ pitch: 40, bearing: -17 });
+    expect(cameraAngles('ramp', '3d', { wide: true })).toEqual({ pitch: 55, bearing: -17 });
+    expect(cameraAngles('region', '2d', { wide: true })).toEqual({ pitch: 0, bearing: 0 });
+    expect(cameraAngles('toString', '3d', { wide: true })).toEqual({ pitch: 0, bearing: 0 });
+    // Without the option, or with anything but true, region and approach stay flat.
+    expect(cameraAngles('region', '3d', { wide: 'yes' })).toEqual({ pitch: 0, bearing: 0 });
+    expect(cameraAngles('approach', '3d', {})).toEqual({ pitch: 0, bearing: 0 });
+    expect(Math.max(...Object.values(CAMERA_3D_WIDE).map(tilt => tilt.pitch))).toBeLessThan(65);
   });
 });
