@@ -1173,3 +1173,11 @@ Tercer paso del carril M8 (rama `feat/occ-monitoreo-mundial`, sin desplegar). So
   - Mientras el filtro atenúa algo, la leyenda dice «Fuera del filtro del tablero» (`OccMapContext.boardFilter`).
 - *Sin cambios en lo fijado.* No cambian noSetStyle, el tope de escritura de GeoJSON (CN-18), el presupuesto de lecturas (CN-19) ni CN-29 a CN-32. La disposición flotante del tablero es de M1 y no se tocó.
 - *Pruebas.* `style/flightRouteLayers.test.js` (nuevo), `flightBoardModel.test.js`, `FlightBoard.test.jsx`, `FlightMonitoringPage.test.jsx`, `FlightMap.test.jsx`, `OccMap.test.jsx`, `MapLegend.test.jsx`, `layersMenu.test.js` y `trafficLayers.test.js`, con el MapLibre simulado. No se vio en un navegador ni en el VPS.
+
+## Actualización (28 de noviembre de 2026). M8 del plan de mapas: verificación del carril
+
+Cierre del carril M8 en la rama `feat/occ-monitoreo-mundial`, sin desplegar. Las notas de arriba del 27 y el 28 de noviembre describen lo que cambia; esta solo deja constancia de cómo se verificó y de lo que queda.
+
+- *Verificado con el MapLibre simulado.* En `frontend/private-web`, `vitest` sobre `src/features/maps`, `src/features/flight-monitoring` y `src/features/occ-ui` pasa entero (169 archivos, 1 300 pruebas); `npm run lint` no da errores ni avisos nuevos en los archivos del carril, y `npm run typecheck` pasa.
+- *Sin verificar.* No se vio en un navegador ni con GPU real cómo quedan el globo y su atmósfera, la base de GIBS, la densidad de los aeropuertos del mundo y de las rutas, ni la atenuación del filtro. No se corrieron Playwright, la suite visual (sus capturas de Monitoreo cambiarán), `next build` ni `test:delivery`.
+- *Pendiente.* En el globo la capa three.js no dibuja por debajo del zoom 12 (`core/aircraft3d.js: projected3d`) y sus aviones no se atenúan con el filtro del tablero; se integra cuando M2 haga la capa consciente de la proyección.

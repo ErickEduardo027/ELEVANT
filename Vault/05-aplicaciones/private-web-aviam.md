@@ -2816,7 +2816,9 @@ API, lo que leen las pantallas ni su cadencia.
   los vuelos de AVIAM del día; la del vuelo elegido sigue resaltada. El tablero
   suma los filtros «En vuelo» y «En tierra» a «Llegadas», «Salidas» y «Todos»,
   y el mapa atenúa los vuelos y rutas que el filtro o la búsqueda dejan fuera
-  (28 de noviembre de 2026, sin desplegar).
+  (28 de noviembre de 2026, sin desplegar). El carril se verificó solo con
+  pruebas unitarias y el MapLibre simulado; falta verlo en un navegador, y la
+  capa 3D bajo el globo llega con M2.
 - **Mapa de posiciones.** 2D/3D, «Centrar PUJ» y pantalla completa pasan al riel
   del mapa. El detalle de la posición usa el mismo panel acoplado, y sus rótulos
   ya no van en mayúsculas.
