@@ -5105,6 +5105,30 @@ export interface OccPositionBoardResponse {
   canAssign: boolean;
 }
 
+export interface OccRadarFrameResponse {
+  time: string;
+  tileUrlTemplate: string;
+}
+
+export interface OccRegionWeatherCreditResponse {
+  name: string;
+  url: string;
+}
+
+export interface OccRadarFramesResponse {
+  stationId: string;
+  status: string;
+  /** @nullable */
+  reason?: string | null;
+  serverTime: string;
+  refreshAfterSeconds: number;
+  credit: OccRegionWeatherCreditResponse;
+  /** @nullable */
+  provider?: string | null;
+  maxZoom: number;
+  frames: OccRadarFrameResponse[];
+}
+
 export interface OccReadyContractServiceResponse {
   code: string;
   name: string;
@@ -5134,6 +5158,59 @@ export interface OccReadyContractsResponse {
   stationCode: string;
   date: string;
   contracts: OccReadyContractResponse[];
+}
+
+export interface OccRegionMetarResponse {
+  raw: string;
+  observedAt: string;
+  /** @nullable */
+  windDirectionDegrees?: number | null;
+  /** @nullable */
+  windSpeedKnots?: number | null;
+  /** @nullable */
+  windGustKnots?: number | null;
+  /** @nullable */
+  visibilityStatuteMiles?: number | null;
+  /** @nullable */
+  ceilingFeet?: number | null;
+  /** @nullable */
+  flightCategory?: string | null;
+  /** @nullable */
+  temperatureCelsius?: number | null;
+  /** @nullable */
+  dewpointCelsius?: number | null;
+  /** @nullable */
+  altimeterHectopascals?: number | null;
+}
+
+export interface OccRegionTafResponse {
+  raw: string;
+  issuedAt: string;
+  validFrom: string;
+  validTo: string;
+}
+
+export interface OccRegionWeatherStationResponse {
+  icao: string;
+  /** @nullable */
+  iata?: string | null;
+  /** @nullable */
+  name?: string | null;
+  latitude: number;
+  longitude: number;
+  metar?: OccRegionMetarResponse | null;
+  taf?: OccRegionTafResponse | null;
+}
+
+export interface OccRegionWeatherResponse {
+  stationId: string;
+  status: string;
+  /** @nullable */
+  reason?: string | null;
+  serverTime: string;
+  refreshAfterSeconds: number;
+  credit: OccRegionWeatherCreditResponse;
+  stations: OccRegionWeatherStationResponse[];
 }
 
 export interface OccReportFilterOptionResponse {
@@ -5394,12 +5471,70 @@ export interface OccReviewSubmissionHistoryResponse {
   hasMore: boolean;
 }
 
+export interface OccSigmetResponse {
+  id: string;
+  /** @nullable */
+  firId?: string | null;
+  hazard: string;
+  /** @nullable */
+  qualifier?: string | null;
+  validFrom: string;
+  validTo: string;
+  /** @nullable */
+  baseFeet?: number | null;
+  /** @nullable */
+  topFeet?: number | null;
+  raw: string;
+  polygon: number[][];
+}
+
+export interface OccSigmetsResponse {
+  stationId: string;
+  status: string;
+  /** @nullable */
+  reason?: string | null;
+  serverTime: string;
+  refreshAfterSeconds: number;
+  credit: OccRegionWeatherCreditResponse;
+  sigmets: OccSigmetResponse[];
+}
+
 export interface OccTurnaroundDetailResponse {
   station: OccStationResponse;
   turnaround: OccTurnaroundResponse;
   version: string;
   isCharter: boolean;
   allowedActions: string[];
+}
+
+export interface OccWindPointResponse {
+  latitude: number;
+  longitude: number;
+  speedKnots: number;
+  directionDegrees: number;
+}
+
+export interface OccWindGridAreaResponse {
+  lonMin: number;
+  lonMax: number;
+  latMin: number;
+  latMax: number;
+  columns: number;
+  rows: number;
+  points: OccWindPointResponse[];
+}
+
+export interface OccWindGridResponse {
+  stationId: string;
+  status: string;
+  /** @nullable */
+  reason?: string | null;
+  serverTime: string;
+  refreshAfterSeconds: number;
+  credit: OccRegionWeatherCreditResponse;
+  /** @nullable */
+  validAt?: string | null;
+  grid: OccWindGridAreaResponse;
 }
 
 export interface OperationMessageResponse {
@@ -7850,6 +7985,22 @@ stationId: string;
 };
 
 export type GetOccAerodromeWeatherParams = {
+stationId: string;
+};
+
+export type GetOccRegionWeatherParams = {
+stationId: string;
+};
+
+export type GetOccRegionSigmetsParams = {
+stationId: string;
+};
+
+export type GetOccRegionWindParams = {
+stationId: string;
+};
+
+export type GetOccRegionRadarParams = {
 stationId: string;
 };
 
@@ -20856,6 +21007,171 @@ export const getOccAerodromeWeather = async (params: GetOccAerodromeWeatherParam
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: OccAerodromeWeatherResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccRegionWeatherUrl = (params: GetOccRegionWeatherParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/weather/region?${stringifiedParams}` : `/api/v1/occ/weather/region`
+}
+
+/**
+ * @summary The METAR (raw text, basics, ceiling and the service's flight category) and the TAF (raw text and validity) of every
+airport of the region around the station's airport, nearest first, which the API reads for the whole region at
+once and keeps a few minutes. Only Punta Cana has a region: the 32 airports the maps draw in Región. The state of
+the region (`Live`, `Stale`, `Unavailable`, `Disabled`) with its reason, when to ask again and
+the credit of the weather service come in the 200; a station outside the reader's scope, or whose airport has no
+region, is not found.
+ */
+export const getOccRegionWeather = async (params: GetOccRegionWeatherParams, options?: RequestInit): Promise<OccRegionWeatherResponse> => {
+
+  const res = await fetch(getGetOccRegionWeatherUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccRegionWeatherResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccRegionSigmetsUrl = (params: GetOccRegionSigmetsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/weather/sigmets?${stringifiedParams}` : `/api/v1/occ/weather/sigmets`
+}
+
+/**
+ * @summary The international SIGMETs whose area touches the region around the station's airport and are still valid, from
+aviationweather.gov, which the API reads once for the region and keeps ten minutes. Their state, reason, when to ask
+again and the credit come in the 200; a station outside the reader's scope, or whose airport has no region, is not
+found.
+ */
+export const getOccRegionSigmets = async (params: GetOccRegionSigmetsParams, options?: RequestInit): Promise<OccSigmetsResponse> => {
+
+  const res = await fetch(getGetOccRegionSigmetsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccSigmetsResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccRegionWindUrl = (params: GetOccRegionWindParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/weather/wind?${stringifiedParams}` : `/api/v1/occ/weather/wind`
+}
+
+/**
+ * @summary The wind 10 m above the ground on a coarse grid over the region around the station's airport, from Open-Meteo,
+which the API reads for the whole grid at once and keeps an hour. Its state, reason, when to ask again and the
+credit come in the 200; a station outside the reader's scope, or whose airport has no region, is not found.
+ */
+export const getOccRegionWind = async (params: GetOccRegionWindParams, options?: RequestInit): Promise<OccWindGridResponse> => {
+
+  const res = await fetch(getGetOccRegionWindUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccWindGridResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccRegionRadarUrl = (params: GetOccRegionRadarParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/weather/radar?${stringifiedParams}` : `/api/v1/occ/weather/radar`
+}
+
+/**
+ * @summary The latest radar scans over the region around the station's airport (San Juan's NEXRAD through the Iowa
+Environmental Mesonet), as tile addresses the screens load themselves; the API keeps the index five minutes. Its
+state, reason, when to ask again and the credit come in the 200; a station outside the reader's scope, or whose
+airport has no region, is not found.
+ */
+export const getOccRegionRadar = async (params: GetOccRegionRadarParams, options?: RequestInit): Promise<OccRadarFramesResponse> => {
+
+  const res = await fetch(getGetOccRegionRadarUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccRadarFramesResponse = body ? JSON.parse(body) : {}
   return data
 }
 

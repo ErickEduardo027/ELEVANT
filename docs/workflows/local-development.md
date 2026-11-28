@@ -117,6 +117,14 @@ Para probar a mano el servicio real, como una lectura deliberada y fuera de las 
 
   Después se hace `GET /api/v1/occ/weather?stationId=<id de PUJ>` desde el Swagger de la API local, autorizado con el token de una sesión de una cuenta de OCC que tenga PUJ en su alcance y un permiso de mapa (Panorama, Monitoreo de vuelos, Mapa de posiciones o Planificación). Responde `Live`, o `Stale` si el último METAR tiene más de 90 minutos, con `icaoCode` «MDPC», el METAR, el TAF y `source.name` «NOAA Aviation Weather Center». `Unavailable` significa que el servicio no respondió o no tiene informe. Al terminar se quita la variable (`Remove-Item Env:ELEVANT_E2E_AVIATION_WEATHER_ENABLED`) y se vuelve a levantar el stack, para que el arnés no lea el servicio real.
 
+## Clima de la región: AWC, Open-Meteo e Iowa Environmental Mesonet
+
+Las cuatro lecturas del clima de la región ([ADR-0043](../adr/0043-occ-maps-one-engine.md), nota del 27 de noviembre de 2026; [integraciones externas](../architecture/external-integrations.md)) son `GET occ/weather/region` y `GET occ/weather/sigmets`, que leen aviationweather.gov y siguen a `AviationWeather:Enabled`, `GET occ/weather/wind`, que lee Open-Meteo con `OpenMeteo:Enabled`, y `GET occ/weather/radar`, que lee el índice del radar de Iowa Environmental Mesonet con `WeatherRadar:Enabled`. Los dos interruptores nuevos están apagados por defecto y `appsettings.Development.json` los enciende, así que el stack local **sin** el overlay llama a esos servicios cuando alguien hace una de esas lecturas y la API no tiene guardada una respuesta vigente: como mucho una consulta por hora a Open-Meteo y una cada 5 minutos al índice de IEM por región. Ninguna pantalla las lee todavía.
+
+El overlay del arnés apaga el viento y el radar con `OpenMeteo__Enabled: "${ELEVANT_E2E_OPEN_METEO_ENABLED:-false}"` y `WeatherRadar__Enabled: "${ELEVANT_E2E_WEATHER_RADAR_ENABLED:-false}"`, y la región y los SIGMET con `ELEVANT_E2E_AVIATION_WEATHER_ENABLED`, como el clima del aeródromo. Ninguna prueba ni workflow de CI llama a estos servicios.
+
+Para una lectura deliberada a mano se levanta el stack con el overlay y la variable de la lectura en `true`, por ejemplo `$env:ELEVANT_E2E_WEATHER_RADAR_ENABLED = "true"`, se hace la lectura desde el Swagger de la API local con `stationId=<id de PUJ>` y el token de una cuenta de OCC con PUJ en su alcance y un permiso de mapa, y al terminar se quita la variable (`Remove-Item Env:ELEVANT_E2E_WEATHER_RADAR_ENABLED`) y se vuelve a levantar el stack. Una estación sin región, como SDQ, responde 404. El plan gratuito de Open-Meteo es solo para uso no comercial: no se enciende fuera de Development.
+
 ## Frontends
 
 Entre a `frontend/private-web`, `frontend/public-web` o `frontend/mobile-agent`, lea su README y ejecute solo los scripts declarados en su `package.json`. Una tablet no puede alcanzar el `localhost` de la PC; use una URL de red autorizada/Tailscale según el ambiente.

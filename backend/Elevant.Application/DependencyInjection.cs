@@ -110,6 +110,23 @@ public static class DependencyInjection
             Elevant.Application.Abstractions.Operations.DisabledAerodromeWeatherSource>(services);
         // ADR-0043 (contracts 1.4): the OCC's weather read (occ/weather), for the readers of the map.
         services.AddScoped<Elevant.Application.Operations.Weather.GetOccAerodromeWeatherHandler>();
+        // Plan M6: the weather of the region's airports (occ/weather/region); without Infrastructure nothing is called.
+        Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton<
+            Elevant.Application.Abstractions.Operations.IRegionWeatherSource,
+            Elevant.Application.Abstractions.Operations.DisabledRegionWeatherSource>(services);
+        services.AddScoped<Elevant.Application.Operations.Weather.GetOccRegionWeatherHandler>();
+        // Plan M6: the region's SIGMETs, wind grid and radar frames (occ/weather/sigmets, wind, radar); without
+        // Infrastructure nothing is called.
+        Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton<
+            Elevant.Application.Abstractions.Operations.IRegionSigmetSource,
+            Elevant.Application.Abstractions.Operations.DisabledRegionSigmetSource>(services);
+        Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton<
+            Elevant.Application.Abstractions.Operations.IRegionWindSource,
+            Elevant.Application.Abstractions.Operations.DisabledRegionWindSource>(services);
+        Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton<
+            Elevant.Application.Abstractions.Operations.IRegionRadarSource,
+            Elevant.Application.Abstractions.Operations.DisabledRegionRadarSource>(services);
+        services.AddScoped<Elevant.Application.Operations.Weather.GetOccRegionWeatherLayersHandler>();
         // ADR-0028 (note of 15 November 2026): without Infrastructure there is no provider and nothing is ever called.
         Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton<
             Elevant.Application.Abstractions.Integrations.IAviationReferenceProvider,

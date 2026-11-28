@@ -289,6 +289,68 @@ del PR M8 (API) «Clima del aeródromo por la API (METAR y TAF)» (`65f9446f` y
   da la línea de curl que el operador corre a mano antes de desplegar, nunca
   desde CI.
 
+### Clima de la región: AWC, Open-Meteo e Iowa Environmental Mesonet
+
+Posterior al commit verificado de esta nota: esta sección describe el código
+del carril M6 «Meteorología regional en el servidor» del plan de mapas
+(`5dacefae` a `87ca9435`), que esa verificación no cubre
+([ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md), nota del 27 de
+noviembre de 2026). Es solo API y cliente compartido: *ninguna pantalla las lee
+todavía*; las capas y el panel de meteorología llegan con el carril M7.
+
+- **Cuatro lecturas nuevas.** Junto a `GET occ/weather`, la API responde
+  `occ/weather/region` (METAR y TAF de los 32 aeropuertos de la región de
+  Punta Cana, con su categoría de vuelo), `occ/weather/sigmets` (SIGMET
+  internacionales dentro de la caja de 12° N a 24° N y 76° O a 60° O),
+  `occ/weather/wind` (malla de viento de 10 × 8 puntos) y `occ/weather/radar`
+  (índice de los últimos 12 barridos del radar de San Juan, TJUA)
+  ([controlador](../../backend/Elevant.Api/Controllers/OccWeatherController.cs)).
+  Tienen los mismos lectores, errores y estados que el clima del aeródromo, y
+  una estación sin región (hoy, toda la que no es Punta Cana) recibe 404.
+- **Por el servidor.** El METAR, el TAF y los SIGMET salen de la Data API de
+  aviationweather.gov
+  ([región](../../backend/Elevant.Infrastructure/Integrations/AviationWeather/AviationWeatherRegionSource.cs)
+  y [SIGMET](../../backend/Elevant.Infrastructure/Integrations/AviationWeather/AviationWeatherSigmetSource.cs));
+  el viento, de la API de pronóstico de Open-Meteo
+  ([viento](../../backend/Elevant.Infrastructure/Integrations/OpenMeteo/OpenMeteoWindSource.cs));
+  y el índice del radar, de Iowa Environmental Mesonet
+  ([radar](../../backend/Elevant.Infrastructure/Integrations/WeatherRadar/IemRadarSource.cs)).
+  Cada lectura es una sola consulta por región, solo cuando alguien la pide,
+  con su caché en memoria (METAR 5 minutos, TAF 30, SIGMET 10, viento 1 hora,
+  radar 5 minutos), el dato viejo marcado tras un fallo y las mismas esperas
+  que el clima del aeródromo, nunca en bucle. Nada se guarda.
+- **Teselas del radar en el navegador.** La API solo lee el índice de los
+  barridos; las teselas de cada barrido las cargará el navegador desde
+  `mesonet.agron.iastate.edu`, como las del satélite de GIBS: una imagen, no un
+  dato operativo, limitada por la CSP. Ese origen ya estaba permitido, así que
+  la CSP no cambia, y deja de estar pendiente de salir de ella.
+- **Licencias y crédito.** Cada respuesta lleva su crédito en `credit`, también
+  con la lectura apagada: «NOAA Aviation Weather Center» (datos públicos de
+  NOAA, sin clave y sin condiciones publicadas de uso comercial),
+  «Open-Meteo» (datos CC BY 4.0; *su plan gratuito es solo para uso no
+  comercial*, así que Production necesita antes su plan comercial) e «Iowa
+  Environmental Mesonet» (teselas de un radar de NOAA NWS, sin límite
+  publicado ni acuerdo de servicio). RainViewer no se usa: su API gratuita es
+  de uso personal y educativo.
+- **Colores de aviación.** Por decisión del dueño del 26 de noviembre de 2026,
+  las capas del clima y las categorías de vuelo usarán las escalas estándar de
+  la aviación (reflectividad del radar; VFR, MVFR, IFR y LIFR), una excepción
+  a los colores por tokens del sistema visual NOC. La API no manda colores.
+- **Activación.** El METAR, el TAF y los SIGMET de la región siguen a
+  `AviationWeather:Enabled`. `OpenMeteo:Enabled` y `WeatherRadar:Enabled` son
+  nuevos: `false` por defecto y en `appsettings.Production.json`, y
+  `appsettings.Development.json` los enciende, sin variables nuevas en el VPS
+  ([registro](../../backend/Elevant.Infrastructure/DependencyInjection.cs)).
+  El overlay del arnés E2E los apaga, salvo
+  `ELEVANT_E2E_OPEN_METEO_ENABLED=true` o
+  `ELEVANT_E2E_WEATHER_RADAR_ENABLED=true` para una lectura deliberada a mano
+  ([guía local](../../docs/workflows/local-development.md)). Ninguna prueba ni
+  workflow de CI llama a estos servicios.
+- **Comprobación del operador.** El VPS de Development tiene que alcanzar
+  también `api.open-meteo.com` y `mesonet.agron.iastate.edu`. La
+  [guía de integraciones](../../docs/architecture/external-integrations.md)
+  da las líneas de curl.
+
 Private Web sí descarga estilos/tiles cartográficos públicos directamente en el navegador. Esa dependencia visual es real y está limitada por CSP, pero no suministra información operacional canónica ni rompe la regla que prohíbe consultar proveedores de aviación desde los clientes.
 
 ## Inventario por estado
@@ -307,8 +369,9 @@ Private Web sí descarga estilos/tiles cartográficos públicos directamente en 
 | Vuelos demo | *Posterior al commit verificado:* simulados por la propia API y apagados por defecto ([ADR-0041](../../docs/adr/0041-demo-flights-and-punta-cana-stands.md)) | Superadministración dispara dos propuestas del proveedor `Demo`; tras la importación de OCC, un worker marca el aterrizaje y el despegue como lo haría el feed | Que exista un proveedor externo, una llamada de red o un gasto de unidades de AeroDataBox. |
 | adsb.fi (tráfico ADS-B) | *Posterior al commit verificado:* implementado; apagado por defecto y encendido en Development ([ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md)) | La API la lee cada 10 s solo mientras alguien lee la imagen aérea del OCC, y sirve la imagen desde memoria con el crédito de la red en cada respuesta. Desde el PR M5, el mapa de Monitoreo de vuelos la dibuja con ese crédito a la vista; desde el PR M6, también Mapa de posiciones y la vista «Mapa» de Planificación, y desde el PR U3, la consola de Panorama. Desde M3 (27 de noviembre de 2026, rama `feat/occ-seguimiento-rd`, sin desplegar), Development lee además 25 NM cada 2 s y busca por indicativo (`/api/v2/callsign`) los vuelos de AVIAM que el círculo no ve, con un cubo común de 0,8 peticiones por segundo como máximo; lo encontrado vive solo en memoria y Production sigue apagado | Uso comercial (su licencia es personal y no comercial), trazas del proveedor, datos guardados o cobertura completa en tierra. |
 | adsb.lol (relevo) | *Posterior al commit verificado:* implementado como relevo, con la misma activación ([ADR-0042](../../docs/adr/0042-occ-air-picture-and-map-flights.md)) | Toma el turno tras tres fallos seguidos de adsb.fi y se detiene en 450 lecturas por día UTC sin clave | Que haya una clave configurada, trazas o un ritmo según su cuota. |
-| aviationweather.gov (METAR y TAF) | *Posterior al commit verificado:* implementado en la API; apagado por defecto y encendido en Development ([ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)). Desde el PR M8 (mapas), Private Web lo lee por la API | La API lee el METAR y el TAF del aeropuerto de la estación solo cuando alguien pide `occ/weather`, los guarda unos minutos en memoria y los sirve con el crédito de NOAA y su estado en un 200. Monitoreo de vuelos, Mapa de posiciones, Planificación y el panel de meteorología de la consola lo piden cada 10 minutos, y los mapas dibujan el viento en pista con ese crédito | Que sea apto para despacho (se rotula «No oficial»), que una pantalla muestre ya el TAF o que se guarde. |
-| Iowa Environmental Mesonet (METAR) | *Posterior al commit verificado:* solo el historial del panel de meteorología de la consola actual (PR M8, mapas, [ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)) | El navegador le pide los METAR de MDPC de las últimas 6 horas cuando alguien amplía ese panel; el METAR actual ya llega por la API | Que sea oficial o tenga acuerdo de servicio, o que su origen haya salido de la CSP: sale en un cambio aparte, cuando U3 retire ese panel. |
+| aviationweather.gov (METAR y TAF) | *Posterior al commit verificado:* implementado en la API; apagado por defecto y encendido en Development ([ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)). Desde el PR M8 (mapas), Private Web lo lee por la API | La API lee el METAR y el TAF del aeropuerto de la estación solo cuando alguien pide `occ/weather`, los guarda unos minutos en memoria y los sirve con el crédito de NOAA y su estado en un 200. Monitoreo de vuelos, Mapa de posiciones, Planificación y el panel de meteorología de la consola lo piden cada 10 minutos, y los mapas dibujan el viento en pista con ese crédito. Desde el carril M6 (nota del 27 de noviembre de 2026), la API lee también, bajo demanda, el METAR y el TAF de los 32 aeropuertos de la región (`occ/weather/region`) y los SIGMET internacionales de la región (`occ/weather/sigmets`), que ninguna pantalla lee todavía | Que sea apto para despacho (se rotula «No oficial»), que una pantalla muestre ya el TAF o los SIGMET, que entren los NOTAM o que se guarde. |
+| Open-Meteo (viento) | *Posterior al commit verificado:* implementado en la API (carril M6, [ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)); apagado por defecto y en Production, encendido en Development | La API lee una malla de viento de 80 puntos en una sola consulta solo cuando alguien pide `occ/weather/wind`, la guarda una hora en memoria y la sirve con el crédito «Open-Meteo»; ninguna pantalla la lee todavía | Uso comercial: el plan gratuito es solo no comercial y Production necesita antes el plan comercial. Tampoco es una observación: es un pronóstico de modelo. |
+| Iowa Environmental Mesonet (METAR y radar) | *Posterior al commit verificado:* el historial del panel de meteorología de la consola actual (PR M8, mapas) y, desde el carril M6, el índice del radar de San Juan en la API ([ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)) | El navegador le pide los METAR de MDPC de las últimas 6 horas cuando alguien amplía ese panel; el METAR actual ya llega por la API. La API lee, solo cuando alguien pide `occ/weather/radar`, el índice de los últimos 12 barridos de TJUA (`WeatherRadar:Enabled`, encendido solo en Development); las teselas las cargará el navegador desde el mismo origen cuando M7 dibuje la capa | Que sea oficial o tenga acuerdo de servicio, que TJUA cubra toda la isla (llega a Punta Cana en su borde) o que su origen vaya a salir de la CSP: el radar lo usa, así que se queda. |
 | NASA GIBS (GOES-East e IMERG) | *Posterior al commit verificado:* implementado en Private Web, en el panel de meteorología de la consola actual y, desde el PR M8 (mapas, [ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)), en el lienzo de los mapas del OCC | El navegador lee de `gibs.earthdata.nasa.gov` la hora de cada imagen y sus teselas fijadas a esa hora: el panel de la consola actual, y los mapas del OCC solo con la capa encendida en Región o Aproximación, cada 10 minutos. Mientras se dibujan, la atribución dice «NASA GIBS» | Que sea radar u observación local: IMERG estima la lluvia y puede retrasarse varias horas. |
 | Pasarela de tarjeta | *Posterior al commit verificado:* simulada y apagada por defecto ([ADR-0036](../../docs/adr/0036-simulated-card-payment.md), [ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)) | `CardPayments:Mode` es `Disabled` por defecto y en `appsettings.Production.json`; `Simulated` solo arranca en Development, Test o Testing y aprueba o rechaza en memoria las tarjetas de prueba, sin red | Que exista una pasarela real o que un cobro mueva dinero. |
 | Proveedor fiscal (DGII) | *Posterior al commit verificado:* sin integración | La simulación fiscal de ADR-0018 (modos `LocalSimulation` y `ProviderSandbox`) salió del producto en la fase 4; la factura es un e-CF simulado que nada transmite ([Finanzas](../03-dominio/finanzas-tarifas-cargos-y-cobros.md)) | Transmisión, firma o aceptación de la DGII. |
@@ -423,7 +486,7 @@ Posterior al commit verificado de esta nota: esta sección describe el código d
 - **NASA GIBS en el lienzo único.** Las nubes infrarrojas de GOES-East y la lluvia estimada de IMERG, que el panel de la consola dibujaba en un mapa propio, pasan al mapa del OCC: solo en Región y Aproximación, y apagadas por omisión. El navegador pide a `gibs.earthdata.nasa.gov`, un origen que la CSP ya permite, la hora de cada imagen solo mientras alguien la enciende, y otra vez cada 10 minutos con la pestaña a la vista; después pide sus teselas fijadas a esa hora, nunca las de la imagen «más reciente» sin hora. El crédito «NASA GIBS» va en esas fuentes, así que la atribución lo muestra solo mientras se dibujan ([capas](../../frontend/private-web/src/features/maps/traffic/weatherLayers.js)).
 - **OurAirports.** Los aeropuertos de la región y las radioayudas PNA y PCA salen de `region.context.json`, del extracto a mano del PR M3, de dominio público ([datos](../../frontend/private-web/src/features/maps/airport/data/README.md)), y los ejes de pista extendidos, de los umbrales y rumbos de OurAirports del plano. No hay llamada en tiempo de ejecución. Van en una fuente propia con el crédito «OurAirports», así que la atribución lo muestra solo mientras se dibuja alguno de ellos ([capas](../../frontend/private-web/src/features/maps/style/referenceLayers.js)).
 - **VATSpy, no.** El plan permitía extraer a mano, una vez, un polígono aproximado de la FIR Santo Domingo del proyecto VATSpy (CC BY-SA 4.0), con su crédito solo mientras se viera la capa. El 14 de noviembre de 2026 su archivo `FIRBoundaries.dat` ya no estaba publicado (GitHub respondió 404): no hay extracto, ni capa, ni crédito, ni ninguna llamada a VATSpy, y el mapa no dibuja la FIR.
-- **Sin origen nuevo.** La CSP no cambia; el origen de Iowa Mesonet sale en un cambio aparte cuando nada lo lea.
+- **Sin origen nuevo.** La CSP no cambia; el origen de Iowa Mesonet sale en un cambio aparte cuando nada lo lea. *Desde el carril M6 ese pendiente ya no aplica:* las teselas del radar de la región salen de ese origen, que se queda en la CSP (ver [Clima de la región](#clima-de-la-región-awc-open-meteo-e-iowa-environmental-mesonet)).
 
 ## Evidencia binaria y object storage
 

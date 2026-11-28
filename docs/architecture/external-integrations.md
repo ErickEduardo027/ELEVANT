@@ -108,6 +108,31 @@ docker run --rm --network elevant-dev-api-runtime curlimages/curl:8.22.0@sha256:
 
 Debe responder `200`, o `204` si el servicio no tiene informe en ese momento. Un `000` significa que la red no sale. Un `403` o un `429` significa que el servicio rechaza o frena esa dirección: la API sigue respondiendo, con el clima `Stale` mientras le dure lo guardado y después `Unavailable`.
 
+## Clima de la región: AWC, Open-Meteo e Iowa Environmental Mesonet
+
+El carril M6 del plan de mapas ([ADR-0043](../adr/0043-occ-maps-one-engine.md), nota del 27 de noviembre de 2026) añade cuatro lecturas bajo `occ/weather` para la región de Punta Cana (la caja de 12° N a 24° N y 76° O a 60° O). Siguen las reglas del clima del aeródromo: solo el servidor llama a los servicios, solo cuando alguien pide la lectura, con una consulta por región, caché en memoria, dato viejo marcado tras un fallo, las mismas esperas, sin redirecciones, 10 s por respuesta, el `User-Agent` `air-traffic-reader/1.0` y nada registrado ni guardado. Ninguna pantalla las lee todavía: las consume el carril M7.
+
+| Lectura | Servicio y consulta | Condiciones | Cadencia |
+| --- | --- | --- | --- |
+| `occ/weather/region` | aviationweather.gov: `metar?ids={32 OACI}&format=json` y `taf?ids={32 OACI}&format=json` | Las de la Data API de arriba | METAR 5 min y TAF 30 por región; tras un fallo, el METAR hasta 2 h y el TAF hasta 12, nunca vencido |
+| `occ/weather/sigmets` | aviationweather.gov: `isigmet?format=json` (la lista mundial; la API se queda con los que tocan la caja) | Las de la Data API de arriba | 10 min; tras un fallo, hasta 2 h, sin servir un SIGMET vencido |
+| `occ/weather/wind` | Open-Meteo: `https://api.open-meteo.com/v1/forecast?latitude=…&longitude=…&current=wind_speed_10m,wind_direction_10m&…` con los 80 puntos de una malla de 10 × 8 | Datos CC BY 4.0, sin clave. El plan gratuito es solo para uso no comercial y admite 10 000 ubicaciones al día | 1 h; tras un fallo, hasta 3 h. 24 consultas (1 920 ubicaciones) al día por región |
+| `occ/weather/radar` | Iowa Environmental Mesonet: `https://mesonet.agron.iastate.edu/json/radar.py?operation=list&product=N0B&radar=JUA&start=…&end=…` | Teselas del NEXRAD de San Juan (TJUA, NOAA NWS). IEM no publica un límite y pide caché; no hay acuerdo de servicio. RainViewer se descartó: su API gratuita es de uso personal y educativo | 5 min; tras un fallo, hasta 30 min |
+
+- **Teselas del radar.** La API nunca pide una tesela. La respuesta da la plantilla `https://mesonet.agron.iastate.edu/c/tile.py/1.0.0/ridge::JUA-N0B-{yyyyMMddHHmm}/{z}/{x}/{y}.png` de los últimos 12 barridos, y el navegador cargará esas teselas como imágenes desde un origen que la CSP ya permite. Ese origen deja de estar pendiente de salir de la CSP.
+- **Crédito.** Cada respuesta lleva `credit` (`name` y `url`), también con la lectura apagada: «NOAA Aviation Weather Center», «Open-Meteo» o «Iowa Environmental Mesonet».
+- **Activación.** Las lecturas de AWC siguen a `AviationWeather:Enabled`. `OpenMeteo:Enabled` (`OpenMeteo:BaseUrl`, `https://api.open-meteo.com/v1/`) y `WeatherRadar:Enabled` (`WeatherRadar:BaseUrl`, `https://mesonet.agron.iastate.edu/`) son `false` por defecto y en `appsettings.Production.json`; `appsettings.Development.json` los enciende. Cada `BaseUrl` debe ser una dirección `https` absoluta; si no, la API no arranca. El overlay del arnés E2E los apaga salvo `ELEVANT_E2E_OPEN_METEO_ENABLED=true` o `ELEVANT_E2E_WEATHER_RADAR_ENABLED=true` ([desarrollo local](../workflows/local-development.md)).
+- **Uso comercial.** Antes de encender el viento en Production hace falta el plan comercial de Open-Meteo, con su clave; las condiciones de AWC y de IEM también se confirman antes de salir de Development.
+
+**Comprobación del operador.** Además de la de aviationweather.gov, el operador comprueba a mano, una sola vez y nunca desde CI, que la red de la API en el VPS alcanza Open-Meteo e Iowa Environmental Mesonet, con un punto de viento de Punta Cana y el índice del radar de una ventana fija de dos horas, y descarta las respuestas:
+
+```bash
+docker run --rm --network elevant-dev-api-runtime curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777 -s -o /dev/null -w '%{http_code}\n' --max-time 10 -A 'air-traffic-reader/1.0' 'https://api.open-meteo.com/v1/forecast?latitude=18.57&longitude=-68.36&current=wind_speed_10m,wind_direction_10m&wind_speed_unit=kn'
+docker run --rm --network elevant-dev-api-runtime curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777 -s -o /dev/null -w '%{http_code}\n' --max-time 10 -A 'air-traffic-reader/1.0' 'https://mesonet.agron.iastate.edu/json/radar.py?operation=list&product=N0B&radar=JUA&start=2026-11-27T00:00Z&end=2026-11-27T02:00Z'
+```
+
+Las dos deben responder `200`. Un `000` significa que la red no sale; un `4xx` o un `5xx`, que el servicio rechaza la consulta: la API sigue respondiendo, con la capa `Stale` mientras le dure lo guardado y después `Unavailable`.
+
 ## Regla para nuevos proveedores
 
 Primero se define la necesidad del caso de uso y el puerto mínimo. Después se construye el adaptador. Si se cambia de proveedor, Domain y los contratos públicos solo cambian cuando cambie realmente el producto, no por la forma particular de la API externa.

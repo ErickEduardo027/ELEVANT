@@ -57,6 +57,19 @@ public sealed record AerodromeWeatherAttribution(string Name, string HomeUrl)
     /// <summary>The service the OCC reads its weather from, aviationweather.gov.</summary>
     public static AerodromeWeatherAttribution NoaaAviationWeatherCenter { get; } =
         new("NOAA Aviation Weather Center", "https://aviationweather.gov");
+
+    /// <summary>
+    /// The forecast service of the region's wind grid (plan M6), Open-Meteo, whose data is CC BY 4.0. Its free tier is for
+    /// non-commercial use only: Production needs its commercial plan before the wind is turned on there.
+    /// </summary>
+    public static AerodromeWeatherAttribution OpenMeteo { get; } = new("Open-Meteo", "https://open-meteo.com");
+
+    /// <summary>
+    /// Who serves the region's radar frames (plan M6): San Juan's NEXRAD (NOAA National Weather Service) as tiles of the
+    /// Iowa Environmental Mesonet.
+    /// </summary>
+    public static AerodromeWeatherAttribution IowaEnvironmentalMesonet { get; } =
+        new("Iowa Environmental Mesonet", "https://mesonet.agron.iastate.edu");
 }
 
 /// <summary>

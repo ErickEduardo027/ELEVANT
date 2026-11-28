@@ -11,7 +11,8 @@
  *
  * Its weather (ADR-0043, contracts 1.4), for the same readers: `occ/weather`, the METAR and the TAF of the station's
  * airport from aviationweather.gov, with its state in a 200 (`Live`, `Stale`, `Unavailable`, `Disabled`) and the credit
- * of the weather service.
+ * of the weather service. The region's weather (plan M6): `occ/weather/region`, `sigmets`, `wind` and `radar`, each with
+ * its state, reason, pace and credit in a 200.
  *
  * The validators are strict at every level; a key may be missing or null only where the contract says null. Latitudes
  * and longitudes are checked as positions on Earth, never against a box: the picture reaches 250 NM around the station.
@@ -21,10 +22,15 @@ import type {
   GetOccAirPictureParams,
   GetOccAircraftTrackParams,
   GetOccMapFlightsParams,
+  GetOccRegionWeatherParams,
   OccAerodromeWeatherResponse,
   OccAircraftTrackResponse,
   OccAirPictureResponse,
   OccMapFlightsResponse,
+  OccRadarFramesResponse,
+  OccRegionWeatherResponse,
+  OccSigmetsResponse,
+  OccWindGridResponse,
 } from "../generated/elevant-api";
 import { DEMO_FLIGHT_PHASES, DEMO_FLIGHT_STATES } from "./demoFlights";
 import { FLIGHT_REPORT_MILESTONES, isFlightReportMilestoneCode } from "./flightReport";
@@ -509,5 +515,247 @@ export function isOccAerodromeWeather(value: unknown, stationId?: string): value
 export function normalizedOccAerodromeWeatherQuery(query: OccAerodromeWeatherQuery): GetOccAerodromeWeatherParams {
   if (!isRecord(query) || !hasOnlyKeys(query, ["stationId"]))
     throw new TypeError("The aerodrome weather query has unknown or invalid fields.");
+  return { stationId: id(query.stationId, "stationId") };
+}
+
+/*
+ * The region's weather (plan M6, contracts 1.4), for the same readers: four reads under `occ/weather`, each with its
+ * state in a 200 (`Live`, `Stale`, `Unavailable`, `Disabled`), the reason it is not live (the air picture's codes), the
+ * pace to ask again at and the credit of its service.
+ *
+ * - `region`: the latest METAR and TAF of every airport of the region (aviationweather.gov), nearest first.
+ * - `sigmets`: the international SIGMETs over the region still valid at the server's time, one per area.
+ * - `wind`: the wind 10 m above the ground on a 10 × 8 grid (Open-Meteo; its free tier is non-commercial).
+ * - `radar`: the latest scans of San Juan's NEXRAD (TJUA) as tiles of the Iowa Environmental Mesonet.
+ */
+
+/** Why a layer of the region's weather is not live; the screens translate it and never print it as it is. */
+export const OCC_REGION_WEATHER_REASONS = ["not_configured", "rate_limited", "provider_error"] as const;
+export type OccRegionWeatherReason = (typeof OCC_REGION_WEATHER_REASONS)[number];
+
+/** The radar tiles' provider; RainViewer (personal and educational use only) is never used. */
+export const OCC_RADAR_PROVIDERS = ["iem-tjua"] as const;
+export type OccRadarProvider = (typeof OCC_RADAR_PROVIDERS)[number];
+
+/** The pace of each read (the soonest and the latest to ask again, in seconds) and the sizes the server bounds. */
+export const OCC_REGION_WEATHER_LIMITS = Object.freeze({
+  regionRefreshSeconds: Object.freeze({ min: 300, max: 900 }),
+  sigmetsRefreshSeconds: Object.freeze({ min: 300, max: 900 }),
+  windRefreshSeconds: Object.freeze({ min: 300, max: 3600 }),
+  radarRefreshSeconds: Object.freeze({ min: 300, max: 900 }),
+  liveMetarMinutes: 90,
+  liveRadarMinutes: 30,
+  maxStations: 64,
+  maxSigmets: 200,
+  maxPolygonPoints: 1001,
+  maxSigmetRawLength: 8000,
+  maxLevelFeet: 100_000,
+  maxWindGridSide: 32,
+  maxWindKnots: 300,
+  maxRadarFrames: 12,
+  maxRadarZoom: 22,
+});
+
+/** A read of the region's weather: the station only; the server knows its airport and its region. */
+export interface OccRegionWeatherQuery {
+  readonly stationId: string;
+}
+
+const LAYER_KEYS = ["stationId", "status", "reason", "serverTime", "refreshAfterSeconds", "credit"] as const;
+const REGION_KEYS = [...LAYER_KEYS, "stations"] as const;
+const REGION_STATION_KEYS = ["icao", "iata", "name", "latitude", "longitude", "metar", "taf"] as const;
+const REGION_METAR_KEYS = ["raw", "observedAt", "windDirectionDegrees", "windSpeedKnots", "windGustKnots",
+  "visibilityStatuteMiles", "ceilingFeet", "flightCategory", "temperatureCelsius", "dewpointCelsius",
+  "altimeterHectopascals"] as const;
+const REGION_TAF_KEYS = ["raw", "issuedAt", "validFrom", "validTo"] as const;
+const SIGMETS_KEYS = [...LAYER_KEYS, "sigmets"] as const;
+const SIGMET_KEYS = ["id", "firId", "hazard", "qualifier", "validFrom", "validTo", "baseFeet", "topFeet", "raw",
+  "polygon"] as const;
+const WIND_KEYS = [...LAYER_KEYS, "validAt", "grid"] as const;
+const WIND_GRID_KEYS = ["lonMin", "lonMax", "latMin", "latMax", "columns", "rows", "points"] as const;
+const WIND_POINT_KEYS = ["latitude", "longitude", "speedKnots", "directionDegrees"] as const;
+const RADAR_KEYS = [...LAYER_KEYS, "provider", "maxZoom", "frames"] as const;
+const RADAR_FRAME_KEYS = ["time", "tileUrlTemplate"] as const;
+const CREDIT_KEYS = ["name", "url"] as const;
+
+const IATA_CODE = /^[A-Z]{3}$/;
+/** A SIGMET's hazard as the service codes it: TS, TURB, ICE, VA, MTW, TC… */
+const HAZARD = /^[A-Z]{2,8}$/;
+/** A FIR's indicator: four to eight upper-case letters, digits or «/». */
+const FIR_ID = /^[A-Z0-9/]{4,8}$/;
+/** The rounding of a wind point's coordinates (three decimals) the server applies inside the grid's box. */
+const GRID_TOLERANCE = 0.001;
+const MAX_REGION_AIRPORT_NAME_LENGTH = 120;
+
+/** The credit of a layer's service: its name and an https page. */
+const isCredit = (value: unknown) => isRecord(value) && hasOnlyKeys(value, CREDIT_KEYS) && isText(value.name, 80) &&
+  isHttpsUrl(value.url);
+
+type Layer = Record<string, unknown> & { status: OccAerodromeWeatherStatus; serverTime: string };
+
+/**
+ * The parts every layer shares: its station (the one asked for, when given), a known state that agrees with its reason
+ * (Live has none; Disabled is `not_configured`; Stale and Unavailable have none or a failure's), the server's time, the
+ * pace within `pace` and the credit.
+ */
+const isLayer = (value: unknown, keys: readonly string[], pace: { min: number; max: number }, stationId?: string):
+  value is Layer => {
+  if (!isRecord(value) || !hasOnlyKeys(value, keys) || !isUuid(value.stationId) ||
+      (stationId !== undefined && !sameId(value.stationId, stationId)) ||
+      !isOneOf(value.status, OCC_AERODROME_WEATHER_STATUSES) || !isInstant(value.serverTime) ||
+      !isWhole(value.refreshAfterSeconds, pace.min, pace.max) || !isCredit(value.credit) ||
+      !(absent(value.reason) || isOneOf(value.reason, OCC_REGION_WEATHER_REASONS)))
+    return false;
+  if (value.status === "Live") return absent(value.reason);
+  if (value.status === "Disabled") return value.reason === "not_configured";
+  return value.reason !== "not_configured";
+};
+
+/**
+ * A METAR of the region: its raw text and instant, the wind (no direction when variable or not given), a visibility up
+ * to 100 statute miles, the ceiling in feet, a known flight category, a temperature and a dewpoint from −100 to 100 °C
+ * and an altimeter from 800 to 1 100 hPa.
+ */
+const isRegionMetar = (value: unknown) => isRecord(value) && hasOnlyKeys(value, REGION_METAR_KEYS) &&
+  isText(value.raw, MAX_METAR_LENGTH) && isInstant(value.observedAt) &&
+  isOptionalWhole(value.windDirectionDegrees, 0, 360) && isOptionalWhole(value.windSpeedKnots, 0, 300) &&
+  isOptionalWhole(value.windGustKnots, 0, 400) && isOptionalNumberIn(value.visibilityStatuteMiles, 0, 100) &&
+  isOptionalWhole(value.ceilingFeet, 0, OCC_REGION_WEATHER_LIMITS.maxLevelFeet) &&
+  (absent(value.flightCategory) || isOneOf(value.flightCategory, OCC_WEATHER_FLIGHT_CATEGORIES)) &&
+  isOptionalNumberIn(value.temperatureCelsius, -100, 100) && isOptionalNumberIn(value.dewpointCelsius, -100, 100) &&
+  isOptionalNumberIn(value.altimeterHectopascals, 800, 1_100);
+
+/** A TAF of the region: its raw text, when it was issued and a validity that ends no earlier than it starts. */
+const isRegionTaf = (value: unknown) => isRecord(value) && hasOnlyKeys(value, REGION_TAF_KEYS) &&
+  isText(value.raw, MAX_TAF_LENGTH) && isInstant(value.issuedAt) && isInstant(value.validFrom) &&
+  isInstant(value.validTo) && instantOf(value.validFrom) <= instantOf(value.validTo);
+
+/** An airport of the region: its ICAO code, its IATA code and name (or none), where it is and its reports (or none). */
+const isRegionStation = (value: unknown) => isRecord(value) && hasOnlyKeys(value, REGION_STATION_KEYS) &&
+  matches(value.icao, ICAO_CODE) && (absent(value.iata) || matches(value.iata, IATA_CODE)) &&
+  isOptionalText(value.name, MAX_REGION_AIRPORT_NAME_LENGTH) && isLatitude(value.latitude) &&
+  isLongitude(value.longitude) && (absent(value.metar) || isRegionMetar(value.metar)) &&
+  (absent(value.taf) || isRegionTaf(value.taf));
+
+/**
+ * The region's weather for the station asked for (when `stationId` is given). Beyond each field: every airport comes
+ * once; Live and Stale show at least one METAR, and Live one at most 90 minutes older than `serverTime`; Unavailable
+ * and Disabled show none; Disabled shows no TAF either.
+ */
+export function isOccRegionWeather(value: unknown, stationId?: string): value is OccRegionWeatherResponse {
+  if (!isLayer(value, REGION_KEYS, OCC_REGION_WEATHER_LIMITS.regionRefreshSeconds, stationId) ||
+      !isListOf(value.stations, OCC_REGION_WEATHER_LIMITS.maxStations, isRegionStation))
+    return false;
+  const stations = value.stations as { icao: string; metar?: { observedAt: string } | null; taf?: unknown }[];
+  if (new Set(stations.map(station => station.icao)).size !== stations.length) return false;
+  const observed = stations.flatMap(station => station.metar ? [instantOf(station.metar.observedAt)] : []);
+  const status = value.status;
+  if ((status === "Live" || status === "Stale") === (observed.length === 0)) return false;
+  if (status === "Disabled" && stations.some(station => !absent(station.taf))) return false;
+  const now = instantOf(value.serverTime);
+  return status !== "Live" || observed.some(at => now - at <= OCC_REGION_WEATHER_LIMITS.liveMetarMinutes * 60_000);
+}
+
+/** A `[longitude, latitude]` pair on Earth. */
+const isLonLat = (value: unknown) => Array.isArray(value) && value.length === 2 && isLongitude(value[0]) &&
+  isLatitude(value[1]);
+
+/** A closed ring of at least four `[longitude, latitude]` pairs (its last is its first), ready for GeoJSON. */
+const isRing = (value: unknown) => {
+  if (!isListOf(value, OCC_REGION_WEATHER_LIMITS.maxPolygonPoints, isLonLat) || value.length < 4) return false;
+  const first = value[0] as number[];
+  const last = value[value.length - 1] as number[];
+  return first[0] === last[0] && first[1] === last[1];
+};
+
+/** One SIGMET: its id, FIR, hazard, qualifier, a validity that ends after it starts, its levels, raw text and area. */
+const isSigmet = (value: unknown) => isRecord(value) && hasOnlyKeys(value, SIGMET_KEYS) && isText(value.id, 64) &&
+  (absent(value.firId) || matches(value.firId, FIR_ID)) && matches(value.hazard, HAZARD) &&
+  isOptionalText(value.qualifier, 64) && isInstant(value.validFrom) && isInstant(value.validTo) &&
+  instantOf(value.validFrom) < instantOf(value.validTo) &&
+  isOptionalWhole(value.baseFeet, 0, OCC_REGION_WEATHER_LIMITS.maxLevelFeet) &&
+  isOptionalWhole(value.topFeet, 0, OCC_REGION_WEATHER_LIMITS.maxLevelFeet) &&
+  isText(value.raw, OCC_REGION_WEATHER_LIMITS.maxSigmetRawLength) && isRing(value.polygon);
+
+/**
+ * The SIGMETs over the region for the station asked for (when `stationId` is given). Beyond each field: every id comes
+ * once, every SIGMET is still valid at `serverTime`, and Unavailable and Disabled have none.
+ */
+export function isOccSigmets(value: unknown, stationId?: string): value is OccSigmetsResponse {
+  if (!isLayer(value, SIGMETS_KEYS, OCC_REGION_WEATHER_LIMITS.sigmetsRefreshSeconds, stationId) ||
+      !isListOf(value.sigmets, OCC_REGION_WEATHER_LIMITS.maxSigmets, isSigmet))
+    return false;
+  const sigmets = value.sigmets as { id: string; validTo: string }[];
+  if (new Set(sigmets.map(sigmet => sigmet.id)).size !== sigmets.length) return false;
+  const now = instantOf(value.serverTime);
+  if (sigmets.some(sigmet => instantOf(sigmet.validTo) <= now)) return false;
+  return (value.status !== "Unavailable" && value.status !== "Disabled") || sigmets.length === 0;
+}
+
+/** One point of the wind grid: where it is, its speed in knots and the whole degrees it blows from. */
+const isWindPoint = (value: unknown) => isRecord(value) && hasOnlyKeys(value, WIND_POINT_KEYS) &&
+  isLatitude(value.latitude) && isLongitude(value.longitude) &&
+  isNumberIn(value.speedKnots, 0, OCC_REGION_WEATHER_LIMITS.maxWindKnots) && isWhole(value.directionDegrees, 0, 360);
+
+/** The grid: a box that is not inverted, its shape, and at most one point per node, each inside the box. */
+const isWindGrid = (value: unknown) => {
+  if (!isRecord(value) || !hasOnlyKeys(value, WIND_GRID_KEYS) || !isLongitude(value.lonMin) ||
+      !isLongitude(value.lonMax) || !isLatitude(value.latMin) || !isLatitude(value.latMax) ||
+      value.lonMin >= value.lonMax || value.latMin >= value.latMax ||
+      !isWhole(value.columns, 2, OCC_REGION_WEATHER_LIMITS.maxWindGridSide) ||
+      !isWhole(value.rows, 2, OCC_REGION_WEATHER_LIMITS.maxWindGridSide) ||
+      !isListOf(value.points, value.columns * value.rows, isWindPoint))
+    return false;
+  const { lonMin, lonMax, latMin, latMax } = value;
+  return (value.points as { latitude: number; longitude: number }[]).every(point =>
+    point.longitude >= lonMin - GRID_TOLERANCE && point.longitude <= lonMax + GRID_TOLERANCE &&
+    point.latitude >= latMin - GRID_TOLERANCE && point.latitude <= latMax + GRID_TOLERANCE);
+};
+
+/**
+ * The region's wind for the station asked for (when `stationId` is given). Beyond each field: a grid with points has
+ * the time it is valid at; Live and Stale have points, and Unavailable and Disabled have none.
+ */
+export function isOccWindGrid(value: unknown, stationId?: string): value is OccWindGridResponse {
+  if (!isLayer(value, WIND_KEYS, OCC_REGION_WEATHER_LIMITS.windRefreshSeconds, stationId) ||
+      !isOptionalInstant(value.validAt) || !isWindGrid(value.grid))
+    return false;
+  const points = (value.grid as { points: unknown[] }).points.length;
+  if (points > 0 && absent(value.validAt)) return false;
+  return (value.status === "Live" || value.status === "Stale") === (points > 0);
+}
+
+/** An XYZ tile address: https, with `{z}`, `{x}` and `{y}` to fill. */
+const isTileTemplate = (value: unknown) => isHttpsUrl(value) &&
+  ["{z}", "{x}", "{y}"].every(part => (value as string).includes(part));
+
+const isRadarFrame = (value: unknown) => isRecord(value) && hasOnlyKeys(value, RADAR_FRAME_KEYS) &&
+  isInstant(value.time) && isTileTemplate(value.tileUrlTemplate);
+
+/**
+ * The region's radar for the station asked for (when `stationId` is given). Beyond each field: frames come oldest
+ * first, each scan once; a provider and a zoom from 1 come with frames, and no provider and zoom 0 without; Live and
+ * Stale have frames, and a live one's latest scan is at most 30 minutes older than `serverTime`; Unavailable and
+ * Disabled have none.
+ */
+export function isOccRadarFrames(value: unknown, stationId?: string): value is OccRadarFramesResponse {
+  if (!isLayer(value, RADAR_KEYS, OCC_REGION_WEATHER_LIMITS.radarRefreshSeconds, stationId) ||
+      !(absent(value.provider) || isOneOf(value.provider, OCC_RADAR_PROVIDERS)) ||
+      !isWhole(value.maxZoom, 0, OCC_REGION_WEATHER_LIMITS.maxRadarZoom) ||
+      !isListOf(value.frames, OCC_REGION_WEATHER_LIMITS.maxRadarFrames, isRadarFrame))
+    return false;
+  const times = (value.frames as { time: string }[]).map(frame => instantOf(frame.time));
+  if (times.some((time, index) => index > 0 && times[index - 1]! >= time)) return false;
+  const drawn = times.length > 0;
+  if (absent(value.provider) === drawn || (value.maxZoom === 0) === drawn) return false;
+  if ((value.status === "Live" || value.status === "Stale") !== drawn) return false;
+  return value.status !== "Live" ||
+    instantOf(value.serverTime) - times[times.length - 1]! <= OCC_REGION_WEATHER_LIMITS.liveRadarMinutes * 60_000;
+}
+
+/** A read of the region's weather: the station in lower case, and nothing else. */
+export function normalizedOccRegionWeatherQuery(query: OccRegionWeatherQuery): GetOccRegionWeatherParams {
+  if (!isRecord(query) || !hasOnlyKeys(query, ["stationId"]))
+    throw new TypeError("The region weather query has unknown or invalid fields.");
   return { stationId: id(query.stationId, "stationId") };
 }
