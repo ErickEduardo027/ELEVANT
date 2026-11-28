@@ -1,7 +1,7 @@
 import {
   LOOP_BANDS, RADAR_CREDITS, RADAR_FRAME_COUNT, RADAR_OPACITY, LOOP_FRAME_COUNT, SIGMET_SOURCE, STATIONS_SOURCE,
   WEATHER_GROUPS, frameOpacities, loopBandAt, loopFrameIndex, loopFrames, loopLayerId, loopPaint, radarFrames,
-  radarLayerId, sigmetFeatures, stationFeatures,
+  loopSourceId, radarLayerId, sigmetFeatures, stationFeatures,
 } from '../traffic/weatherLayers';
 
 // The regional weather of an OCC map that opts in (lane M7: OccMap's `regionWeather`, what
@@ -14,19 +14,72 @@ const EMPTY_FRAMES = Object.freeze([]);
 const NO_LOOP = Object.freeze({ status: 'loading', band: 'ir', frames: EMPTY_FRAMES, demo: false });
 const NO_RADAR = Object.freeze({ frames: EMPTY_FRAMES, provider: null, demo: false });
 const WITH_DATA = new Set(['Live', 'Stale']);
+const NO_MARKS = Object.freeze({});
+const LOOP_SOURCE_PREFIX = loopSourceId('');
 /** How often the frame loop changes frame, in ms (traffic/weatherLayers.js LOOP_FRAME_MS divides it). */
 export const REGIONAL_TICK_MS = 300;
 
 /**
- * The frames of the satellite loop at the server's minute `nowMs`: the band of the hour (GeoColor by day at PUJ, the
- * infrared at night) ending at the latest GOES-East time GIBS reported (`goes`, what useSatelliteImagery answers).
- * `status` is `ready` with frames, `unavailable` when GIBS has no image, else `loading`.
+ * The frames of the satellite loop at the server's minute `nowMs`, from the images GIBS has of the band it shows
+ * (`images`, useSatelliteImagery's `loop`: `{ status, band, times }`; hotfix of 2026-11-28): the latest six of that band,
+ * skipping the holes of its domain, never another band's time. Until they arrive the band is the one of the hour
+ * (GeoColor by day at PUJ, the infrared at night). `status` is `ready` with frames, `unavailable` when GIBS has no image,
+ * else `loading`.
+ *
+ * `missing` (`{ [sourceId]: tileTemplate }`, markLoopFrameMissing) are the frames whose tiles failed at the time they
+ * are pinned to (hotfix of 2026-11-28, step 2): each frame says whether it is `missing`, the loop skips those, and when
+ * every frame is missing the loop keeps its frames pinned but is `unavailable`. A mark of another template (the frame
+ * pinned to a new time since) is no mark.
  */
-export function regionalLoop(goes, nowMs, demo = false) {
-  const band = loopBandAt(nowMs);
-  if (goes?.status === 'unavailable') return Object.freeze({ ...NO_LOOP, status: 'unavailable', band, demo });
-  const frames = goes?.status === 'ready' ? loopFrames({ band, latestTime: goes.time }) : EMPTY_FRAMES;
-  return Object.freeze({ status: frames.length > 0 ? 'ready' : 'loading', band, frames, demo });
+export function regionalLoop(images, nowMs, demo = false, missing = NO_MARKS) {
+  const hourBand = loopBandAt(nowMs);
+  if (images?.status === 'unavailable') return Object.freeze({ ...NO_LOOP, status: 'unavailable', band: hourBand, demo });
+  const ready = images?.status === 'ready' && Object.hasOwn(LOOP_BANDS, images.band ?? '');
+  const band = ready ? images.band : hourBand;
+  const frames = (ready ? loopFrames({ band, times: images.times }) : EMPTY_FRAMES)
+    .map(frame => Object.freeze({ ...frame, missing: loopFrameMissing(missing, frame) }));
+  const shown = frames.filter(frame => !frame.missing).length;
+  const status = frames.length === 0 ? 'loading' : shown === 0 ? 'unavailable' : 'ready';
+  return Object.freeze({ status, band, frames: Object.freeze(frames), demo });
+}
+
+/** Whether `sourceId` is the source of a frame of the satellite loop (traffic/weatherLayers.js loopSourceId). */
+export const isLoopFrameSource = sourceId => typeof sourceId === 'string' && sourceId.startsWith(LOOP_SOURCE_PREFIX);
+
+/** Whether the marks (`{ [sourceId]: tileTemplate }`) say `frame` failed at the tiles it is pinned to. */
+export function loopFrameMissing(marks, frame) {
+  const current = marks ?? NO_MARKS;
+  return typeof frame?.source === 'string' && Object.hasOwn(current, frame.source)
+    && current[frame.source] === frame.tiles?.[0];
+}
+
+/**
+ * The marks of the loop frames that failed (hotfix of 2026-11-28, step 2) once the loop source `sourceId` reported a
+ * tile it could not load: `marks` with that source marked at the tiles the engine holds for it (`pinned`,
+ * createRegionalApplied's `tiles`), keeping only the marks that still match what is pinned (a frame pinned to a new
+ * time loses its mark). The same `marks` when nothing changes (not a loop source, nothing pinned, already marked).
+ */
+export function markLoopFrameMissing(marks, pinned, sourceId) {
+  const template = isLoopFrameSource(sourceId) ? pinned?.[sourceId] : undefined;
+  const current = marks ?? NO_MARKS;
+  if (typeof template !== 'string' || current[sourceId] === template) return current;
+  const next = {};
+  for (const [source, tiles] of Object.entries(current)) if (pinned[source] === tiles) next[source] = tiles;
+  next[sourceId] = template;
+  return Object.freeze(next);
+}
+
+/**
+ * The marks of the loop frames that failed once the frame `sourceId` loads again (HOTFIX-GOES-2: a mark is revocable,
+ * so a short outage does not leave the loop empty until GIBS publishes a new instant): `marks` without that source.
+ * The same `marks` when it was not marked.
+ */
+export function unmarkLoopFrameMissing(marks, sourceId) {
+  const current = marks ?? NO_MARKS;
+  if (typeof sourceId !== 'string' || !Object.hasOwn(current, sourceId)) return current;
+  const next = { ...current };
+  delete next[sourceId];
+  return Object.freeze(next);
 }
 
 /** The radar frames of the regional read (`{ status, data }`), with the provider that serves them. */
@@ -37,13 +90,14 @@ export function regionalRadar(read, demo = false) {
 }
 
 /**
- * What the map draws of `regionWeather` (`{ region, sigmets, wind, radar, demo }`) at `nowMs`: `{ loop, radar,
+ * What the map draws of `regionWeather` (`{ region, sigmets, wind, radar, demo }`) and of the loop's images
+ * (`loopImages`, useSatelliteImagery's `loop`; `loopMissing`, the frames that failed) at `nowMs`: `{ loop, radar,
  * stations, sigmets, notes }`, the FeatureCollections of the stations and the SIGMETs, and the reads the layers menu
  * explains (weatherLayerNotes' `regional`).
  */
-export function regionalDrawing({ regionWeather, goes, nowMs, language = 'es' }) {
+export function regionalDrawing({ regionWeather, loopImages, loopMissing = NO_MARKS, nowMs, language = 'es' }) {
   const demo = regionWeather?.demo === true;
-  const loop = regionalLoop(goes, nowMs, demo);
+  const loop = regionalLoop(loopImages, nowMs, demo, loopMissing);
   const radar = regionalRadar(regionWeather?.radar, demo);
   return Object.freeze({
     loop,
@@ -116,12 +170,18 @@ export function applyRegionalDrawing(engine, applied, drawing) {
 /**
  * The opacities of every loop and radar layer `elapsedMs` after the loop started (`{ [layerId]: opacity }`): the
  * frame of that moment at its band's or the radar's opacity, the others at 0. `still` (reduced motion, a frozen clock)
- * holds the latest frame.
+ * holds the latest frame. A frame that is `missing` (its tiles failed, hotfix of 2026-11-28) is skipped: the loop runs
+ * over the others, so the frame before it stays on screen instead of a blank one; with every frame missing, every
+ * layer is at 0.
  */
 export function regionalOpacities(drawing, elapsedMs, { still = false } = {}) {
   const out = {};
   const write = (frames, count, layerOf, opacity) => {
-    const active = loopFrameIndex(still ? Number.NaN : elapsedMs, frames.length);
+    const shown = [];
+    frames.forEach((frame, position) => {
+      if (frame?.missing !== true) shown.push(position);
+    });
+    const active = shown[loopFrameIndex(still ? Number.NaN : elapsedMs, shown.length)] ?? -1;
     const values = frameOpacities(active, frames.length, opacity);
     for (let index = 0; index < count; index += 1) out[layerOf(index)] = values[index] ?? 0;
   };
@@ -132,19 +192,83 @@ export function regionalOpacities(drawing, elapsedMs, { still = false } = {}) {
 }
 
 /**
+ * The share of the tiles a loop frame holds that must have failed for the loop to skip it (hotfix of 2026-11-28,
+ * HOTFIX-GOES-2): more than this share, and at least LOOP_FRAME_MIN_FAILED tiles. They fail when GIBS has no image at
+ * that instant (a 404 also makes MapLibre ask for the parent tiles, which fail too); a tile lost to a flaky network
+ * leaves only a gap in that frame, also when the view holds only one or two tiles of it (Aproximación at maxzoom 6).
+ */
+export const LOOP_FRAME_FAILED_SHARE = 0.5;
+
+/** The fewest failed tiles that skip a loop frame (HOTFIX-GOES-2): one lost tile never does. */
+export const LOOP_FRAME_MIN_FAILED = 2;
+
+/**
+ * How long a loop frame stays skipped before the loop asks the engine once again for its failed tiles
+ * (HOTFIX-GOES-2, `engine.reloadFailedTiles`): MapLibre never asks again for an `errored` tile by itself. GIBS tiles,
+ * outside the API budget of CN-19.
+ */
+export const LOOP_FRAME_RETRY_MS = 60_000;
+
+// Whether the loop frame `sourceId` failed: more than LOOP_FRAME_FAILED_SHARE of the tiles it holds failed, and at least
+// LOOP_FRAME_MIN_FAILED of them. An engine without `heldTiles` keeps the rule of step 2 (any failed tile).
+function loopFrameFailed(engine, sourceId) {
+  const failed = engine.failedTiles(sourceId);
+  if (!(failed > 0)) return false;
+  if (typeof engine.heldTiles !== 'function') return true;
+  return failed >= LOOP_FRAME_MIN_FAILED && failed > engine.heldTiles(sourceId) * LOOP_FRAME_FAILED_SHARE;
+}
+
+// Whether the skipped loop frame `sourceId` loads again: most of the tiles it holds are `loaded` (`engine.loadedTiles`;
+// tiles still loading do not count, so a frame asked for again is not shown blank while it loads).
+function loopFrameRecovered(engine, sourceId) {
+  if (typeof engine.loadedTiles !== 'function' || typeof engine.heldTiles !== 'function') return false;
+  const loaded = engine.loadedTiles(sourceId);
+  return loaded > 0 && loaded > engine.heldTiles(sourceId) * LOOP_FRAME_FAILED_SHARE;
+}
+
+/**
  * Runs the loop of one engine: every REGIONAL_TICK_MS it sets the opacity of each frame layer that changed for the
  * drawing `getDrawing()` returns (the same value again changes nothing), held on the latest frame while `isStill()`
  * and paused while the tab is hidden. Returns the function that stops it; `rewrite()` on the returned object writes
  * every opacity again on the next tick (a new drawing, a context loss).
+ *
+ * Each tick it also asks the engine whether a loop frame not yet `missing` holds tiles that failed
+ * (`engine.failedTiles`; MapLibre 6.16 keeps a 404 quiet, without an `error` event, and puts a tile lost to the network
+ * in `errored` too) and, when they are more than LOOP_FRAME_FAILED_SHARE of the tiles it holds (`engine.heldTiles`) and
+ * at least LOOP_FRAME_MIN_FAILED, calls `onFrameFailed(sourceId)` (hotfix of 2026-11-28, step 2 and HOTFIX-GOES-2).
+ * A frame already `missing` whose tiles are mostly loaded again (a pan, a context restore, a tile asked for again)
+ * calls `onFrameRecovered(sourceId)`; one still failing has its failed tiles asked for once again every
+ * LOOP_FRAME_RETRY_MS (`engine.reloadFailedTiles`). Apart from that retry it reads what MapLibre already holds: no
+ * request, no write.
  */
 export function startRegionalLoop(engine, { getDrawing, isStill = () => false, now = () => Date.now(),
-  setTimer = (callback, ms) => setInterval(callback, ms), clearTimer = timer => clearInterval(timer) } = {}) {
+  onFrameFailed = null, onFrameRecovered = null, setTimer = (callback, ms) => setInterval(callback, ms),
+  clearTimer = timer => clearInterval(timer) } = {}) {
   const started = now();
   let written = {};
+  // When each skipped frame asks again for its failed tiles: { [sourceId]: ms }.
+  const retryAt = new Map();
+  const checkFrames = frames => {
+    for (const frame of frames) {
+      if (frame.missing !== true) {
+        retryAt.delete(frame.source);
+        if (loopFrameFailed(engine, frame.source)) onFrameFailed(frame.source);
+      } else if (typeof onFrameRecovered === 'function' && loopFrameRecovered(engine, frame.source)) {
+        retryAt.delete(frame.source);
+        onFrameRecovered(frame.source);
+      } else if (typeof engine.reloadFailedTiles === 'function') {
+        const at = now();
+        const due = retryAt.get(frame.source);
+        if (due !== undefined && at >= due) engine.reloadFailedTiles(frame.source);
+        if (due === undefined || at >= due) retryAt.set(frame.source, at + LOOP_FRAME_RETRY_MS);
+      }
+    }
+  };
   const tick = () => {
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
     const drawing = getDrawing();
     if (!drawing) return;
+    if (typeof onFrameFailed === 'function' && typeof engine.failedTiles === 'function') checkFrames(drawing.loop.frames);
     const next = regionalOpacities(drawing, now() - started, { still: isStill() });
     for (const [layer, opacity] of Object.entries(next)) {
       if (written[layer] === opacity) continue;

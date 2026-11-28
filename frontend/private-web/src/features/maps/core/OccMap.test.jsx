@@ -30,7 +30,9 @@ import {
 import { serverClock } from '../../../services/serverClock';
 import { toWeatherReading } from '../../../services/weatherService';
 import { runwayEnds } from '../airport/runwayInUse';
-import { createAerodromeWeather, WEATHER_NOON } from '../testing/weatherFixtures';
+import {
+  createAerodromeWeather, createRadarFrames, createRegionWeather, createSigmets, WEATHER_NOON,
+} from '../testing/weatherFixtures';
 import { nightShadeFeatures } from '../traffic/nightShade';
 import { createMotionStore } from '../traffic/motionStore';
 import { buildSituation, toFlightsModel, toPictureModel } from '../traffic/situationModel';
@@ -2871,6 +2873,12 @@ function ReferenceProbe() {
   return <pre data-testid="reference-probe">{JSON.stringify(referencesOnScreen)}</pre>;
 }
 const referenceProbe = () => JSON.parse(screen.getByTestId('reference-probe').textContent);
+// What the layers menu says under each weather key (HOTFIX-GOES-2: the loop with no frame left is unavailable).
+function LayerNotesProbe() {
+  const { layers } = useOccMap();
+  return <pre data-testid="layer-notes-probe">{JSON.stringify(layers?.notes ?? null)}</pre>;
+}
+const layerNotesProbe = () => JSON.parse(screen.getByTestId('layer-notes-probe').textContent);
 const inUseOf = map => map.getSource('occ-reference-ourairports').data.features
   .filter(item => item.properties.kind === 'centrelineLabel').map(item => item.properties.label);
 // The layer that draws each kind of reference, as queryRenderedFeatures names it.
@@ -3176,6 +3184,122 @@ describe('OccMap weather (PR M8)', () => {
     // The browser's choices were not touched by the scene's.
     expect(window.localStorage.getItem('elevant-occ-map-layers:v1')).toBe('{"weather.goes":false}');
     window.localStorage.clear();
+  });
+
+  // Hotfix of 2026-11-28 (VPS e17a01d1): the loop asked GeoColor for the infrared's latest time (16:50) when GeoColor's
+  // latest was 16:20, and four of its six frames answered 404. It now pins the images GeoColor has, skipping its holes.
+  it('pins the satellite loop to the images GIBS has of the band it shows, never to the infrared time', async () => {
+    const afternoon = Date.parse('2026-11-28T17:20:00Z');
+    const geocolor = ['2026-11-28T15:10:00Z', '2026-11-28T15:20:00Z', '2026-11-28T15:30:00Z', '2026-11-28T15:40:00Z',
+      '2026-11-28T15:50:00Z', '2026-11-28T16:10:00Z', '2026-11-28T16:20:00Z'];
+    const service = createSimulatedSatelliteImagery({ goes: { time: '2026-11-28T16:50:00Z' },
+      domains: { geocolor, ir: ['2026-11-28T16:50:00Z'] } });
+    const read = data => ({ status: 'success', data });
+    const regionWeather = { region: read(createRegionWeather()), sigmets: read(createSigmets()),
+      wind: { status: 'loading', data: null }, radar: read(createRadarFrames()), demo: false };
+    render(<OccMap defaultView="region" frozenAt={afternoon} weather={weatherAt()} regionWeather={regionWeather}
+      satelliteService={service} layerOverrides={{ 'weather.loop': true, 'weather.goes': false }} />);
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    await settle();
+    await settle();
+    // Only the domain of GeoColor, the band of the afternoon at PUJ, is read; not the infrared's header.
+    expect(service.calls).toEqual([{ loop: true, read: 'domain', band: 'geocolor' }]);
+    const pinned = Array.from({ length: 6 }, (_, index) => map.getSource(`occ-weather-loop-${index}`).setTilesCalls.at(-1)?.[0]);
+    expect(pinned).toEqual(['15:20', '15:30', '15:40', '15:50', '16:10', '16:20'].map(time =>
+      `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-East_ABI_GeoColor/default/2026-11-28T${time}:00Z/`
+      + 'GoogleMapsCompatible_Level7/{z}/{y}/{x}.png'));
+    expect(pinned.join(' ')).not.toContain('16:50');
+  });
+
+  // Hotfix of 2026-11-28, step 2: an instant GIBS lists whose tiles still fail (a 404 seen that day) is skipped, so the
+  // loop never shows a blank frame; with every frame failing it holds nothing, until the tiles load again.
+  it('skips a frame of the satellite loop whose tiles fail, holds nothing when every frame fails, and shows them again', async () => {
+    const afternoon = Date.parse('2026-11-28T17:20:00Z');
+    const geocolor = ['2026-11-28T15:10:00Z', '2026-11-28T15:20:00Z', '2026-11-28T15:30:00Z', '2026-11-28T15:40:00Z',
+      '2026-11-28T15:50:00Z', '2026-11-28T16:10:00Z', '2026-11-28T16:20:00Z'];
+    const service = createSimulatedSatelliteImagery({ goes: { time: '2026-11-28T16:50:00Z' },
+      domains: { geocolor, ir: ['2026-11-28T16:50:00Z'] } });
+    const read = data => ({ status: 'success', data });
+    const regionWeather = { region: read(createRegionWeather()), sigmets: read(createSigmets()),
+      wind: { status: 'loading', data: null }, radar: read(createRadarFrames()), demo: false };
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    render(<OccMap defaultView="region" frozenAt={afternoon} weather={weatherAt()} regionWeather={regionWeather}
+      satelliteService={service} layerOverrides={{ 'weather.loop': true, 'weather.goes': false }}>
+      <ReferenceProbe /><LayerNotesProbe /></OccMap>);
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    await settle();
+    await settle();
+    // The legend lists the loop with the span of the frames it shows (ADR-0044: the legend matches the map).
+    const legendLoop = () => {
+      act(() => fake.state.emit(map, 'idle'));
+      return referenceProbe().imagery?.loopGeocolor ?? null;
+    };
+    const opacities = () => Array.from({ length: 6 }, (_, index) =>
+      map.layers.find(layer => layer.id === `occ-weather-loop-${index}-image`).paint['raster-opacity']);
+    const shown = () => opacities().findIndex(value => value > 0);
+    // The frozen clock holds the latest frame. MapLibre reloads each source given new tiles (its content source data).
+    expect(shown()).toBe(5);
+    expect(legendLoop()).toMatchObject({ from: '2026-11-28T15:20:00Z', time: '2026-11-28T16:20:00Z' });
+    for (let index = 0; index < 6; index += 1) {
+      act(() => fake.state.emit(map, 'sourcedata', { sourceId: `occ-weather-loop-${index}`, sourceDataType: 'content' }));
+    }
+    const tilesCalls = map.calls.filter(call => call.method === 'setTiles').length;
+    const reads = service.calls.length;
+
+    // The latest frame's source fires `error` for one of its tiles (HOTFIX-GOES-2: a flaky network): handled, not
+    // logged, and the frame keeps showing with a gap, since that tile is 1 of the 12 it holds.
+    const tiles = (failed, held) => [...Array(held - failed).fill('loaded'), ...Array(failed).fill('errored')];
+    fake.state.setTileStates(map, 'occ-weather-loop-5', tiles(1, 12));
+    act(() => fake.state.emit(map, 'error', { sourceId: 'occ-weather-loop-5', tile: {}, error: new Error('Failed to fetch') }));
+    await act(() => new Promise(resolve => { setTimeout(resolve, 350); }));
+    await settle();
+    expect(shown()).toBe(5);
+    expect(error).not.toHaveBeenCalled();
+    expect(legendLoop()).toMatchObject({ from: '2026-11-28T15:20:00Z', time: '2026-11-28T16:20:00Z' });
+
+    // A 404 on every tile of the frame, which MapLibre 6.16 keeps quiet: the tiles stay `errored`, the loop's next tick
+    // finds them and the frame before it shows instead.
+    fake.state.setTileStates(map, 'occ-weather-loop-5', tiles(12, 12));
+    await act(() => new Promise(resolve => { setTimeout(resolve, 350); }));
+    await settle();
+    expect(shown()).toBe(4);
+    expect(opacities().filter(value => value > 0)).toHaveLength(1);
+    expect(legendLoop()).toMatchObject({ from: '2026-11-28T15:20:00Z', time: '2026-11-28T16:10:00Z' });
+
+    // A frame of two tiles that loses one keeps showing with a gap (Aproximación holds one or two z6 tiles of a frame).
+    fake.state.setTileStates(map, 'occ-weather-loop-4', tiles(1, 2));
+    await act(() => new Promise(resolve => { setTimeout(resolve, 350); }));
+    await settle();
+    expect(shown()).toBe(4);
+
+    // Every frame failing (a short outage while the loop loads): the loop holds nothing.
+    for (const index of [0, 1, 2, 3, 4]) fake.state.setTileStates(map, `occ-weather-loop-${index}`, tiles(2, 2));
+    await act(() => new Promise(resolve => { setTimeout(resolve, 350); }));
+    await settle();
+    expect(opacities()).toEqual([0, 0, 0, 0, 0, 0]);
+    // Nothing of the loop is drawn: the layers menu says so and the legend does not list it.
+    expect(layerNotesProbe()?.['weather.loop']).toBe('No hay imagen en este momento.');
+    expect(legendLoop()).toBeNull();
+    expect(referenceProbe().kinds).not.toContain('loopGeocolor');
+    // No new tiles and no new read: the budget is the same.
+    expect(map.calls.filter(call => call.method === 'setTiles')).toHaveLength(tilesCalls);
+    expect(service.calls).toHaveLength(reads);
+    expect(map.styleCalls).toEqual([]);
+
+    // The network comes back and the tiles load (a pan, the loop asking again for them): the marks are revoked and the
+    // loop shows its frames again, without a new read of GIBS's domain or new tiles (HOTFIX-GOES-2 review).
+    for (let index = 0; index < 6; index += 1) fake.state.setTileStates(map, `occ-weather-loop-${index}`, tiles(0, 2));
+    await act(() => new Promise(resolve => { setTimeout(resolve, 350); }));
+    await settle();
+    expect(shown()).toBe(5);
+    expect(opacities().filter(value => value > 0)).toHaveLength(1);
+    expect(layerNotesProbe()?.['weather.loop']).not.toBe('No hay imagen en este momento.');
+    expect(legendLoop()).toMatchObject({ from: '2026-11-28T15:20:00Z', time: '2026-11-28T16:20:00Z' });
+    expect(map.calls.filter(call => call.method === 'setTiles')).toHaveLength(tilesCalls);
+    expect(service.calls).toHaveLength(reads);
+    expect(error).not.toHaveBeenCalled();
   });
 
   it('credits NOAA while the wind is on screen', () => {

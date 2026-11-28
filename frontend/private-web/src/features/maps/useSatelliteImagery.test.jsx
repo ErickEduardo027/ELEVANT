@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GOES_TILE_TEMPLATE, IMERG_TILE_TEMPLATE } from '../../services/satelliteService';
 import { createOccShellValue, OccShellTestProvider } from '../admin-occ/shell/testing/occShellFixtures';
 import {
-  SATELLITE_POLL_MS, createSimulatedSatelliteImagery, remoteSatelliteImagery, satelliteSourceState, useSatelliteImagery,
+  LOOP_POLL_MS, LOOP_WINDOW_MS, SATELLITE_POLL_MS, createSimulatedSatelliteImagery, readLoopImages, remoteSatelliteImagery,
+  satelliteSourceState, useSatelliteImagery,
 } from './useSatelliteImagery';
 
 // The times of the satellite images (PR M8), read from a simulated GIBS: nothing here touches the network.
@@ -165,6 +166,191 @@ describe('useSatelliteImagery (PR M8)', () => {
     })));
     await expect(remoteSatelliteImagery.loadImageInfo('goes')).resolves.toMatchObject({ time: '2026-11-13T14:50:00Z' });
     expect(fetch.mock.calls[0][0]).toMatch(/^https:\/\/gibs\.earthdata\.nasa\.gov\//);
+    vi.unstubAllGlobals();
+  });
+});
+
+// Hotfix of 2026-11-28: the satellite loop asks GIBS which images it has of the band it shows (its DescribeDomains),
+// and never pins GeoColor to the infrared's time. The domains below are the ones GIBS answered at 17:20 UTC.
+const AFTERNOON = Date.parse('2026-11-28T17:20:00Z');
+const GEOCOLOR_DOMAIN = Object.freeze(['2026-11-28T15:10:00Z', '2026-11-28T15:20:00Z', '2026-11-28T15:30:00Z',
+  '2026-11-28T15:40:00Z', '2026-11-28T15:50:00Z', '2026-11-28T16:10:00Z', '2026-11-28T16:20:00Z']);
+const IR_DOMAIN = Object.freeze(['2026-11-28T16:20:00Z', '2026-11-28T16:30:00Z', '2026-11-28T16:40:00Z',
+  '2026-11-28T16:50:00Z']);
+const GEOCOLOR_LAYER = 'GOES-East_ABI_GeoColor';
+const IR_LAYER = 'GOES-East_ABI_Band13_Clean_Infrared';
+const loaders = ({ domains = {}, latest = {} } = {}) => ({
+  loadDomain: vi.fn(async ({ layer }) => {
+    const answer = domains[layer];
+    if (answer instanceof Error || answer instanceof DOMException) throw answer;
+    return answer ?? null;
+  }),
+  loadLatestTime: vi.fn(async ({ layer }) => {
+    const answer = latest[layer];
+    if (answer instanceof Error || answer instanceof DOMException) throw answer;
+    return answer ?? null;
+  }),
+});
+const pendingRead = reads => (band, { signal }) => {
+  reads.push({ band, signal });
+  return new Promise(() => {});
+};
+
+describe('the images of the satellite loop (hotfix of 2026-11-28)', () => {
+  it('reads the domain of the band it shows over the last three hours, holes and all', async () => {
+    const read = loaders({ domains: { [GEOCOLOR_LAYER]: GEOCOLOR_DOMAIN, [IR_LAYER]: IR_DOMAIN },
+      latest: { [IR_LAYER]: '2026-11-28T16:50:00Z' } });
+    await expect(readLoopImages('geocolor', { ...read, nowMs: AFTERNOON }))
+      .resolves.toEqual({ band: 'geocolor', times: GEOCOLOR_DOMAIN, source: 'domain' });
+    expect(read.loadDomain).toHaveBeenCalledTimes(1);
+    expect(read.loadDomain.mock.calls[0][0]).toMatchObject({ layer: GEOCOLOR_LAYER,
+      matrix: 'GoogleMapsCompatible_Level7', fromMs: AFTERNOON - LOOP_WINDOW_MS, toMs: AFTERNOON });
+    // GeoColor never asks for the infrared's time.
+    expect(read.loadLatestTime).not.toHaveBeenCalled();
+    await expect(readLoopImages('ir', { ...read, nowMs: AFTERNOON }))
+      .resolves.toEqual({ band: 'ir', times: IR_DOMAIN, source: 'domain' });
+    expect(read.loadDomain.mock.calls[1][0]).toMatchObject({ layer: IR_LAYER, matrix: 'GoogleMapsCompatible_Level6' });
+  });
+
+  it('falls back to the header of its own band when the domain cannot be read', async () => {
+    const read = loaders({ domains: { [GEOCOLOR_LAYER]: new Error('satellite-unavailable') },
+      latest: { [GEOCOLOR_LAYER]: '2026-11-28T16:20:00Z', [IR_LAYER]: '2026-11-28T16:50:00Z' } });
+    await expect(readLoopImages('geocolor', { ...read, nowMs: AFTERNOON })).resolves.toEqual({ band: 'geocolor',
+      source: 'header', times: ['2026-11-28T15:30:00Z', '2026-11-28T15:40:00Z', '2026-11-28T15:50:00Z',
+        '2026-11-28T16:00:00Z', '2026-11-28T16:10:00Z', '2026-11-28T16:20:00Z'] });
+    expect(read.loadLatestTime.mock.calls.map(([options]) => options.layer)).toEqual([GEOCOLOR_LAYER]);
+    // A domain that cannot be read (null) falls back the same way.
+    const unread = loaders({ latest: { [GEOCOLOR_LAYER]: '2026-11-28T16:20:00Z' } });
+    await expect(readLoopImages('geocolor', { ...unread, nowMs: AFTERNOON })).resolves.toMatchObject({
+      band: 'geocolor', source: 'header' });
+  });
+
+  it('shows the infrared when GeoColor has nothing yet in the window (just after sunrise) or cannot be read', async () => {
+    const sunrise = loaders({ domains: { [GEOCOLOR_LAYER]: [], [IR_LAYER]: IR_DOMAIN } });
+    await expect(readLoopImages('geocolor', { ...sunrise, nowMs: AFTERNOON }))
+      .resolves.toEqual({ band: 'ir', times: IR_DOMAIN, source: 'domain' });
+    // An empty domain is an answer: GeoColor's header is not read.
+    expect(sunrise.loadLatestTime).not.toHaveBeenCalled();
+    const down = loaders({ domains: { [GEOCOLOR_LAYER]: new Error('x'), [IR_LAYER]: new Error('x') },
+      latest: { [GEOCOLOR_LAYER]: new Error('x'), [IR_LAYER]: '2026-11-28T16:50:00Z' } });
+    await expect(readLoopImages('geocolor', { ...down, nowMs: AFTERNOON }))
+      .resolves.toMatchObject({ band: 'ir', source: 'header' });
+    // Nothing anywhere: no images.
+    await expect(readLoopImages('geocolor', { ...loaders(), nowMs: AFTERNOON })).resolves.toBeNull();
+    await expect(readLoopImages('ir', { ...loaders({ domains: { [IR_LAYER]: [] } }), nowMs: AFTERNOON }))
+      .resolves.toBeNull();
+    // A cancelled read stays cancelled: it never falls back.
+    const controller = new AbortController();
+    controller.abort();
+    const aborted = loaders({ domains: { [GEOCOLOR_LAYER]: new DOMException('stop', 'AbortError') } });
+    await expect(readLoopImages('geocolor', { ...aborted, nowMs: AFTERNOON, signal: controller.signal }))
+      .rejects.toMatchObject({ name: 'AbortError' });
+    expect(aborted.loadLatestTime).not.toHaveBeenCalled();
+  });
+
+  it('reads the loop only while it is wanted, every five minutes while visible, again on a new band', async () => {
+    vi.setSystemTime(AFTERNOON);
+    const reads = [];
+    const service = {
+      loadImageInfo: vi.fn(),
+      loadLoopImages: vi.fn((band, { signal, nowMs }) => {
+        reads.push({ band, signal, nowMs });
+        return Promise.resolve({ band, times: band === 'geocolor' ? GEOCOLOR_DOMAIN : IR_DOMAIN, source: 'domain' });
+      }),
+    };
+    const view = setup({}, { service });
+    await flush(LOOP_POLL_MS);
+    expect(reads).toEqual([]);
+    expect(view.result.current.loop).toEqual({ status: 'idle', band: null, times: [], source: null });
+
+    view.rerender({ loop: 'geocolor', service });
+    expect(view.result.current.loop.status).toBe('loading');
+    await flush();
+    expect(reads.map(read => read.band)).toEqual(['geocolor']);
+    expect(reads[0].nowMs).toBe(AFTERNOON + LOOP_POLL_MS);
+    expect(view.result.current.loop).toEqual({ status: 'ready', band: 'geocolor', times: GEOCOLOR_DOMAIN,
+      source: 'domain' });
+    // The header of the clouds is not read for the loop.
+    expect(service.loadImageInfo).not.toHaveBeenCalled();
+
+    // Again after five minutes while the tab shows; not while it is hidden.
+    await flush(LOOP_POLL_MS - 1);
+    expect(reads).toHaveLength(1);
+    await flush(1);
+    expect(reads).toHaveLength(2);
+    visibility = 'hidden';
+    await flush(LOOP_POLL_MS);
+    expect(reads).toHaveLength(2);
+    visibility = 'visible';
+
+    // A new band (sunset): the infrared is read at once; the loop keeps its images until it answers.
+    service.loadLoopImages.mockImplementationOnce(pendingRead(reads));
+    view.rerender({ loop: 'ir', service });
+    await flush();
+    expect(reads.at(-1).band).toBe('ir');
+    expect(view.result.current.loop).toMatchObject({ status: 'ready', band: 'geocolor' });
+    // Back to GeoColor before it answers: the infrared read is cancelled.
+    const pending = reads.at(-1).signal;
+    view.rerender({ loop: 'geocolor', service });
+    await flush();
+    expect(pending.aborted).toBe(true);
+    expect(reads.at(-1).band).toBe('geocolor');
+
+    // Not wanted: no more reads; gone: the read in flight is cancelled.
+    view.rerender({ loop: null, service });
+    const count = reads.length;
+    await flush(3 * LOOP_POLL_MS);
+    expect(reads).toHaveLength(count);
+    service.loadLoopImages.mockImplementationOnce(pendingRead(reads));
+    vi.setSystemTime(AFTERNOON + 60 * 60_000);
+    view.rerender({ loop: 'ir', service });
+    await flush();
+    const inFlight = reads.at(-1).signal;
+    view.unmount();
+    expect(inFlight.aborted).toBe(true);
+  });
+
+  it('leaves the loop unavailable when GIBS has no image, and tells the OCC frame', async () => {
+    const shell = createOccShellValue();
+    const none = createSimulatedSatelliteImagery({ domains: { geocolor: [], ir: [] } });
+    const view = setup({ loop: 'geocolor' }, { service: none, shell });
+    await flush();
+    expect(view.result.current.loop.status).toBe('unavailable');
+    expect(satelliteSource(shell)).toMatchObject({ state: 'offline' });
+    cleanup();
+
+    const ready = createOccShellValue();
+    const service = createSimulatedSatelliteImagery({ domains: { geocolor: GEOCOLOR_DOMAIN } });
+    setup({ loop: 'geocolor' }, { service, shell: ready });
+    await flush();
+    expect(satelliteSource(ready)).toMatchObject({ state: 'ok', at: Date.parse('2026-11-28T16:20:00Z') });
+  });
+
+  it('the simulated adapter answers fixed instants, never the network; the remote one reads the domain from GIBS', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => { throw new Error('no network in the simulated adapter'); }));
+    const simulated = createSimulatedSatelliteImagery({ goes: IMAGES.goes,
+      domains: { geocolor: GEOCOLOR_DOMAIN, ir: { fails: true } }, latest: { ir: '2026-11-28T16:50:00Z' } });
+    await expect(simulated.loadLoopImages('geocolor', { nowMs: AFTERNOON }))
+      .resolves.toEqual({ band: 'geocolor', times: GEOCOLOR_DOMAIN, source: 'domain' });
+    await expect(simulated.loadLoopImages('ir', { nowMs: AFTERNOON }))
+      .resolves.toMatchObject({ band: 'ir', source: 'header' });
+    // A band the scene does not name runs six images ending at the time of its clouds.
+    await expect(createSimulatedSatelliteImagery({ goes: IMAGES.goes }).loadLoopImages('geocolor'))
+      .resolves.toMatchObject({ band: 'geocolor', times: expect.arrayContaining([IMAGES.goes.time]) });
+    expect(simulated.calls).toEqual([{ loop: true, read: 'domain', band: 'geocolor' },
+      { loop: true, read: 'domain', band: 'ir' }, { loop: true, read: 'header', band: 'ir' }]);
+    expect(fetch).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+
+    const xml = '<Domains><DimensionDomain><ows:Identifier>time</ows:Identifier>'
+      + '<Domain>2026-11-28T15:40:00Z/2026-11-28T15:50:00Z/PT10M,2026-11-28T16:10:00Z/2026-11-28T16:20:00Z/PT10M</Domain>'
+      + '</DimensionDomain></Domains>';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(xml, { status: 200 })));
+    await expect(remoteSatelliteImagery.loadLoopImages('geocolor', { nowMs: AFTERNOON })).resolves.toEqual({
+      band: 'geocolor', source: 'domain',
+      times: ['2026-11-28T15:40:00Z', '2026-11-28T15:50:00Z', '2026-11-28T16:10:00Z', '2026-11-28T16:20:00Z'] });
+    expect(fetch.mock.calls[0][0]).toBe('https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/1.0.0/'
+      + 'GOES-East_ABI_GeoColor/default/GoogleMapsCompatible_Level7/all/2026-11-28T14:20:00Z--2026-11-28T17:20:00Z.xml');
     vi.unstubAllGlobals();
   });
 });

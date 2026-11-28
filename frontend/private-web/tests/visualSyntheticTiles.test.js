@@ -4,8 +4,10 @@ import { PbfReader } from 'pbf';
 import { describe, expect, it } from 'vitest';
 import { basemapLayers } from '../src/features/maps/style/basemapLayers';
 import { WORLD_BASE_TILES } from '../src/features/maps/style/worldBaseLayers';
-import { GOES_TILE_TEMPLATE, IMERG_TILE_TEMPLATE } from '../src/services/satelliteService';
-import { GIBS_ORIGIN, gibsProbeRequest, gibsTileRequest, isolate, latestGibsTime } from './visual/support/isolate.mjs';
+import { GOES_TILE_TEMPLATE, IMERG_TILE_TEMPLATE, gibsDomainUrl, parseGibsDomain } from '../src/services/satelliteService';
+import {
+  GIBS_ORIGIN, gibsDomainRequest, gibsProbeRequest, gibsTileRequest, isolate, latestGibsTime, syntheticGibsDomain,
+} from './visual/support/isolate.mjs';
 import {
   SYNTHETIC_LAYERS, clipLine, clipRing, encodePng, syntheticSatelliteTile, syntheticTile, tilePixelLngLat, toTileUnits,
 } from './visual/support/syntheticTiles.mjs';
@@ -133,6 +135,29 @@ describe('synthetic satellite images of the visual suite (PR M8)', () => {
     // By day the loop draws GOES-East GeoColor (level 7), answered with the same synthetic clouds.
     expect(gibsTileRequest(new URL(`${GIBS_ORIGIN}/wmts/epsg3857/best/GOES-East_ABI_GeoColor/default/`
       + '2026-11-28T13:40:00Z/GoogleMapsCompatible_Level7/7/56/38.png'))).toMatchObject({ image: 'goes', z: 7 });
+  });
+
+  // Hotfix of 2026-11-28: the loop asks first which images GIBS has of its band (DescribeDomains), then, if that
+  // fails, the header of its own band (GeoColor's at level 7 too). Both are answered without the network.
+  it('answers the domain of a band of the loop with a synthetic list up to the recent time, and its own header', () => {
+    const now = Date.parse('2026-11-28T17:20:00Z');
+    const url = new URL(gibsDomainUrl('GOES-East_ABI_GeoColor', 'GoogleMapsCompatible_Level7', now - 3 * 3_600_000, now));
+    const request = gibsDomainRequest(url);
+    expect(request).toEqual({ layer: 'GOES-East_ABI_GeoColor', image: 'goes', fromMs: now - 3 * 3_600_000, toMs: now });
+    const times = parseGibsDomain(syntheticGibsDomain(request, now), request);
+    expect(times[0]).toBe('2026-11-28T14:20:00Z');
+    expect(times.at(-1)).toBe(latestGibsTime('goes', now));
+    expect(times).toHaveLength(18);
+    // A window with no image yet answers an empty domain.
+    expect(parseGibsDomain(syntheticGibsDomain({ fromMs: now + 3_600_000, toMs: now + 7_200_000 }, now))).toEqual([]);
+    expect(gibsDomainRequest(new URL(gibsDomainUrl('GOES-East_ABI_Band13_Clean_Infrared', 'GoogleMapsCompatible_Level6',
+      now - 3_600_000, now)))).toMatchObject({ image: 'goes' });
+    expect(gibsDomainRequest(new URL(gibsDomainUrl('IMERG_Precipitation_Rate_30min', 'GoogleMapsCompatible_Level6',
+      now - 3_600_000, now)))).toBeNull();
+    expect(gibsDomainRequest(new URL('https://example.test/wmts/epsg3857/best/1.0.0/GOES-East_ABI_GeoColor/default/'
+      + 'GoogleMapsCompatible_Level7/all/2026-11-28T14:20:00Z--2026-11-28T17:20:00Z.xml'))).toBeNull();
+    expect(gibsProbeRequest(new URL(`${GIBS_ORIGIN}/wmts/epsg3857/best/GOES-East_ABI_GeoColor/default/default/`
+      + 'GoogleMapsCompatible_Level7/6/28/19.png'))).toMatchObject({ layer: 'GOES-East_ABI_GeoColor', image: 'goes' });
   });
 
   it('answers the satellite images of NASA GIBS pinned to their time with a synthetic PNG, and nothing else', () => {

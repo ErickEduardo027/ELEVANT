@@ -49,6 +49,9 @@ vi.mock('../../../services/weatherService', () => ({
 vi.mock('../../../services/satelliteService', async () => ({
   ...(await vi.importActual('../../../services/satelliteService')),
   loadSatelliteImageInfo: vi.fn(() => new Promise(() => {})),
+  // The loop's reads of which images GIBS has (hotfix of 2026-11-28) never answer either.
+  loadGibsDomain: vi.fn(() => new Promise(() => {})),
+  loadGibsLatestTime: vi.fn(() => new Promise(() => {})),
   imageAgeMinutes: vi.fn(() => 25),
 }));
 // What the console loads with next/dynamic: its view (ConsolePage.jsx, its own chunk in the app), here at once, and the

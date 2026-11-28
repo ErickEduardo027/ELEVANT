@@ -19,7 +19,10 @@ import { syntheticSatelliteTile, syntheticTile } from './syntheticTiles.mjs';
 //   level 6, whose `Layer-Time-Actual` header names the time the map then pins its tiles to): it answers the same
 //   picture with a recent time (`satelliteProbe`; integration of 2026-11-28, so Panorama in Región, where the satellite
 //   loop of lane M7 shows by default, never asks GIBS). By day the loop draws GOES-East GeoColor, answered as the
-//   clouds. The world base of the globe (M8,
+//   clouds. The loop asks first which images GIBS has of its band (hotfix of 2026-11-28: the DescribeDomains of
+//   GOES-East Band 13 or GeoColor over its window, satelliteService.js loadGibsDomain): it answers a synthetic domain,
+//   every ten minutes up to the same recent time (`satelliteDomain`); when that read fails the loop falls back to the
+//   header of its own band, GeoColor's tile over PUJ at level 7 included. The world base of the globe (M8,
 //   src/features/maps/style/worldBaseLayers.js) is answered the same way: Black Marble pinned to its 2016 image, and
 //   Blue Marble, a static layer whose template names no time;
 // - Iowa Environmental Mesonet (lane M7, integration of 2026-11-28): a radar tile of TJUA's N0B scan pinned to the
@@ -47,8 +50,11 @@ const GIBS_STATIC_LAYERS = new Set(['BlueMarble_ShadedRelief_Bathymetry']);
 // A WMTS tile of GIBS in Web Mercator, pinned to the time of its image (an instant or a day, never `default`), or with
 // no time at all for a static layer; PNG or JPEG.
 const GIBS_TILE = /^\/wmts\/epsg3857\/best\/([^/]+)\/default\/(?:(\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}Z)?)\/)?GoogleMapsCompatible_Level\d+\/(\d+)\/(\d+)\/(\d+)\.(?:png|jpeg)$/;
-// The read of the time of the latest image: the tile over PUJ of the latest GOES-East or IMERG image, at level 6.
-const GIBS_PROBE = /^\/wmts\/epsg3857\/best\/(GOES-East_ABI_Band13_Clean_Infrared|IMERG_Precipitation_Rate_30min)\/default\/default\/GoogleMapsCompatible_Level6\/6\/28\/19\.png$/;
+// The read of the time of the latest image: the tile over PUJ (level 6) of the latest GOES-East or IMERG image, in
+// the matrix of its layer (GeoColor's is level 7).
+const GIBS_PROBE = /^\/wmts\/epsg3857\/best\/(GOES-East_ABI_Band13_Clean_Infrared|GOES-East_ABI_GeoColor|IMERG_Precipitation_Rate_30min)\/default\/default\/GoogleMapsCompatible_Level[67]\/6\/28\/19\.png$/;
+// The read of the images GIBS has of a band of the loop: its DescribeDomains over a window of whole minutes.
+const GIBS_DOMAIN = /^\/wmts\/epsg3857\/best\/1\.0\.0\/(GOES-East_ABI_Band13_Clean_Infrared|GOES-East_ABI_GeoColor)\/default\/GoogleMapsCompatible_Level[67]\/all\/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00Z)--(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00Z)\.xml$/;
 // How far back the answered latest image is, and the step its times are rounded down to: GOES-East every 10 minutes,
 // IMERG every 30.
 const GIBS_PROBE_STEP_MINUTES = Object.freeze({ goes: 10, imerg: 30 });
@@ -128,6 +134,37 @@ export function gibsProbeRequest(url) {
 }
 
 /**
+ * `{ layer, image, fromMs, toMs }` of the read of the images GIBS has of a band of the loop (its DescribeDomains), or
+ * `null` for any other URL.
+ */
+export function gibsDomainRequest(url) {
+  if (url.origin !== GIBS_ORIGIN) return null;
+  const match = GIBS_DOMAIN.exec(url.pathname);
+  if (!match) return null;
+  const fromMs = Date.parse(match[2]);
+  const toMs = Date.parse(match[3]);
+  return Number.isFinite(fromMs) && Number.isFinite(toMs) && fromMs <= toMs
+    ? { layer: match[1], image: GIBS_LAYERS[match[1]], fromMs, toMs }
+    : null;
+}
+
+/**
+ * The synthetic DescribeDomains of a band of the loop for the window `fromMs`–`toMs` at `nowMs`: one period every ten
+ * minutes from the window's first step up to the latest image (latestGibsTime), as GIBS writes it; an empty domain
+ * when the window holds no image.
+ */
+export function syntheticGibsDomain({ fromMs, toMs }, nowMs = Date.now()) {
+  const step = 10 * 60_000;
+  const instant = ms => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const first = Math.ceil(fromMs / step) * step;
+  const last = Math.min(Date.parse(latestGibsTime('goes', nowMs)), Math.floor(toMs / step) * step);
+  const domain = first <= last ? `${instant(first)}/${instant(last)}/PT10M` : '';
+  return '<?xml version="1.0" encoding="UTF-8"?><Domains xmlns:ows="http://www.opengis.net/ows/1.1">'
+    + '<DimensionDomain><ows:Identifier>time</ows:Identifier><ows:UOM>ISO8601</ows:UOM>'
+    + `<Domain>${domain}</Domain></DimensionDomain></Domains>`;
+}
+
+/**
  * The time the latest `image` (`goes` or `imerg`) answers in its `Layer-Time-Actual` header at `nowMs`: the step of
  * the image before the current one (`yyyy-mm-ddThh:mm:ssZ`), so the map pins its tiles to a recent instant.
  */
@@ -152,7 +189,7 @@ function assertTileMode(mode) {
  * Routes the page's foreign requests. `origin` is the page's own origin (the suite's baseURL); `tiles` is one of
  * TILE_MODES; `api(request, url)` may return `{ status, json, headers }` for an API request (or nothing for the
  * 404). Returns the log of what happened: `unexpected` (requests and WebSockets to any other origin), `requests`
- * (every answered request with its `kind`: tilejson, glyph, tile, api, stylesheet, satellite, satelliteProbe or radar), `glyphMisses`, `count(kind)`,
+ * (every answered request with its `kind`: tilejson, glyph, tile, api, stylesheet, satellite, satelliteProbe, satelliteDomain or radar), `glyphMisses`, `count(kind)`,
  * and `setTiles(mode)` / `setApi(handler)` to change the answers for the next requests.
  */
 export async function isolate(page, { origin, tiles = 'synthetic', api = null } = {}) {
@@ -217,6 +254,7 @@ export async function isolate(page, { origin, tiles = 'synthetic', api = null } 
     const url = new URL(request.url());
     const satellite = gibsTileRequest(url);
     const probe = gibsProbeRequest(url);
+    const domain = gibsDomainRequest(url);
     const radar = radarTileRequest(url);
     if (url.origin === OPENFREEMAP_ORIGIN) {
       const handled = await openFreeMap(route, request, url);
@@ -240,6 +278,12 @@ export async function isolate(page, { origin, tiles = 'synthetic', api = null } 
         headers: { ...headers, 'layer-time-actual': latestGibsTime(probe.image),
           'access-control-expose-headers': `${headers['access-control-expose-headers']}, Layer-Time-Actual` },
         body: syntheticSatelliteTile(probe.image, probe.z, probe.x, probe.y),
+      });
+    } else if (domain !== null) {
+      answered('satelliteDomain', request);
+      return route.fulfill({
+        status: 200, headers: corsHeaders(request, origin), contentType: 'text/xml',
+        body: syntheticGibsDomain(domain),
       });
     } else if (radar !== null) {
       answered('radar', request);

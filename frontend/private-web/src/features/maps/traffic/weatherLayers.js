@@ -423,10 +423,13 @@ export function weatherOnScreen({ wind = [], rasters = {}, imagery = null, loop 
   }
   const span = (frames, extra) => Object.freeze({ from: frames[0].time, time: frames.at(-1).time, precision: 'loop',
     ...extra });
-  if (rasters?.loop === true && Array.isArray(loop?.frames) && loop.frames.length > 0) {
+  // Only the loop frames shown: a frame whose tiles failed (hotfix of 2026-11-28) is neither drawn nor in the span, and
+  // a loop with every frame failed is not on screen.
+  const loopShown = Array.isArray(loop?.frames) ? loop.frames.filter(frame => frame?.missing !== true) : [];
+  if (rasters?.loop === true && loopShown.length > 0) {
     const kind = loop.band === 'geocolor' ? 'loopGeocolor' : 'loopIr';
     kinds.push(kind);
-    images[kind] = span(loop.frames, { demo: loop.demo === true });
+    images[kind] = span(loopShown, { demo: loop.demo === true });
   }
   if (rasters?.radar === true && Array.isArray(radar?.frames) && radar.frames.length > 0) {
     kinds.push('radar');
@@ -539,7 +542,10 @@ export function weatherLayerNotes({ layers = {}, view = null, imagery = null, we
 // The regional weather (lane M7). The builders below are pure: the answers of the API (the shapes of
 // OccRegionWeatherResponse, OccSigmetsResponse and OccRadarFramesResponse), the instant and the language are parameters.
 
-/** The frames of the satellite loop: six images ten minutes apart, the last the latest GIBS reports. */
+/**
+ * The frames of the satellite loop: the latest six images GIBS has of the band on screen (its DescribeDomains, hotfix of
+ * 2026-11-28), or, when that list cannot be read, six images ten minutes apart ending at the band's latest one.
+ */
 export const LOOP_FRAME_COUNT = 6;
 export const LOOP_STEP_MINUTES = 10;
 /** The frames of the radar the map keeps: the latest six the API lists. */
@@ -631,6 +637,21 @@ export function loopFrameTimes(latestTime, { count = LOOP_FRAME_COUNT, stepMinut
 }
 
 /**
+ * The instants of the loop's frames from the instants GIBS has of the band (`available`, any order): the latest `count`,
+ * oldest first, skipping the holes of its domain (with GeoColor's domain of 2026-11-28 at 17:20 UTC, 15:20, 15:30,
+ * 15:40, 15:50, 16:10 and 16:20). Fewer than `count` repeat the oldest, so every loop source is pinned to an image GIBS
+ * has. Empty without a GIBS instant.
+ */
+export function loopFrameTimesFrom(available, { count = LOOP_FRAME_COUNT } = {}) {
+  if (!Array.isArray(available)) return Object.freeze([]);
+  const times = [...new Set(available.filter(time => GIBS_TIME.test(time ?? '') && finite(Date.parse(time))))]
+    .sort((a, b) => Date.parse(a) - Date.parse(b))
+    .slice(-count);
+  if (times.length === 0) return Object.freeze([]);
+  return Object.freeze([...Array.from({ length: count - times.length }, () => times[0]), ...times]);
+}
+
+/**
  * The band of the loop at `ms`: GeoColor while the sun is up at Punta Cana (its visible picture), the infrared once it
  * has set (twilight and night), when the visible has nothing to show.
  */
@@ -640,13 +661,15 @@ export function loopBandAt(ms) {
 }
 
 /**
- * The frames of the loop for `band` ending at `latestTime`: `[{ index, source, layer, time, tiles }]`, oldest first,
+ * The frames of the loop for `band`: from `times`, the instants GIBS has of that band (loopFrameTimesFrom), or else
+ * ending at `latestTime` ten minutes apart (loopFrameTimes). `[{ index, source, layer, time, tiles }]`, oldest first,
  * one per loop source, each pinned once (OccMap gives a source new tiles only when its frame changes). Empty for an
  * unknown band or without a time.
  */
-export function loopFrames({ band = 'ir', latestTime = null } = {}) {
+export function loopFrames({ band = 'ir', times = null, latestTime = null } = {}) {
   if (!Object.hasOwn(LOOP_BANDS, band)) return Object.freeze([]);
-  return Object.freeze(loopFrameTimes(latestTime).map((time, index) => Object.freeze({
+  const instants = Array.isArray(times) ? loopFrameTimesFrom(times) : loopFrameTimes(latestTime);
+  return Object.freeze(instants.map((time, index) => Object.freeze({
     index, source: loopSourceId(index), layer: loopLayerId(index), time, tiles: Object.freeze([loopTileAt(band, time)]),
   })));
 }
@@ -974,8 +997,10 @@ function regionalLayerNotes({ layers, view, regional, nowMs, t, language }) {
     }
     if (key === 'loop') {
       const loop = regional?.loop;
-      if (loop?.status === 'ready' && Array.isArray(loop.frames) && loop.frames.length > 0) {
-        notes[group] = loopSpanWords({ from: loop.frames[0].time, time: loop.frames.at(-1).time }, language);
+      // The span of the frames the loop shows: a frame whose tiles failed (hotfix of 2026-11-28) is not shown.
+      const shown = Array.isArray(loop?.frames) ? loop.frames.filter(frame => frame?.missing !== true) : [];
+      if (loop?.status === 'ready' && shown.length > 0) {
+        notes[group] = loopSpanWords({ from: shown[0].time, time: shown.at(-1).time }, language);
       } else notes[group] = t(loop?.status === 'unavailable' ? 'layers.note.noImage' : 'layers.note.loadingImage');
       continue;
     }

@@ -19,6 +19,10 @@
 //   it throws for a missing source and, stricter than MapLibre, for an ID that is not `{ x, y, z }` integers; each call
 //   is recorded;
 // - `setFilter` replaces a layer's filter (a missing layer throws), and a context loss keeps it, as MapLibre 6.16 does.
+// - `map.style.tileManagers[sourceId]` answers `getIds()` and `getTileByID(id)` of the tiles a test gave the source with
+//   `setTileStates(map, sourceId, states)` (hotfix of 2026-11-28: a 404 tile is `errored`, MapLibre 6.16 fires no
+//   `error` for it); there is no style while the context is lost or before `style.load`, and `setTiles` of a raster
+//   source drops its tiles, as MapLibre reloads them.
 // Camera moves are applied at once and fire their events synchronously: movestart, zoomstart, rotatestart and
 // pitchstart for what changes, moveend. A person's gesture is `emit(map, 'dragstart', { originalEvent })` and the like,
 // ended with `emit(map, 'moveend', { originalEvent })`. A double click is `doubleClick(map, { point, lngLat })`: the
@@ -245,6 +249,7 @@ function rasterMethods(map, id, spec) {
       this.setTilesCalls.push(tiles);
       this.tiles = [...tiles];
       this.spec = { ...this.spec, tiles: [...tiles] };
+      map.tileStates.delete(id);
       return this;
     },
     serialize() {
@@ -359,6 +364,7 @@ function createModule(state) {
       this.snapshot = null;
       this.calls = [];
       this.sources = new Map();
+      this.tileStates = new Map();
       this.layers = [];
       this.paintCalls = [];
       this.layoutCalls = [];
@@ -597,6 +603,26 @@ function createModule(state) {
 
     getSource(id) {
       return this._readStyle() ? this.sources.get(id) : undefined;
+    }
+
+    // As MapLibre 6.16's map.style (internal): its tile managers, by source, with the tiles a test gave them.
+    get style() {
+      if (this.removed || this.contextLost || !this.styleLoaded) return null;
+      const tileManagers = {};
+      for (const id of this.sources.keys()) {
+        const tiles = this.tileStates.get(id) ?? [];
+        tileManagers[id] = {
+          getIds: () => tiles.map((_, index) => `tile-${index}`),
+          getTileByID: key => {
+            const index = Number(String(key).replace('tile-', ''));
+            // Each tile at its own canonical ID, z6 x = its index (map.refreshTiles takes those).
+            return Number.isInteger(index) && index < tiles.length
+              ? { state: tiles[index], tileID: { canonical: { x: index, y: 0, z: 6 } } }
+              : undefined;
+          },
+        };
+      }
+      return { tileManagers };
     }
 
     // As MapLibre 6.16: the given tiles of a source are asked for again (all of them without a list); nothing else moves.
@@ -1012,6 +1038,11 @@ function addHelpers(state) {
   return Object.assign(state, {
     liveMaps() {
       return state.maps.filter(map => !map.removed);
+    },
+
+    // The states of the tiles MapLibre holds of a source ('loaded', 'errored', 'loading'...), as map.style answers them.
+    setTileStates(map, sourceId, states) {
+      map.tileStates.set(sourceId, [...states]);
     },
 
     // Fires an event on a map. The first `style.load` installs the style given to the constructor, and the one after
