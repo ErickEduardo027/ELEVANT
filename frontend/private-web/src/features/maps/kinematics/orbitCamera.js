@@ -14,6 +14,9 @@ export { angleDiff as angleDiffDeg } from './smoothing.js';
 // - «Desde arriba» (top): straight down on the aircraft, its nose up the screen;
 // - «Desde la torre» (tower): from the tower of Punta Cana, looking at the aircraft: the bearing is the tower's to it;
 // - «Órbita libre» (orbit): the bearing is ABSOLUTE: the camera stays where the person put it while the aircraft turns.
+// - «Muy cerca» (close, M4): a close chase, a little above the tail and some 25–40 m behind it by the type's length
+//   (closeChaseZoom); the double click on an aircraft flies in to it. From zoom 19.5 on the map draws past its own
+//   limit: setOrbitMode lifts it to 22 while the orbit has the camera.
 // The pivot is the aircraft itself at its height above the field (MapLibre's centre elevation), so a turn never swings
 // it off the screen. Every frame eases the camera there by exponential smoothing (no jump, no jitter). Pure: degrees,
 // MapLibre zoom levels, metres; nothing here reads a clock or the map.
@@ -23,7 +26,8 @@ export const ORBIT = Object.freeze({
   minPitch: 0,
   maxPitch: 85,
   minZoom: 14.5,
-  maxZoom: 19.5,
+  // M4 (2026-11-27): ultra close, past the map's own 19.5 (mapEngine.js: setOrbitMode lifts it while following).
+  maxZoom: 22,
   rotateStepDeg: 15,
   tiltStepDeg: 10,
   zoomStep: 0.5,
@@ -51,10 +55,37 @@ export const ORBIT_VIEWS = Object.freeze({
   top: Object.freeze({ mode: 'relative', offsetDeg: 0, pitch: 0, zoom: 17.8 }),
   tower: Object.freeze({ mode: 'tower', offsetDeg: 0, pitch: 70, zoom: 17.4 }),
   orbit: Object.freeze({ mode: 'absolute', offsetDeg: 0, pitch: 65, zoom: 18 }),
+  // M4: the zoom is the type's (closeChaseZoom); this one stands for a 38 m airliner on a screen 800 px high.
+  close: Object.freeze({ mode: 'relative', offsetDeg: 0, pitch: 74, zoom: 20.9 }),
 });
 
 /** The view names in the panel's order. */
-export const ORBIT_VIEW_NAMES = Object.freeze(['chase', 'side', 'top', 'tower', 'orbit']);
+export const ORBIT_VIEW_NAMES = Object.freeze(['chase', 'close', 'side', 'top', 'tower', 'orbit']);
+
+/** The zoom beyond which the camera is close up (M4): the map hides the labels that would crowd the aircraft. */
+export const CLOSE_UP_ZOOM = 19.5;
+
+/** «Muy cerca» (M4): how far behind the tail the camera sits, `factor` times the type's length within these metres. */
+export const CLOSE_CHASE = Object.freeze({ behindTailFactor: 0.7, minBehindTailM: 25, maxBehindTailM: 40, lengthM: 38 });
+
+// MapLibre: the metres of one pixel at zoom 0 on the equator (512 px tiles), and the camera's distance to the centre of
+// the map in screen heights (its field of view of 36.87°: half the height over tan(18.43°)).
+const METRES_PER_PX_Z0 = 40_075_016.686 / 512;
+const CAMERA_HEIGHTS = 1.5;
+
+/**
+ * The zoom of «Muy cerca» for an aircraft `lengthM` long (38 m when unknown) at latitude `latDeg`, on a map
+ * `viewportHeightPx` high (800 px when unknown): the camera, MapLibre's 1.5 heights from the pivot, stands half the
+ * length plus 25–40 m (0.7 lengths) behind it, within the orbit's zoom.
+ */
+export function closeChaseZoom({ lengthM = null, latDeg = 0, viewportHeightPx = null } = {}) {
+  const length = finite(lengthM) && lengthM > 0 ? lengthM : CLOSE_CHASE.lengthM;
+  const height = finite(viewportHeightPx) && viewportHeightPx > 0 ? viewportHeightPx : 800;
+  const behind = clamp(length * CLOSE_CHASE.behindTailFactor, CLOSE_CHASE.minBehindTailM, CLOSE_CHASE.maxBehindTailM);
+  const distanceM = length / 2 + behind;
+  const metresPerPxZ0 = METRES_PER_PX_Z0 * Math.cos(((finite(latDeg) ? latDeg : 0) * Math.PI) / 180);
+  return clamp(Math.log2((CAMERA_HEIGHTS * height * metresPerPxZ0) / distanceM), ORBIT.minZoom, ORBIT.maxZoom);
+}
 
 /**
  * The control tower of Punta Cana, where «Desde la torre» looks from: north of the runways by the terminals, about
@@ -80,9 +111,10 @@ function wrap180(degrees) {
 
 /**
  * The orbit of a view, frozen: `{ view, mode, offsetDeg, bearingDeg, pitch, zoom, auto }`. `bearingDeg` is the
- * absolute bearing of 'absolute' mode (taken from the aircraft's track behind it when a view switches to it).
+ * absolute bearing of 'absolute' mode (taken from the aircraft's track behind it when a view switches to it). `zoom`,
+ * when given, replaces the view's own within the orbit's limits («Muy cerca»: closeChaseZoom).
  */
-export function createOrbit(view = 'chase', { trackDeg = 0, auto = false } = {}) {
+export function createOrbit(view = 'chase', { trackDeg = 0, auto = false, zoom = null } = {}) {
   const preset = ORBIT_VIEWS[view] ?? ORBIT_VIEWS.chase;
   const name = ORBIT_VIEWS[view] ? view : 'chase';
   return Object.freeze({
@@ -91,7 +123,7 @@ export function createOrbit(view = 'chase', { trackDeg = 0, auto = false } = {})
     offsetDeg: preset.offsetDeg,
     bearingDeg: wrap360((finite(trackDeg) ? trackDeg : 0) + preset.offsetDeg),
     pitch: preset.pitch,
-    zoom: preset.zoom,
+    zoom: finite(zoom) ? clamp(zoom, ORBIT.minZoom, ORBIT.maxZoom) : preset.zoom,
     auto: auto === true,
   });
 }

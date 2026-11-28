@@ -377,6 +377,7 @@ export const mapMessages = {
       camera: 'Cámara',
       views: {
         chase: 'Persecución',
+        close: 'Muy cerca',
         side: 'Lateral',
         top: 'Desde arriba',
         tower: 'Desde la torre',
@@ -848,7 +849,9 @@ export const mapMessages = {
       expand: 'Expand the panel',
       stop: 'Stop following',
       camera: 'Camera',
-      views: { chase: 'Chase', side: 'Side', top: 'From above', tower: 'From the tower', orbit: 'Free orbit' },
+      views: {
+        chase: 'Chase', close: 'Very close', side: 'Side', top: 'From above', tower: 'From the tower', orbit: 'Free orbit',
+      },
       rotateLeft: 'Turn left',
       rotateRight: 'Turn right',
       tiltUp: 'Tilt towards the horizon',

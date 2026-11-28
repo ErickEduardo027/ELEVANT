@@ -1,6 +1,7 @@
 import { BASEMAP_SOURCE_ID, SLOT_GROUP, nextSlot, slotMarkerId } from '../style/occStyle';
 import { collapseCompactAttribution } from './attribution';
 import { ensureWorkerUrl } from './workerUrl';
+import { ORBIT } from '../kinematics/orbitCamera.js';
 
 // The only module of the OCC maps that constructs a MapLibre Map (design A2). Everything a screen draws is declared in
 // the style document (style/occStyle.js); the engine is the thin imperative shell around it:
@@ -319,6 +320,20 @@ export function createMapEngine({
   // The gestures and limits «Seguir en 3D» took from MapLibre (setOrbitMode), to give back.
   let orbitSaved = null;
 
+  // Close up (M4, setCloseUp): the layers whose metadata says `'occ:closeUp': 'hide'` are hidden whatever their group,
+  // and those with an `'occ:closeUpFilter'` draw only what it lets through, on top of their own filter. The visibility
+  // each group was last given (setGroupVisibility) is what a hidden layer gets back.
+  let closeUp = false;
+  const groupVisible = new Map();
+  const closeUpHidden = [...styleLayers.values()].filter(layer => layer.metadata?.['occ:closeUp'] === 'hide');
+  const closeUpFiltered = [...styleLayers.values()].filter(layer => Array.isArray(layer.metadata?.['occ:closeUpFilter']));
+  function layerVisibility(layer) {
+    if (closeUp && layer.metadata?.['occ:closeUp'] === 'hide') return 'none';
+    const group = layer.metadata?.['occ:group'];
+    if (groupVisible.has(group)) return groupVisible.get(group) ? 'visible' : 'none';
+    return layer.layout?.visibility ?? 'visible';
+  }
+
   function listen(type, handler) {
     map.on(type, handler);
     listeners.push([type, handler]);
@@ -460,12 +475,41 @@ export function createMapEngine({
     /** Shows or hides every layer of a layers-menu group (the slot markers are never shown). */
     setGroupVisibility(group, visible) {
       if (group === SLOT_GROUP) return;
-      const ids = [...styleLayers.values()].filter(layer => layer.metadata?.['occ:group'] === group).map(layer => layer.id);
+      groupVisible.set(group, Boolean(visible));
+      const layers = [...styleLayers.values()].filter(layer => layer.metadata?.['occ:group'] === group);
       whenStyleReady(() => {
-        for (const id of ids) {
-          if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
+        for (const layer of layers) {
+          if (map.getLayer(layer.id)) map.setLayoutProperty(layer.id, 'visibility', layerVisibility(layer));
         }
       });
+    },
+
+    /**
+     * Close up (M4: «Seguir en 3D» past zoom 19.5): `true` hides the labels that would crowd the followed aircraft (the
+     * layers marked `'occ:closeUp': 'hide'`: the other traffic's tags, the stand designators, the references' words)
+     * and narrows those with an `'occ:closeUpFilter'` (the ELEVANT tags: the chosen aircraft's only); `false` gives back
+     * what their groups show. One call per change; nothing without a map.
+     */
+    setCloseUp(on) {
+      const next = on === true;
+      if (!live() || next === closeUp) return;
+      closeUp = next;
+      whenStyleReady(() => {
+        for (const layer of closeUpHidden) {
+          if (map.getLayer(layer.id)) map.setLayoutProperty(layer.id, 'visibility', layerVisibility(layer));
+        }
+        for (const layer of closeUpFiltered) {
+          if (!map.getLayer(layer.id)) continue;
+          const own = layer.filter ?? null;
+          const narrowed = own === null ? layer.metadata['occ:closeUpFilter'] : ['all', own, layer.metadata['occ:closeUpFilter']];
+          map.setFilter(layer.id, closeUp ? narrowed : own);
+        }
+      });
+    },
+
+    /** Whether the map is close up (setCloseUp). */
+    isCloseUp() {
+      return closeUp;
     },
 
     setData(sourceId, data) {
@@ -595,7 +639,8 @@ export function createMapEngine({
     /**
      * «Seguir en 3D» (CN-30): `true` hands the gestures to the orbit of follow mode (OccMap): MapLibre's own drag, rotate,
      * zoom, double click and keys stop, the tilt may reach 85° and the centre may stand above the ground (the followed
-     * aircraft in the air); `false` gives them back as they were. Nothing without a map.
+     * aircraft in the air) and the zoom 22 (M4, «Muy cerca»); `false` gives them back as they were. Nothing without a
+     * map.
      */
     setOrbitMode(on) {
       if (!live()) return;
@@ -606,10 +651,13 @@ export function createMapEngine({
         orbitSaved = {
           handlers: handlers.filter(name => map[name]?.isEnabled?.() === true),
           maxPitch: map.getMaxPitch?.() ?? null,
+          maxZoom: map.getMaxZoom?.() ?? null,
           clamped: map.getCenterClampedToGround?.() ?? null,
         };
         for (const name of orbitSaved.handlers) map[name].disable();
         map.setMaxPitch?.(85);
+        // M4 (2026-11-27): «Muy cerca» and the ultra zoom reach 22 (kinematics/orbitCamera.js: ORBIT.maxZoom).
+        map.setMaxZoom?.(ORBIT.maxZoom);
         map.setCenterClampedToGround?.(false);
         return;
       }
@@ -619,6 +667,8 @@ export function createMapEngine({
       map.jumpTo?.({ elevation: 0 });
       map.setCenterClampedToGround?.(saved.clamped ?? true);
       if (Number.isFinite(saved.maxPitch)) map.setMaxPitch?.(saved.maxPitch);
+      // setMaxZoom eases a camera beyond the old limit back within it.
+      if (Number.isFinite(saved.maxZoom)) map.setMaxZoom?.(saved.maxZoom);
       for (const name of saved.handlers) map[name]?.enable?.();
     },
 

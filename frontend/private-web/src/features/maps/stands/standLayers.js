@@ -352,7 +352,8 @@ function labelLayer(id, { source = STAND_LABEL_SOURCE, filter, layout, paint, me
     ...(filter ? { filter } : {}),
     layout,
     paint,
-    metadata: metadata(meta),
+    // M4: the designators are hidden close up (core/mapEngine.js: setCloseUp).
+    metadata: metadata({ 'occ:closeUp': 'hide', ...meta }),
   };
 }
 

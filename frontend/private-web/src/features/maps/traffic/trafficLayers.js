@@ -308,7 +308,8 @@ export function trafficOverlay({ theme = 'dark' } = {}) {
         filter: ['all', OTHER, isNot('forceTag')],
         layout: tagLayout(11, { visibility: 'none', 'text-field': OTHER_TAG, 'text-allow-overlap': false }),
         paint: tagPaint(occColor('muted')),
-        metadata: { 'occ:group': TRAFFIC_GROUPS.labels },
+        // M4: hidden close up (core/mapEngine.js: setCloseUp).
+        metadata: { 'occ:group': TRAFFIC_GROUPS.labels, 'occ:closeUp': 'hide' },
       },
       {
         slot: 'traffic',
@@ -355,7 +356,8 @@ export function trafficOverlay({ theme = 'dark' } = {}) {
             TAG_DECLUTTER_UNTIL_ZOOM, ['case', is('selected'), 1, 0]],
         }),
         paint: tagPaint(occColor('text')),
-        metadata: { 'occ:group': TRAFFIC_GROUPS.aviam },
+        // M4: close up only the chosen (followed) aircraft keeps its tag (core/mapEngine.js: setCloseUp).
+        metadata: { 'occ:group': TRAFFIC_GROUPS.aviam, 'occ:closeUpFilter': is('selected') },
       },
       {
         slot: 'traffic',
