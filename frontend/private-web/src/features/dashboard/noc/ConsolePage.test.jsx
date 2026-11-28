@@ -1091,6 +1091,28 @@ describe('the weather pill', () => {
     expect(screen.queryByTestId('goes-cloud-map')).not.toBeInTheDocument();
   });
 
+  it('closes its detail on Esc and keeps the selection and the view of the map under it (M1)', async () => {
+    weatherView.current = weatherOf('success', observation(20));
+    renderConsole({ url: `${PAGE}?stand=A5` });
+    await boardReady();
+    await screen.findByRole('region', { name: 'Inspector' });
+    // The status bar floats inside the map's root, which listens to the map keys; the bar keeps them out.
+    const map = screen.getByTestId('occ-map');
+    expect(map).toContainElement(pill());
+    expect(pill().closest('[data-occ-console-status]')).toHaveAttribute('data-occ-map-keys', 'off');
+    const view = map.getAttribute('data-occ-view');
+    await userEvent.click(pill());
+    const detail = screen.getByRole('dialog', { name: 'Meteorología · Punta Cana (MDPC)' });
+    // «2» on a button of the detail is not the map's «Aproximación».
+    within(detail).getByRole('button', { name: 'GOES-East' }).focus();
+    await userEvent.keyboard('2');
+    expect(map.getAttribute('data-occ-view')).toBe(view);
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Meteorología · Punta Cana (MDPC)' })).not.toBeInTheDocument();
+    expect(search().get('stand')).toBe('A5');
+    expect(screen.getByRole('region', { name: 'Inspector' })).toBeInTheDocument();
+  });
+
   it('marks an old observation as outdated and a failed source as unavailable', async () => {
     weatherView.current = weatherOf('success', observation(3 * 60));
     const view = renderConsole();

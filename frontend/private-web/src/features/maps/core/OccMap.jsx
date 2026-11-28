@@ -2348,7 +2348,12 @@ const OccMapView = forwardRef(function OccMapView({
       },
     });
     const handle = createOccShortcutHandler(handlers, { isBlocked: () => Boolean(latest.current?.isShortcutBlocked?.()) });
+    // A child of the map that is not the map's own chrome opts out with `data-occ-map-keys="off"` (the console's status
+    // bar, M1): its popovers close on their own Esc and its buttons and nested maps keep their keys, so the map neither
+    // clears its selection nor changes its view under them.
     const listener = event => {
+      const optOut = typeof event.target?.closest === 'function' ? event.target.closest('[data-occ-map-keys="off"]') : null;
+      if (optOut !== null && optOut !== root && root.contains(optOut)) return;
       handle(event);
     };
     root.addEventListener('keydown', listener);
@@ -2458,7 +2463,7 @@ const OccMapView = forwardRef(function OccMapView({
         className={`occ-map absolute inset-0 overflow-hidden bg-occ-canvas ${className}`.trim()}
         style={insetVariables(padding)}
       >
-        <div ref={hostRef} data-testid={testId} className="h-full w-full" />
+        <div ref={hostRef} data-testid={testId} className="occ-map-host h-full w-full" />
         {unavailable && (
           <MapUnavailable
             title={labels?.unavailableTitle ?? t('unavailable.title')}

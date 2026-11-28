@@ -1,7 +1,10 @@
 /* The OCC map (src/features/maps/core/OccMap.jsx imports this file). MapLibre's controls sit on the OCC tokens,
    flat (no shadow, no blur, no gradient), inside the insets the page reports: OccMap writes --occ-map-inset-* on
    its root and the map engine on its own container. Next keeps a global stylesheet loaded after a navigation, so
-   every rule is scoped under .occ-map and reaches no other map.
+   every rule is scoped under .occ-map and reaches no other map. The rules on MapLibre's controls go one step further,
+   to the map's own host (.occ-map > .occ-map-host): a MapLibre map the page nests among the map's children (the GOES
+   map of the weather pill in the console's status bar, M1) keeps its controls where MapLibre puts them, even though
+   it inherits the inset variables.
 
    The chrome around the map follows one plan on every OCC map (CN-32, «Monitoreo OCC más profesional»; M1, «pantalla
    completa con paneles flotantes»):
@@ -66,128 +69,128 @@
 
 /* The control corners: three inside the insets, and the top right one, the head of the control column, at the true
    corner of the map (M1). */
-.occ-map .maplibregl-ctrl-top-left {
+.occ-map > .occ-map-host .maplibregl-ctrl-top-left {
   top: var(--occ-map-inset-top, 0px);
   left: var(--occ-map-inset-left, 0px);
 }
 
-.occ-map .maplibregl-ctrl-top-right {
+.occ-map > .occ-map-host .maplibregl-ctrl-top-right {
   top: 0;
   right: 0;
 }
 
-.occ-map .maplibregl-ctrl-bottom-left {
+.occ-map > .occ-map-host .maplibregl-ctrl-bottom-left {
   bottom: var(--occ-map-inset-bottom, 0px);
   left: var(--occ-map-inset-left, 0px);
 }
 
 /* The scale and the credits of the bottom right corner sit left of the control column, or of a panel floating left of
    it, never under either. */
-.occ-map .maplibregl-ctrl-bottom-right {
+.occ-map > .occ-map-host .maplibregl-ctrl-bottom-right {
   bottom: var(--occ-map-inset-bottom, 0px);
   right: var(--occ-map-clear-right);
 }
 
 /* The zoom group heads the control column: the map's gap from the corner, as wide as the rail under it. */
-.occ-map .maplibregl-ctrl-top-right .maplibregl-ctrl {
+.occ-map > .occ-map-host .maplibregl-ctrl-top-right .maplibregl-ctrl {
   margin: var(--occ-map-gap) var(--occ-map-gap) 0 0;
 }
 
-.occ-map .maplibregl-ctrl-top-right .maplibregl-ctrl-group {
+.occ-map > .occ-map-host .maplibregl-ctrl-top-right .maplibregl-ctrl-group {
   width: var(--occ-map-rail);
 }
 
 /* Control groups: a flat panel slab with a 1 px joint. MapLibre draws its icons dark, so they are inverted. */
-.occ-map .maplibregl-ctrl-group {
+.occ-map > .occ-map-host .maplibregl-ctrl-group {
   border: 1px solid var(--occ-line);
   border-radius: 4px;
   background: var(--occ-panel);
 }
 
-.occ-map .maplibregl-ctrl-group:not(:empty) {
+.occ-map > .occ-map-host .maplibregl-ctrl-group:not(:empty) {
   box-shadow: none;
 }
 
-.occ-map .maplibregl-ctrl-group button {
+.occ-map > .occ-map-host .maplibregl-ctrl-group button {
   width: 100%;
   height: var(--occ-map-control);
 }
 
-.occ-map .maplibregl-ctrl-group button + button {
+.occ-map > .occ-map-host .maplibregl-ctrl-group button + button {
   border-top: 1px solid var(--occ-line);
 }
 
-.occ-map .maplibregl-ctrl button .maplibregl-ctrl-icon {
+.occ-map > .occ-map-host .maplibregl-ctrl button .maplibregl-ctrl-icon {
   filter: invert(1);
 }
 
 /* In the light theme the panel is light, so the dark icons stay as they come. */
-.occ-map:where(:root:not(.dark) *) .maplibregl-ctrl button .maplibregl-ctrl-icon {
+.occ-map:where(:root:not(.dark) *) > .occ-map-host .maplibregl-ctrl button .maplibregl-ctrl-icon {
   filter: none;
 }
 
 /* In forced colours MapLibre swaps its control icons for the system's own colours: they stay as they come. */
 @media (forced-colors: active) {
-  .occ-map .maplibregl-ctrl button .maplibregl-ctrl-icon {
+  .occ-map > .occ-map-host .maplibregl-ctrl button .maplibregl-ctrl-icon {
     filter: none;
   }
 }
 
-.occ-map .maplibregl-ctrl button:not(:disabled):hover,
-.occ-map .maplibregl-ctrl button:not(:disabled):active {
+.occ-map > .occ-map-host .maplibregl-ctrl button:not(:disabled):hover,
+.occ-map > .occ-map-host .maplibregl-ctrl button:not(:disabled):active {
   background-color: var(--occ-panel-raised);
 }
 
 /* Focus is a cyan outline, as everywhere in the OCC; MapLibre's blue glow is a shadow. */
-.occ-map .maplibregl-ctrl-group button:focus,
-.occ-map .maplibregl-ctrl-attrib-button:focus {
+.occ-map > .occ-map-host .maplibregl-ctrl-group button:focus,
+.occ-map > .occ-map-host .maplibregl-ctrl-attrib-button:focus {
   box-shadow: none;
 }
 
-.occ-map .maplibregl-ctrl-group button:focus:focus-visible,
-.occ-map .maplibregl-ctrl-attrib-button:focus:focus-visible {
+.occ-map > .occ-map-host .maplibregl-ctrl-group button:focus:focus-visible,
+.occ-map > .occ-map-host .maplibregl-ctrl-attrib-button:focus:focus-visible {
   box-shadow: none;
   outline: 2px solid var(--occ-accent);
   outline-offset: -2px;
 }
 
 /* Credits: the near-opaque floating panel, muted text, cyan links. */
-.occ-map .maplibregl-ctrl.maplibregl-ctrl-attrib,
-.occ-map .maplibregl-ctrl-attrib.maplibregl-compact {
+.occ-map > .occ-map-host .maplibregl-ctrl.maplibregl-ctrl-attrib,
+.occ-map > .occ-map-host .maplibregl-ctrl-attrib.maplibregl-compact {
   border-radius: 4px;
   background-color: var(--occ-panel-float);
   color: var(--occ-muted);
   font-size: 12px;
 }
 
-.occ-map .maplibregl-ctrl-attrib.maplibregl-compact {
+.occ-map > .occ-map-host .maplibregl-ctrl-attrib.maplibregl-compact {
   border: 1px solid var(--occ-line);
 }
 
-.occ-map .maplibregl-ctrl-attrib a {
+.occ-map > .occ-map-host .maplibregl-ctrl-attrib a {
   color: var(--occ-accent);
 }
 
-.occ-map .maplibregl-ctrl-attrib-button,
-.occ-map .maplibregl-ctrl-attrib.maplibregl-compact-show .maplibregl-ctrl-attrib-button {
+.occ-map > .occ-map-host .maplibregl-ctrl-attrib-button,
+.occ-map > .occ-map-host .maplibregl-ctrl-attrib.maplibregl-compact-show .maplibregl-ctrl-attrib-button {
   border-radius: 4px;
   background-color: transparent;
   filter: invert(1);
 }
 
 /* MapLibre draws its «i» dark: inverted on the dark panel, as it comes on the light one. */
-.occ-map:where(:root:not(.dark) *) .maplibregl-ctrl-attrib-button,
-.occ-map:where(:root:not(.dark) *) .maplibregl-ctrl-attrib.maplibregl-compact-show .maplibregl-ctrl-attrib-button {
+.occ-map:where(:root:not(.dark) *) > .occ-map-host .maplibregl-ctrl-attrib-button,
+.occ-map:where(:root:not(.dark) *) > .occ-map-host .maplibregl-ctrl-attrib.maplibregl-compact-show .maplibregl-ctrl-attrib-button {
   filter: none;
 }
 
 /* Opened, the credits wrap in the corner instead of running left over the key of the map. */
-.occ-map .maplibregl-ctrl-attrib.maplibregl-compact-show {
+.occ-map > .occ-map-host .maplibregl-ctrl-attrib.maplibregl-compact-show {
   max-width: min(20rem, calc(100% - 20px));
 }
 
 /* The nautical scale. */
-.occ-map .maplibregl-ctrl-scale {
+.occ-map > .occ-map-host .maplibregl-ctrl-scale {
   border-color: var(--occ-line-strong);
   background-color: var(--occ-panel-float);
   color: var(--occ-muted);

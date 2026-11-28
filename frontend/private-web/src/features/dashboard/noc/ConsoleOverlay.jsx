@@ -96,7 +96,8 @@ export const CONSOLE_OVERLAY_LAYOUT = Object.freeze({
  * `alerts`, `inspector` and `positions` are the panels, each already given its class of CONSOLE_OVERLAY_LAYOUT. `wide`
  * (from 1536 px) gives the inspector its own column at the right of the map; otherwise it goes under the board.
  * `status` is what the status bar holds and `statusRef` the ref the map measures the bar through (useStageInsets).
- * With `showPanels: false` (the maximised map, `focus=map`) the status bar stays alone over the map.
+ * With `showPanels: false` (the maximised map, `focus=map`) the status bar stays alone over the map. The bar keeps
+ * the map's keys out (`data-occ-map-keys="off"`): Esc closes the detail of a pill first, and leaves the selection.
  */
 export default function ConsoleOverlay({
   layout = 'float', wide = false, showPanels = true, board, figures, alerts, inspector, positions, status = null,
@@ -104,7 +105,7 @@ export default function ConsoleOverlay({
 }) {
   const classes = CONSOLE_OVERLAY_LAYOUT[layout] ?? CONSOLE_OVERLAY_LAYOUT.float;
   const statusBar = status === null ? null
-    : <div ref={statusRef} data-occ-console-status="" className={classes.status}>{status}</div>;
+    : <div ref={statusRef} data-occ-console-status="" data-occ-map-keys="off" className={classes.status}>{status}</div>;
   if (layout === 'grid') {
     return (
       <div data-occ-console-panels={layout} className={classes.root}>
