@@ -2278,6 +2278,20 @@ lecturas de M5: la API no cambia.
   [ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md); el laboratorio la
   repite con `perf-approach-feed` y `perf-airfield-feed`
   (`tests/visual/lab/map-lab.fluency.spec.mjs`).
+- **Capa de tráfico animada (posterior al commit verificado, 27 de noviembre
+  de 2026).** Con WebGL2 y tráfico en movimiento, la capa three.js dibuja en
+  cada cuadro todos los aviones a la vista (siluetas en 2D, modelos en 3D, sus
+  rótulos y el anillo del elegido) interpolando entre dos fotogramas clave por
+  avión ([`keyframes.js`](../../frontend/private-web/src/features/maps/traffic/keyframes.js)).
+  Mientras anima, el GeoJSON del tráfico se escribe como mucho dos veces por
+  segundo, y «Seguir en 3D» ya no lo escribe en cada cuadro. El fundido de los
+  rótulos vuelve a 150 ms. El regulador ya no toma por cuadros lentos los que
+  provoca cada escritura con la cámara quieta: solo cuenta los cuadros de una
+  animación continua. Los clics sobre el tráfico se resuelven en la CPU. Sin
+  WebGL2, o si la capa no puede crearse, el mapa vuelve a los iconos y rótulos
+  GeoJSON de antes. Ctrl+Alt+F muestra un medidor de cuadros oculto. Las
+  decisiones y la medición en GPU real están en la actualización del 27 de
+  noviembre de 2026 de [ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md).
 - **Qué se mueve y de dónde sale.**
   [`motionStore.js`](../../frontend/private-web/src/features/maps/traffic/motionStore.js)
   une cada lectura con la cinemática pura de `kinematics/`. Un avión en vivo
