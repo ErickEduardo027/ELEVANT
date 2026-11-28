@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { destinationPoint } from '../airport/geo';
+import { GROUND_TRAFFIC_3D_RADIUS_M, liveryInstanceColours } from '../aircraft/instancePlan';
 import { LIVERIES } from '../aircraft/liveries';
 import {
   AIRCRAFT_3D_SLOT, DETAIL_MIN_ZOOM, GOVERNOR, GOVERNOR_PAUSED, MODE_3D_STORAGE_KEY, RETRY_LOAD_MS,
@@ -76,10 +77,24 @@ describe('parkedFromStands', () => {
     expect(parkedFromStands(stands, [{ ...parkedAircraft, gsMs: 6 }], new Set()).map(item => item.id)).toEqual(['s:A5']);
     expect(parkedFromStands(null, null)).toEqual([]);
   });
+
+  it("M9: carries what names the airline for its livery, the owner's callsign and codes, else the stand's flight", () => {
+    const byStand = stand('B20');
+    byStand.display.flightNumber = 'CM 893';
+    const owned = stand('B21', { turnaroundId: 't-owned' });
+    owned.display.flightNumber = 'XX 1';
+    const owner = aviam('f:owner', { turnaroundId: 't-owned', gsMs: 0, callsign: 'JBU1234', airlineIcao: 'JBU',
+      airlineIata: 'B6', flightNumber: 'B6 1234' });
+    const [first, second] = parkedFromStands([byStand, owned], [owner], new Set(['f:owner']));
+    expect(first).toMatchObject({ id: 's:B20', airlineIcao: null, airlineIata: null, callsign: null,
+      flightNumber: 'CM 893' });
+    expect(second).toMatchObject({ id: 'f:owner', airlineIcao: 'JBU', airlineIata: 'B6', callsign: 'JBU1234',
+      flightNumber: 'B6 1234' });
+  });
 });
 
 describe('translatePick', () => {
-  it('names a flight by its key, other traffic by its address and a stand\'s aircraft by the stand', () => {
+  it("names a flight by its key, other traffic by its address and a stand\'s aircraft by the stand", () => {
     const drawn = [aviam('f:k-1'), other('abc123'), { ...aviam('h:def456'), flightKey: null, hex: 'def456' }];
     expect(translatePick({ kind: 'aircraft', id: 'f:k-1' }, drawn)).toMatchObject({ kind: 'flight', id: 'k-1',
       feature: { source: 'occ-traffic', properties: { id: 'f:k-1' } } });
@@ -140,7 +155,7 @@ describe('the governor', () => {
 });
 
 // The controller's world: an engine that records its custom layers, a chunk that resolves when told, a stub layer.
-function world({ fail = false, webgl = true } = {}) {
+function world({ fail = false, webgl = true, liveries = false } = {}) {
   let clock = 0;
   let resolveLoad;
   let rejectLoad;
@@ -182,7 +197,7 @@ function world({ fail = false, webgl = true } = {}) {
   const onChange = vi.fn();
   const controller = createAircraft3dController({
     engine, originLngLat: ARP, fieldElevationM: 14, load, onChange, now: () => clock, getNow: () => Date.parse('2026-11-13T15:00:00Z'),
-    webgl: () => webgl,
+    webgl: () => webgl, liveries,
   });
   const settle = async () => {
     if (fail) rejectLoad();
@@ -317,6 +332,48 @@ describe('createAircraft3dController', () => {
     // The lab's pause, on demand.
     controller.pause();
     expect(controller.state().status).toBe('paused');
+  });
+
+  it("M9: with liveries it plans the airlines' colours and the ground traffic near the field, until the governor steps down", async () => {
+    const { controller, made, settle, frame, onChange } = world({ liveries: true });
+    const [lon, lat] = near(1_200, 300);
+    const taxiing = other('def456', { lon, lat, onGround: true, altM: null, callsign: 'AAL1234' });
+    const copa = aviam('f:k-1', { callsign: 'CMP893' });
+    controller.setEnabled(true);
+    controller.plan({ aircraft: [copa, taxiing], ...AT_RAMP });
+    await settle();
+    const ids = controller.plan({ aircraft: [copa, taxiing], ...AT_RAMP });
+    expect([...ids].sort()).toEqual(['f:k-1', 'h:def456']);
+    const { plan } = made[0].options.getInstances();
+    expect(Array.from(plan.get('A320').colors.slice(0, 3)))
+      .toEqual(Array.from(Float32Array.from(liveryInstanceColours({ airlineIcao: 'CMP' }).fuselage)));
+    expect(Array.from(plan.get('B738').zoneColors.tail.slice(0, 3)))
+      .toEqual(Array.from(Float32Array.from(liveryInstanceColours({ airlineIcao: 'AAL' }).tail)));
+    expect(GROUND_TRAFFIC_3D_RADIUS_M).toBeGreaterThan(1_200);
+
+    // The governor's first step gives the ground traffic back to 2D, and asks the map to write its traffic again.
+    onChange.mockClear();
+    for (let index = 0; index < 2_200 / 40; index += 1) frame(40);
+    expect(controller.state().level).toBe(1);
+    await Promise.resolve();
+    expect(onChange).toHaveBeenCalled();
+    expect([...controller.plan({ aircraft: [copa, taxiing], ...AT_RAMP })]).toEqual(['f:k-1']);
+    // Its livery stays.
+    expect(made[0].options.getInstances().plan.get('A320').zoneColors.tail.slice(0, 3))
+      .toEqual(Float32Array.from(liveryInstanceColours({ airlineIcao: 'CMP' }).tail));
+  });
+
+  it('without liveries other traffic on the ground stays 2D and the aircraft keep their monochrome colours', async () => {
+    const { controller, made, settle } = world();
+    const [lon, lat] = near(1_200, 300);
+    const taxiing = other('def456', { lon, lat, onGround: true, altM: null, callsign: 'AAL1234' });
+    controller.setEnabled(true);
+    controller.plan({ aircraft: [aviam('f:k-1', { callsign: 'CMP893' }), taxiing], ...AT_RAMP });
+    await settle();
+    expect([...controller.plan({ aircraft: [aviam('f:k-1', { callsign: 'CMP893' }), taxiing], ...AT_RAMP })])
+      .toEqual(['f:k-1']);
+    const entry = made[0].options.getInstances().plan.get('A320');
+    expect(entry.zoneColors.tail.slice(0, 3)).toEqual(entry.colors.slice(0, 3));
   });
 
   it('without the governor (the map lab) slow frames change nothing', async () => {
