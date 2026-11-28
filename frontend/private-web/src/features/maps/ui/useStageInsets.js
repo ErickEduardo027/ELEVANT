@@ -19,7 +19,8 @@ const browserObserver = () => (typeof globalThis.ResizeObserver === 'function' ?
  * - A ResizeObserver watches the box and every panel, so a fold, a panel that grows and a window that changes size
  *   are measured again; the insets are measured after every render too, so a panel that comes or goes counts at once.
  *   Without a ResizeObserver (`ResizeObserverImpl` null) only the renders measure.
- * - `enabled: false` (the console's fallback grid, the maximised map) measures nothing: the insets are 0.
+ * - `enabled: false` (the console's fallback grid, where there is no map to float over) measures nothing: the insets
+ *   are 0. The maximised map (`focus=map`) still measures what stays over it, such as the console's status bar.
  * Returns `{ insets, rootRef, measure, measured }`; `insets` keeps its identity while it measures the same.
  * `measured()` (a stable function) answers the last measurement, `{ insets, width, height }`, with the size of the box
  * in pixels: right after a render that measured new insets they differ from `insets` until the next render has them,
@@ -89,7 +90,8 @@ export function useStageInsets({ edges = NO_EDGES, enabled = true, ResizeObserve
     return refs.current.get(panelId);
   }, [observe, unobserve]);
 
-  // After every render: a panel that came or went (an inspector, the maximised map) changes the insets at once.
+  // After every render: a panel that came or went (an inspector, the panels the maximised map hides) changes the insets
+  // at once.
   useLayoutEffect(() => { recompute(); });
 
   useLayoutEffect(() => () => {

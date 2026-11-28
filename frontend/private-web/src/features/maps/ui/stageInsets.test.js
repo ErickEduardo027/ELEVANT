@@ -12,36 +12,52 @@ const rect = (left, top, width, height) => ({ left, top, right: left + width, bo
 const MAP_CSS = readSource('src/styles/occ-map.css').replace(/\/\*[\s\S]*?\*\//g, '');
 const declared = name => new RegExp(`(?:^|[\\s;{])${name}:\\s*([^;]+);`).exec(MAP_CSS)?.[1].trim() ?? null;
 const ROOT_FONT_PX = 16;
+// The room the control column keeps at the right edge of the map, in pixels (--occ-map-rail-reserve: the last test).
+const RAIL_RESERVE_PX = 112;
 
 describe('insetsFromPanels', () => {
   it('open side panels give their width, the bottom panel its height and the top panel its height', () => {
+    // The console floating over the map (M1): its panels 12 px in from the edges and 12 px apart, those at the right
+    // left of the control column's reserve (RAIL_RESERVE_PX, checked against occ-map.css below).
     const panels = [
-      // «Tablero» 448 px wide, 12 px in from the left edge.
-      { side: 'left', rect: rect(252, 60, 448, 500), folded: false },
-      // «Alertas» and the «Inspector» under it, 384 px wide, 12 px in from the right edge.
-      { side: 'right', rect: rect(1244, 60, 384, 300), folded: false },
-      { side: 'right', rect: rect(1244, 368, 384, 300), folded: false },
-      // «Cifras de la jornada» at the top centre, 80 px high.
-      { side: 'top', rect: rect(760, 60, 420, 80), folded: false },
+      // «Tablero» and «Alertas» under it, in the left column, 384 px wide.
+      { side: 'left', rect: rect(252, 60, 384, 500), folded: false },
+      { side: 'left', rect: rect(252, 572, 384, 264), folded: false },
+      // The «Inspector» in its own column, 352 px wide, left of the control column.
+      { side: 'right', rect: rect(ROOT.right - RAIL_RESERVE_PX - 352, 128, 352, 520), folded: false },
+      // «Cifras de la jornada» along the top, 56 px high.
+      { side: 'top', rect: rect(648, 60, 880, 56), folded: false },
       // «Posiciones» along the bottom, 160 px high.
-      { side: 'bottom', rect: rect(252, 676, 1376, 160), folded: false },
+      { side: 'bottom', rect: rect(648, 676, 880, 160), folded: false },
     ];
     expect(insetsFromPanels(ROOT, panels)).toEqual({
-      left: 12 + 448 + STAGE_INSET_GAP_PX,
-      right: 12 + 384 + STAGE_INSET_GAP_PX,
-      top: 12 + 80 + STAGE_INSET_GAP_PX,
+      left: 12 + 384 + STAGE_INSET_GAP_PX,
+      right: RAIL_RESERVE_PX + 352 + STAGE_INSET_GAP_PX,
+      top: 12 + 56 + STAGE_INSET_GAP_PX,
       bottom: 12 + 160 + STAGE_INSET_GAP_PX,
     });
   });
 
   it('folded pills take room only at the top or the bottom edge', () => {
     const panels = [
-      { side: 'left', rect: rect(252, 60, 140, 40), folded: true },
-      { side: 'right', rect: rect(1500, 60, 128, 40), folded: true },
-      { side: 'top', rect: rect(800, 60, 200, 40), folded: true },
-      { side: 'bottom', rect: rect(252, 796, 420, 40), folded: true },
+      { side: 'left', rect: rect(252, 60, 132, 40), folded: true },
+      { side: 'right', rect: rect(ROOT.right - RAIL_RESERVE_PX - 132, 60, 132, 40), folded: true },
+      { side: 'top', rect: rect(648, 60, 100, 40), folded: true },
+      { side: 'bottom', rect: rect(648, 796, 880, 40), folded: true },
     ];
     expect(insetsFromPanels(ROOT, panels)).toEqual({ left: 0, right: 0, top: 12 + 40 + 8, bottom: 12 + 40 + 8 });
+  });
+
+  it('along the bottom the higher of the status bar and the band counts; the bar alone while the panels hide (M1)', () => {
+    // The console's status bar floats 12 px over the bottom edge, 40 px high, and the band 12 px over the bar.
+    const bar = { side: 'bottom', rect: rect(252, ROOT.bottom - 12 - 40, 1276, 40), folded: false };
+    const band = { side: 'bottom', rect: rect(648, ROOT.bottom - 12 - 40 - 12 - 160, 880, 160), folded: false };
+    const bandPill = { ...band, rect: rect(648, ROOT.bottom - 12 - 40 - 12 - 40, 880, 40), folded: true };
+    expect(insetsFromPanels(ROOT, [bar, band]).bottom).toBe(12 + 40 + 12 + 160 + STAGE_INSET_GAP_PX);
+    expect(insetsFromPanels(ROOT, [band, bar]).bottom).toBe(12 + 40 + 12 + 160 + STAGE_INSET_GAP_PX);
+    expect(insetsFromPanels(ROOT, [bar, bandPill]).bottom).toBe(12 + 40 + 12 + 40 + STAGE_INSET_GAP_PX);
+    // `focus=map`: the panels hide and the bar stays over the map, taking only its own height.
+    expect(insetsFromPanels(ROOT, [bar])).toEqual({ top: 0, right: 0, bottom: 12 + 40 + STAGE_INSET_GAP_PX, left: 0 });
   });
 
   it('takes nothing from a hidden panel, one outside the map or one with an unknown side', () => {
@@ -82,16 +98,17 @@ describe('insetsFromPanels', () => {
 
   it('a panel of a column takes room from the side its middle is on, and a pill from the nearer of top and bottom (CN-32)', () => {
     const map = { left: 0, top: 0, right: 1000, bottom: 600 };
-    // The inspector docked under the board at the left (below 1536 px), then in its own column at the right.
-    expect(insetsFromPanels(map, [{ side: 'side', rect: { left: 0, top: 0, right: 384, bottom: 600 } }]))
-      .toEqual({ top: 0, right: 0, bottom: 0, left: 392 });
-    expect(insetsFromPanels(map, [{ side: 'side', rect: { left: 648, top: 60, right: 1000, bottom: 560 } }]))
-      .toEqual({ top: 0, right: 360, bottom: 0, left: 0 });
+    // The inspector under the board at the left (below 1536 px), then in its own column at the right, left of the
+    // control column: both floating 12 px in from the edges of the map (M1).
+    expect(insetsFromPanels(map, [{ side: 'side', rect: { left: 12, top: 12, right: 396, bottom: 588 } }]))
+      .toEqual({ top: 0, right: 0, bottom: 0, left: 404 });
+    expect(insetsFromPanels(map, [{ side: 'side', rect: { left: 536, top: 80, right: 1000 - RAIL_RESERVE_PX,
+      bottom: 520 } }])).toEqual({ top: 0, right: 472, bottom: 0, left: 0 });
     // Folded at the foot of the left column, the pill of «Alertas» takes room from the bottom, not the top.
-    expect(insetsFromPanels(map, [{ side: 'side', folded: true, rect: { left: 0, top: 560, right: 150, bottom: 600 } }]))
-      .toEqual({ top: 0, right: 0, bottom: 48, left: 0 });
-    expect(insetsFromPanels(map, [{ side: 'side', folded: true, rect: { left: 0, top: 0, right: 150, bottom: 40 } }]))
-      .toEqual({ top: 48, right: 0, bottom: 0, left: 0 });
+    expect(insetsFromPanels(map, [{ side: 'side', folded: true, rect: { left: 12, top: 548, right: 144, bottom: 588 } }]))
+      .toEqual({ top: 0, right: 0, bottom: 60, left: 0 });
+    expect(insetsFromPanels(map, [{ side: 'side', folded: true, rect: { left: 12, top: 12, right: 144, bottom: 52 } }]))
+      .toEqual({ top: 60, right: 0, bottom: 0, left: 0 });
   });
 
   it('a panel floating left of the control column takes its width, the column\'s reserve and the gap (M1)', () => {
@@ -101,7 +118,7 @@ describe('insetsFromPanels', () => {
     expect(declared('--occ-map-rail')).toBe('5.5rem');
     expect(declared('--occ-map-rail-reserve')).toBe('calc(var(--occ-map-rail) + 2 * var(--occ-map-gap))');
     const reserve = 5.5 * ROOT_FONT_PX + 2 * 12;
-    expect(reserve).toBe(112);
+    expect(reserve).toBe(RAIL_RESERVE_PX);
     // An inspector 352 px wide in the right slot, 12 px in from the top and the bottom of the map: the camera centres
     // in the area left of both the panel and the column.
     const inspector = { side: 'side', rect: rect(ROOT.right - reserve - 352, ROOT.top + 12, 352, 776), folded: false };

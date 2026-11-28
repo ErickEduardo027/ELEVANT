@@ -16,6 +16,8 @@ const RECTS = Object.freeze({
   inspector: { left: 1400 - RAIL_RESERVE_PX - 352, top: 12, right: 1400 - RAIL_RESERVE_PX, bottom: 788 },
   // A note the screen names no edge for.
   note: { left: 600, top: 300, right: 800, bottom: 400 },
+  // The console's status bar, floating 12 px over the bottom edge, short of the control column.
+  status: { left: 12, top: 748, right: 1400 - RAIL_RESERVE_PX, bottom: 788 },
 });
 const ZERO = Object.freeze({ top: 0, right: 0, bottom: 0, left: 0 });
 const BOARD_ONLY = Object.freeze({ board: 'side' });
@@ -73,6 +75,19 @@ describe('useStageInsets', () => {
     const bare = [];
     render(<Harness panels={['board', 'inspector']} onCommit={commit => bare.push(commit)} />);
     expect(bare.at(-1)).toEqual({ rendered: ZERO, measured: { insets: ZERO, width: 1400, height: 800 } });
+  });
+
+  it('a panel that goes stops taking room at once, and what stays over the map keeps its own (M1)', () => {
+    layOut();
+    const commits = [];
+    const edges = { board: 'side', status: 'bottom' };
+    const view = render(<Harness edges={edges} panels={['board', 'status']} onCommit={commit => commits.push(commit)} />);
+    const bottom = 800 - RECTS.status.top + STAGE_INSET_GAP_PX;
+    expect(commits.at(-1).rendered).toEqual({ ...ZERO, left: RECTS.board.right + STAGE_INSET_GAP_PX, bottom });
+    // The maximised map (`focus=map`): the panels hide and the status bar stays, still measured.
+    view.rerender(<Harness edges={edges} panels={['status']} onCommit={commit => commits.push(commit)} />);
+    expect(commits.at(-1).rendered).toEqual({ ...ZERO, bottom });
+    expect(commits.at(-1).measured).toEqual({ insets: { ...ZERO, bottom }, width: 1400, height: 800 });
   });
 
   it('measures nothing while it is off', () => {

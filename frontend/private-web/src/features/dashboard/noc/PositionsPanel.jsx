@@ -16,10 +16,10 @@ import { consoleMessages } from './consoleMessages';
 import { CONSOLE_SCROLL } from './consoleStyles';
 import { bandWindow, buildStandTimeline, standCounts, TIMELINE_FILTERS } from './standTimeline';
 
-// «Posiciones» (contratos 2.5): the ramp in time along the bottom of the map. Folded, a pill with the figures of the day
-// and how many stands read each state; open, the stand band (occ-ui/OccTimeline.jsx, standTimeline.js) with its «ahora»
-// line, its windows «4 h», «8 h» and «Día», «Con vuelos» or «Todas», and its legend in the header. A bar selects its
-// stand on the map.
+// «Posiciones» (contratos 2.5): the ramp in time along the bottom of the map. Folded, a pill with how many stands read
+// each state and, where no strip of figures shows them, the figures of the day; open, the stand band
+// (occ-ui/OccTimeline.jsx, standTimeline.js) with its «ahora» line, its windows «4 h», «8 h» and «Día», «Con vuelos» or
+// «Todas», and its legend in the header. A bar selects its stand on the map.
 
 const RANGES = Object.freeze([['4h', 'band.range4h'], ['8h', 'band.range8h'], ['day', 'band.day']]);
 const SIGNAL_KEYS = Object.freeze(['attention', 'urgent']);
@@ -59,13 +59,13 @@ function BandLegend({ t, tUi, locale, language }) {
   );
 }
 
-function FoldedSummary({ figures, counts, t, language }) {
+function FoldedSummary({ figures, showFigures, counts, t, language }) {
   const states = STAND_STATE_KEYS.filter(key => counts[key] > 0);
   const figure = id => (figures?.[id] ?? null);
   return (
     <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
-      {/* Docked under the strip of figures (CN-32), the band does not say them again: `figures` is null there. */}
-      {figures === null ? null : (
+      {/* Under the strip of figures over the map (CN-32), the band does not say them again (`showFigures` false). */}
+      {showFigures ? (
         <span className="inline-flex items-center gap-3">
           {['turnarounds', 'inOperation'].map(id => (
             <span key={id} className="whitespace-nowrap">
@@ -74,7 +74,7 @@ function FoldedSummary({ figures, counts, t, language }) {
             </span>
           ))}
         </span>
-      )}
+      ) : null}
       {states.length > 0 ? (
         <span aria-label={t('positions.counts')} role="list" className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
           {states.map(key => (
@@ -93,13 +93,14 @@ function FoldedSummary({ figures, counts, t, language }) {
 /**
  * The positions panel. `stands` are the console's stands as the map draws them (useStandDisplay), `flightsByTurnaround`
  * and `aircraft` the map's flights and aircraft (for the bars' times and the «est.» texture); `figures` buildFigures'
- * model for the folded summary; `state` the remote state of the positions board. `selectedBarId` is the turnaround of
- * the selection and `onSelectStand(code)` selects a bar's stand. `nowMs` is the server's time and `timeZone` the
- * station's.
+ * model for the folded summary, which says «Escalas» and «En operación» only with `showFigures` (not under the strip of
+ * figures, which already shows them); `state` the remote state of the positions board. `selectedBarId` is the
+ * turnaround of the selection and `onSelectStand(code)` selects a bar's stand. `nowMs` is the server's time and
+ * `timeZone` the station's.
  */
 export default function PositionsPanel({
-  stands = NO_STANDS, flightsByTurnaround, aircraft, figures, state, labels, nowMs, timeZone, selectedBarId = null,
-  onSelectStand, measureRef, layout = 'float', defaultFolded = true, className = '',
+  stands = NO_STANDS, flightsByTurnaround, aircraft, figures, showFigures = true, state, labels, nowMs, timeZone,
+  selectedBarId = null, onSelectStand, measureRef, layout = 'float', defaultFolded = true, className = '',
 }) {
   const { t, language, locale } = useTranslation(consoleMessages);
   const { t: tUi } = useTranslation(occUiMessages);
@@ -127,7 +128,8 @@ export default function PositionsPanel({
   return (
     <OccFloatingPanel ref={measureRef} panelId="positions" title={t('panels.positions')} layout={layout}
       defaultFolded={defaultFolded} className={className} actions={controls}
-      foldedSummary={<FoldedSummary figures={figures} counts={counts} t={t} language={language} />}>
+      foldedSummary={<FoldedSummary figures={figures} showFigures={showFigures} counts={counts} t={t}
+        language={language} />}>
       <OccRemoteView {...state} labels={labels} timeZone={timeZone}>
         <div id={bandId} className={`max-h-[clamp(9rem,26vh,16rem)] px-2 pb-2 ${CONSOLE_SCROLL}`}>
           <OccTimeline label={t('band.label')} rows={timeline.rows} windowStart={windowStart} windowEnd={windowEnd}

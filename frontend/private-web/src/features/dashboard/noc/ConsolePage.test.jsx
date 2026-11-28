@@ -16,7 +16,8 @@ import { DepartmentAccessProvider } from '../../access/DepartmentAccessContext';
 import { createOccShellValue, OccShellTestProvider } from '../../admin-occ/shell/testing/occShellFixtures';
 import { MDPC_LAYOUT } from '../../maps/airport/airportLayout';
 import { attachStandGeometry } from '../../maps/stands/standModel';
-import { resetPanelFoldsForTests } from '../../occ-ui/occPanelMemory';
+import { MIN_VISIBLE_MAP_PX } from '../../maps/ui/stageInsets';
+import { resetPanelFoldsForTests, writePanelFolded } from '../../occ-ui/occPanelMemory';
 import { parseMetar } from '../../weather/metar';
 import { resetClosedArrivalsForTests } from './arrivalMemory';
 import { BOARD_LEGEND_KEYS } from './boardModel';
@@ -155,6 +156,10 @@ const accessWithout = (...codes) => ({ ...OCC_ACCESS, permissions: OCC_ACCESS.pe
 const NO_PERMISSION = 'No tienes permiso para ver esta información.';
 const NO_STATION = 'No hay una estación OCC autorizada para consultar este panorama.';
 const panelOf = id => document.querySelector(`[data-occ-floating-panel="${id}"]`);
+const statusBar = () => document.querySelector('[data-occ-console-status]');
+// What the folded band's pill says beside its button (OccFloatingPanel's `foldedSummary`, which describes the button).
+const bandSummary = () => document.getElementById(within(region('Posiciones'))
+  .getByRole('button', { name: 'Posiciones', exact: true }).getAttribute('aria-describedby'));
 const search = () => new URLSearchParams(window.location.search);
 // The board answers once the map flights did: its tabs show (also inside a folded board, whose body stays mounted).
 const boardReady = () => within(board()).findByRole('tablist', { name: 'Vista del tablero', hidden: true });
@@ -175,31 +180,60 @@ class FakeResizeObserver {
   disconnect() { this.targets.clear(); }
 }
 
-// A screen as matchMedia answers it: narrow (below 1280 px, the panels open folded) or wide.
-const screenOf = narrow => query => ({ matches: narrow && /max-width/.test(query), media: query, addEventListener() {},
-  removeEventListener() {} });
+// A screen `width` px wide as matchMedia answers it: the console asks only `max-width` and `min-width` queries (below
+// 1440 px only the board opens, below 768 px nothing does, from 1536 px the inspector takes a column of its own).
+const screenOf = width => query => {
+  const [, kind, px] = /\((max|min)-width:\s*([\d.]+)px\)/.exec(query) ?? [];
+  let matches = false;
+  if (kind === 'max') matches = width <= Number(px);
+  else if (kind === 'min') matches = width >= Number(px);
+  return { matches, media: query, addEventListener() {}, removeEventListener() {} };
+};
 const boxOf = (left, top, width, height) => ({ left, top, width, height, right: left + width, bottom: top + height,
   x: left, y: top, toJSON() { return this; } });
-// Where the console's box and its floating panels sit at 1440 × 900, the fake map's own viewport, as
-// `[left, top, width, height]` in window pixels: each panel as a pill when folded and open otherwise. «Alertas» and the
-// «Inspector» share the right column (24rem and the 12 px padding): either open there takes 404 px from the right.
+// Where the console's box, its floating panels and its status bar sit on a map of 1440 × 900, the fake map's own
+// viewport, as `[left, top, width, height]` in window pixels: each panel as a pill when folded and open otherwise (M1).
+// The stage is 12 px in from the edges of the map and stops 112 px from its right edge (the control column's reserve);
+// the panels are 12 px apart. The status bar runs along the foot (60 px from the bottom with its gap); over it the
+// left column (24rem) holds «Tablero», «Alertas» at its foot and, below 1536 px, the «Inspector»: any of them open takes
+// 404 px from the left. From 1536 px the inspector floats in its own column left of the reserve: 472 px from the right.
 const PANEL_PLACES = Object.freeze({
   map: [0, 0, 1440, 900],
-  board: { folded: [12, 12, 132, 40], open: [12, 12, 448, 560] },
-  figures: { folded: [600, 12, 220, 40], open: [480, 12, 540, 96] },
-  alerts: { folded: [1296, 12, 132, 40], open: [1044, 12, 384, 300] },
-  inspector: { folded: [1296, 60, 132, 40], open: [1044, 60, 384, 520] },
-  positions: { folded: [12, 848, 260, 40], open: [12, 588, 1416, 300] },
+  status: [12, 848, 1316, 40],
+  board: { folded: [12, 12, 132, 40], open: [12, 12, 384, 560] },
+  figures: { folded: [408, 12, 100, 40], open: [408, 12, 920, 56] },
+  alerts: { folded: [12, 796, 132, 40], open: [12, 584, 384, 252] },
+  inspector: { folded: [12, 64, 132, 40], open: [12, 64, 384, 772] },
+  inspectorWide: { folded: [1196, 80, 132, 40], open: [976, 80, 352, 704] },
+  positions: { folded: [408, 796, 920, 40], open: [408, 588, 920, 248] },
+});
+// The same at 1366 × 768 with the navigation rail open (248 px) under the 48 px status bar: a map of 1118 × 720, where
+// only the board opens and the others are pills. The board's box is drawn as it shares its column with an open
+// inspector; alone it runs down to the pill of «Alertas»: 404 px from the left either way.
+const PLACES_1366 = Object.freeze({
+  map: [0, 0, 1118, 720],
+  status: [12, 668, 994, 40],
+  board: { folded: [12, 12, 132, 40], open: [12, 12, 384, 266] },
+  figures: { folded: [408, 12, 100, 40], open: [408, 12, 598, 104] },
+  alerts: { folded: [12, 616, 132, 40], open: [12, 432, 384, 224] },
+  inspector: { folded: [12, 290, 132, 40], open: [12, 290, 384, 366] },
+  positions: { folded: [408, 616, 598, 40], open: [408, 420, 598, 236] },
 });
 let laidOut = null;
 
-/** Lays out what jsdom does not: the console's map box and its panels, by fold, from PANEL_PLACES. */
+/**
+ * Lays out what jsdom does not: the console's map box, its panels by fold and its status bar, from `places`; the
+ * inspector by where the overlay put it (its own column from 1536 px: `inspectorWide`).
+ */
 function layOutPanels(places = PANEL_PLACES) {
   const original = Element.prototype.getBoundingClientRect;
   laidOut = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function boundingClientRect() {
     const fold = this.getAttribute('data-folded') === 'true' ? 'folded' : 'open';
-    const place = this.hasAttribute('data-occ-console-map') ? places.map
-      : places[this.getAttribute('data-occ-floating-panel')]?.[fold];
+    const panelId = this.getAttribute('data-occ-floating-panel');
+    const id = panelId === 'inspector' && this.closest('[data-occ-console-side]') ? 'inspectorWide' : panelId;
+    let place = places[id]?.[fold];
+    if (this.hasAttribute('data-occ-console-map')) place = places.map;
+    else if (this.hasAttribute('data-occ-console-status')) place = places.status;
     return place ? boxOf(...place) : original.call(this);
   });
 }
@@ -276,8 +310,10 @@ describe('the OCC console', () => {
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
     expect(screen.queryByText(/sintéticos|FlyAware|42 vuelos/i)).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: 'Panorama operativo' })).toBeInTheDocument();
-    // The provenance line under the map says where the data comes from.
+    // The provenance line says where the data comes from, in the status bar that floats at the foot of the map (M1).
     const provenance = await screen.findByTestId('occ-console-provenance');
+    expect(provenance.closest('[data-occ-console-status]')).not.toBeNull();
+    expect(screen.getByTestId('occ-map')).toContainElement(provenance);
     await waitFor(() => expect(provenance).toHaveTextContent(/Aviones: Red ADS-B de prueba, hace \d+ s\./));
     expect(provenance).toHaveTextContent('Posiciones: referencia interna sin verificar.');
     expect(provenance).not.toHaveTextContent('Incluye un vuelo demo.');
@@ -297,7 +333,8 @@ describe('the OCC console', () => {
       expect(button).toHaveAttribute('aria-expanded', String(!open));
       expect(panel).toHaveAttribute('data-folded', String(open));
     }
-    // «Posiciones» opens folded: its pill says the figures of the day and the stands by state.
+    // «Posiciones» opens folded: its pill says the stands by state (over the map, the strip of figures already says the
+    // figures of the day).
     expect(region('Posiciones')).toHaveAttribute('data-folded', 'false');
     await userEvent.click(within(region('Posiciones')).getByRole('button', { name: 'Posiciones' }));
     expect(within(region('Posiciones')).getByRole('list', { name: 'Posiciones por estado' })).toHaveTextContent(/Libre/);
@@ -490,10 +527,11 @@ describe('the OCC console', () => {
     renderConsole({ mapService: simulatedMap({ on: true }) });
     await boardReady();
     const announced = await screen.findByText('Llegada nueva: ZZ9001');
-    // In the area the panels leave, and no wider than it: it wraps rather than run over a panel.
+    // In the area the panels leave, and no wider than it: it wraps rather than run over a panel or the control column.
     const place = announced.closest('[data-occ-arrival-place]');
     expect(place.style.left).toContain('--occ-map-inset-left');
-    expect(place.style.maxWidth).toContain('--occ-map-inset-right');
+    expect(place.style.maxWidth).toContain('--occ-map-inset-left');
+    expect(place.style.maxWidth).toContain('--occ-map-clear-right');
     // Opened again (a reload, or back from another module) before anyone acted on it: it is still news.
     cleanup();
     renderConsole({ mapService: simulatedMap({ on: true }) });
@@ -543,50 +581,111 @@ describe('the OCC console', () => {
       .getByRole('button', { name: 'A5' }));
     await waitFor(() => expect(search().get('stand')).toBe('A5'));
     expect(await screen.findByRole('region', { name: 'Inspector' })).toHaveAttribute('data-layout', 'grid');
+    // The status bar closes the grid, under the map's list: there is no map for it to float over, nor panels to hide.
+    const bar = statusBar();
+    expect(bar.parentElement).toHaveAttribute('data-occ-console-panels', 'grid');
+    expect(screen.getByTestId('occ-map')).not.toContainElement(bar);
+    expect(within(bar).queryByRole('button', { name: 'Ocultar paneles' })).not.toBeInTheDocument();
+    // Without a strip of figures over a map, the band's pill says the figures of the day.
+    expect(bandSummary()).toHaveTextContent('Escalas');
+    expect(bandSummary()).toHaveTextContent('En operación');
   });
 
-  it('narrow screens open the panels folded', async () => {
-    vi.stubGlobal('matchMedia', query => ({ matches: /max-width/.test(query), media: query, addEventListener() {},
-      removeEventListener() {} }));
+  it('a phone opens every panel folded', async () => {
+    vi.stubGlobal('matchMedia', screenOf(600));
     renderConsole();
     await boardReady();
     for (const id of ['board', 'alerts', 'figures', 'positions']) expect(panelOf(id)).toHaveAttribute('data-folded', 'true');
   });
 
-  it('a wide screen opens the board, the alerts and the figures, and folds the band', async () => {
-    vi.stubGlobal('matchMedia', query => ({ matches: false, media: query, addEventListener() {}, removeEventListener() {} }));
+  it('below 1440 px only the board opens: the figures, the alerts and the band open folded (M1)', async () => {
+    vi.stubGlobal('matchMedia', screenOf(1366));
+    renderConsole();
+    await boardReady();
+    expect(panelOf('board')).toHaveAttribute('data-folded', 'false');
+    for (const id of ['alerts', 'figures', 'positions']) expect(panelOf(id)).toHaveAttribute('data-folded', 'true');
+    // The strip of figures says «Cifras» on its pill there, and keeps its whole name.
+    expect(within(region('Cifras de la jornada')).getByRole('button', { name: 'Cifras de la jornada' }))
+      .toHaveTextContent('Cifras');
+  });
+
+  it('from 1440 px the board, the alerts and the figures open, and the band folds', async () => {
+    vi.stubGlobal('matchMedia', screenOf(1440));
     renderConsole();
     await boardReady();
     for (const id of ['board', 'alerts', 'figures']) expect(panelOf(id)).toHaveAttribute('data-folded', 'false');
     expect(panelOf('positions')).toHaveAttribute('data-folded', 'true');
+    // Under the strip of figures, the band's pill does not say them again.
+    expect(bandSummary()).not.toHaveTextContent(/Escalas|En operación/);
   });
 
-  it('open panels become map insets', async () => {
+  it('open panels and the status bar become map insets', async () => {
     vi.stubGlobal('ResizeObserver', FakeResizeObserver);
     renderConsole();
     await boardReady();
     const rect = (left, top, width, height) => ({ left, top, width, height, right: left + width, bottom: top + height,
       x: left, y: top, toJSON() { return this; } });
-    // The map's box at 1400 × 800, and the panels where the overlay lays them out.
+    // The map's box at 1400 × 800, and the panels where the overlay floats them: 12 px in from the edges of the map and
+    // 12 px apart, short of the control column's reserve at the right (112 px), over the status bar.
     document.querySelector('[data-occ-console-map]').getBoundingClientRect = () => rect(0, 0, 1400, 800);
-    panelOf('board').getBoundingClientRect = () => rect(12, 12, 448, 560);
-    panelOf('alerts').getBoundingClientRect = () => rect(1004, 12, 384, 300);
-    panelOf('figures').getBoundingClientRect = () => rect(560, 12, 420, 96);
-    panelOf('positions').getBoundingClientRect = () => rect(12, 748, 300, 40);
-    await act(async () => FakeResizeObserver.instances.forEach(observer => observer.callback([], observer)));
+    panelOf('board').getBoundingClientRect = () => rect(12, 12, 384, 560);
+    panelOf('alerts').getBoundingClientRect = () => rect(12, 584, 384, 152);
+    panelOf('figures').getBoundingClientRect = () => rect(408, 12, 880, 56);
+    panelOf('positions').getBoundingClientRect = () => rect(408, 696, 880, 40);
+    statusBar().getBoundingClientRect = () => rect(12, 748, 1276, 40);
+    await remeasure();
     const map = screen.getByTestId('occ-map');
-    expect(map.style.getPropertyValue('--occ-map-inset-left')).toBe('468px');
-    expect(map.style.getPropertyValue('--occ-map-inset-right')).toBe('404px');
-    expect(map.style.getPropertyValue('--occ-map-inset-top')).toBe('116px');
-    // The folded band is a pill along the bottom: only its height counts.
-    expect(map.style.getPropertyValue('--occ-map-inset-bottom')).toBe('60px');
+    expect(map.style.getPropertyValue('--occ-map-inset-left')).toBe('404px');
+    // Nothing floats at the right: the control column keeps its reserve without taking room from the camera.
+    expect(map.style.getPropertyValue('--occ-map-inset-right')).toBe('0px');
+    expect(map.style.getPropertyValue('--occ-map-inset-top')).toBe('76px');
+    // The folded band is a pill over the status bar: only its height counts, from the higher of the two.
+    expect(map.style.getPropertyValue('--occ-map-inset-bottom')).toBe('112px');
 
-    // Folding the board leaves its pill at the top: the left edge is the map's again.
+    // Folding the board leaves its pill at the top, and «Alertas» keep the column: the left edge is still theirs.
     await userEvent.click(within(board()).getByRole('button', { name: 'Tablero' }));
-    panelOf('board').getBoundingClientRect = () => rect(12, 12, 140, 40);
-    await act(async () => FakeResizeObserver.instances.forEach(observer => observer.callback([], observer)));
+    panelOf('board').getBoundingClientRect = () => rect(12, 12, 132, 40);
+    await remeasure();
+    expect(map.style.getPropertyValue('--occ-map-inset-left')).toBe('404px');
+    expect(map.style.getPropertyValue('--occ-map-inset-top')).toBe('76px');
+    // Folded too, «Alertas» are a pill at the foot of the column: the left edge is the map's again.
+    await userEvent.click(within(region('Alertas')).getByRole('button', { name: 'Alertas' }));
+    panelOf('alerts').getBoundingClientRect = () => rect(12, 696, 132, 40);
+    await remeasure();
     expect(map.style.getPropertyValue('--occ-map-inset-left')).toBe('0px');
-    expect(map.style.getPropertyValue('--occ-map-inset-top')).toBe('116px');
+    expect(map.style.getPropertyValue('--occ-map-inset-bottom')).toBe('112px');
+  });
+
+  it('at 1366 × 768 the panels that open leave the map far more than its least visible area (M1)', async () => {
+    vi.stubGlobal('matchMedia', screenOf(1366));
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+    layOutPanels(PLACES_1366);
+    renderConsole();
+    await boardReady();
+    await remeasure();
+    const inset = side => Number.parseFloat(screen.getByTestId('occ-map').style.getPropertyValue(`--occ-map-inset-${side}`));
+    const insets = () => ({ top: inset('top'), right: inset('right'), bottom: inset('bottom'), left: inset('left') });
+    const [, , width, height] = PLACES_1366.map;
+    // The open board at the left, the pills of «Cifras» at the top and of the band and «Alertas» over the status bar.
+    expect(insets()).toEqual({ top: 60, right: 0, bottom: 112, left: 404 });
+    // More than the least the map keeps in sight, so none of that room was given back (maps/ui/stageInsets.js), and
+    // more than half of the map across and down.
+    const across = width - inset('left') - inset('right');
+    const down = height - inset('top') - inset('bottom');
+    expect(across).toBeGreaterThan(MIN_VISIBLE_MAP_PX.width);
+    expect(down).toBeGreaterThan(MIN_VISIBLE_MAP_PX.height);
+    expect(across / width).toBeGreaterThan(0.5);
+    expect(down / height).toBeGreaterThan(0.5);
+
+    // A stand chosen: its inspector opens under the board, in the same column, and the map keeps its width.
+    cleanup();
+    FakeResizeObserver.instances = [];
+    renderConsole({ url: `${PAGE}?stand=B24` });
+    await boardReady();
+    await screen.findByRole('region', { name: 'Inspector' });
+    await remeasure();
+    expect(panelOf('inspector').closest('[data-occ-console-side]')).toBeNull();
+    expect(insets()).toEqual({ top: 60, right: 0, bottom: 112, left: 404 });
   });
 
   it('Escalas filters by derived resource state and labels a demo turnaround «Demo», and no other', async () => {
@@ -651,14 +750,25 @@ describe('the OCC console', () => {
     expect(legend()).toBeNull();
   });
 
-  it('?focus=map hides the panels behind «Mostrar paneles»', async () => {
+  it('?focus=map hides the panels behind «Mostrar paneles», and keeps the status bar over the map', async () => {
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+    layOutPanels();
     renderConsole({ url: `${PAGE}?focus=map` });
     expect(await screen.findByRole('button', { name: 'Mostrar paneles' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Tablero' })).not.toBeInTheDocument();
+    // The status bar stays, still measured: only its height is taken from the map, at the bottom.
+    const map = screen.getByTestId('occ-map');
+    expect(map).toContainElement(statusBar());
+    expect(await within(statusBar()).findByTestId('occ-console-provenance')).toBeInTheDocument();
+    expect(within(statusBar()).queryByRole('button', { name: 'Ocultar paneles' })).not.toBeInTheDocument();
+    await remeasure();
+    expect(['top', 'right', 'bottom', 'left'].map(side => map.style.getPropertyValue(`--occ-map-inset-${side}`)))
+      .toEqual(['0px', '0px', '60px', '0px']);
+
     await userEvent.click(screen.getByRole('button', { name: 'Mostrar paneles' }));
     await waitFor(() => expect(search().has('focus')).toBe(false));
     expect(await screen.findByRole('region', { name: 'Tablero' })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Ocultar paneles' }));
+    await userEvent.click(within(statusBar()).getByRole('button', { name: 'Ocultar paneles' }));
     await waitFor(() => expect(search().get('focus')).toBe('map'));
   });
 });
@@ -668,10 +778,15 @@ describe('the OCC console', () => {
 // when a change of the room covers it. The fake MapLibre answers `project` around the middle of its viewport and
 // applies every move at once; `cameraCalls` keeps their order.
 describe('the camera around the panels', () => {
-  /** The console on a laid-out screen, its engine ready, and `code` drawn at `pixel` after the opening view. */
-  async function consoleWithStandAt(code, pixel, { narrow = true, url = PAGE } = {}) {
-    vi.stubGlobal('matchMedia', screenOf(narrow));
+  /**
+   * The console on a laid-out screen `width` px wide (PANEL_PLACES), its engine ready, and `code` drawn at `pixel` after
+   * the opening view. `folded`: the person folded «Tablero», «Alertas» and «Cifras» earlier in the tab (the band opens
+   * folded anyway), so only their pills take room until something is chosen.
+   */
+  async function consoleWithStandAt(code, pixel, { folded = true, width = 1440, url = PAGE } = {}) {
+    vi.stubGlobal('matchMedia', screenOf(width));
     vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+    if (folded) for (const panelId of ['board', 'alerts', 'figures']) writePanelFolded(panelId, true);
     layOutPanels();
     const { map } = renderConsole({ url });
     await boardReady();
@@ -682,16 +797,17 @@ describe('the camera around the panels', () => {
   }
 
   it('a stand chosen on the map where the inspector opens comes back into sight, at the same zoom', async () => {
-    // A narrow screen: «Alertas» is a pill, so the right edge is the map's until something is chosen.
-    const { map, point } = await consoleWithStandAt('B24', [1300, 450]);
-    expect(screen.getByTestId('occ-map').style.getPropertyValue('--occ-map-inset-right')).toBe('0px');
+    // Every panel a pill: the left edge is the map's until something is chosen.
+    const { map, point } = await consoleWithStandAt('B24', [150, 450]);
+    expect(screen.getByTestId('occ-map').style.getPropertyValue('--occ-map-inset-left')).toBe('0px');
     const zoom = map.getZoom();
     const from = map.cameraCalls.length;
-    await clickStand(map, 'B24', [1300, 450], point);
+    await clickStand(map, 'B24', [150, 450], point);
     await waitFor(() => expect(search().get('stand')).toBe('B24'));
     expect(await screen.findByRole('region', { name: 'Inspector' })).toBeInTheDocument();
-    // The inspector takes 404 px from the right, where B24 was: once the map has that room, B24 is in its middle.
-    const padded = paddedSince(map, from, 'right', 404);
+    // Below 1536 px the inspector opens in the left column, 404 px from the left, where B24 was: once the map has that
+    // room, B24 is in its middle.
+    const padded = paddedSince(map, from, 'left', 404);
     expect(padded).toBeGreaterThanOrEqual(0);
     expect(movedToSince(map, from, point)).toBeGreaterThan(padded);
     expect(near(map.getCenter(), point)).toBe(true);
@@ -704,48 +820,49 @@ describe('the camera around the panels', () => {
     const from = map.cameraCalls.length;
     await clickStand(map, 'B24', [600, 450], point);
     await screen.findByRole('region', { name: 'Inspector' });
-    expect(paddedSince(map, from, 'right', 404)).toBeGreaterThanOrEqual(0);
+    expect(paddedSince(map, from, 'left', 404)).toBeGreaterThanOrEqual(0);
     expect(movesSince(map, from)).toEqual([]);
     expect(near(map.getCenter(), [centre.lng, centre.lat])).toBe(true);
   });
 
   it('a panel unfolded over what is chosen brings it back, but not what a person moved out of sight', async () => {
-    const { map, point } = await consoleWithStandAt('B24', [200, 450], { url: `${PAGE}?stand=B24` });
+    const { map, point } = await consoleWithStandAt('B24', [700, 700], { url: `${PAGE}?stand=B24` });
     await screen.findByRole('region', { name: 'Inspector' });
     const zoom = map.getZoom();
     let from = map.cameraCalls.length;
-    // «Tablero» opens 468 px wide over B24, which the pill left in sight.
-    await userEvent.click(within(board()).getByRole('button', { name: 'Tablero' }));
+    // «Posiciones» opens 320 px high over B24, which its pill over the status bar left in sight.
+    await userEvent.click(within(region('Posiciones')).getByRole('button', { name: 'Posiciones', exact: true }));
     await remeasure();
-    expect(paddedSince(map, from, 'left', 468)).toBeGreaterThanOrEqual(0);
+    expect(paddedSince(map, from, 'bottom', 320)).toBeGreaterThanOrEqual(0);
     expect(near(map.getCenter(), point)).toBe(true);
     expect(map.getZoom()).toBeCloseTo(zoom, 6);
 
-    // A person drags B24 far out of sight; folding the board leaves the camera where they put it.
+    // A person drags B24 far out of sight; folding the band leaves the camera where they put it.
     act(() => map.jumpTo({ center: [point[0] + 0.05, point[1]], originalEvent: { type: 'mousemove' } }));
     const dragged = map.getCenter();
     from = map.cameraCalls.length;
-    await userEvent.click(within(board()).getByRole('button', { name: 'Tablero' }));
+    await userEvent.click(within(region('Posiciones')).getByRole('button', { name: 'Posiciones', exact: true }));
     await remeasure();
-    expect(paddedSince(map, from, 'left', 0)).toBeGreaterThanOrEqual(0);
+    expect(paddedSince(map, from, 'bottom', 112)).toBeGreaterThanOrEqual(0);
     expect(movesSince(map, from)).toEqual([]);
     expect(near(map.getCenter(), [dragged.lng, dragged.lat])).toBe(true);
   });
 
-  it('a strip chosen beside a folded «Alertas» flies to its flight only once the inspector is measured', async () => {
-    const { map } = await consoleWithStandAt('B24', [600, 450], { narrow: false });
-    // The person folds «Alertas»: its pill takes no width.
-    await userEvent.click(within(region('Alertas')).getByRole('button', { name: 'Alertas' }));
-    await remeasure();
+  it('a strip chosen on a wide screen flies to its flight only once the inspector\'s column is measured', async () => {
+    // From 1536 px (a map of 1440 px beside the open navigation rail) the inspector floats in a column of its own, left
+    // of the control column: until something is chosen nothing floats at the right.
+    const { map } = await consoleWithStandAt('B24', [600, 450], { folded: false, width: 1688 });
     expect(screen.getByTestId('occ-map').style.getPropertyValue('--occ-map-inset-right')).toBe('0px');
     const onFinal = airPicture({ now: Date.now() }).aircraft.find(item => item.hex === CONSOLE_HEX.onFinal);
     const aircraft = [onFinal.longitude, onFinal.latitude];
     const from = map.cameraCalls.length;
     await userEvent.click(within(board()).getByRole('button', { name: /ZZ161/ }));
     await waitFor(() => expect(search().get('flightId')).toBe(ARRIVAL_ON_FINAL_KEY));
-    await screen.findByRole('region', { name: 'Inspector' });
-    // A move made before the inspector's room would stop half-way at the jump of the new padding.
-    const padded = paddedSince(map, from, 'right', 404);
+    const inspector = await screen.findByRole('region', { name: 'Inspector' });
+    expect(inspector.closest('[data-occ-console-side]')).not.toBeNull();
+    // Its width, the column's reserve and the gap: 472 px. A move made before that room would stop half-way at the
+    // jump of the new padding.
+    const padded = paddedSince(map, from, 'right', 472);
     expect(padded).toBeGreaterThanOrEqual(0);
     expect(movedToSince(map, from, aircraft, AIRCRAFT_TOLERANCE)).toBeGreaterThan(padded);
     expect(near(map.getCenter(), aircraft, AIRCRAFT_TOLERANCE)).toBe(true);

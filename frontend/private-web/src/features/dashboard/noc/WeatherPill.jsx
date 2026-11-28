@@ -16,10 +16,11 @@ import { CONSOLE_ACTION, CONSOLE_SCROLL } from './consoleStyles';
 import { describeClouds, describeVisibility, describeWeather, describeWind } from './weatherWords';
 
 // The weather pill of the console (contratos 2.5): today's METAR of MDPC from the browser's IEM service (PR M8 moves it
-// to the API), at the end of the provenance line under the map, with the wind, the QNH, the age of the observation and
-// «No oficial». It opens its detail, which carries everything the old dashboard's weather panel showed, so nothing is
-// lost (design D.1): the decoded and the raw METAR with its times and freshness, the last reports, and the GOES-East and
-// IMERG imagery of NASA GIBS on the maps lane's GoesCloudMap, loaded only while the detail is open.
+// to the API), in the console's status bar after the provenance line, floating at the foot of the map (M1), with the
+// wind, the QNH, the age of the observation and «No oficial». It opens its detail, which carries everything the old
+// dashboard's weather panel showed, so nothing is lost (design D.1): the decoded and the raw METAR with its times and
+// freshness, the last reports, and the GOES-East and IMERG imagery of NASA GIBS on the maps lane's GoesCloudMap, loaded
+// only while the detail is open.
 
 const GoesCloudMap = dynamic(() => import('../../maps/GoesCloudMap'), { ssr: false });
 
