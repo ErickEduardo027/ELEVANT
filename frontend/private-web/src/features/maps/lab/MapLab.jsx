@@ -273,12 +273,14 @@ function LabScene({ scene, basemap, frozenAt, governed = false }) {
       windAt: () => (scene.weather ? windPoint() : null),
       // The 3D aircraft (PR M7): `{ enabled, status, notice, level, stats, pause, resume }`, or null.
       aircraft3d: () => mapRef.current?.aircraft3d?.() ?? null,
+      // Chooses an aircraft by its address (M5: the gallery of the 3D models), as a click on it would, or null to clear.
+      selectAircraft: hex => select(hex === null ? null : { kind: 'aircraft', id: hex }),
     };
     window.__occMapLab = lab;
     return () => {
       if (window.__occMapLab === lab) delete window.__occMapLab;
     };
-  }, [scene.id, scene.stands, scene.weather, scene.traffic, reread, traffic, motion, renderClock]);
+  }, [scene.id, scene.stands, scene.weather, scene.traffic, reread, traffic, motion, renderClock, select]);
 
   // Read once when the map starts, like every option of the engine.
   const [mapOptions] = useState(() => ({
