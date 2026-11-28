@@ -1509,9 +1509,13 @@ Desde el PR M7 los aviones se ven en 3D en Aeródromo y Rampa (ver
   mapa está listo al cargar su estilo. Solo un mapa que no puede arrancar, como
   en un navegador sin WebGL2, o cuyo contexto WebGL vuelve sin WebGL2, deja en
   su lugar la lista de respaldo, y ese mapa ya no vuelve; si el mapa base no
-  carga, un aviso dice «No se pudo cargar el mapa base. Los datos de ELEVANT
-  siguen en el mapa.», y lo que dibuja cada pantalla (posiciones, vuelos y el
-  punto de referencia de PUJ) sigue en el mapa.
+  carga, un aviso dice «No se pudo cargar el mapa base; reintentando… Los datos
+  de ELEVANT siguen en el mapa.», y lo que dibuja cada pantalla (posiciones,
+  vuelos y el punto de referencia de PUJ) sigue en el mapa. Desde el 28 de
+  noviembre de 2026 el mapa base se reintenta solo (a los 2 s, 5 s y 10 s, y
+  luego cada 30 s, sin intentos con la pestaña oculta) y el aviso se quita con
+  su primera tesela; con el mapa base ya cargado, una tesela que falla recarga
+  la fuente como mucho cada 10 s (ADR-0043).
   [`workerUrl.js`](../../frontend/private-web/src/features/maps/core/workerUrl.js)
   prepara una sola vez los workers de MapLibre (`prewarm`), que ya no se crean
   ni se terminan con cada mapa.
