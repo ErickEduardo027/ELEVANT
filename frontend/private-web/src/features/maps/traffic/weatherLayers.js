@@ -570,7 +570,7 @@ export const RADAR_OPACITY = 0.7;
  * The tiles a radar source is born with, never asked for: its layer is born hidden and OccMap shows it only once it has
  * pinned the source to a frame of the API (the latest TJUA image of IEM, an origin the CSP already allows).
  */
-export const RADAR_PLACEHOLDER_TILE = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::TJUA-N0Q-0/{z}/{x}/{y}.png';
+export const RADAR_PLACEHOLDER_TILE = 'https://mesonet.agron.iastate.edu/c/tile.py/1.0.0/ridge::JUA-N0B-0/{z}/{x}/{y}.png';
 
 export const loopSourceId = index => `occ-weather-loop-${index}`;
 export const loopLayerId = index => `occ-weather-loop-${index}-image`;
@@ -585,9 +585,12 @@ export const SIGMET_LAYER_IDS = Object.freeze(['occ-weather-sigmet-fill', 'occ-w
   'occ-weather-sigmet-label']);
 /** The credit of the stations and the SIGMETs, on their sources: MapLibre lists it while one of them is drawn. */
 export const AWC_ATTRIBUTION = '<a href="https://aviationweather.gov" target="_blank" rel="noopener noreferrer">NOAA Aviation Weather Center</a>';
-/** The credit of each radar provider the API may name, for the map's attribution while the radar is on screen. */
+/**
+ * The credit of each radar provider the API may name (OCC_RADAR_PROVIDERS of the shared client: only San Juan's NEXRAD
+ * through the Iowa Environmental Mesonet; RainViewer is never used), for the map's attribution while the radar is on
+ * screen.
+ */
 export const RADAR_CREDITS = Object.freeze({
-  rainviewer: Object.freeze({ name: 'RainViewer', homeUrl: 'https://www.rainviewer.com' }),
   'iem-tjua': Object.freeze({ name: 'Iowa Environmental Mesonet (NWS TJUA)', homeUrl: 'https://mesonet.agron.iastate.edu' }),
 });
 /** The radius of a station's dot, in px. */

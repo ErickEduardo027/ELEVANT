@@ -1,15 +1,18 @@
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createElevantApiClient } from '@elevant/api-client';
 import {
-  createDisabledRegionWeatherAdapter, createRemoteRegionWeatherAdapter, createSimulatedRegionWeatherAdapter,
-  offersRegionWeather, REGION_WEATHER_OPERATIONS,
+  createRemoteRegionWeatherAdapter, createSimulatedRegionWeatherAdapter, defaultRegionWeatherAdapter,
+  REGION_WEATHER_OPERATIONS,
 } from '../../services/regionWeatherService';
+import { createServerClock } from '../../services/serverClock';
 import { administratorAccess, DepartmentAccessProvider } from '../access/DepartmentAccessContext';
 import { DepartmentPermissionCodes } from '../access/testAccess';
 import { createOccShellValue, OccShellTestProvider } from '../admin-occ/shell/testing/occShellFixtures';
 import { MAP_PERMISSIONS } from '../maps/mapPermissions';
 import {
-  createRegionWeather, createRegionWeatherScenario, createSigmets, WEATHER_NOON, WEATHER_STATION_ID,
+  createRadarFrames, createRegionWeather, createRegionWeatherScenario, createSigmets, createWindGrid, radarTemplateAt,
+  WEATHER_NOON, WEATHER_STATION_ID,
 } from '../maps/testing/weatherFixtures';
 import {
   REGION_WEATHER_MAX_DELAY_MS, REGION_WEATHER_READS, regionReadStatus, regionWeatherDelayMs, regionWeatherPollMs,
@@ -184,29 +187,53 @@ describe('useRegionWeather (lane M7)', () => {
 });
 
 describe('the regional weather adapters (services/regionWeatherService.js)', () => {
-  it('the remote one calls the shared client with the station and fails a read the client does not offer yet', async () => {
-    const client = {
-      getOccRegionWeather: vi.fn().mockResolvedValue({ status: 'Live', serverTime: WEATHER_NOON, stations: [] }),
-    };
+  it("the remote one calls the shared client with the station, and Panorama's default is the remote one", async () => {
+    const client = Object.fromEntries(Object.values(REGION_WEATHER_OPERATIONS).map(({ read }) => [read,
+      vi.fn().mockResolvedValue({ status: 'Live', serverTime: WEATHER_NOON })]));
     const adapter = createRemoteRegionWeatherAdapter({ client });
-    await expect(adapter.getRegionWeather({ stationId: WEATHER_STATION_ID })).resolves.toMatchObject({ status: 'Live' });
-    expect(client.getOccRegionWeather).toHaveBeenCalledWith({ stationId: WEATHER_STATION_ID }, expect.any(Object));
-    await expect(adapter.getRadarFrames({ stationId: WEATHER_STATION_ID }))
-      .rejects.toMatchObject({ status: 404, code: 'region_weather_unavailable' });
-    expect(offersRegionWeather(client)).toBe(false);
-    const full = Object.fromEntries(Object.values(REGION_WEATHER_OPERATIONS).map(({ read }) => [read, () => null]));
-    expect(offersRegionWeather(full)).toBe(true);
-    expect(offersRegionWeather(() => { throw new Error('no client'); })).toBe(false);
+    for (const { method, read } of Object.values(REGION_WEATHER_OPERATIONS)) {
+      await expect(adapter[method]({ stationId: WEATHER_STATION_ID })).resolves.toMatchObject({ status: 'Live' });
+      expect(client[read]).toHaveBeenCalledWith({ stationId: WEATHER_STATION_ID },
+        expect.objectContaining({ cache: 'no-store', signal: expect.any(AbortSignal) }));
+    }
+    const failing = createRemoteRegionWeatherAdapter({ client: { ...client,
+      getOccSigmets: vi.fn().mockRejectedValue(Object.assign(new Error('refused'), { status: 503, code: 'x' })) } });
+    await expect(failing.getSigmets({ stationId: WEATHER_STATION_ID })).rejects.toMatchObject({ status: 503, code: 'x' });
+    const panorama = defaultRegionWeatherAdapter();
+    expect(panorama.simulated).toBeUndefined();
+    expect(Object.keys(panorama).sort()).toEqual(['clock', 'getRadarFrames', 'getRegionWeather', 'getSigmets', 'getWindGrid']);
   });
 
-  it('the disabled one answers Disabled for every read without a request', async () => {
-    const adapter = createDisabledRegionWeatherAdapter();
-    const answers = await Promise.all([adapter.getRegionWeather({ stationId: 'x' }), adapter.getSigmets({}),
-      adapter.getWindGrid({}), adapter.getRadarFrames({})]);
-    expect(answers.map(answer => answer.status)).toEqual(['Disabled', 'Disabled', 'Disabled', 'Disabled']);
-    expect(answers[0]).toMatchObject({ stationId: 'x', stations: [] });
-    expect(answers[3].frames).toEqual([]);
-  });
+  it("the remote one reads the four answers of lane M6 through the real shared client, IEM's TJUA tiles included",
+    async () => {
+      const inForce = createSigmets().sigmets.slice(0, 1);
+      const answers = {
+        '/api/v1/occ/weather/region': createRegionWeather(),
+        '/api/v1/occ/weather/sigmets': createSigmets({ sigmets: inForce }),
+        '/api/v1/occ/weather/wind': createWindGrid(),
+        '/api/v1/occ/weather/radar': createRadarFrames(),
+      };
+      const fetch = vi.fn(async input => {
+        const url = new URL(String(input?.url ?? input));
+        expect(url.searchParams.get('stationId')).toBe(WEATHER_STATION_ID);
+        const body = answers[url.pathname];
+        return new Response(JSON.stringify(body ?? {}), { status: body ? 200 : 404,
+          headers: { 'content-type': 'application/json' } });
+      });
+      const client = createElevantApiClient({ baseUrl: 'https://api.example.test', fetch });
+      const adapter = createRemoteRegionWeatherAdapter({ client, clock: createServerClock() });
+      const [region, sigmets, wind, radar] = await Promise.all([adapter.getRegionWeather, adapter.getSigmets,
+        adapter.getWindGrid, adapter.getRadarFrames].map(read => read({ stationId: WEATHER_STATION_ID })));
+      expect(fetch).toHaveBeenCalledTimes(4);
+      expect(region.stations).toHaveLength(6);
+      expect(sigmets.sigmets.map(sigmet => sigmet.id)).toEqual(['MDCS-SIGMET-A1']);
+      expect(wind.refreshAfterSeconds).toBe(3600);
+      expect(radar.provider).toBe('iem-tjua');
+      expect(radar.frames.at(-1).tileUrlTemplate).toBe(radarTemplateAt(radar.frames.at(-1).time));
+      // An answer outside the contract is refused by the shared client, never drawn.
+      answers['/api/v1/occ/weather/radar'] = { ...createRadarFrames(), provider: 'rainviewer' };
+      await expect(adapter.getRadarFrames({ stationId: WEATHER_STATION_ID })).rejects.toBeInstanceOf(Error);
+    });
 
   it('the simulated one moves its instants to now when asked, and answers 404 for a missing part', async () => {
     const later = NOON + 3_600_000;

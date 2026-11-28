@@ -284,7 +284,7 @@ describe('the OCC console', () => {
     await waitFor(() => expect(map.getSource('occ-weather-stations').data.features.map(item => item.properties.icao))
       .toContain('MDSD'));
     expect(map.getSource('occ-weather-sigmet').data.features.map(item => item.properties.id)).toEqual(['MDCS-SIGMET-A1']);
-    expect(map.getSource('occ-weather-radar-5').serialize().tiles[0]).toContain('ridge::TJUA-N0Q-');
+    expect(map.getSource('occ-weather-radar-5').serialize().tiles[0]).toContain('ridge::JUA-N0B-');
     // «Meteorología PUJ» floats in the area the panels leave, with its METAR.
     const panel = screen.getByTestId('weather-panel');
     const place = panel.closest('[data-occ-weather-place]');

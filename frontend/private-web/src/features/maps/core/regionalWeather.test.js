@@ -101,9 +101,9 @@ describe('the regional weather of an OCC map (lane M7)', () => {
     loop.stop();
   });
 
-  it('credits the radar provider it knows', () => {
+  it("credits the radar provider it knows: only IEM's TJUA, the one the API names (lane M6)", () => {
     expect(radarCredit('iem-tjua').name).toMatch(/Iowa Environmental Mesonet/);
-    expect(radarCredit('rainviewer').name).toBe('RainViewer');
+    expect(radarCredit('rainviewer')).toBeNull();
     expect(radarCredit('other')).toBeNull();
     expect(radarCredit(null)).toBeNull();
   });

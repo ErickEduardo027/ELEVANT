@@ -5,12 +5,13 @@ import { createServerClock, parseInstant, serverClock } from './serverClock';
 
 // The regional weather of an OCC station (lane M7, owner decisions of 2026-11-26 and 2026-11-27): the METARs and TAFs
 // of the region's airports, the SIGMETs in force, a grid of wind and the index of radar frames. The API reads them from
-// their providers (lane M6: GET occ/weather/region, occ/weather/sigmet, occ/weather/wind and occ/weather/radar) and
-// answers each with its state in a 200 (Live, Stale, Unavailable or Disabled) and its credit; the browser never calls a
-// weather provider itself (ADR-0004). Three adapters with one interface, `{ getRegionWeather, getSigmets, getWindGrid,
-// getRadarFrames }`, each `({ stationId, signal }) => answer`:
-// - the remote one, over the shared client's getOccRegionWeather, getOccSigmets, getOccWindGrid and getOccRadarFrames;
-// - the disabled one, which sends nothing and answers Disabled, until those reads reach the shared client;
+// their providers (lane M6: GET occ/weather/region, occ/weather/sigmets, occ/weather/wind and occ/weather/radar; the
+// radar is San Juan's NEXRAD through the Iowa Environmental Mesonet, `provider` iem-tjua) and answers each with its
+// state in a 200 (Live, Stale, Unavailable or Disabled) and its credit; the browser never calls a weather provider
+// itself (ADR-0004). Two adapters with one interface, `{ getRegionWeather, getSigmets, getWindGrid, getRadarFrames }`,
+// each `({ stationId, signal }) => answer`:
+// - the remote one, over the shared client's getOccRegionWeather, getOccSigmets, getOccWindGrid and getOccRadarFrames
+//   (which check every answer against the contract and refuse a malformed one);
 // - a simulated one for the map lab and the tests, which answers a synthetic scenario and never touches the network
 //   (its data live with the tests and the lab: features/maps/testing/weatherFixtures.js).
 // The host passes the adapter; a component never chooses the source.
@@ -26,19 +27,6 @@ export const REGION_WEATHER_OPERATIONS = Object.freeze({
 });
 const OPERATIONS = Object.entries(REGION_WEATHER_OPERATIONS);
 
-/**
- * Whether `client` (the API client, or a function that creates it) offers the four regional reads. The reads come with
- * lane M6; until then Panorama answers Disabled without a request (defaultRegionWeatherAdapter).
- */
-export function offersRegionWeather(client = defaultClient) {
-  try {
-    const api = typeof client === 'function' ? client() : client;
-    return OPERATIONS.every(([, { read }]) => typeof api?.[read] === 'function');
-  } catch {
-    return false;
-  }
-}
-
 async function guarded(request) {
   try { return await request(); } catch (error) {
     if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
@@ -50,8 +38,7 @@ async function guarded(request) {
  * The regional reads over the API. Each takes the instants it was sent and answered and feeds `clock` with the answer's
  * `serverTime`; like every OCC read it is abandoned after OCC_READ_TIMEOUT_MS and fails with a `TimeoutError`; the
  * caller's `signal` cancels it before. A 401 signs out through handleUnauthorizedResponse; every failure is thrown again
- * as it came, with its `status` and `code`. A client without one of the reads fails that read with
- * `region_weather_unavailable` (status 404, which the OCC reads as refused, so it is not asked again).
+ * as it came, with its `status` and `code`.
  */
 export function createRemoteRegionWeatherAdapter({ client = defaultClient, clock = serverClock,
   timeoutMs = OCC_READ_TIMEOUT_MS } = {}) {
@@ -60,14 +47,7 @@ export function createRemoteRegionWeatherAdapter({ client = defaultClient, clock
     const timeout = AbortSignal.timeout(timeoutMs);
     const options = { signal: signal ? AbortSignal.any([signal, timeout]) : timeout, cache: 'no-store' };
     const sentAt = clock.localNow();
-    const data = await guarded(() => {
-      const target = api();
-      if (typeof target?.[read] !== 'function') {
-        throw Object.assign(new Error(`${read} is not in the API client yet.`), { status: 404,
-          code: 'region_weather_unavailable' });
-      }
-      return target[read]({ stationId }, options);
-    });
+    const data = await guarded(() => api()[read]({ stationId }, options));
     clock.observe(data?.serverTime, sentAt, clock.localNow());
     return data;
   };
@@ -77,28 +57,9 @@ export function createRemoteRegionWeatherAdapter({ client = defaultClient, clock
   });
 }
 
-/**
- * The regional reads while the API client has none of them (before lane M6): every read answers at once, without a
- * request, the envelope of a Disabled answer, so the layers menu says «no activado en este entorno» and nothing is
- * drawn or made up.
- */
-export function createDisabledRegionWeatherAdapter({ clock = serverClock } = {}) {
-  const disabled = extra => async ({ stationId } = {}) => ({
-    stationId: stationId ?? null, status: 'Disabled', reason: 'disabled', serverTime: new Date(clock.now()).toISOString(),
-    refreshAfterSeconds: 600, credit: null, ...extra,
-  });
-  return Object.freeze({
-    clock,
-    getRegionWeather: disabled({ stations: [] }),
-    getSigmets: disabled({ sigmets: [] }),
-    getWindGrid: disabled({ validAt: null, grid: null }),
-    getRadarFrames: disabled({ provider: null, maxZoom: null, frames: [] }),
-  });
-}
-
-/** The regional weather of Panorama: the API's once the shared client offers its four reads, else Disabled. */
+/** The regional weather of Panorama: the API's, through the shared client. */
 export function defaultRegionWeatherAdapter() {
-  return offersRegionWeather() ? createRemoteRegionWeatherAdapter() : createDisabledRegionWeatherAdapter();
+  return createRemoteRegionWeatherAdapter();
 }
 
 // Every field of the regional answers that holds an instant.

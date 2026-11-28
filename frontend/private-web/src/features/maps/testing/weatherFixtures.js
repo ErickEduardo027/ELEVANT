@@ -198,11 +198,12 @@ const regionStation = ({ icao, iata, name, p, metar }, observedMinutes) => ({
 
 const WITH_REPORTS = new Set(['Live', 'Stale']);
 
-// The envelope every regional answer has.
+// The envelope every regional answer has, with the reasons of the contract (OCC_REGION_WEATHER_REASONS): Disabled is
+// `not_configured`, Stale and Unavailable a provider's failure, Live none.
 function envelope(status, { serverTime = WEATHER_NOON, refreshAfterSeconds = 300 } = {}) {
   let reason = null;
-  if (status === 'Disabled') reason = 'disabled';
-  else if (status !== 'Live') reason = 'upstream-unavailable';
+  if (status === 'Disabled') reason = 'not_configured';
+  else if (status !== 'Live') reason = 'provider_error';
   return {
     stationId: WEATHER_STATION_ID,
     status,
@@ -254,13 +255,20 @@ export function createSigmets({ status = 'Live', sigmets, serverTime } = {}) {
   };
 }
 
-/** A radar tile template of the fixtures for a frame time, on the IEM origin the CSP allows. */
-export const radarTemplateAt = time => 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::TJUA-N0Q-'
+/**
+ * A radar tile template of the fixtures for a frame time, as the API writes it (lane M6, IemRadarParser): IEM's ridge
+ * tiles of TJUA's N0B scan of that minute, on the IEM origin the CSP allows.
+ */
+export const radarTemplateAt = time => 'https://mesonet.agron.iastate.edu/c/tile.py/1.0.0/ridge::JUA-N0B-'
   + `${time.replace(/\D/g, '').slice(0, 12)}/{z}/{x}/{y}.png`;
+
+/** The deepest zoom of IEM's radar tiles, as the API answers it with frames (lane M6). */
+export const RADAR_TILES_MAX_ZOOM = 10;
 
 /**
  * An answer of GET occ/weather/radar at noon: `count` frames ten minutes apart, the latest five minutes before noon,
- * from IEM's TJUA (`provider` iem-tjua, max zoom 8). Unavailable and Disabled answers have no frames.
+ * from IEM's TJUA (`provider` iem-tjua, max zoom RADAR_TILES_MAX_ZOOM). Unavailable and Disabled answers have no frames,
+ * no provider and zoom 0, as the contract asks.
  */
 export function createRadarFrames({ status = 'Live', count = 8, provider = 'iem-tjua', frames, serverTime } = {}) {
   const withFrames = WITH_REPORTS.has(status);
@@ -271,12 +279,15 @@ export function createRadarFrames({ status = 'Live', count = 8, provider = 'iem-
   return {
     ...envelope(status, { serverTime, refreshAfterSeconds: 300 }),
     provider: withFrames ? provider : null,
-    maxZoom: 8,
+    maxZoom: withFrames ? RADAR_TILES_MAX_ZOOM : 0,
     frames: frames ?? (withFrames ? list : []),
   };
 }
 
-/** An answer of GET occ/weather/wind at noon: a 3 × 3 grid over the region, the trade wind from the east. */
+/**
+ * An answer of GET occ/weather/wind at noon: a 3 × 3 grid over the region, the trade wind from the east. Unavailable and
+ * Disabled answers keep the grid's box without points, as the contract asks.
+ */
 export function createWindGrid({ status = 'Live', serverTime } = {}) {
   const [lonMin, lonMax, latMin, latMax] = [-72, -64, 16.5, 21.5];
   const points = [];
@@ -292,8 +303,8 @@ export function createWindGrid({ status = 'Live', serverTime } = {}) {
   }
   return {
     ...envelope(status, { serverTime, refreshAfterSeconds: 3600 }),
-    validAt: WEATHER_NOON,
-    grid: WITH_REPORTS.has(status) ? { lonMin, lonMax, latMin, latMax, columns: 3, rows: 3, points } : null,
+    validAt: WITH_REPORTS.has(status) ? WEATHER_NOON : null,
+    grid: { lonMin, lonMax, latMin, latMax, columns: 3, rows: 3, points: WITH_REPORTS.has(status) ? points : [] },
   };
 }
 

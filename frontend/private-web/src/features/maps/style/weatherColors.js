@@ -28,8 +28,8 @@ export const FLIGHT_CATEGORY_COLORS = deepFreeze({
 });
 
 /**
- * The reflectivity scale of the radar in dBZ, as the NWS paints its base reflectivity (N0Q, the product of the IEM
- * TJUA tiles): each stop the lower bound of its colour, from light rain in cyan to hail in violet. The legend shows
+ * The reflectivity scale of the radar in dBZ, as the NWS paints its base reflectivity (N0B, the product of the IEM
+ * TJUA tiles the API names): each stop the lower bound of its colour, from light rain in cyan to hail in violet. The legend shows
  * these steps; the map draws the provider's tiles as they come (the colours are in the image).
  */
 export const RADAR_SCALE_NWS = deepFreeze([
@@ -39,11 +39,10 @@ export const RADAR_SCALE_NWS = deepFreeze([
 ]);
 
 /**
- * The scale of each radar provider the API may name (OccRadarFramesResponse.provider). Both are read with the NWS
- * scale: the API (lane M6) asks RainViewer for the colour scheme that follows it. A provider not listed has no scale
- * and the legend shows the radar without one.
+ * The scale of each radar provider the API may name (OccRadarFramesResponse.provider, only `iem-tjua`: lane M6 never
+ * uses RainViewer). A provider not listed has no scale and the legend shows the radar without one.
  */
-export const RADAR_SCALES = deepFreeze({ 'iem-tjua': RADAR_SCALE_NWS, rainviewer: RADAR_SCALE_NWS });
+export const RADAR_SCALES = deepFreeze({ 'iem-tjua': RADAR_SCALE_NWS });
 
 /** The hazards of a SIGMET the map tells apart, in the order the legend lists them. */
 export const SIGMET_HAZARDS = deepFreeze(['TS', 'TC', 'TURB', 'ICE', 'MTW', 'VA', 'DS', 'OTHER']);

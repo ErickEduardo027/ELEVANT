@@ -1,4 +1,6 @@
-import { isOccAerodromeWeather, OCC_AERODROME_WEATHER_STATUSES } from '@elevant/api-client';
+import {
+  isOccAerodromeWeather, isOccRadarFrames, isOccRegionWeather, isOccSigmets, isOccWindGrid, OCC_AERODROME_WEATHER_STATUSES,
+} from '@elevant/api-client';
 import { describe, expect, it } from 'vitest';
 import regionContext from '../airport/data/region.context.json';
 import { TRAFFIC_NOON, TRAFFIC_STATION_ID } from './trafficFixtures';
@@ -70,10 +72,24 @@ describe('synthetic regional weather fixtures (lane M7)', () => {
       expect(answers[0].stations.length > 0, status).toBe(reporting);
       expect(answers[1].sigmets.length > 0, status).toBe(reporting);
       expect(answers[2].frames.length > 0, status).toBe(reporting);
-      expect(answers[3].grid !== null, status).toBe(reporting);
+      expect(answers[3].grid.points.length > 0, status).toBe(reporting);
     }
     expect(createRegionWeather().reason).toBeNull();
-    expect(createRegionWeather({ status: 'Disabled' }).reason).toBe('disabled');
+    expect(createRegionWeather({ status: 'Disabled' }).reason).toBe('not_configured');
+  });
+
+  it("every synthetic answer passes the shared client's checks of lane M6 for its station", () => {
+    // The SIGMETs of the default list include one already over and areas left open on purpose (the map drops and closes
+    // them); the API never sends those, so the checks get the one in force.
+    const inForce = createSigmets().sigmets.slice(0, 1);
+    for (const status of OCC_AERODROME_WEATHER_STATUSES) {
+      expect(isOccRegionWeather(createRegionWeather({ status }), WEATHER_STATION_ID), status).toBe(true);
+      expect(isOccSigmets(createSigmets({ status, ...(status === 'Live' || status === 'Stale' ? { sigmets: inForce } : {}) }),
+        WEATHER_STATION_ID), status).toBe(true);
+      expect(isOccWindGrid(createWindGrid({ status }), WEATHER_STATION_ID), status).toBe(true);
+      expect(isOccRadarFrames(createRadarFrames({ status }), WEATHER_STATION_ID), status).toBe(true);
+    }
+    expect(isOccSigmets(createSigmets(), WEATHER_STATION_ID)).toBe(false);
   });
 
   it('places the invented reports at the real airports of the region', () => {
@@ -91,8 +107,11 @@ describe('synthetic regional weather fixtures (lane M7)', () => {
     expect(Object.keys(sigmet)).toEqual(['id', 'firId', 'hazard', 'qualifier', 'validFrom', 'validTo', 'baseFeet', 'topFeet',
       'raw', 'polygon']);
     const radar = createRadarFrames();
-    expect([radar.provider, radar.maxZoom, radar.frames.length]).toEqual(['iem-tjua', 8, 8]);
-    expect(radar.frames.every(frame => frame.tileUrlTemplate.startsWith('https://mesonet.agron.iastate.edu/'))).toBe(true);
+    expect([radar.provider, radar.maxZoom, radar.frames.length]).toEqual(['iem-tjua', 10, 8]);
+    expect(radar.frames.every(frame => frame.tileUrlTemplate
+      .startsWith('https://mesonet.agron.iastate.edu/c/tile.py/1.0.0/ridge::JUA-N0B-'))).toBe(true);
+    expect([createRadarFrames({ status: 'Disabled' }).provider, createRadarFrames({ status: 'Disabled' }).maxZoom])
+      .toEqual([null, 0]);
     expect(createWindGrid().grid.points).toHaveLength(9);
   });
 });
