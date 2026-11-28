@@ -337,8 +337,10 @@ describe('a map fixed on the airport (M9)', () => {
   it('centres a box on a point by growing it to the smallest box centred there that holds it', () => {
     const box = [[-68.4, 18.5], [-68.3, 18.6]];
     const centred = centredBounds(box, [-68.38, 18.55]);
-    expect(centred[0]).toEqual([-68.4, 18.5]);
-    expect(centred[1][0]).toBeCloseTo(-68.36, 12);
+    // 0.08° to the east edge is the farther side, so the west edge moves out to 0.08° as well.
+    expect(centred[0][0]).toBeCloseTo(-68.46, 12);
+    expect(centred[0][1]).toBeCloseTo(18.5, 12);
+    expect(centred[1][0]).toBeCloseTo(-68.3, 12);
     expect(centred[1][1]).toBeCloseTo(18.6, 12);
     expect(centredBounds(box, null)).toBe(box);
     expect(centredBounds(box, [Number.NaN, 18.5])).toBe(box);
