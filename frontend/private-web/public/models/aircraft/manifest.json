@@ -8,7 +8,7 @@
     "l2": "avión seguido, hasta 60 000 triángulos",
     "l1": "cercanos y estacionados, hasta 15 000 triángulos, una primitiva"
   },
-  "totalBytes": 12571590,
+  "totalBytes": 12571589,
   "types": {
     "A20N": {
       "name": "Airbus A320neo",
@@ -20,13 +20,13 @@
         "l2": [
           {
             "file": "l2.gltf",
-            "bytes": 4542,
-            "sha256": "bdaf6f6fbbeb6f1275d3596157eb8d435c4c14c6b9ebc895282df4840fda6f6a"
+            "bytes": 4541,
+            "sha256": "34e30319806423c13dff2082cc4ad9fb3d134f8c3645c20723afa217f2176008"
           },
           {
             "file": "l2.bin",
             "bytes": 417720,
-            "sha256": "aeb4795a29b92bfa36d23e0369aeaf4109357ed347740c30b9135f46a7c7e3be"
+            "sha256": "433a6247f0bcd9685fd9f22df1cbffa17283e64dcc541ef24772cfe24881dfaf"
           }
         ],
         "l1": [
@@ -95,13 +95,13 @@
         "l2": [
           {
             "file": "l2.gltf",
-            "bytes": 4534,
-            "sha256": "510cdb63e6131c175f472240b1e39471803424ab468c2c630a540a768c498be6"
+            "bytes": 4533,
+            "sha256": "724b9b07bd153ea4718697afb9e8fbe947ef3eb0d24ea41552732be810b1d0ea"
           },
           {
             "file": "l2.bin",
             "bytes": 457128,
-            "sha256": "c980344546a44535d5b5f932943a9f4cc4e6c7805d158ccc0890cd0e7c68c166"
+            "sha256": "f52a42dec7800c3f94d670751df5d918723834b512e5569160ba2f9239e56ad8"
           }
         ],
         "l1": [
@@ -170,12 +170,12 @@
           {
             "file": "l2.gltf",
             "bytes": 4545,
-            "sha256": "27bbaa6e2e7f2b99bd3ce155ac3169f66d3aa19c1c5e227634796514d1c31b55"
+            "sha256": "0209388735cab9da7234cda29f53249ada1392a86af8425fd0fc91d88fe9b802"
           },
           {
             "file": "l2.bin",
             "bytes": 403820,
-            "sha256": "c90df9dcc2f712e518142451518add9483e0ed13999b4c63e2c6b9bc20074084"
+            "sha256": "646eb8a4e23944f9e599ff92bf3ebe18c76dfcd037d33a9017bd9444050c2d17"
           }
         ],
         "l1": [
@@ -241,13 +241,13 @@
         "l2": [
           {
             "file": "l2.gltf",
-            "bytes": 4540,
-            "sha256": "2be2841807e6a32e9ba23923fa03846da0e2261a83bd5fad536c1be54d33d3c2"
+            "bytes": 4539,
+            "sha256": "cf32097e3e65d1ff9a22482da5dbec11bc75379b203fad4085e2e91045d8306c"
           },
           {
             "file": "l2.bin",
             "bytes": 418248,
-            "sha256": "d50445e2decae3dae5b2bd1d61c76315fa64d1ed60cd88a1535faa905d0a8594"
+            "sha256": "75acd119bc41145d91deeccd59b0b113c2b95e27cbe015955287e710a0deee98"
           }
         ],
         "l1": [
@@ -314,13 +314,13 @@
         "l2": [
           {
             "file": "l2.gltf",
-            "bytes": 4536,
-            "sha256": "6c197d480b22d9b03f746829e8aefbc487ecc80d0cffd8cdff1438d10d8e6c54"
+            "bytes": 4535,
+            "sha256": "a8ba6806da35e947cd80f55fd641191168e41e4ca4655b65f60dbb4e4c3705c5"
           },
           {
             "file": "l2.bin",
             "bytes": 457056,
-            "sha256": "179a4127686c0afd307580a98f0c266f9d4643fc2ad6e386f07cb25d3d6f0fa4"
+            "sha256": "0a32766c0f47e4e7dcd067ee04f9f60a805e755e86bb8d807409c24871feb86c"
           }
         ],
         "l1": [
@@ -1049,13 +1049,13 @@
         "l2": [
           {
             "file": "l2.gltf",
-            "bytes": 4542,
-            "sha256": "556bcdd7c6778ecc6b886bfb913dfa9886a0d94358da017543201545ac857dad"
+            "bytes": 4545,
+            "sha256": "b02c183a5ee9878c10a35cd03321b0440465d62053becf068d6af6328163eb1a"
           },
           {
             "file": "l2.bin",
             "bytes": 561844,
-            "sha256": "3e758fcdff6e904e2da737086eacbef341e5590f77aaa82563eb14fb94815bf5"
+            "sha256": "7ef0317bdc5f721a0054e829bcdbd9359b640b175a3241cbbe5348742199a358"
           }
         ],
         "l1": [

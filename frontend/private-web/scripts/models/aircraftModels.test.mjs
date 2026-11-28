@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { AIRCRAFT_TYPES } from '../../src/features/maps/aircraft/types.js';
+import { classify } from './lib/classes.mjs';
 import { BASES, RECIPES } from './lib/recipes.mjs';
 
 // The vendored models of plan M5 (public/models/aircraft), as scripts/models/build-aircraft-models.mjs writes them:
@@ -19,6 +20,20 @@ const triangles = gltf => gltf.meshes.flatMap(m => m.primitives)
   .reduce((sum, p) => sum + gltf.accessors[p.indices].count / 3, 0);
 
 describe('vendored aircraft models (M5)', () => {
+  it('classifies the outer skin of a nacelle as body, so it takes the engine colour of the livery (QA 2026-11-28)', () => {
+    // A320 family (FANCOWL meshes), 757 (Engine, LReverserTurbofan) and CRJ900 (Nacelle, Intake, Reverser).
+    for (const names of [['EngineL', 'FANCOWL.L2_8 - De.004'], ['Intake.001', 'FANCOWL.L2_8 - De.001'],
+      ['Nacelle', 'FANCOWL.L2_8 - Defaul'], ['LReverserTurbofan', 'Paint.004'], ['Reverser', 'DefaultWhite']]) {
+      expect(classify(...names), names.join(' ')).toBe('body');
+    }
+    // The inside of the intake, the fan face, the core and the black aft faces stay dark.
+    for (const names of [['IntakeInterior', 'FANCOWL.L2_8 - De.002'], ['fanWheel', 'grey'], ['turbofan_1', 'DefaultWhite'],
+      ['Core', 'REVERSE.L1_2 - Defaul'], ['ReverserRear', 'Black'], ['NacelleRear', 'Black']]) {
+      expect(classify(...names), names.join(' ')).toBe('dark');
+    }
+    expect(classify('Windshield', 'FANCOWL')).toBe('glass');
+  });
+
   it('builds every recipe type, one row of types.js each, and keeps the 767 procedural', () => {
     expect(Object.keys(manifest.types).sort()).toEqual(Object.keys(RECIPES).sort());
     for (const icao of Object.keys(RECIPES)) expect(AIRCRAFT_TYPES[icao], icao).toBeDefined();

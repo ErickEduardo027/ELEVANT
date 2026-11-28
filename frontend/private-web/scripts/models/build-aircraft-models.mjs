@@ -36,6 +36,7 @@ import {
   insertPlug, mapVertices, mergeParts, resizeNacelles, rotateParts, splitBySide, stretchSpan, triangleCount,
   weldPositions, wingtipDevice,
 } from './lib/mesh.mjs';
+import { classify } from './lib/classes.mjs';
 import { BASES, RECIPES } from './lib/recipes.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -57,21 +58,6 @@ export const GROUND_CLEARANCE_M = Object.freeze({
 });
 
 const { AIRCRAFT_TYPES } = await import(pathToFileURL(path.join(APP, 'src/features/maps/aircraft/types.js')).href);
-
-// What a part is, from its names: glass (windows and windshields), dark (engine insides, fans, exhausts, tyres, black
-// and metal trim) or body.
-const GLASS = /glass|window|windshield|transparent|^emit|cockpitwin/i;
-const DARK = new RegExp([
-  'black', 'rubber', 'dark', 'tire', 'tyre', 'nozzle', 'exhaust', 'tailpipe', 'intake.?interior', '^fan', 'fan$',
-  'fanwheel', 'blade', 'shroud', 'casing', '^core', 'spinner', 'chrome', 'metal', 'alumin', 'grey', 'gray', 'nospec',
-  'wire', 'duct', 'opening', 'engcore',
-].join('|'), 'i');
-export function classify(...names) {
-  const given = names.filter(Boolean);
-  if (given.some(name => GLASS.test(name))) return 'glass';
-  if (given.some(name => DARK.test(name))) return 'dark';
-  return 'body';
-}
 
 const sha256 = buffer => createHash('sha256').update(buffer).digest('hex');
 
@@ -466,7 +452,7 @@ function inspect(icao, parts) {
     const box = bounds([part]);
     const corner = values => `[${values.map(v => v.toFixed(1)).join(' ')}]`;
     console.log(`${part.name.padEnd(28).slice(0, 28)} ${part.cls.padEnd(5)} ${String(part.tri.length / 3).padStart(6)} `
-      + `${corner(box.min)} ${corner(box.max)} ${part.material ?? ''}`);
+      + `${corner(box.min)} ${corner(box.max)} ${part.material ?? ''} ${part.mesh && part.mesh !== part.name ? `(mesh ${part.mesh})` : ''}`);
   }
 }
 
