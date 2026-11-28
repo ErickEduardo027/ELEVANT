@@ -66,8 +66,8 @@ const SAME_AGENT_CLEARANCE = 6;
 const HOVER_OPACITY = 0.55;
 // The aircraft of a stand stays inside its box at every zoom: a silhouette about 30 m across on the ground, sized with
 // the map (twice as large for each zoom step). It stands in for the aircraft to scale (PR M6) where that is too small to
-// read, and where the aircraft has no type to draw.
-export const STAND_GLYPH_SIZE = Object.freeze(['interpolate', ['exponential', 2], ['zoom'], 13, 0.17, 16, 1.32, 19.5, 14.93]);
+// read, and where the aircraft has no type to draw. Up to zoom 22, the ultra-close zoom of Mapa de posiciones (M9).
+export const STAND_GLYPH_SIZE = Object.freeze(['interpolate', ['exponential', 2], ['zoom'], 13, 0.17, 16, 1.32, 19.5, 14.93, 22, 84.46]);
 // Where the signal and the clock sit: the upper corners of the stand around its centre, about 15 m out on the ground
 // (8 px when the stands are small), so they keep clear of the label in the middle as the map grows.
 // The signal sits above the stand's box and the clock of «Por liberar» below it, on the stand's axis on screen: outside
@@ -75,7 +75,7 @@ export const STAND_GLYPH_SIZE = Object.freeze(['interpolate', ['exponential', 2]
 // label (2 × 13.8 px) and, from the three lines on, a four-line one, with the 20 px image; both grow with the stand
 // (about 13 px from its centre to its edge at zoom 16, twice as far for each zoom step). Below 15, where no label shows,
 // they stay close to the small box.
-const ICON_GAP_STOPS = Object.freeze([[14, 8], [15, 10], [15.5, 24], [16, 25], [17, 42], [18, 64], [19, 116], [20, 220]]);
+const ICON_GAP_STOPS = Object.freeze([[14, 8], [15, 10], [15.5, 24], [16, 25], [17, 42], [18, 64], [19, 116], [20, 220], [21, 440], [22, 880]]);
 const outsideOffset = side => ['interpolate', ['linear'], ['zoom'],
   ...ICON_GAP_STOPS.flatMap(([zoom, gap]) => [zoom, ['literal', [0, gap * side]]])];
 // A label moves above or below the stand's centre when its neighbours leave no room in the middle.

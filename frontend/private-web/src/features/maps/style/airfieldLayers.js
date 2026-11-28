@@ -11,13 +11,27 @@ import { BASEMAP_COLORS } from './mapTheme';
 // the markings --occ-text and the taxiway names a dim token: no hue. The runway is drawn over the ends of the taxiways
 // that meet it, so they join it cleanly. Runways and taxiways are the pick targets of the map tooltip. Pure: OccMap adds
 // the overlay and fills its source with airport/airfieldFeatures.js.
+//
+// With `structures` (lane M9, Mapa de posiciones) the overlay also draws the airport in 3D from a second source that
+// OccMap fills with airport/structures.js: the taxiway pavement at its estimated width under the taxiway lines, and in
+// the `extrusions` slot the terminals raised to their estimated height and the jet bridges of B20–B26 (a tunnel and its
+// rotunda on their supports), with each terminal named and its height labelled «est.». Every size there is an estimate.
 
 export const AIRFIELD_SOURCE = 'occ-airfield';
 export const AIRFIELD_GROUP = 'airfield';
 export const AIRFIELD_SLOT = 'airfield';
+/** The source of the airport's structures (M9): GeoJSON from airport/structures.js. */
+export const AIRFIELD_STRUCTURES_SOURCE = 'occ-airfield-structures';
+/** The slot of the raised structures: with the 3D buildings of the base map, under the aircraft models. */
+export const AIRFIELD_EXTRUSION_SLOT = 'extrusions';
 
-/** What the legend lists of the airfield, in its order (owner request: only what is on screen). */
-export const AIRFIELD_LEGEND_KINDS = Object.freeze(['runway', 'taxiway', 'holdBar', 'apron', 'terminal']);
+/**
+ * What the legend lists of the airfield, in its order (owner request: only what is on screen). `taxiwayPavement`,
+ * `building` and `jetBridge` are the structures of M9; a raised terminal stands in for its flat footprint.
+ */
+export const AIRFIELD_LEGEND_KINDS = Object.freeze([
+  'runway', 'taxiway', 'taxiwayPavement', 'holdBar', 'apron', 'terminal', 'building', 'jetBridge',
+]);
 
 // The legend item each kind of feature belongs to: the markings are part of their runway, a taxilane is a taxiway.
 const LEGEND_KIND = Object.freeze({
@@ -30,6 +44,10 @@ const LEGEND_KIND = Object.freeze({
   holdBar: 'holdBar',
   apron: 'apron',
   terminal: 'terminal',
+  taxiwayPavement: 'taxiwayPavement',
+  building: 'building',
+  jetBridgeTunnel: 'jetBridge',
+  jetBridgeRotunda: 'jetBridge',
 });
 
 const KIND = ['get', 'kind'];
@@ -45,14 +63,25 @@ const FROM_AIRFIELD = Object.freeze({ 'occ:group': AIRFIELD_GROUP, 'occ:minThres
 const MARKING_WIDTH = ['interpolate', ['exponential', 2], ['zoom'], 13, 0.75, 16, 1.5, 18, 3];
 const BAR_WIDTH = ['interpolate', ['exponential', 2], ['zoom'], 13, 1, 16, 2, 18, 4];
 // The digits painted at a runway end are about 9 m tall: never smaller than the 12 px floor of the OCC, life size close in.
-const DESIGNATOR_SIZE = ['interpolate', ['exponential', 2], ['zoom'], 16.5, LABEL_SIZE, 19.5, 44];
+const DESIGNATOR_SIZE = ['interpolate', ['exponential', 2], ['zoom'], 16.5, LABEL_SIZE, 19.5, 44, 22, 249];
 
-function airfieldLayer(id, type, filter, { layout, paint, pick } = {}) {
+// The structures (M9). The jet bridges in a slate of the OCC, apart from the terminals in the base-map colour; both
+// lit by MapLibre's vertical gradient (darker at the foot), opaque so the overlaps of the footprints show no seam.
+const EXTRUSION_PAINT = Object.freeze({
+  'fill-extrusion-base': ['to-number', ['get', 'baseM'], 0],
+  'fill-extrusion-height': ['to-number', ['get', 'heightM'], 0],
+  'fill-extrusion-opacity': 1,
+  'fill-extrusion-vertical-gradient': true,
+});
+
+function airfieldLayer(id, type, filter, {
+  layout, paint, pick, slot = AIRFIELD_SLOT, source = AIRFIELD_SOURCE,
+} = {}) {
   return {
-    slot: AIRFIELD_SLOT,
+    slot,
     id,
     type,
-    source: AIRFIELD_SOURCE,
+    source,
     filter,
     ...(layout ? { layout } : {}),
     paint,
@@ -66,15 +95,57 @@ const labelPaint = colour => ({
   'text-halo-width': 1.2,
 });
 
+const structureLayer = (id, type, filter, options) => airfieldLayer(id, type, filter, {
+  ...options, source: AIRFIELD_STRUCTURES_SOURCE,
+});
+
+// The taxiway pavement of the structures, in the taxiway colour (one tone, so the overlaps at the junctions merge).
+const pavementLayers = () => [
+  structureLayer('occ-airfield-taxiway-pavement', 'fill', ['all', IS_POLYGON, kindIs('taxiwayPavement')], {
+    paint: { 'fill-color': BASEMAP_COLORS.taxiway, 'fill-opacity': 1 },
+  }),
+];
+
+// The raised structures and the names of the terminals with their estimated height, over the extrusions.
+const extrusionLayers = () => [
+  structureLayer('occ-airfield-building-3d', 'fill-extrusion', ['all', IS_POLYGON, kindIs('building')], {
+    slot: AIRFIELD_EXTRUSION_SLOT,
+    paint: { 'fill-extrusion-color': BASEMAP_COLORS.buildingExtrusion, ...EXTRUSION_PAINT },
+  }),
+  structureLayer('occ-airfield-jet-bridge', 'fill-extrusion', [
+    'all', IS_POLYGON, kindIs('jetBridgeTunnel', 'jetBridgeRotunda'),
+  ], {
+    slot: AIRFIELD_EXTRUSION_SLOT,
+    paint: { 'fill-extrusion-color': occColor('line-strong'), ...EXTRUSION_PAINT },
+  }),
+  structureLayer('occ-airfield-building-label', 'symbol', ['all', IS_POLYGON, kindIs('building')], {
+    slot: AIRFIELD_EXTRUSION_SLOT,
+    layout: {
+      'text-field': ['concat', ['coalesce', ['get', 'name'], ''], '\n', ['coalesce', ['get', 'heightLabel'], '']],
+      'text-font': fonts('regular'),
+      'text-size': LABEL_SIZE,
+      'text-line-height': 1.15,
+      'text-max-width': 12,
+      'text-padding': 2,
+    },
+    paint: labelPaint(occColor('muted')),
+  }),
+];
+
 /**
  * The overlay of the airfield for buildOccStyle: the GeoJSON source `occ-airfield`, born empty and carrying the credit
  * of its data (AIRFIELD_ATTRIBUTION), and its layers from the bottom: aprons, terminal buildings with their outline,
  * taxiways and taxilanes, each runway as its axis (the narrowest the tiles draw) and its pavement, the dashed
  * centreline, the threshold bars, the holding bars, the taxiway names along their line and the designators.
+ * `structures: true` (M9) adds the source `occ-airfield-structures`, born empty, the taxiway pavement under the taxiway
+ * lines and, in the `extrusions` slot, the raised terminals, the jet bridges and the terminal labels.
  */
-export function airfieldOverlay() {
+export function airfieldOverlay({ structures = false } = {}) {
   return {
-    sources: { [AIRFIELD_SOURCE]: { type: 'geojson', attribution: AIRFIELD_ATTRIBUTION } },
+    sources: {
+      [AIRFIELD_SOURCE]: { type: 'geojson', attribution: AIRFIELD_ATTRIBUTION },
+      ...(structures ? { [AIRFIELD_STRUCTURES_SOURCE]: { type: 'geojson', attribution: AIRFIELD_ATTRIBUTION } } : {}),
+    },
     layers: [
       airfieldLayer('occ-airfield-apron', 'fill', ['all', IS_POLYGON, kindIs('apron')], {
         paint: { 'fill-color': BASEMAP_COLORS.apron },
@@ -86,6 +157,7 @@ export function airfieldOverlay() {
         layout: { 'line-join': 'round' },
         paint: { 'line-color': occColor('line-strong'), 'line-width': 1 },
       }),
+      ...(structures ? pavementLayers() : []),
       airfieldLayer('occ-airfield-taxiway', 'line', ['all', IS_LINE, kindIs('taxiway', 'taxilane')], {
         layout: { 'line-join': 'round', 'line-cap': 'round' },
         paint: { 'line-color': BASEMAP_COLORS.taxiway, 'line-width': [...TAXIWAY_WIDTH] },
@@ -135,18 +207,22 @@ export function airfieldOverlay() {
         },
         paint: labelPaint(occColor('text')),
       }),
+      ...(structures ? extrusionLayers() : []),
     ],
   };
 }
 
 /** The ids of the airfield's layers, in drawing order (what OccMap asks the map about for the legend). */
 export const AIRFIELD_LAYER_IDS = Object.freeze(airfieldOverlay().layers.map(layer => layer.id));
-const AIRFIELD_LAYERS = new Set(AIRFIELD_LAYER_IDS);
+/** The ids of the layers `structures: true` adds (M9), in drawing order; the legend reads them with the others. */
+export const AIRFIELD_STRUCTURE_LAYER_IDS = Object.freeze(airfieldOverlay({ structures: true }).layers
+  .map(layer => layer.id).filter(id => !AIRFIELD_LAYER_IDS.includes(id)));
+const AIRFIELD_LAYERS = new Set([...AIRFIELD_LAYER_IDS, ...AIRFIELD_STRUCTURE_LAYER_IDS]);
 
 /**
- * What the map draws of the airfield, from the features queryRenderedFeatures answers for AIRFIELD_LAYER_IDS: the
- * legend items on screen (`runway`, `taxiway`, `holdBar`, `apron`, `terminal`), in the legend's order. Features of other
- * layers are ignored. Pure.
+ * What the map draws of the airfield, from the features queryRenderedFeatures answers for AIRFIELD_LAYER_IDS and
+ * AIRFIELD_STRUCTURE_LAYER_IDS: the legend items on screen (AIRFIELD_LEGEND_KINDS), in the legend's order. A raised
+ * terminal (`building`) stands in for the flat `terminal` it covers. Features of other layers are ignored. Pure.
  */
 export function airfieldKindsOnScreen(features) {
   const present = new Set();
@@ -155,6 +231,7 @@ export function airfieldKindsOnScreen(features) {
     const kind = feature.properties?.kind;
     if (typeof kind === 'string' && Object.hasOwn(LEGEND_KIND, kind)) present.add(LEGEND_KIND[kind]);
   }
+  if (present.has('building')) present.delete('terminal');
   return AIRFIELD_LEGEND_KINDS.filter(kind => present.has(kind));
 }
 

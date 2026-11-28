@@ -33,6 +33,10 @@ export const mapMessages = {
       hold: 'Punto de espera',
       apron: 'Plataforma',
       terminal: 'Terminal',
+      // The structures in 3D of Mapa de posiciones (M9): every size is an estimate.
+      taxiwayPavement: 'Calle de rodaje (pavimento, ancho est.)',
+      building: 'Terminal (altura est.)',
+      jetBridge: 'Finger (pasarela, est.)',
       // The traffic on screen (ui/trafficLegend.js); its tags take their words from occ-ui/statusVocabulary.js.
       traffic: {
         aviamArrival: 'Vuelo de AVIAM que llega',
@@ -547,6 +551,9 @@ export const mapMessages = {
       hold: 'Holding point',
       apron: 'Apron',
       terminal: 'Terminal',
+      taxiwayPavement: 'Taxiway (pavement, est. width)',
+      building: 'Terminal (est. height)',
+      jetBridge: 'Jet bridge (est.)',
       traffic: {
         aviamArrival: 'AVIAM arrival',
         aviamDeparture: 'AVIAM departure',

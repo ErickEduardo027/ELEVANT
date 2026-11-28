@@ -243,3 +243,20 @@ export function structureFeatures(layout = null, structures = MDPC_STRUCTURES) {
   features.sort((a, b) => order.get(a.properties.kind) - order.get(b.properties.kind));
   return { type: 'FeatureCollection', features };
 }
+
+const BUILT = new WeakMap();
+const EMPTY_STRUCTURES = Object.freeze({ type: 'FeatureCollection', features: Object.freeze([]) });
+
+/**
+ * The structures a map draws for `layout`: those of `structures` when the layout is the airport they describe (its
+ * ICAO code), else none. A map given another layout (a test fixture, another airport) draws no structures.
+ */
+export function airportStructures(layout, structures = MDPC_STRUCTURES) {
+  if (!layout || layout.meta?.icao !== structures.airport) return EMPTY_STRUCTURES;
+  // Built once per layout and dataset: a map re-created for another theme draws the same features.
+  const cached = BUILT.get(layout);
+  if (cached?.structures === structures) return cached.features;
+  const features = structureFeatures(layout, structures);
+  BUILT.set(layout, { structures, features });
+  return features;
+}

@@ -14,6 +14,7 @@ import { useOptionalTheme } from '../../shell/useTheme';
 import { createOccShortcutHandler } from '../../occ-ui/occShortcuts';
 import { mapStandCode } from '../../positions-map/positionsMapMappers';
 import { airfieldFeatures } from '../airport/airfieldFeatures';
+import { airportStructures } from '../airport/structures';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { haversineM } from '../airport/geo';
 import { followCamera, needsReframe, stepCamera } from '../kinematics/followCamera';
@@ -35,7 +36,8 @@ import {
 } from '../stands/standLayers';
 import { attachStandGeometry, standStateOf } from '../stands/standModel';
 import {
-  AIRFIELD_LAYER_IDS, AIRFIELD_SOURCE, airfieldKindsOnScreen, airfieldOverlay, airfieldTooltip,
+  AIRFIELD_LAYER_IDS, AIRFIELD_SOURCE, AIRFIELD_STRUCTURE_LAYER_IDS, AIRFIELD_STRUCTURES_SOURCE, airfieldKindsOnScreen,
+  airfieldOverlay, airfieldTooltip,
 } from '../style/airfieldLayers';
 import { createImageResolver } from '../style/mapImages';
 import { buildOccStyle } from '../style/occStyle';
@@ -109,6 +111,8 @@ const SELECTABLE_KINDS = new Set(['stand', 'flight', 'aircraft']);
 // What takes the pointer cursor: what can be selected, a terminal chip to open, and a runway, a taxiway or the wind (PR
 // M8) with its tooltip.
 const POINTER_KINDS = new Set([...SELECTABLE_KINDS, 'terminal', 'runway', 'taxiway', 'wind']);
+// The airfield layers the legend reads back, the structures of M9 among them (a map without them has none to answer).
+const AIRFIELD_LEGEND_LAYER_IDS = Object.freeze([...AIRFIELD_LAYER_IDS, ...AIRFIELD_STRUCTURE_LAYER_IDS]);
 // A map without stands has no countdown to keep: its clock stays still at this instant and starts no timer.
 const NO_CLOCK = 0;
 const PITCH_EASE_MS = 600;
@@ -523,7 +527,9 @@ const standPointOf = stand => stand?.geometry?.center ?? lngLatOf(stand);
  * - A map fixed on the airport (M9, Mapa de posiciones): `views` (the views the map offers, all four by default: a view
  *   left out is not flown to, its key does nothing and a `view=` of it in the URL is ignored; ui/MapPresetSwitcher.jsx
  *   shows only these) and `airfieldCentre` (`[lng, lat]`: Aeródromo is centred on that point, core/cameraPresets.js);
- *   `mapOptions` then carries its bounds and minimum zoom (cameraPresets.js: airportLockOptions).
+ *   `mapOptions` then carries its bounds and minimum zoom (cameraPresets.js: airportLockOptions); and `structures`
+ *   (read at start): the airfield also draws the airport in 3D, its taxiway pavement, raised terminals and jet bridges
+ *   at their estimated sizes (airport/structures.js, style/airfieldLayers.js), listed in the legend.
  * - `traffic` (PR M5): `{ aircraft, trails, route, source, flights }` from the map situation (useMapSituation: the
  *   aircraft of traffic/situationModel.js, the trails FeatureCollection, the chosen flight's route, the air picture's
  *   source and, from PR M8, the rows of the map flights, whose counterparts the references emphasise).
@@ -628,6 +634,7 @@ const OccMapView = forwardRef(function OccMapView({
   focusStandOnStart = false,
   views: viewsProp,
   airfieldCentre = null,
+  structures = false,
   className = '',
   children,
 }, ref) {
@@ -679,6 +686,8 @@ const OccMapView = forwardRef(function OccMapView({
   const arrivals = useRecentArrivals(referenceAircraft, { layout, nowMs: referenceMinute });
   // The weather (PR M8): whether the map draws it is read at start; a map without it still takes no wind for the runway.
   const [drawsWeather] = useState(() => weather !== undefined);
+  // The airport in 3D (M9): whether the airfield draws its structures is read at start.
+  const [drawsStructures] = useState(() => structures === true);
   const weatherNow = weather ?? null;
   const runway = useMemo(() => mapRunwayInUse({ layout, arrivals, weather: weatherNow, nowMs: referenceMinute }),
     [layout, arrivals, weatherNow, referenceMinute]);
@@ -779,7 +788,7 @@ const OccMapView = forwardRef(function OccMapView({
     Object.assign(latest.current, { traffic: traffic ?? null, drawsTraffic: traffic !== undefined, groups: shownGroups,
       language, shownTrails, layersMenuOpen, setLayersMenuOpen });
     // The weather (PR M8): whether the map draws it, the satellite images and the wind it draws.
-    Object.assign(latest.current, { drawsWeather, imagery, windData });
+    Object.assign(latest.current, { drawsWeather, imagery, windData, drawsStructures });
     // Follow mode (PR M6): what the URL says and how to change it.
     Object.assign(latest.current, { urlFollow: urlFollow === true, setFollow });
     // The 3D aircraft (PR M7): whether they are on, and how the page or the browser changes it.
@@ -1172,7 +1181,7 @@ const OccMapView = forwardRef(function OccMapView({
     const flights = bounds === null || !drawsFlights ? EMPTY : flightsInView(latest.current.flights, bounds);
     // Below its threshold the airfield is not drawn: nothing to ask the map.
     const airfieldDrawn = drawsAirfield && bounds !== null && !(zoom < thresholds?.airfield);
-    const airfield = airfieldDrawn ? airfieldKindsOnScreen(engine.renderedFeatures(AIRFIELD_LAYER_IDS, padding)) : EMPTY;
+    const airfield = airfieldDrawn ? airfieldKindsOnScreen(engine.renderedFeatures(AIRFIELD_LEGEND_LAYER_IDS, padding)) : EMPTY;
     // The references drawn there (PR M8), read back from the map as the airfield is, for the groups that are shown.
     const referenceIds = bounds === null ? EMPTY : referenceLayersShown(latest.current.groups);
     const references = referenceIds.length === 0
@@ -1739,7 +1748,7 @@ const OccMapView = forwardRef(function OccMapView({
     // pavement.
     const overlays = [
       selectionOverlay(),
-      ...(props.layout ? [airfieldOverlay()] : []),
+      ...(props.layout ? [airfieldOverlay({ structures: props.drawsStructures === true })] : []),
       // The region's airports with the traffic they are context for (owner request of 2026-11-15).
       referenceOverlay({ airports: props.drawsTraffic, theme: props.theme }),
       ...(props.drawsStands ? [standOverlay({ labels: props.standLabels, theme: props.theme })] : []),
@@ -1792,6 +1801,7 @@ const OccMapView = forwardRef(function OccMapView({
     Object.assign(appliedRef.current, { aircraft3d, reached3d: null });
     aircraft3d?.setEnabled(props.pitchMode === '3d');
     if (props.layout) engine.setData(AIRFIELD_SOURCE, airfieldFeatures(props.layout));
+    if (props.layout && props.drawsStructures) engine.setData(AIRFIELD_STRUCTURES_SOURCE, airportStructures(props.layout));
     engine.setInsets(props.padding);
     refit();
     lastViewRef.current = props.urlView === null ? null : viewKey(props.urlView, props.urlTerminal);

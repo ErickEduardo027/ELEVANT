@@ -44,6 +44,7 @@ const AIRPORT_LOCK_OPTIONS = Object.freeze(airportLockOptions({ stands: STAND_RE
 // PUJ (the airfield box plus 3 km, zoom 13 at least), the map opens on «Aeródromo» centred on the ARP, offers only
 // Aeródromo and Rampa (keys 1 and 2 do nothing) and its rail adds «Capas» (L); its 2D/3D is the screen's own, in
 // `railTools`, so the rail shows no second one. `onViewModeChange(next)` lets the D key change the page's `viewMode`.
+// It also draws the airport in 3D (OccMap `structures`): taxiway pavement, raised terminals and jet bridges, all est.
 const PositionMap = forwardRef(function PositionMap({
   positions = EMPTY, selectedPositionId = null, onSelectPosition, viewMode = '2d', initialCamera, onCameraChange,
   allowBuildingExtrusion = false, dashboardLabels = false, onMapClick, placing = false, placingCode = null,
@@ -99,6 +100,7 @@ const PositionMap = forwardRef(function PositionMap({
       views={fixedOnAirport ? AIRPORT_VIEWS : undefined}
       airfieldCentre={fixedOnAirport ? PUJ_ARP : null}
       mapOptions={fixedOnAirport ? AIRPORT_LOCK_OPTIONS : undefined}
+      structures={fixedOnAirport}
       presetStands={STAND_REFERENCE}
       stands={positions}
       traffic={traffic}
