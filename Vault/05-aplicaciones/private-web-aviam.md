@@ -2799,7 +2799,13 @@ API, lo que leen las pantallas ni su cadencia.
   por debajo, en lugar del tablero, que vuelve al cerrarlo. El panel reúne lo que
   el mapa sabe del avión («En vivo», con «Seguir»), los horarios con su demora,
   la escala con sus hitos y los enlaces a Planificación y Mapa de posiciones;
-  ninguna tarjeta flota sobre el mapa.
+  ninguna tarjeta flota sobre el mapa. Desde el carril M8 del plan de mapas
+  (27 de noviembre de 2026, rama `feat/occ-monitoreo-mundial`, sin desplegar)
+  el mapa es un globo con atmósfera que se aleja hasta el zoom 1, abre
+  encuadrando la República Dominicana y Puerto Rico y ofrece la vista
+  «0 Mundo» antes de las cuatro; Panorama y Mapa de posiciones siguen en
+  Mercator con sus cuatro vistas
+  ([ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)).
 - **Mapa de posiciones.** 2D/3D, «Centrar PUJ» y pantalla completa pasan al riel
   del mapa. El detalle de la posición usa el mismo panel acoplado, y sus rótulos
   ya no van en mayúsculas.
