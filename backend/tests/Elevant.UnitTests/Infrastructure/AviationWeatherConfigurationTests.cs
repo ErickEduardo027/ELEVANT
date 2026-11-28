@@ -141,6 +141,72 @@ public sealed class AviationWeatherConfigurationTests
         Assert.Same(ownRegion, keptRegion.ImplementationInstance);
     }
 
+    /// <summary>
+    /// Plan M6: the region's SIGMETs follow <c>AviationWeather:Enabled</c>; the wind grid has its own switch,
+    /// <c>OpenMeteo:Enabled</c> (the free tier is non-commercial), and the radar frames <c>WeatherRadar:Enabled</c>. Off by
+    /// default, and then the disabled source; on, a factory that sends nothing until someone reads the layer.
+    /// </summary>
+    [Fact]
+    public void TheRegionLayersHaveTheirOwnSwitchesOffByDefault()
+    {
+        var off = Compose(new());
+        Assert.Equal(typeof(DisabledRegionSigmetSource), Layer<IRegionSigmetSource>(off).ImplementationType);
+        Assert.Equal(typeof(DisabledRegionWindSource), Layer<IRegionWindSource>(off).ImplementationType);
+        Assert.Equal(typeof(DisabledRegionRadarSource), Layer<IRegionRadarSource>(off).ImplementationType);
+
+        // The METARs' switch turns the SIGMETs on, never the wind or the radar.
+        var weatherOnly = Compose(new() { ["AviationWeather:Enabled"] = "true" });
+        using (var sigmets = Assert.IsType<AviationWeatherSigmetSource>(
+                   Layer<IRegionSigmetSource>(weatherOnly).ImplementationFactory!(new OnlyTime())))
+            Assert.Equal("https://aviationweather.gov/api/data/isigmet?format=json", sigmets.Query.AbsoluteUri);
+        Assert.Equal(typeof(DisabledRegionWindSource), Layer<IRegionWindSource>(weatherOnly).ImplementationType);
+        Assert.Equal(typeof(DisabledRegionRadarSource), Layer<IRegionRadarSource>(weatherOnly).ImplementationType);
+
+        var all = Compose(new() { ["OpenMeteo:Enabled"] = "true", ["WeatherRadar:Enabled"] = "true" });
+        Assert.Equal(typeof(DisabledRegionSigmetSource), Layer<IRegionSigmetSource>(all).ImplementationType);
+        var windDescriptor = Layer<IRegionWindSource>(all);
+        Assert.Equal(((Type?)null, ServiceLifetime.Singleton), (windDescriptor.ImplementationType, windDescriptor.Lifetime));
+        using (var wind = Assert.IsType<Elevant.Infrastructure.Integrations.OpenMeteo.OpenMeteoWindSource>(
+                   windDescriptor.ImplementationFactory!(new OnlyTime())))
+            Assert.Equal("https://api.open-meteo.com/v1/", wind.BaseUrl.AbsoluteUri);
+        using (var radar = Assert.IsType<Elevant.Infrastructure.Integrations.WeatherRadar.IemRadarSource>(
+                   Layer<IRegionRadarSource>(all).ImplementationFactory!(new OnlyTime())))
+            Assert.Equal("https://mesonet.agron.iastate.edu/", radar.BaseUrl.AbsoluteUri);
+    }
+
+    [Theory]
+    [InlineData("OpenMeteo")]
+    [InlineData("WeatherRadar")]
+    public void TheLayerAddressesMustBeAbsoluteHttpsAddresses(string section)
+    {
+        foreach (var enabled in new[] { "true", "false" })
+        {
+            var refused = Assert.Throws<InvalidOperationException>(() => Compose(new()
+            {
+                [$"{section}:Enabled"] = enabled,
+                [$"{section}:BaseUrl"] = "http://example.test/",
+            }));
+            Assert.Equal($"{section}:BaseUrl must be an absolute https address.", refused.Message);
+        }
+    }
+
+    /// <summary>Without Infrastructure the layers' sources are the disabled ones, and nothing is called.</summary>
+    [Fact]
+    public async Task WithoutInfrastructureTheLayersAreDisabled()
+    {
+        var services = new ServiceCollection().AddApplication();
+        Assert.Equal(typeof(DisabledRegionSigmetSource), Layer<IRegionSigmetSource>(services).ImplementationType);
+        Assert.Equal(typeof(DisabledRegionWindSource), Layer<IRegionWindSource>(services).ImplementationType);
+        Assert.Equal(typeof(DisabledRegionRadarSource), Layer<IRegionRadarSource>(services).ImplementationType);
+        var area = Elevant.Application.Operations.Weather.RegionWeatherStations.PuntaCanaArea;
+        Assert.Null(await new DisabledRegionSigmetSource().ReadAsync(area, TestContext.Current.CancellationToken));
+        Assert.Null(await new DisabledRegionWindSource().ReadAsync(area, TestContext.Current.CancellationToken));
+        Assert.Null(await new DisabledRegionRadarSource().ReadAsync(area, TestContext.Current.CancellationToken));
+    }
+
+    private static ServiceDescriptor Layer<T>(IServiceCollection services) =>
+        Assert.Single(services, item => item.ServiceType == typeof(T));
+
     private static IServiceCollection Compose(Dictionary<string, string?> values) =>
         new ServiceCollection().AddInfrastructure(new ConfigurationBuilder().AddInMemoryCollection(values).Build());
 

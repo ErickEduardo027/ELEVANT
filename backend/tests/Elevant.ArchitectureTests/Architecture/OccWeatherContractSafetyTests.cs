@@ -9,16 +9,17 @@ using Microsoft.AspNetCore.Mvc.Routing;
 namespace Elevant.ArchitectureTests.Architecture;
 
 /// <summary>
-/// ADR-0043 (contracts 1.4) and plan M6: the OCC's weather is two reads under <c>occ/weather</c>, an airport's and, since
-/// M6, its region's, for authenticated sessions with a private response. Their contracts expose a public identifier only,
-/// no <c>long</c> and no enumeration (states and codes travel as text). The airport read says nothing of the reasons or
-/// the pace the weather service is read at; the region read says why it is not live and when to ask again, like the air
-/// picture, with exactly the names of its contract.
+/// ADR-0043 (contracts 1.4) and plan M6: the OCC's weather is five reads under <c>occ/weather</c>, an airport's and, since
+/// M6, its region's METARs, SIGMETs, wind grid and radar frames, for authenticated sessions with a private response.
+/// Their contracts expose a public identifier only (and a SIGMET's own code, which is the weather service's), no
+/// <c>long</c> and no enumeration (states and codes travel as text). The airport read says nothing of the reasons or the
+/// pace the weather service is read at; the region reads say why they are not live and when to ask again, like the air
+/// picture, with exactly the names of their contracts.
 /// </summary>
 public sealed class OccWeatherContractSafetyTests
 {
     private static readonly string[] WeatherPrefixes =
-        ["OccAerodrome", "OccWeather", "OccMetar", "OccTaf", "OccCloud", "OccRegion"];
+        ["OccAerodrome", "OccWeather", "OccMetar", "OccTaf", "OccCloud", "OccRegion", "OccSigmet", "OccWind", "OccRadar"];
 
     private static readonly Type[] AerodromeContracts =
     [
@@ -32,6 +33,15 @@ public sealed class OccWeatherContractSafetyTests
         typeof(OccRegionMetarResponse), typeof(OccRegionTafResponse),
     ];
 
+    private static readonly Type[] LayerContracts =
+    [
+        typeof(OccSigmetsResponse), typeof(OccSigmetResponse), typeof(OccWindGridResponse), typeof(OccWindGridAreaResponse),
+        typeof(OccWindPointResponse), typeof(OccRadarFramesResponse), typeof(OccRadarFrameResponse),
+    ];
+
+    private static readonly Type[] LayerReads = [typeof(OccSigmetsResponse), typeof(OccWindGridResponse),
+        typeof(OccRadarFramesResponse)];
+
     private static readonly Type[] WeatherContracts = typeof(OccAerodromeWeatherResponse).Assembly.GetTypes()
         .Where(type => type.Namespace == typeof(OccAerodromeWeatherResponse).Namespace &&
             WeatherPrefixes.Any(prefix => type.Name.StartsWith(prefix, StringComparison.Ordinal)))
@@ -40,7 +50,8 @@ public sealed class OccWeatherContractSafetyTests
     [Fact]
     public void WeatherContractsExposeNoLongNoEnumAndNoInternalId()
     {
-        Assert.Equal(AerodromeContracts.Concat(RegionContracts).ToHashSet(), WeatherContracts.ToHashSet());
+        Assert.Equal(AerodromeContracts.Concat(RegionContracts).Concat(LayerContracts).ToHashSet(),
+            WeatherContracts.ToHashSet());
         Assert.All(WeatherContracts, type => Assert.True(type.IsSealed, type.Name));
         var properties = Properties(WeatherContracts);
 
@@ -52,14 +63,19 @@ public sealed class OccWeatherContractSafetyTests
             property.Name.Contains("Token", StringComparison.OrdinalIgnoreCase) ||
             property.Name.Contains("Email", StringComparison.OrdinalIgnoreCase) ||
             property.Name.Contains("ApiKey", StringComparison.OrdinalIgnoreCase));
-        // The only identifier a screen receives is the station's public UUID, once in each read.
-        Assert.Equal(["StationId", "StationId"], properties.Where(property =>
-            property.Name == "Id" || property.Name.EndsWith("Id", StringComparison.Ordinal)).Select(property => property.Name));
-        Assert.Equal(typeof(Guid), typeof(OccAerodromeWeatherResponse).GetProperty("StationId")?.PropertyType);
-        Assert.Equal(typeof(Guid), typeof(OccRegionWeatherResponse).GetProperty("StationId")?.PropertyType);
-        // The states are text from a closed list.
-        Assert.Equal(typeof(string), typeof(OccAerodromeWeatherResponse).GetProperty("Status")?.PropertyType);
-        Assert.Equal(typeof(string), typeof(OccRegionWeatherResponse).GetProperty("Status")?.PropertyType);
+        // The only identifier of ELEVANT a screen receives is the station's public UUID, once in each read; a SIGMET
+        // brings the weather service's own codes as text: its id and its FIR.
+        Assert.Equal(["FirId", "Id", "StationId", "StationId", "StationId", "StationId", "StationId"], properties
+            .Where(property => property.Name == "Id" || property.Name.EndsWith("Id", StringComparison.Ordinal))
+            .Select(property => property.Name).Order(StringComparer.Ordinal));
+        Assert.Equal((typeof(string), typeof(string)), (typeof(OccSigmetResponse).GetProperty("Id")?.PropertyType,
+            typeof(OccSigmetResponse).GetProperty("FirId")?.PropertyType));
+        foreach (var read in new[] { typeof(OccAerodromeWeatherResponse), typeof(OccRegionWeatherResponse) }.Concat(LayerReads))
+        {
+            Assert.Equal(typeof(Guid), read.GetProperty("StationId")?.PropertyType);
+            // The states are text from a closed list.
+            Assert.Equal(typeof(string), read.GetProperty("Status")?.PropertyType);
+        }
     }
 
     [Fact]
@@ -101,7 +117,39 @@ public sealed class OccWeatherContractSafetyTests
     }
 
     [Fact]
-    public void TheWeatherIsTwoReadsUnderOccWeather()
+    public void TheLayerReadsCarryExactlyTheNamesOfTheirContracts()
+    {
+        // Each one has the state, reason, pace and credit of the region's METARs, then its own layer.
+        string[] head = ["StationId", "Status", "Reason", "ServerTime", "RefreshAfterSeconds", "Credit"];
+        Assert.Equal([.. head, "Sigmets"], Names(typeof(OccSigmetsResponse)));
+        Assert.Equal([.. head, "ValidAt", "Grid"], Names(typeof(OccWindGridResponse)));
+        Assert.Equal([.. head, "Provider", "MaxZoom", "Frames"], Names(typeof(OccRadarFramesResponse)));
+        foreach (var read in LayerReads)
+            Assert.Equal((typeof(string), typeof(int), typeof(OccRegionWeatherCreditResponse)),
+                (read.GetProperty("Reason")?.PropertyType, read.GetProperty("RefreshAfterSeconds")?.PropertyType,
+                    read.GetProperty("Credit")?.PropertyType));
+
+        Assert.Equal(["Id", "FirId", "Hazard", "Qualifier", "ValidFrom", "ValidTo", "BaseFeet", "TopFeet", "Raw", "Polygon"],
+            Names(typeof(OccSigmetResponse)));
+        // The area is a ring of [longitude, latitude] pairs, as GeoJSON takes it.
+        Assert.Equal((typeof(IReadOnlyList<IReadOnlyList<double>>), typeof(int?), typeof(int?)),
+            (typeof(OccSigmetResponse).GetProperty("Polygon")?.PropertyType,
+                typeof(OccSigmetResponse).GetProperty("BaseFeet")?.PropertyType,
+                typeof(OccSigmetResponse).GetProperty("TopFeet")?.PropertyType));
+        Assert.Equal(["LonMin", "LonMax", "LatMin", "LatMax", "Columns", "Rows", "Points"],
+            Names(typeof(OccWindGridAreaResponse)));
+        Assert.Equal(["Latitude", "Longitude", "SpeedKnots", "DirectionDegrees"], Names(typeof(OccWindPointResponse)));
+        Assert.Equal((typeof(DateTimeOffset?), typeof(double), typeof(int)),
+            (typeof(OccWindGridResponse).GetProperty("ValidAt")?.PropertyType,
+                typeof(OccWindPointResponse).GetProperty("SpeedKnots")?.PropertyType,
+                typeof(OccWindPointResponse).GetProperty("DirectionDegrees")?.PropertyType));
+        Assert.Equal(["Time", "TileUrlTemplate"], Names(typeof(OccRadarFrameResponse)));
+        Assert.Equal((typeof(string), typeof(int)), (typeof(OccRadarFramesResponse).GetProperty("Provider")?.PropertyType,
+            typeof(OccRadarFramesResponse).GetProperty("MaxZoom")?.PropertyType));
+    }
+
+    [Fact]
+    public void TheWeatherIsFiveReadsUnderOccWeather()
     {
         var controller = typeof(OccWeatherController);
         var route = Assert.Single(controller.GetCustomAttributes<RouteAttribute>(inherit: false));
@@ -116,9 +164,9 @@ public sealed class OccWeatherContractSafetyTests
         var actions = controller.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
             .Select(method => (Method: method, Http: method.GetCustomAttribute<HttpMethodAttribute>()))
             .ToArray();
-        // Two reads: the operationIds the snapshot publishes, their verb and their routes under occ/weather (the
+        // Five reads: the operationIds the snapshot publishes, their verb and their routes under occ/weather (the
         // airport's has none of its own).
-        Assert.Equal(2, actions.Length);
+        Assert.Equal(5, actions.Length);
         Assert.All(actions, action => Assert.NotNull(action.Http));
         var reads = actions
             .Select(action => (Name: action.Http!.Name, Verb: Assert.Single(action.Http.HttpMethods),
@@ -127,7 +175,9 @@ public sealed class OccWeatherContractSafetyTests
             .ToArray();
         Assert.Equal(new (string?, string, string?)[]
         {
-            ("GetOccAerodromeWeather", "GET", null), ("GetOccRegionWeather", "GET", "region"),
+            ("GetOccAerodromeWeather", "GET", null), ("GetOccRegionRadar", "GET", "radar"),
+            ("GetOccRegionSigmets", "GET", "sigmets"), ("GetOccRegionWeather", "GET", "region"),
+            ("GetOccRegionWind", "GET", "wind"),
         }, reads);
         foreach (var (read, _) in actions)
         {
