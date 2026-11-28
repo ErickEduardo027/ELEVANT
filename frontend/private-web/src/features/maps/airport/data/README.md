@@ -2,10 +2,11 @@
 
 Esta carpeta guarda el plano del aeropuerto de Punta Cana (MDPC / PUJ) que
 dibujan los mapas del OCC desde el PR M3
-([ADR-0043](../../../../../../../docs/adr/0043-occ-maps-one-engine.md)). Los
-dos JSON se generan con `scripts/maps/build-mdpc-layout.mjs` y no se editan a
-mano: una prueba los reconstruye y falla si no son idénticos a los
-versionados.
+([ADR-0043](../../../../../../../docs/adr/0043-occ-maps-one-engine.md)). El
+plano y el contexto regional se generan con
+`scripts/maps/build-mdpc-layout.mjs` y no se editan a mano: una prueba los
+reconstruye y falla si no son idénticos a los versionados. El tercero,
+`mdpc.structures.json`, sí se escribe a mano (abajo).
 
 ## Qué hay aquí
 
@@ -39,6 +40,72 @@ deja fuera la etiqueta de las teselas de esos aeropuertos, así que cada uno se
 escribe una sola vez. Van en una fuente propia, con los ejes de pista
 extendidos, que salen de los umbrales y rumbos de OurAirports del plano, y esa
 fuente lleva el crédito «OurAirports» (abajo, en Licencias).
+
+**`mdpc.structures.json`**, las estructuras en 3D (esquema 1, desde el carril
+M9, 27 de noviembre de 2026). A diferencia de los otros dos, **se escribe a
+mano**: ninguna prueba lo reconstruye y el generador no lo toca. Toda medida
+que guarda es una **estimación** (`source: 'estimate'`). Cada una lleva su
+`note` y `reviewedBy: null` hasta que alguien la confirme, y el mapa la rotula
+con «est.». Ninguna sale del AIP ni de las cartas del aeropuerto. Erick, como
+dueño del producto, puede corregir cualquier valor: lo cambia aquí, explica el
+cambio en `note` y pone su rol en `reviewedBy`.
+
+- `buildings`: la altura (`heightM`) y la base (`baseM`) de cada huella de
+  terminal del plano. Cada una se nombra por su id (`layoutId`, el de
+  `terminals`):
+  - las salidas y las llegadas de la Terminal A, ~12 m;
+  - el edificio principal de la Terminal A, ~14 m;
+  - la Terminal B, ~15 m;
+  - el edificio sin nombre al oeste de la Terminal B, ~13 m.
+
+  Las huellas que se solapan en OSM llevan alturas distintas, para que no
+  parpadeen al dibujarse.
+- `kindDefaults`: la altura que tomaría cada clase de edificio cuando el plano
+  tenga su huella: terminal ~12 m, FBO ~8 m y hangar ~14 m. **Hoy el plano no
+  guarda ninguna huella de FBO ni de hangar**, porque el extracto de OSM solo
+  trae terminales. Por eso no se dibuja ninguna: su geometría nunca se inventa.
+- `jetBridges`: una pasarela por cada posición con `bridge: true` (B20 a B26).
+  - Cada una nombra la terminal (`terminalId`) y el lado de su polígono contra
+    el que se apoya (`edgeIndex`: el tramo que va del punto `edgeIndex` al
+    siguiente). El lado se eligió a mano: es la cara del muelle que mira a la
+    posición.
+  - Medidas de la pasarela: el radio de la rotonda (`rotundaRadiusM`, 2,3 m),
+    lo que la rotonda sube sobre el túnel (`rotundaRiseM`, 0,6 m), el ancho y
+    el alto del túnel (`tunnelWidthM`, 2,6 m, y `tunnelHeightM`, 3 m) y la
+    altura de su base (`baseHeightM`, 3,4 m, la de la puerta).
+  - Lleva también el avión de referencia (`designType`: un A320 de
+    [`types.js`](../../aircraft/types.js)) y la distancia de su puerta
+    delantera a la nariz (`doorAftOfNoseM`, 6 m).
+  - Por último, cuánto se aparta la rotonda hacia la izquierda del avión
+    (`rotundaLateralM`, 8 m).
+- `taxiwayPavement`: la media anchura de las calzadas de rodaje, 11,5 m
+  (23 m de calzada). Vale para toda calle del plano, porque el plano no guarda
+  el ancho de cada una.
+
+Lo lee [`structures.js`](../structures.js) (`MDPC_STRUCTURES`), que lo
+convierte en GeoJSON (`structureFeatures`):
+
+- los edificios, extruidos desde su base hasta su altura, con su rótulo
+  («15 m est.»);
+- las pasarelas, construidas solas:
+  - el avión de referencia se estaciona con su centro en el centro de la
+    posición y la nariz hacia su rumbo;
+  - la rotonda se apoya en el lado elegido, a un radio de él, en el punto más
+    cercano al que queda 8 m a la izquierda de la puerta;
+  - el túnel va del centro de la rotonda a la puerta delantera izquierda;
+- las calzadas: cada eje de rodaje con un búfer de 11,5 m, uniones redondas y
+  extremos redondos.
+
+Cada elemento lleva `estimate: true`. Las pruebas
+([`structures.test.js`](../structures.test.js)) comprueban:
+
+- que cada anillo cierra y tiene área;
+- que cada pasarela llega a la puerta, que esa puerta cae dentro de su
+  posición, que la rotonda queda fuera del edificio y que el túnel no lo
+  cruza;
+- que cada calzada contiene su eje y no se dobla sobre sí misma;
+- que el archivo describe cada terminal del plano y cada posición con
+  pasarela, ni una más.
 
 **El límite de la FIR Santo Domingo (MDCS) no está en esta carpeta.** El plan
 permitía extraerlo una sola vez del proyecto VATSpy (`FIRBoundaries.dat`,
