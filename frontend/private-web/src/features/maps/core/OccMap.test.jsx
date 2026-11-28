@@ -3206,6 +3206,59 @@ describe('OccMap weather (PR M8)', () => {
     expect(pinned.join(' ')).not.toContain('16:50');
   });
 
+  // Hotfix of 2026-11-28, step 2: an instant GIBS lists whose tiles still fail (a 404 seen that day) is skipped, so the
+  // loop never shows a blank frame; with every frame failing it holds nothing.
+  it('skips a frame of the satellite loop whose tiles fail, and holds nothing when every frame fails', async () => {
+    const afternoon = Date.parse('2026-11-28T17:20:00Z');
+    const geocolor = ['2026-11-28T15:10:00Z', '2026-11-28T15:20:00Z', '2026-11-28T15:30:00Z', '2026-11-28T15:40:00Z',
+      '2026-11-28T15:50:00Z', '2026-11-28T16:10:00Z', '2026-11-28T16:20:00Z'];
+    const service = createSimulatedSatelliteImagery({ goes: { time: '2026-11-28T16:50:00Z' },
+      domains: { geocolor, ir: ['2026-11-28T16:50:00Z'] } });
+    const read = data => ({ status: 'success', data });
+    const regionWeather = { region: read(createRegionWeather()), sigmets: read(createSigmets()),
+      wind: { status: 'loading', data: null }, radar: read(createRadarFrames()), demo: false };
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    render(<OccMap defaultView="region" frozenAt={afternoon} weather={weatherAt()} regionWeather={regionWeather}
+      satelliteService={service} layerOverrides={{ 'weather.loop': true, 'weather.goes': false }} />);
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    await settle();
+    await settle();
+    const opacities = () => Array.from({ length: 6 }, (_, index) =>
+      map.layers.find(layer => layer.id === `occ-weather-loop-${index}-image`).paint['raster-opacity']);
+    const shown = () => opacities().findIndex(value => value > 0);
+    // The frozen clock holds the latest frame. MapLibre reloads each source given new tiles (its content source data).
+    expect(shown()).toBe(5);
+    for (let index = 0; index < 6; index += 1) {
+      act(() => fake.state.emit(map, 'sourcedata', { sourceId: `occ-weather-loop-${index}`, sourceDataType: 'content' }));
+    }
+    const tilesCalls = map.calls.filter(call => call.method === 'setTiles').length;
+    const reads = service.calls.length;
+
+    // The latest frame's source fires `error` for a tile: the frame before it shows instead, and nothing is logged.
+    act(() => fake.state.emit(map, 'error', { sourceId: 'occ-weather-loop-5', tile: {}, error: new Error('Not Found') }));
+    await settle();
+    expect(shown()).toBe(4);
+    expect(opacities().filter(value => value > 0)).toHaveLength(1);
+    expect(error).not.toHaveBeenCalled();
+
+    // A 404, which MapLibre 6.16 keeps quiet: the frame's tiles stay `errored`, and the loop's next tick finds them.
+    fake.state.setTileStates(map, 'occ-weather-loop-4', ['errored', 'errored']);
+    await act(() => new Promise(resolve => { setTimeout(resolve, 350); }));
+    await settle();
+    expect(shown()).toBe(3);
+
+    // Every frame failing: the loop holds nothing.
+    for (const index of [0, 1, 2, 3]) fake.state.setTileStates(map, `occ-weather-loop-${index}`, ['errored']);
+    await act(() => new Promise(resolve => { setTimeout(resolve, 350); }));
+    await settle();
+    expect(opacities()).toEqual([0, 0, 0, 0, 0, 0]);
+    // No new tiles and no new read: the budget is the same.
+    expect(map.calls.filter(call => call.method === 'setTiles')).toHaveLength(tilesCalls);
+    expect(service.calls).toHaveLength(reads);
+    expect(map.styleCalls).toEqual([]);
+  });
+
   it('credits NOAA while the wind is on screen', () => {
     const element = props => (
       <OccMap defaultView="airfield" frozenAt={WEATHER_NOON_MS} weather={weatherAt()} {...props}><ReferenceProbe /></OccMap>
