@@ -280,7 +280,7 @@ describe('OccMap', () => {
 
     act(() => fake.state.emit(map, 'error', { sourceId: 'openmaptiles', error: new Error('Failed to fetch') }));
     const chip = screen.getByRole('status');
-    expect(chip).toHaveTextContent('No se pudo cargar el mapa base. Los datos de ELEVANT siguen en el mapa.');
+    expect(chip).toHaveTextContent('No se pudo cargar el mapa base; reintentando… Los datos de ELEVANT siguen en el mapa.');
     expect(chip).toHaveClass('occ-map-chip');
     expect(probe()).toMatchObject({ engineStatus: 'ready', basemapStatus: 'degraded' });
     // The same states on the root, where the visual suite waits for them.

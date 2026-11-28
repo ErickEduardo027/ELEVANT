@@ -29,9 +29,9 @@ describe('map messages', () => {
       }
     }
     expect(createTranslator(mapMessages, 'es')('basemap.degraded'))
-      .toBe('No se pudo cargar el mapa base. Los datos de ELEVANT siguen en el mapa.');
+      .toBe('No se pudo cargar el mapa base; reintentando… Los datos de ELEVANT siguen en el mapa.');
     expect(createTranslator(mapMessages, 'en')('basemap.degraded'))
-      .toBe('The base map could not be loaded. ELEVANT data is still on the map.');
+      .toBe('The base map could not be loaded; retrying… ELEVANT data is still on the map.');
     expect(createTranslator(mapMessages, 'en')('view.group')).toBe('Map view');
   });
 

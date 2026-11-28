@@ -482,7 +482,7 @@ test.describe('map lab', () => {
     const map = await openLab(page, `scene=ramp-states&view=ramp&terminal=A&t=${NOON}`);
     await expect(map).toHaveAttribute('data-occ-basemap', 'degraded');
     await expect(page.locator('.occ-map-chip')).toHaveText(
-      'No se pudo cargar el mapa base. Los datos de ELEVANT siguen en el mapa.',
+      'No se pudo cargar el mapa base; reintentando… Los datos de ELEVANT siguen en el mapa.',
     );
     expect(isolation.count('tile')).toBeGreaterThan(0);
     // The stands are still drawn and still answer a click.
