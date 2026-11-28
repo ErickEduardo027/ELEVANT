@@ -169,7 +169,7 @@ Las leyendas leen las palabras y los dibujos de `statusVocabulary.js`: un estado
   - `SIGNALS`: `attention` (`--occ-warn`, triángulo, «Atención»), `urgent` (`--occ-danger`, octágono, «Urgente») y `notice` (sin color, rombo, «Aviso»).
   - `isInOperation(visit)`: una visita está «En operación» cuando su escala está `InProgress` o su operación está `InProgress` o `Returned`. Acepta un vuelo del mapa, una escala y una escala de Planificación.
 - `occShortcuts.js`: la tabla `OCC_SHORTCUTS` y `createOccShortcutHandler(handlers, { isBlocked, document })`.
-  - Ocho teclas: `1` Región, `2` Aproximación, `3` Aeródromo, `4` Rampa, `D` 2D/3D, `S` Seguir, `L` Capas y `Esc` Limpiar.
+  - Ocho teclas: `1` Región, `2` Aproximación, `3` Aeródromo, `4` Rampa, `D` 2D/3D, `S` Seguir, `L` Capas y `Esc` Limpiar. *Desde la nota del 27 de noviembre de 2026 son nueve: `0` Mundo va primero, y solo la obedece un mapa con el globo (hoy, Monitoreo).*
   - Compara `event.key` sin distinguir mayúsculas.
   - Ignora la tecla escrita en un campo editable, con Ctrl, Meta o Alt, repetida por mantenerla pulsada, o ya atendida por otro (`defaultPrevented`).
   - No hace nada con un diálogo modal abierto (`[role=dialog][aria-modal=true]`), ni cuando `isBlocked()` avisa de un cajón abierto.
@@ -919,3 +919,5 @@ Esta nota amplía las decisiones de arriba sin reescribirlas. Del [ADR-0043](004
 ## Nota del 27 de noviembre de 2026: «0 Mundo» (M8 del plan de mapas)
 
 La tabla de teclas de los mapas (sección 6) pasa de ocho a nueve: `0` Mundo va primero, antes de `1` Región. Solo la obedece un mapa con el globo (hoy, Monitoreo); en Panorama y en Mapa de posiciones la tecla no hace nada y su selector sigue mostrando las cuatro vistas. En Monitoreo el selector del riel muestra «Mundo» primero, con su tecla, y marca la vista que la cámara muestra de verdad, como las otras. El cielo y la atmósfera del globo son colores del mapa (`style/mapColors.js`), no del marco del OCC: el riel y los paneles siguen siendo losas planas con sus tokens.
+
+Lo demás del carril M8 sigue estas reglas sin añadir tokens: la base de NASA GIBS va en grises bajo la noche y lleva su crédito; los aeropuertos dominicanos se distinguen por tamaño y rótulo, no por un color nuevo; las rutas de los vuelos de AVIAM son líneas de 1 px con el acento del mapa; el filtro del tablero («Llegadas», «Salidas», «En vuelo», «En tierra», «Todos») es un `OccSegmented`, y lo que deja fuera se atenúa en el mapa en lugar de ocultarse. Cada capa nueva tiene su entrada en la leyenda («Luces de las ciudades» o «Relieve y fondo marino», «Aeropuerto de República Dominicana», «Rutas de los vuelos de AVIAM» y «Fuera del filtro del tablero»).
