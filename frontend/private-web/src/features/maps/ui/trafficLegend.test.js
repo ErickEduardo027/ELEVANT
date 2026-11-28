@@ -47,6 +47,11 @@ describe('traffic legend entries', () => {
     ]);
     // In 2D no kind has a hint.
     expect(hints({}).map(([, hint]) => hint)).toEqual([null, null, null, null]);
+    // Integration of M5 with M9: with the map's liveries (Mapa de posiciones) every kind wears its airline's, the other
+    // traffic on the ground near the field included; in 2D still no hint.
+    expect(hints({ models3d: true, liveries3d: true }).map(([, hint]) => hint))
+      .toEqual(Array(4).fill('En 3D, de cerca, con la librea de su aerolínea'));
+    expect(hints({ liveries3d: true }).map(([, hint]) => hint)).toEqual([null, null, null, null]);
   });
 
   it('lists only what is on screen, in English too', () => {

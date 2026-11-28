@@ -2391,7 +2391,9 @@ const OccMapView = forwardRef(function OccMapView({
     status: view3dState.status, notice: view3dState.notice, resume: resume3d,
     // CN-30: the followed aircraft's own 3D («Seguir en 3D»): off, loading, ready or failed.
     follow: view3dState.follow ?? 'off',
-  }), [toggles3d, snapshot.engineStatus, pitchMode, toggle3d, view3dState, resume3d]);
+    // M9 with PR M5: whether the 3D aircraft wear their airlines' liveries (aircraft3d={{ liveries }}), for the legend.
+    liveries: aircraft3dOptions?.liveries === true,
+  }), [toggles3d, snapshot.engineStatus, pitchMode, toggle3d, view3dState, resume3d, aircraft3dOptions?.liveries]);
   useLayoutEffect(() => {
     latest.current.view3d = view3d;
   });

@@ -455,8 +455,10 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, f
   // The traffic on screen (PR M5): the aircraft kinds, their tags and their trails.
   // In 3D (PR M5) its kinds say whether their 3D aircraft wear a livery.
   const models3d = view3d?.on === true;
-  const traffic = useMemo(() => trafficLegendEntries(trafficOnScreen, { language, models3d }),
-    [trafficOnScreen, language, models3d]);
+  // M9: with the map's liveries (Mapa de posiciones) every 3D aircraft wears its airline's.
+  const liveries3d = view3d?.liveries === true;
+  const traffic = useMemo(() => trafficLegendEntries(trafficOnScreen, { language, models3d, liveries3d }),
+    [trafficOnScreen, language, models3d, liveries3d]);
   // The references on screen (PR M8).
   const references = useMemo(() => referenceLegendEntries(referencesOnScreen ?? {}, { language }),
     [referencesOnScreen, language]);
