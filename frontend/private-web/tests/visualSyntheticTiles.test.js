@@ -158,7 +158,9 @@ describe('synthetic satellite images of the visual suite (PR M8)', () => {
     expect(colours.size).toBeGreaterThanOrEqual(5);
     // Made once, the same every time; nothing for another image.
     expect(syntheticSatelliteTile('goes', tile.z, tile.x, tile.y)).toBe(png);
-    expect(syntheticSatelliteTile('radar', 5, 9, 14)).toBeNull();
+    expect(syntheticSatelliteTile('lightning', 5, 9, 14)).toBeNull();
+    // IEM's TJUA radar (M7) is an image of the suite too: a real PNG of the same size.
+    expect(readPng(syntheticSatelliteTile('radar', 5, 9, 14)).width).toBe(256);
     // The pixels run on across tiles: the centre of a tile's pixel is where Web Mercator puts it.
     const [west] = tilePixelLngLat(5, 9, 14, -0.5, 0);
     expect(west).toBeCloseTo((9 / 32) * 360 - 180, 9);
