@@ -1,6 +1,6 @@
 // The wind barbs of the METAR stations (lane M7, traffic/weatherLayers.js), drawn on demand by style/mapImages.js as
 // SDF images like every other icon, so the layer paints them in its colour with a dark halo. One image per 5 kt from 5
-// to 100 kt: a shaft that rises from the station's dot to the north, with its marks on the right of it near the tip, as
+// to 100 kt (barbImageId): a shaft that rises from the station's dot to the north, with its marks on the right of it near the tip, as
 // a station plot of the northern hemisphere draws them: a pennant for 50 kt, a barb for 10 kt and a half barb for 5 kt.
 // The layer turns the image to where the wind blows from (icon-rotate: the METAR's direction), so the shaft points into
 // the wind. The image is square around the station, which sits at its middle, so turning it keeps the station still.
@@ -25,8 +25,11 @@ const BARB_RISE = 3;
 const LINE_WIDTH = 1.5;
 const round = value => Math.round(value * 100) / 100;
 
-/** The id of the barb image of `speedKt`, one of BARB_SPEEDS. */
-export const barbImageId = speedKt => `wind-barb-${speedKt}`;
+/**
+ * The id of the barb image of `speedKt`, one of BARB_SPEEDS: its count of 5 kt steps, «wind-barb-3» for 15 kt (an image
+ * id carries no run of three digits, style/mapImages.js).
+ */
+export const barbImageId = speedKt => `wind-barb-${speedKt / BARB_STEP_KT}`;
 
 /** The pennants, barbs and half barbs of `speedKt` (a multiple of 5): `{ pennants, barbs, half }`. */
 export function barbParts(speedKt) {

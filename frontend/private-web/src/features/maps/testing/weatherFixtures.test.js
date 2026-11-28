@@ -1,10 +1,11 @@
 import { isOccAerodromeWeather, OCC_AERODROME_WEATHER_STATUSES } from '@elevant/api-client';
 import { describe, expect, it } from 'vitest';
-import {
-  createAerodromeWeather, createWeatherScenario, WEATHER_CREDIT, WEATHER_NOON, WEATHER_OBSERVED_AT, WEATHER_STATION_ID,
-  WEATHER_TAF_RAW,
-} from './weatherFixtures';
+import regionContext from '../airport/data/region.context.json';
 import { TRAFFIC_NOON, TRAFFIC_STATION_ID } from './trafficFixtures';
+import {
+  createAerodromeWeather, createRadarFrames, createRegionWeather, createSigmets, createWeatherScenario, createWindGrid,
+  REGION_CREDIT, REGION_STATIONS, WEATHER_CREDIT, WEATHER_NOON, WEATHER_OBSERVED_AT, WEATHER_STATION_ID, WEATHER_TAF_RAW,
+} from './weatherFixtures';
 
 describe('synthetic aerodrome weather fixtures', () => {
   it('every synthetic answer passes isOccAerodromeWeather for its station', () => {
@@ -51,5 +52,47 @@ describe('synthetic aerodrome weather fixtures', () => {
     // The same invented station as the traffic fixtures; its airport is MDPC.
     expect(createAerodromeWeather().icaoCode).toBe('MDPC');
     expect(WEATHER_STATION_ID).toMatch(/^5a000000-0000-4000-8000-/);
+  });
+});
+
+describe('synthetic regional weather fixtures (lane M7)', () => {
+  const ENVELOPE = ['stationId', 'status', 'reason', 'serverTime', 'refreshAfterSeconds', 'credit'];
+
+  it('answer in the shapes of lane M6 in their four states', () => {
+    for (const status of ['Live', 'Stale', 'Unavailable', 'Disabled']) {
+      const answers = [createRegionWeather({ status }), createSigmets({ status }), createRadarFrames({ status }),
+        createWindGrid({ status })];
+      for (const answer of answers) {
+        expect(Object.keys(answer).slice(0, ENVELOPE.length), status).toEqual(ENVELOPE);
+        expect([answer.stationId, answer.status, answer.credit], status).toEqual([WEATHER_STATION_ID, status, REGION_CREDIT]);
+      }
+      const reporting = status === 'Live' || status === 'Stale';
+      expect(answers[0].stations.length > 0, status).toBe(reporting);
+      expect(answers[1].sigmets.length > 0, status).toBe(reporting);
+      expect(answers[2].frames.length > 0, status).toBe(reporting);
+      expect(answers[3].grid !== null, status).toBe(reporting);
+    }
+    expect(createRegionWeather().reason).toBeNull();
+    expect(createRegionWeather({ status: 'Disabled' }).reason).toBe('disabled');
+  });
+
+  it('places the invented reports at the real airports of the region', () => {
+    const airports = new Map(regionContext.airports.map(airport => [airport.icao, airport.p]));
+    for (const station of REGION_STATIONS) expect(station.p, station.icao).toEqual(airports.get(station.icao));
+    const [mdpc] = createRegionWeather().stations;
+    expect(Object.keys(mdpc)).toEqual(['icao', 'iata', 'name', 'latitude', 'longitude', 'metar', 'taf']);
+    expect(Object.keys(mdpc.metar)).toEqual(['raw', 'observedAt', 'windDirectionDegrees', 'windSpeedKnots', 'windGustKnots',
+      'visibilityStatuteMiles', 'ceilingFeet', 'flightCategory', 'temperatureCelsius', 'dewpointCelsius',
+      'altimeterHectopascals']);
+    expect(mdpc.metar.raw).toBe('MDPC 131450Z 10013KT 9999 SCT020 28/22 Q1014');
+    expect(Object.keys(mdpc.taf)).toEqual(['raw', 'issuedAt', 'validFrom', 'validTo']);
+    expect(createRegionWeather().stations.find(station => station.icao === 'MDCY').metar).toBeNull();
+    const [sigmet] = createSigmets().sigmets;
+    expect(Object.keys(sigmet)).toEqual(['id', 'firId', 'hazard', 'qualifier', 'validFrom', 'validTo', 'baseFeet', 'topFeet',
+      'raw', 'polygon']);
+    const radar = createRadarFrames();
+    expect([radar.provider, radar.maxZoom, radar.frames.length]).toEqual(['iem-tjua', 8, 8]);
+    expect(radar.frames.every(frame => frame.tileUrlTemplate.startsWith('https://mesonet.agron.iastate.edu/'))).toBe(true);
+    expect(createWindGrid().grid.points).toHaveLength(9);
   });
 });

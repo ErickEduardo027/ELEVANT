@@ -34,9 +34,9 @@ export const MAP_IMAGE_IDS = Object.freeze([
   'wind-arrow',
   'wind-calm',
   // The traffic (PR M5, style/trafficImages.js): silhouettes per icon category, the estimated ring, tag glyphs, «Demo».
-  ...Object.keys(TRAFFIC_IMAGE_SHAPES),
   // The wind barbs of the METAR stations (lane M7, style/weatherImages.js), one per 5 kt from 5 to 100 kt.
   ...Object.keys(WEATHER_IMAGE_SHAPES),
+  ...Object.keys(TRAFFIC_IMAGE_SHAPES),
 ]);
 
 function deepFreeze(value) {
@@ -170,8 +170,8 @@ export const MAP_IMAGE_SHAPES = deepFreeze({
       { fill: 'M13.5 12 A1.5 1.5 0 1 1 10.5 12 A1.5 1.5 0 1 1 13.5 12 Z' },
     ],
   },
-  ...TRAFFIC_IMAGE_SHAPES,
   ...WEATHER_IMAGE_SHAPES,
+  ...TRAFFIC_IMAGE_SHAPES,
 });
 
 /** Whether an image is an SDF (an icon the layer paints) rather than a pattern painted here. */
