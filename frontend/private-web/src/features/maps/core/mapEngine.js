@@ -333,10 +333,19 @@ export function createMapEngine({
     limitsWaiter = null;
   }
 
+  // Integration of M4 and M9: while «Seguir en 3D» holds the orbit (setOrbitMode), the maximum zoom given here is the one
+  // the orbit gives back when it ends (the latest the screen set, whichever came first), and the map keeps at least the
+  // orbit's zoom 22 until then.
   function applyLimits({ maxBounds = null, minZoom = null, maxZoom = null }) {
+    const limit = Number.isFinite(maxZoom) ? maxZoom : ENGINE_MAX_ZOOM;
     map.setMaxBounds?.(maxBounds ?? null);
     map.setMinZoom?.(Number.isFinite(minZoom) ? minZoom : ENGINE_MIN_ZOOM);
-    map.setMaxZoom?.(Number.isFinite(maxZoom) ? maxZoom : ENGINE_MAX_ZOOM);
+    if (orbitSaved !== null) {
+      orbitSaved.maxZoom = limit;
+      map.setMaxZoom?.(Math.max(limit, ORBIT.maxZoom));
+      return;
+    }
+    map.setMaxZoom?.(limit);
   }
 
   // The sky (M4, setSky): the SkySpecification the map shows, or null for none; put back after a context loss.
@@ -710,11 +719,12 @@ export function createMapEngine({
       if (orbitSaved === null) return;
       const saved = orbitSaved;
       orbitSaved = null;
+      // The zoom limit first: the jump below ends a move, and limits that waited for it (setCameraLimits with afterMove)
+      // then apply on top of it rather than under it. setMaxZoom eases a camera beyond the old limit back within it.
+      if (Number.isFinite(saved.maxZoom)) map.setMaxZoom?.(saved.maxZoom);
       map.jumpTo?.({ elevation: 0 });
       map.setCenterClampedToGround?.(saved.clamped ?? true);
       if (Number.isFinite(saved.maxPitch)) map.setMaxPitch?.(saved.maxPitch);
-      // setMaxZoom eases a camera beyond the old limit back within it.
-      if (Number.isFinite(saved.maxZoom)) map.setMaxZoom?.(saved.maxZoom);
       for (const name of saved.handlers) map[name]?.enable?.();
     },
 

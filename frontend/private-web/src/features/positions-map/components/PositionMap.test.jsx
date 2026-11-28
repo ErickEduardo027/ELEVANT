@@ -537,4 +537,37 @@ describe('PositionMap fixed on PUJ (M9, Mapa de posiciones)', () => {
     act(() => fake.state.emit(map, 'moveend'));
     expect(map.options).toMatchObject({ maxBounds: lock.maxBounds, minZoom: 13, maxZoom: ENGINE_MAX_ZOOM });
   });
+
+  // Integration of M4 and M9: «Seguir en 3D» lifts the zoom to 22 for its orbit and the follow lets the PUJ lock go;
+  // neither undoes the other while it follows, and its end gives back the lock with the screen's own zoom range.
+  it('«Seguir en 3D» on the map fixed on PUJ keeps zoom 22 and no lock while it orbits, then holds the camera again', () => {
+    const frames = [];
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => frames.push(callback));
+    vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => {});
+    const runFrames = () => act(() => frames.splice(0).forEach(callback => callback(0)));
+    const lock = airportLockOptions({ stands: STAND_REFERENCE, layout: MDPC_LAYOUT });
+    const { map } = renderPositions({
+      fixedOnAirport: true, viewMode: '3d', onViewModeChange: () => {}, traffic: liveTraffic(), follow3dButton: true,
+      trafficSelection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.arrival }, onSelectTraffic: () => {},
+    });
+    loadStyle(map);
+    runFrames();
+    expect(map.options).toMatchObject({ maxBounds: lock.maxBounds, minZoom: 13, maxZoom: ENGINE_MAX_ZOOM });
+
+    const follow3d = () => document.querySelector('[data-occ-follow3d]');
+    act(() => { follow3d().click(); });
+    runFrames();
+    runFrames();
+    expect(follow3d()).toHaveAttribute('aria-pressed', 'true');
+    expect(map.options).toMatchObject({ maxBounds: null, minZoom: ENGINE_MIN_ZOOM, maxZoom: AIRPORT_FOLLOW_MAX_ZOOM });
+    expect(map.getMaxPitch()).toBe(85);
+
+    act(() => { follow3d().click(); });
+    runFrames();
+    act(() => fake.state.emit(map, 'moveend'));
+    expect(follow3d()).toHaveAttribute('aria-pressed', 'false');
+    expect(new URLSearchParams(window.location.search).get('follow')).toBeNull();
+    expect(map.options).toMatchObject({ maxBounds: lock.maxBounds, minZoom: 13, maxZoom: ENGINE_MAX_ZOOM });
+    expect(map.getMaxPitch()).toBe(65);
+  });
 });

@@ -802,6 +802,46 @@ describe('map engine', () => {
     expect(map.doubleClickZoom.isEnabled()).toBe(true);
   });
 
+  it('setCameraLimits and setOrbitMode do not fight: the orbit keeps zoom 22 and gives back the latest limits (M4, M9)', () => {
+    const { engine, map } = ready(setup({ camera: { center: [-68.36, 18.57], zoom: 15 } }));
+    const box = [[-68.42, 18.53], [-68.32, 18.6]];
+    // The airport lock of Mapa de posiciones (M9), then «Seguir en 3D» and, after it, the release of the lock.
+    engine.setCameraLimits({ maxBounds: box, minZoom: 13 });
+    engine.setOrbitMode(true);
+    expect(map.getMaxZoom()).toBe(22);
+    engine.setCameraLimits({ maxBounds: null, minZoom: null, maxZoom: 22 });
+    expect(map.options).toMatchObject({ maxBounds: null, minZoom: ENGINE_MIN_ZOOM, maxZoom: 22 });
+    // A screen's lower limit during the orbit waits for its end: the orbit keeps 22 meanwhile.
+    engine.setCameraLimits({ maxBounds: null, minZoom: null, maxZoom: 20 });
+    expect(map.getMaxZoom()).toBe(22);
+    engine.jumpTo({ zoom: 21.6 });
+    engine.setOrbitMode(false);
+    expect([map.getMaxZoom(), map.getZoom()]).toEqual([20, 20]);
+    // As OccMap ends it: the orbit off, the flight home under way, then the lock back once it lands (afterMove), which
+    // restores the screen's own range.
+    engine.setOrbitMode(true);
+    engine.setOrbitMode(false);
+    map.moving = true;
+    engine.setCameraLimits({ maxBounds: box, minZoom: 13 }, { afterMove: true });
+    expect(map.getMaxZoom()).toBe(20);
+    map.moving = false;
+    map._fire('moveend', {});
+    expect(map.options).toMatchObject({ maxBounds: box, minZoom: 13, maxZoom: ENGINE_MAX_ZOOM });
+    // A wait still pending when the orbit ends applies at the end of its jump, not under the limit it gives back.
+    engine.setOrbitMode(true);
+    engine.setCameraLimits({ maxBounds: null, minZoom: null, maxZoom: 22 });
+    map.moving = true;
+    engine.setCameraLimits({ maxBounds: box, minZoom: 13 }, { afterMove: true });
+    engine.setOrbitMode(false);
+    map.moving = false;
+    map._fire('moveend', {});
+    expect(map.options).toMatchObject({ maxBounds: box, minZoom: 13, maxZoom: ENGINE_MAX_ZOOM });
+    // Without the release (Panorama, Monitoreo) the orbit gives back the map's own limit.
+    engine.setOrbitMode(true);
+    engine.setOrbitMode(false);
+    expect(map.getMaxZoom()).toBe(ENGINE_MAX_ZOOM);
+  });
+
   it('setCloseUp hides the layers marked for it and narrows the filtered ones; their groups win back (M4)', () => {
     const overlay = {
       sources: { 'occ-traffic': { type: 'geojson', promoteId: 'id' }, 'occ-stands': { type: 'geojson' } },
