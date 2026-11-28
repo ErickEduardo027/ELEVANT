@@ -2,6 +2,7 @@ import { occColor } from '../../occ-ui/occPalette';
 import { EARTH_RADIUS_M, METRES_PER_NM, haversineM } from '../airport/geo';
 import { isDrawn } from '../traffic/trafficFeatures';
 import { resolveAircraftType } from './types';
+import { contactShadowMatrix, contactShadowSize, contactShadowStrength } from './contactShadow';
 
 // What the 3D layer draws (design G1 and G3, contracts 2.3 and 2.4): one entry per aircraft type present, with the
 // instance matrices and colours of its aircraft and of their ground shadows, in the local frame of the ARP. Pure, and
@@ -254,6 +255,9 @@ const byId = (a, b) => {
  * - CN-30: `attitudes` (`Map<id, { heightM, pitchDeg, bankDeg }>`, aircraft/attitude.js) pitch and bank an aircraft of
  *   the traffic (poseMatrix) and set its height; its shadow stays level. `excludeId` is left out of the plan: the
  *   aircraft the detailed model draws (core/aircraft3d.js).
+ * - M4 (2026-11-28): `contacts` holds the matrix of each aircraft's soft contact shadow (contactShadow.js: 16 floats,
+ *   in the aircraft's order) and `contactStrengths` its strength, 1 on the ground and 0 from CONTACT_SHADOW.fadeM up
+ *   (its matrix then zero).
  * The input is never changed; the same input gives the same plan.
  */
 export function planInstances(renderAircraft = [], parkedAircraft = [], {
@@ -311,6 +315,9 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
     const floorLengths = new Float32Array(2 * aircraftCount);
     const ids = [];
     const drops = [];
+    // M4: the soft contact shadow under each aircraft (contactShadow.js), fading with its height.
+    const contacts = new Float32Array(16 * aircraftCount);
+    const contactStrengths = new Float32Array(aircraftCount);
     members.forEach((member, index) => {
       writeMatrix(matrices, 16 * index, { ...member, flatten: 1 });
       writeMatrix(matrices, 16 * (aircraftCount + index), { ...member, z: SHADOW.heightM, flatten: SHADOW.flatten,
@@ -323,6 +330,12 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
       floorLengths[index] = floor;
       floorLengths[aircraftCount + index] = floor;
       if (member.z > DROP_LINE_MIN_M) drops.push(member.x, member.y, member.z, member.x, member.y, 0);
+      const strength = contactShadowStrength(member.z);
+      contactStrengths[index] = strength;
+      if (strength > 0) {
+        contacts.set(contactShadowMatrix({ x: member.x, y: member.y, headingDeg: member.headingDeg,
+          ...contactShadowSize(resolved.spec, member.z) }), 16 * index);
+      }
     });
     plan.set(key, Object.freeze({
       spec: resolved.spec,
@@ -334,6 +347,8 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
       floorLengths,
       ids: Object.freeze(ids),
       dropLines: Float32Array.from(drops),
+      contacts,
+      contactStrengths,
     }));
   }
   return plan;

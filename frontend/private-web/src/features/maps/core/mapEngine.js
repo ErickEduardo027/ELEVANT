@@ -236,6 +236,7 @@ export function createMapEngine({
     for (const id of customLayers.keys()) runWhileLoading(() => addCustomLayerNow(id));
     for (const { source, id, state } of featureStates.values()) runWhileLoading(() => applyFeatureState(source, id, state));
     for (const [sourceId, tiles] of rasterTiles) runWhileLoading(() => applyRasterTiles(sourceId, tiles));
+    if (sky !== null) runWhileLoading(applySky);
   }
 
   function markStyleReady({ restore }) {
@@ -319,6 +320,13 @@ export function createMapEngine({
 
   // The gestures and limits «Seguir en 3D» took from MapLibre (setOrbitMode), to give back.
   let orbitSaved = null;
+
+  // The sky (M4, setSky): the SkySpecification the map shows, or null for none; put back after a context loss.
+  let sky = null;
+  let skyKey = 'null';
+  function applySky() {
+    if (typeof map.setSky === 'function') map.setSky(sky ?? undefined);
+  }
 
   // Close up (M4, setCloseUp): the layers whose metadata says `'occ:closeUp': 'hide'` are hidden whatever their group,
   // and those with an `'occ:closeUpFilter'` draw only what it lets through, on top of their own filter. The visibility
@@ -510,6 +518,26 @@ export function createMapEngine({
     /** Whether the map is close up (setCloseUp). */
     isCloseUp() {
       return closeUp;
+    },
+
+    /**
+     * The sky (M4: core/mapSky.js, on in the 3D views and while following in 3D): a MapLibre SkySpecification, or
+     * null to take it away. MapLibre's setSky changes a property of the style, never the style (no setStyle). The same
+     * sky again changes nothing; a map without one is never told to have none. Nothing without a map.
+     */
+    setSky(next) {
+      if (!live()) return;
+      const value = next == null ? null : structuredClone(next);
+      const key = JSON.stringify(value);
+      if (key === skyKey) return;
+      sky = value;
+      skyKey = key;
+      whenStyleReady(applySky);
+    },
+
+    /** The sky set (setSky), a copy, or null. */
+    getSky() {
+      return sky === null ? null : structuredClone(sky);
     },
 
     setData(sourceId, data) {

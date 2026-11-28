@@ -9,6 +9,7 @@ import {
   AIRCRAFT_3D_COLORS, AIRCRAFT_3D_RADIUS_NM, DROP_LINE_MIN_M, SHADOW, TYPE_MEMO_LIMIT, instanceKey, linearRgb,
   mercatorFrame, planInstances, typeMemoSizeForTests, pivotOf, poseMatrix,
 } from './instancePlan';
+import { contactShadowMatrix, contactShadowSize, contactShadowStrength } from './contactShadow';
 import { AIRCRAFT_TYPES, CATEGORY_FALLBACKS } from './types';
 
 // Synthetic aircraft around the ARP of Punta Cana: invented ids and places, the shape of the map's RenderAircraft
@@ -393,5 +394,30 @@ describe('poseMatrix and attitudes (CN-30)', () => {
     // Left out when the detailed model draws it.
     expect(planInstances([climbing], [], { zoom: 16, minZoom: 15, originLngLat: MDPC_LAYOUT.meta.arp,
       excludeId: 'f:climb' }).size).toBe(0);
+  });
+
+  it('plans the soft contact shadow of each aircraft, full on the ground and none from fadeM up (M4)', () => {
+    const parked = { id: 's:B2', lon: ARP[0] + 0.003, lat: ARP[1], headingDeg: 45, typeIcao: 'A320', kind: 'aviam' };
+    const low = aircraft('f:low', { bearing: 90, metres: 900, onGround: false, altM: FIELD_M + 10, trackDeg: 90 });
+    const high = aircraft('f:high', { bearing: 270, metres: 900, onGround: false, altM: FIELD_M + 400, trackDeg: 270 });
+    const plan = planInstances([aircraft('f:ground', { bearing: 180, metres: 500 }), low, high], [parked], OPTIONS);
+    const entry = plan.get('A320');
+    expect(entry.ids.slice(0, entry.aircraftCount)).toEqual(['f:ground', 'f:high', 'f:low', 's:B2']);
+    expect(entry.contacts).toHaveLength(16 * entry.aircraftCount);
+    const strengths = [...entry.contactStrengths];
+    expect(strengths[0]).toBe(1);
+    expect(strengths[1]).toBe(0);
+    expect(strengths[2]).toBeCloseTo(contactShadowStrength(10), 6);
+    expect(strengths[3]).toBe(1);
+    // Under each aircraft, a little above the ground, along its heading and the size of its type.
+    const [x, y] = translationOf(entry, 3);
+    const expected = contactShadowMatrix({ x, y, headingDeg: 45, ...contactShadowSize(AIRCRAFT_TYPES.A320) });
+    [...entry.contacts.slice(48, 64)].forEach((value, index) => expect(value).toBeCloseTo(expected[index], 3));
+    // None for the one above fadeM.
+    expect([...entry.contacts.slice(16, 32)].every(value => value === 0)).toBe(true);
+    // The spread of the low one: wider than on the ground.
+    const along = index => Math.hypot(entry.contacts[16 * index + 4], entry.contacts[16 * index + 5]);
+    expect(along(2) / along(0)).toBeCloseTo(contactShadowSize(AIRCRAFT_TYPES.A320, 10).alongM
+      / contactShadowSize(AIRCRAFT_TYPES.A320).alongM, 4);
   });
 });

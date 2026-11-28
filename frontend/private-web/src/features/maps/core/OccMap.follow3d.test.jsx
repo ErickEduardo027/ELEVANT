@@ -13,6 +13,7 @@ import { buildSituation, toFlightsModel, toPictureModel } from '../traffic/situa
 import Follow3dPanel from '../ui/Follow3dPanel';
 import { MODE_3D_STORAGE_KEY } from './aircraft3d';
 import { createRenderClock } from './frameLoop';
+import { occSky } from './mapSky';
 import OccMap from './OccMap';
 import { useOccMap } from './OccMapContext';
 
@@ -202,6 +203,20 @@ describe('OccMap «Seguir en 3D» (CN-30)', () => {
     expect(threeProbe().on).toBe(true);
     act(() => { screen.getByRole('button', { name: 'Dejar de seguir' }).click(); });
     expect(threeProbe().on).toBe(false);
+  });
+
+  it('shows the sky while it follows on a 2D map and takes it away when it ends (M4)', () => {
+    const { map, seconds, root } = renderFollow3d();
+    const skyCalls = () => map.calls.filter(call => call.method === 'setSky');
+    // A 2D map has no sky, and MapLibre is never told so.
+    expect(skyCalls()).toEqual([]);
+    act(() => { screen.getByRole('button', { name: 'start' }).click(); });
+    seconds(1);
+    expect(map.getSky()).toEqual(occSky('dark'));
+    fireEvent(root, createEvent.keyDown(root, { key: 'Escape' }));
+    expect(map.getSky()).toBeUndefined();
+    expect(skyCalls()).toHaveLength(2);
+    expect(map.styleCalls).toEqual([]);
   });
 });
 

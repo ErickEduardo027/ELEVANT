@@ -2,6 +2,7 @@ import { OCC_PALETTE } from '../../occ-ui/occPalette';
 import { CIVIL_TWILIGHT_DEG, dayPhase } from '../traffic/solar';
 import { buildDetailedAircraft, nextBlinkInMs } from './aircraftDetail';
 import { buildAircraftGeometry, triangleCount } from './aircraftGeometry';
+import { contactDisc, contactShadowMatrix, contactShadowSize, contactShadowStrength } from './contactShadow';
 import { SHADOW, linearRgb, mercatorFrame, poseMatrix } from './instancePlan';
 
 // The 3D aircraft as one MapLibre custom layer (design G1, G3 and G4): three draws the instance plan
@@ -16,6 +17,9 @@ import { SHADOW, linearRgb, mercatorFrame, poseMatrix } from './instancePlan';
 //   five minutes, in case it comes back, and then gives it and its model up.
 // - Light: a hemisphere light and a directional light from the sun by day; by night a dim cool ambient and a fixed
 //   light from high up, so the models still read; the civil twilight blends the two.
+// - Contact shadows (M4, 2026-11-28): a soft ellipse on the ground under each aircraft (contactShadow.js), one
+//   InstancedMesh for all, drawn first without depth writes and blended as ground × (1 − darkness × strength), so it
+//   only darkens what is under it; the detailed aircraft has its own. The governor's shadows switch takes them away.
 // - Picking: a ray from the inverse projection through the meshes; a hit names the aircraft, a shadow names nothing.
 // - Context loss: MapLibre 6.16 removes its custom layers when it loses the context (its style's destroy() calls
 //   onRemove, then the map fires `webglcontextlost`), and the engine adds the layer again once the style is back, so
@@ -68,6 +72,8 @@ const PALETTE_TOKENS = Object.freeze([DAY_LIGHT.sky, DAY_LIGHT.ground, DAY_LIGHT
   NIGHT_LIGHT.overhead, DROP_LINE_TOKEN]);
 const MIN_LINE_VERTICES = 64;
 const EMPTY_PLAN = new Map();
+const NO_FLOATS = new Float32Array(0);
+const CONTACT_MESH_NAME = 'contact-shadows';
 const NO_IDS = Object.freeze([]);
 
 // The detailed aircraft (CN-30): its propellers turn at this speed while it moves or its beacon is on, and its ground
@@ -208,8 +214,9 @@ function sameSun(a, b) {
  * of the aircraft under the pointer, or `null` when the ray meets no aircraft (a shadow is no aircraft), before the
  * first frame, while the context is lost and while the layer has failed: the map then picks in 2D.
  * `setQuality({ shadows, dropLines })` lets the frame loop's governor lighten the scene without switching it off.
- * `stats()` → `{ meshes, instances, triangles, drawCalls, lost, failed }`: the meshes held, the instances and triangles
- * drawn, the draw calls of the scene, whether the context is lost and whether the layer has failed. It has failed while
+ * `stats()` → `{ meshes, instances, contacts, triangles, drawCalls, lost, failed }`: the meshes held, the instances and
+ * triangles drawn, the contact shadows drawn (M4), the draw calls of the scene, whether the context is lost and whether
+ * the layer has failed. It has failed while
  * it is on a map whose context works and three could not build its renderer on that context, so it draws nothing; it
  * has not failed before onAdd, after onRemove or while the context is lost, when nothing draws, 2D included.
  */
@@ -268,6 +275,16 @@ export function createAircraft3dLayer({
   let blinkTimer = null;
   let night = true;
   const logos = new Map();
+  // M4: the contact shadows of the traffic, in a group of their own (so the scene's direct meshes stay the types'):
+  // their disc, material and mesh, the matrices as planned, the floor lengths and how many there are.
+  let contactGroup = null;
+  let contactGeometry = null;
+  let contactMaterial = null;
+  let contactMesh = null;
+  let contactCapacity = 0;
+  let contactCount = 0;
+  let contactBase = NO_FLOATS;
+  let contactFloors = NO_FLOATS;
 
   function buildScene() {
     scene = new three.Scene();
@@ -289,8 +306,97 @@ export function createAircraft3dLayer({
     detailHemisphere.position.set(0, 0, 1);
     detailSun = new three.DirectionalLight();
     detailScene.add(detailHemisphere, detailSun);
+    contactGroup = new three.Group();
+    contactGroup.matrixAutoUpdate = false;
+    scene.add(contactGroup);
+    contactGeometry = discGeometry();
+    contactMaterial = contactShadowMaterial();
+    contactMesh = null;
+    contactCapacity = 0;
+    contactCount = 0;
     copied = false;
     appliedSun = undefined;
+  }
+
+  // The unit disc of the contact shadows (contactShadow.js), its darkness in its vertex colours.
+  function discGeometry() {
+    const disc = contactDisc();
+    const geometry = new three.BufferGeometry();
+    geometry.setAttribute('position', new three.Float32BufferAttribute(disc.positions, 3));
+    geometry.setAttribute('color', new three.Float32BufferAttribute(disc.colors, 3));
+    geometry.setIndex(Array.from(disc.indices));
+    return geometry;
+  }
+
+  // Ground × (1 − colour): three's subtractive blend, premultiplied, only darkens; no depth written, so the models and
+  // their silhouettes drawn after it cover it.
+  function contactShadowMaterial() {
+    return new three.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, blending: three.SubtractiveBlending,
+      premultipliedAlpha: true, depthWrite: false });
+  }
+
+  // Copies the contact shadows of the plan (each entry's `contacts` with a strength above 0) into the one mesh.
+  function syncContacts(plan) {
+    let count = 0;
+    for (const entry of plan.values()) {
+      for (let index = 0; index < entry.aircraftCount; index += 1) if (entry.contactStrengths?.[index] > 0) count += 1;
+    }
+    if (count > contactCapacity) {
+      if (contactMesh !== null) {
+        contactGroup.remove(contactMesh);
+        contactMesh.dispose();
+      }
+      contactCapacity = nextPowerOfTwo(count);
+      contactMesh = new three.InstancedMesh(contactGeometry, contactMaterial, contactCapacity);
+      contactMesh.instanceMatrix.setUsage(three.DynamicDrawUsage);
+      contactMesh.instanceColor = new three.InstancedBufferAttribute(new Float32Array(3 * contactCapacity), 3);
+      contactMesh.instanceColor.setUsage(three.DynamicDrawUsage);
+      contactMesh.frustumCulled = false;
+      contactMesh.matrixAutoUpdate = false;
+      contactMesh.renderOrder = -1;
+      contactMesh.name = CONTACT_MESH_NAME;
+      contactGroup.add(contactMesh);
+    }
+    contactBase = new Float32Array(16 * count);
+    contactFloors = new Float32Array(count);
+    let at = 0;
+    for (const entry of plan.values()) {
+      for (let index = 0; index < entry.aircraftCount; index += 1) {
+        const strength = entry.contactStrengths?.[index];
+        if (!(strength > 0)) continue;
+        contactBase.set(entry.contacts.subarray(16 * index, 16 * index + 16), 16 * at);
+        contactFloors[at] = entry.floorLengths?.[index] ?? 0;
+        contactMesh.instanceColor.array.fill(strength, 3 * at, 3 * at + 3);
+        at += 1;
+      }
+    }
+    contactCount = count;
+    if (contactMesh !== null) contactMesh.instanceColor.needsUpdate = true;
+    writeContacts();
+  }
+
+  // The contact shadows' matrices with the floor of the zoom, as the models' (scaleHeld).
+  function writeContacts() {
+    if (contactMesh === null) return;
+    const target = contactMesh.instanceMatrix.array;
+    for (let index = 0; index < contactCount; index += 1) {
+      const length = contactFloors[index];
+      const factor = floorM > 0 && length > 0 ? Math.min(MAX_MODEL_SCALE, Math.max(1, floorM / length)) : 1;
+      const offset = 16 * index;
+      for (let element = 0; element < 16; element += 1) {
+        const scaled = element < 12 && element % 4 !== 3;
+        target[offset + element] = scaled ? contactBase[offset + element] * factor : contactBase[offset + element];
+      }
+    }
+    contactMesh.instanceMatrix.needsUpdate = true;
+    applyContactCount();
+  }
+
+  function applyContactCount() {
+    if (contactMesh === null) return;
+    contactMesh.count = quality.shadows ? contactCount : 0;
+    contactMesh.boundingSphere = null;
+    contactMesh.boundingBox = null;
   }
 
   function lineGeometry(vertices) {
@@ -394,6 +500,7 @@ export function createAircraft3dLayer({
       applyCount(held);
     }
     writeLines(segments);
+    syncContacts(plan);
     return true;
   }
 
@@ -426,6 +533,7 @@ export function createAircraft3dLayer({
     if (floorM > 0 && Math.abs(next - floorM) <= FLOOR_STEP * floorM) return;
     floorM = next;
     for (const held of meshes.values()) scaleHeld(held, floorM);
+    writeContacts();
   }
 
   function retireIdle(time) {
@@ -444,6 +552,9 @@ export function createAircraft3dLayer({
     detailHeld.shadow.removeFromParent();
     detailHeld.shadow.geometry.dispose();
     detailHeld.shadow.material.dispose();
+    // Its contact shadow shares the traffic's disc: only its material is its own.
+    detailHeld.contact.removeFromParent();
+    detailHeld.contact.material.dispose();
     detailHeld = null;
   }
 
@@ -462,8 +573,13 @@ export function createAircraft3dLayer({
     }));
     shadow.matrixAutoUpdate = false;
     shadow.frustumCulled = false;
-    detailScene.add(model.object, shadow);
-    detailHeld = { key: detail.key, model, shadow, idleSince: null, builtAt: time };
+    const contact = new three.Mesh(contactGeometry, contactShadowMaterial());
+    contact.matrixAutoUpdate = false;
+    contact.frustumCulled = false;
+    contact.renderOrder = -1;
+    contact.name = CONTACT_MESH_NAME;
+    detailScene.add(contact, model.object, shadow);
+    detailHeld = { key: detail.key, model, shadow, contact, idleSince: null, builtAt: time };
     const url = detail.livery.logoTexture;
     if (typeof url === 'string' && url !== '' && !logos.has(url)) {
       logos.set(url, null);
@@ -482,6 +598,7 @@ export function createAircraft3dLayer({
       if (detailHeld !== null) {
         detailHeld.model.object.visible = false;
         detailHeld.shadow.visible = false;
+        detailHeld.contact.visible = false;
         detailHeld.idleSince ??= time;
       }
       return;
@@ -504,6 +621,14 @@ export function createAircraft3dLayer({
       flatten: SHADOW.flatten }));
     held.shadow.matrixWorldNeedsUpdate = true;
     held.shadow.visible = quality.shadows;
+    // M4: its contact shadow, scaled as the model and fading as it climbs.
+    const strength = contactShadowStrength(detail.heightM);
+    const size = contactShadowSize(detail.spec, detail.heightM);
+    held.contact.matrix.fromArray(contactShadowMatrix({ headingDeg: detail.headingDeg, alongM: size.alongM * scale,
+      acrossM: size.acrossM * scale }));
+    held.contact.matrixWorldNeedsUpdate = true;
+    held.contact.material.color.setScalar(strength);
+    held.contact.visible = quality.shadows && strength > 0;
     const moving = detail.gsMs > 0.5 || detail.lights?.beacon === true;
     held.model.setState({ gearDown: detail.gearDown, lights: detail.lights ?? {}, timeMs: time, night,
       propellerRpm: moving ? PROPELLER_RPM : 0 });
@@ -657,6 +782,17 @@ export function createAircraft3dLayer({
       }
       detailScene?.clear();
       detailScene = null;
+      contactMesh?.dispose();
+      contactGeometry?.dispose();
+      contactMaterial?.dispose();
+      contactGroup = null;
+      contactGeometry = null;
+      contactMaterial = null;
+      contactMesh = null;
+      contactCapacity = 0;
+      contactCount = 0;
+      contactBase = NO_FLOATS;
+      contactFloors = NO_FLOATS;
       detailCamera = null;
       detailHemisphere = null;
       detailSun = null;
@@ -726,6 +862,7 @@ export function createAircraft3dLayer({
       if (typeof shadows === 'boolean') quality.shadows = shadows;
       if (typeof dropLines === 'boolean') quality.dropLines = dropLines;
       for (const held of meshes.values()) applyCount(held);
+      applyContactCount();
       if (lines !== null) lines.visible = quality.dropLines;
       if (!removed) map?.triggerRepaint();
       return { ...quality };
@@ -741,6 +878,8 @@ export function createAircraft3dLayer({
         if (held.mesh.count > 0) drawCalls += 1;
       }
       if (lines !== null && lines.visible && lines.geometry.drawRange.count > 0) drawCalls += 1;
+      const contacts = contactMesh?.count ?? 0;
+      if (contacts > 0) drawCalls += 1;
       // The detailed aircraft (CN-30): what of it is on screen.
       let detail = null;
       if (detailDrawn !== null) {
@@ -753,12 +892,14 @@ export function createAircraft3dLayer({
           detailCalls += 1;
         });
         if (detailDrawn.shadow.visible) detailCalls += 1;
+        if (detailDrawn.contact.visible) detailCalls += 1;
         triangles += detailTriangles;
         drawCalls += detailCalls;
         detail = { key: detailDrawn.key, triangles: detailTriangles, drawCalls: detailCalls,
           textured: detailDrawn.model.textured };
       }
-      return { meshes: meshes.size, instances, triangles, drawCalls, lost, failed, ...(detail === null ? {} : { detail }) };
+      return { meshes: meshes.size, instances, contacts, triangles, drawCalls, lost, failed,
+        ...(detail === null ? {} : { detail }) };
     },
   };
 }

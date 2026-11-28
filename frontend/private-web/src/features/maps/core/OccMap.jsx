@@ -76,6 +76,7 @@ import {
   writeLayerOverrides,
 } from './layersMenu';
 import { createMapEngine } from './mapEngine';
+import { skyFor } from './mapSky';
 import { matchFlight, relatedEntities } from './mapSelection';
 import MapUnavailable from './MapUnavailable';
 import { OccMapContext } from './OccMapContext';
@@ -225,6 +226,12 @@ const NO_HOLD = Object.freeze({ rotate: 0, tilt: 0, zoom: 0 });
 // M4: how far under CLOSE_UP_ZOOM the camera goes back before the hidden labels return.
 const CLOSE_UP_RELEASE = 0.2;
 const FOLLOW_3D_OFF = Object.freeze({ on: false, orbit: null, hold: NO_HOLD, camera: null, saved: null, entry: null });
+
+// M4 (2026-11-28): the sky of the map (core/mapSky.js) is on in the 3D views and while «Seguir en 3D» follows, in the
+// map's theme, and off in 2D.
+function syncSky(engine, applied, theme) {
+  engine?.setSky?.(skyFor({ theme, pitchMode: applied?.pitchMode, following3d: applied?.follow3d?.on === true }));
+}
 
 // The orbit of `view` for the followed `item` (M4): «Muy cerca» takes the zoom its type's length and the map's height
 // give (kinematics/orbitCamera.js: closeChaseZoom); every other view its own.
@@ -831,8 +838,9 @@ const OccMapView = forwardRef(function OccMapView({
     applied.follow3d = { ...FOLLOW_3D_OFF };
     const engine = engineRef.current;
     engine?.setOrbitMode(false);
-    // M4: the labels hidden close up come back.
+    // M4: the labels hidden close up come back, and the sky goes with the 3D follow unless the 3D views keep it.
     engine?.setCloseUp?.(false);
+    syncSky(engine, applied, latest.current?.theme);
     // The next write plans no followed aircraft: its detailed model goes.
     applied.loop?.wake();
     if (restore && saved && engine?.map) {
@@ -1839,6 +1847,7 @@ const OccMapView = forwardRef(function OccMapView({
     }) : null;
     Object.assign(appliedRef.current, { aircraft3d, reached3d: null });
     aircraft3d?.setEnabled(props.pitchMode === '3d');
+    syncSky(engine, appliedRef.current, props.theme);
     if (props.layout) engine.setData(AIRFIELD_SOURCE, airfieldFeatures(props.layout));
     engine.setInsets(props.padding);
     refit();
@@ -2141,6 +2150,7 @@ const OccMapView = forwardRef(function OccMapView({
       subjectAt: null,
     };
     engine.setOrbitMode(true);
+    syncSky(engine, applied, latest.current.theme);
     if (!latest.current.urlFollow) latest.current.setFollow(true);
     setFollowNotice(null);
     setFollow3dUi({ view: start, auto: false });
@@ -2322,6 +2332,7 @@ const OccMapView = forwardRef(function OccMapView({
     const applied = appliedRef.current;
     if (!engine || applied.pitchMode === pitchMode) return;
     applied.pitchMode = pitchMode;
+    syncSky(engine, applied, latest.current?.theme);
     // While following, the tilt of 2D or 3D is follow mode's to set (PR M6): the change a person asked for engages it
     // again, one move of the map's own to the aircraft's framing with the new tilt (one jump under reduced motion, whose
     // frames would otherwise wait for the aircraft to near the edge). A tilt the person set gives way; their zoom stays.

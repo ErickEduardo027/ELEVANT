@@ -3,6 +3,7 @@ import { GPUInitializationError, createFakeMapLibre } from '../../../../tests/fa
 import { createImageResolver } from '../style/mapImages';
 import { buildOccStyle, groupLayerIds } from '../style/occStyle';
 import { BASEMAP_TIMEOUT_MS, createMapEngine, liveEngineCount } from './mapEngine';
+import { occSky } from './mapSky';
 import { MAPLIBRE_WORKER_URL } from './workerUrl';
 
 // Point stands with clusters, their codes behind a derived threshold, and flights: enough to exercise every call.
@@ -822,6 +823,44 @@ describe('map engine', () => {
     engine.setCloseUp(true);
     engine.setCloseUp(false);
     expect(shown('occ-traffic-tags')).toBe('visible');
+  });
+
+  it('setSky waits for the style, sets the sky once, takes it away and puts it back after a context loss (M4)', () => {
+    const context = setup();
+    const { engine, map, state } = context;
+    const skyCalls = () => map.calls.filter(call => call.method === 'setSky');
+    const sky = occSky('dark');
+    // No sky asked for: MapLibre is never told to have none.
+    engine.setSky(null);
+    expect(engine.getSky()).toBeNull();
+    // Before the style has loaded the call waits.
+    engine.setSky(sky);
+    expect(skyCalls()).toHaveLength(0);
+    ready(context);
+    expect(skyCalls()).toHaveLength(1);
+    expect(map.getSky()).toEqual(sky);
+    expect(engine.getSky()).toEqual(sky);
+    // The same sky again, even as another object, changes nothing; a copy is kept, so changing the caller's does not.
+    engine.setSky(occSky('dark'));
+    sky['sky-color'] = '#ff0000';
+    expect(skyCalls()).toHaveLength(1);
+    expect(engine.getSky()['sky-color']).toBe(occSky('dark')['sky-color']);
+    // A context loss drops it with the style; the rebuilt style gets it back.
+    state.loseContext(map);
+    state.restoreContext(map);
+    state.emit(map, 'style.load');
+    expect(skyCalls()).toHaveLength(2);
+    expect(map.getSky()).toEqual(occSky('dark'));
+    // null takes it away (MapLibre's setSky(undefined)), and a context loss then brings none back.
+    engine.setSky(null);
+    expect(skyCalls().at(-1).args).toEqual([undefined]);
+    expect(map.getSky()).toBeUndefined();
+    state.loseContext(map);
+    state.restoreContext(map);
+    state.emit(map, 'style.load');
+    expect(skyCalls()).toHaveLength(3);
+    // The sky is a property of the style: never a setStyle.
+    expect(map.styleCalls).toHaveLength(0);
   });
 
   it('onUserGesture hears a person pan, zoom, rotate and tilt the map, never a move the code makes', () => {

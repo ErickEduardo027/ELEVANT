@@ -2,7 +2,8 @@ import {
   AdditiveBlending, BoxGeometry, BufferGeometry, Camera, CanvasTexture, Color, CylinderGeometry, DirectionalLight,
   DoubleSide, DynamicDrawUsage, ExtrudeGeometry, Float32BufferAttribute, Group, HemisphereLight, InstancedBufferAttribute,
   InstancedMesh, LatheGeometry, LineBasicMaterial, LineSegments, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial,
-  MeshStandardMaterial, Raycaster, SRGBColorSpace, Scene, Shape, SphereGeometry, Vector2, Vector3, WebGLRenderer,
+  MeshStandardMaterial, Raycaster, SRGBColorSpace, Scene, Shape, SphereGeometry, SubtractiveBlending, Vector2, Vector3,
+  WebGLRenderer,
 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -20,6 +21,7 @@ export const THREE_PARTS = Object.freeze({
   AdditiveBlending, BoxGeometry, BufferGeometry, Camera, CanvasTexture, Color, CylinderGeometry, DirectionalLight,
   DoubleSide, DynamicDrawUsage, ExtrudeGeometry, Float32BufferAttribute, Group, HemisphereLight, InstancedBufferAttribute,
   InstancedMesh, LatheGeometry, LineBasicMaterial, LineSegments, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial,
-  MeshStandardMaterial, Raycaster, SRGBColorSpace, Scene, Shape, SphereGeometry, Vector2, Vector3, WebGLRenderer,
+  MeshStandardMaterial, Raycaster, SRGBColorSpace, Scene, Shape, SphereGeometry, SubtractiveBlending, Vector2, Vector3,
+  WebGLRenderer,
   mergeGeometries,
 });

@@ -406,7 +406,20 @@ function createModule(state) {
       this.sources = new Map(Object.entries(style?.sources ?? {})
         .map(([id, spec]) => [id, createSource(this, id, clone(spec))]));
       this.layers = clone(style?.layers ?? []).map(normalizeLayer);
+      // M4: the sky of the style; the snapshot of a context loss keeps none, so the engine puts it back.
+      this.sky = style?.sky === undefined ? undefined : clone(style.sky);
       this.styleLoaded = true;
+    }
+
+    // M4: as MapLibre 6.16, a property of the style (no setStyle); undefined takes it away.
+    setSky(sky) {
+      this._requireStyle();
+      this._record('setSky', [sky === undefined ? undefined : clone(sky)]);
+      this.sky = sky === undefined ? undefined : clone(sky);
+    }
+
+    getSky() {
+      return this.sky === undefined ? undefined : clone(this.sky);
     }
 
     _layer(id) {
