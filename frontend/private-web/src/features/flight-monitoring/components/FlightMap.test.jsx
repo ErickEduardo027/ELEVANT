@@ -151,8 +151,10 @@ describe('FlightMap', () => {
     expect(references).toEqual(referenceFeatures());
     expect(within(screen.getByTestId('map-preset-switcher')).getByRole('button', { name: /Región/ }))
       .toHaveAttribute('aria-pressed', 'true');
-    // With no flight on screen the legend has nothing to explain.
-    expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
+    // With no flight on screen the legend explains only the world base of the globe (M8), drawn from afar.
+    expect(within(screen.getByTestId('map-legend')).getAllByRole('listitem', { hidden: true }).map(item => item.textContent))
+      .toEqual(['Luces de las ciudadesNASA Black Marble (2016), desde lejos']);
+    expect(map.options.style.sources['occ-world-base'].tiles[0]).toContain('/VIIRS_Black_Marble/default/2016-01-01/');
   });
 
   it('offers «0 Mundo» first on its selector: the key and the button fly to the globe, and view=world stays in the URL (M8)', async () => {
@@ -188,8 +190,8 @@ describe('FlightMap', () => {
     // It opens folded (CN-32): its rail button says so, and its list is there to open.
     expect(within(legend).getByRole('button', { name: 'Leyenda' })).toHaveAttribute('aria-expanded', 'false');
     expect(within(legend).getAllByRole('listitem', { hidden: true }).map(item => item.textContent))
-      .toEqual(['VueloApunta según su rumbo; al norte si no se conoce']);
-    // Away from the flight there is nothing to explain; the legend comes back with it.
+      .toEqual(['Luces de las ciudadesNASA Black Marble (2016), desde lejos', 'VueloApunta según su rumbo; al norte si no se conoce']);
+    // Away from the flight (and closer than the world base) there is nothing to explain; the legend comes back with it.
     act(() => map.jumpTo({ center: [-70.55, 19.45], zoom: 12 }));
     expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
     act(() => map.jumpTo({ center: [-68.12, 18.78], zoom: 12 }));
@@ -212,7 +214,7 @@ describe('FlightMap', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(map.getSource('occ-flights').data.features).toHaveLength(1);
     expect(within(screen.getByTestId('map-legend')).getAllByRole('listitem', { hidden: true }).map(item => item.textContent))
-      .toEqual(['VueloApunta según su rumbo; al norte si no se conoce']);
+      .toEqual(['Luces de las ciudadesNASA Black Marble (2016), desde lejos', 'VueloApunta según su rumbo; al norte si no se conoce']);
     cleanup();
 
     act(() => resetLanguageForTests('en'));
@@ -436,9 +438,13 @@ describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
     expect(runwayOf(map)).toEqual(['Pista 08 (estimada por el viento)']);
     expect(features(map).filter(item => item.properties.kind === 'centreline' && item.properties.inUse)
       .map(item => [item.properties.ident, item.properties.source])).toEqual([['08', 'wind']]);
-    // The map flights name the counterparts: Santo Domingo is emphasised, the other airports of the region are not.
+    // The map flights name the counterparts: Santo Domingo is emphasised, the other airports of the region are not; on
+    // the globe (M8) the world's airports of today's other flights are too, and every Dominican airport is marked rd.
     const airports = features(map).filter(item => item.properties.kind === 'airport');
-    expect(airports.filter(item => item.properties.counterpart).map(item => item.properties.label)).toEqual(['MDSD/SDQ']);
+    expect(airports.filter(item => item.properties.counterpart && !item.properties.world).map(item => item.properties.label))
+      .toEqual(['MDSD/SDQ']);
+    expect(airports.filter(item => item.properties.rd).map(item => item.properties.icao)).toEqual(
+      expect.arrayContaining(['MDPC', 'MDSD', 'MDST', 'MDLR', 'MDPP', 'MDCY', 'MDJB', 'MDBH', 'MDCR', 'MDSI']));
     // The reference sources are written when what they draw changes, not on every read of the traffic or the flights.
     const writesOf = () => ['occ-reference', 'occ-reference-ourairports'].map(id => map.getSource(id).setDataCalls.length);
     const writes = writesOf();

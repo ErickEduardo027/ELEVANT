@@ -798,3 +798,43 @@ describe('MapLegend: the airports of the region (owner request of 2026-11-15)', 
     }
   });
 });
+
+describe('MapLegend: the globe of Monitoreo (M8)', () => {
+  const globe = (view, extra = {}) => ({ ...OCC_MAP_IDLE, activeView: view, views: ['world', 'region', 'approach', 'airfield', 'ramp'],
+    layers: { keys: ['reference.airports'], values: { 'reference.airports': true } }, ...extra });
+  const worldBase = () => document.querySelector('[data-swatch="world-base"]');
+
+  it('adds the Dominican airports to the kinds and explains the world base in the Mundo and Región views', () => {
+    const { rerender } = render(<OccMapContext.Provider value={globe('world')}><MapLegend /></OccMapContext.Provider>);
+    const entries = [...document.querySelectorAll('[data-legend-airport]')];
+    expect(entries.map(entry => entry.dataset.legendAirport)).toEqual(['home', 'international', 'regional', 'other', 'rd']);
+    expect(entries.at(-1).textContent).toBe('Aeropuerto de República Dominicana');
+    const radius = kind => Number(document.querySelector(`[data-airport="${kind}"] circle`).getAttribute('r'));
+    expect(radius('rd')).toBeGreaterThan(radius('international'));
+    // The dark theme by default: the night lights of Black Marble.
+    expect(worldBase()).toHaveAttribute('data-world-base', 'dark');
+    expect(worldBase().closest('li').textContent).toBe('Luces de las ciudadesNASA Black Marble (2016), desde lejos');
+    rerender(<OccMapContext.Provider value={globe('region')}><MapLegend /></OccMapContext.Provider>);
+    expect(worldBase()).not.toBeNull();
+    // Closer in it is not drawn, so not listed.
+    rerender(<OccMapContext.Provider value={globe('approach')}><MapLegend /></OccMapContext.Provider>);
+    expect(worldBase()).toBeNull();
+    expect([...document.querySelectorAll('[data-legend-airport]')].map(entry => entry.dataset.legendAirport)).toContain('rd');
+    // A Mercator map (the four views) lists neither.
+    rerender(<OccMapContext.Provider value={globe('region', { views: ['region', 'approach', 'airfield', 'ramp'] })}>
+      <MapLegend /></OccMapContext.Provider>);
+    expect(worldBase()).toBeNull();
+    expect([...document.querySelectorAll('[data-legend-airport]')].map(entry => entry.dataset.legendAirport)).not.toContain('rd');
+  });
+
+  it('explains Blue Marble in the light theme', () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'light');
+    try {
+      render(<ThemeProvider><OccMapContext.Provider value={globe('world')}><MapLegend /></OccMapContext.Provider></ThemeProvider>);
+      expect(worldBase()).toHaveAttribute('data-world-base', 'light');
+      expect(worldBase().closest('li').textContent).toBe('Relieve y fondo marinoNASA Blue Marble, desde lejos');
+    } finally {
+      window.localStorage.removeItem(THEME_STORAGE_KEY);
+    }
+  });
+});

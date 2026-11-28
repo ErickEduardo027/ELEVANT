@@ -3074,3 +3074,25 @@ describe('OccMap weather (PR M8)', () => {
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
   });
 });
+
+describe('OccMap world base and world airports (M8)', () => {
+  it('draws them only on the globe, the base under the night and the Dominican airports labelled', () => {
+    const mercator = render(<OccMap defaultView="region" traffic={{ aircraft: [], flights: [] }} />);
+    const flat = fake.state.liveMaps().at(-1);
+    expect(flat.options.style.sources['occ-world-base']).toBeUndefined();
+    expect(flat.options.style.layers.some(layer => layer.id === 'occ-rd-airport-labels')).toBe(false);
+    mercator.unmount();
+
+    render(<OccMap defaultView="region" projection="globe" mapOptions={{ minZoom: 1 }} traffic={{ aircraft: [], flights: [] }} />);
+    const globe = fake.state.liveMaps().at(-1);
+    const { sources, layers } = globe.options.style;
+    expect(sources['occ-world-base']).toMatchObject({ type: 'raster', maxzoom: 8 });
+    const ids = layers.map(layer => layer.id);
+    expect(ids.indexOf('occ-world-base-image')).toBeLessThan(ids.indexOf('occ-night'));
+    expect(ids).toContain('occ-rd-airport-labels');
+    loadStyle(globe);
+    const airports = globe.getSource('occ-reference-ourairports').data.features.filter(item => item.properties.kind === 'airport');
+    expect(airports.find(item => item.properties.icao === 'KJFK')?.properties).toMatchObject({ world: true, rd: false });
+    expect(airports.find(item => item.properties.icao === 'MDSD')?.properties).toMatchObject({ rd: true });
+  });
+});
