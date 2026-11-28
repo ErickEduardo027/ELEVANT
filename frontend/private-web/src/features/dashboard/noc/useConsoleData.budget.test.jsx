@@ -177,9 +177,9 @@ describe('the console within the OCC request budget (contratos 2.7)', () => {
     // Two cursor polls, the air picture every 10 s, every 60 s read once, the presence lease twice: the plan's minute.
     expect(rest.byKey).toEqual({ 'shell:cursor': 2, airPicture: 6, mapFlights: 1, planning: 1, positions: 1,
       reviewQueue: 1, readiness: 1, notices: 1, presence: 2 });
-    // The regional weather (lane M7) read once each when Panorama opened, and not again within the counted minute; the
-    // wind grid, not drawn yet, is not read (2026-11-28).
-    expect(rest.weatherReads.sort()).toEqual(['radar', 'region', 'sigmets']);
+    // The regional weather (lane M7) read once each when Panorama opened, and not again within the counted minute (the
+    // worst case: Panorama leaves out the wind grid while it is not drawn, 2026-11-28).
+    expect(rest.weatherReads.sort()).toEqual(['radar', 'region', 'sigmets', 'wind']);
     // Who listens to what: the flights to occ_planning, the queue to occ_review, the frame's notices to notifications.
     expect(rest.subscriptions).toEqual(['notifications', 'occ_planning', 'occ_review']);
   });
