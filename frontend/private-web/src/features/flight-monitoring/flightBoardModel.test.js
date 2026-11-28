@@ -4,8 +4,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createTranslator } from '../../i18n/languageStore';
 import OccFlightStrip from '../occ-ui/OccFlightStrip';
 import {
-  buildFlightBoard, DEFAULT_FLIGHT_BOARD_SORT, FLIGHT_BOARD_FILTERS, FLIGHT_BOARD_SORT_KEYS, FLIGHT_BOARD_STATUS_KEYS,
-  FLIGHT_PLACES, filterBoard, findBoardFlight, flightDirection, legPlace, nextBoardSort, sortBoard, stripStatus,
+  buildFlightBoard, DEFAULT_FLIGHT_BOARD_SORT, DEPARTED_AIRBORNE_MS, FLIGHT_BOARD_FILTERS, FLIGHT_BOARD_SORT_KEYS,
+  FLIGHT_BOARD_STATUS_KEYS, FLIGHT_PLACES, filterBoard, findBoardFlight, flightDirection, legPlace, nextBoardSort,
+  sortBoard, stripStatus,
 } from './flightBoardModel';
 import { flightMonitoringMessages } from './flightMonitoringMessages';
 
@@ -179,6 +180,20 @@ describe('En vuelo y En tierra (M8)', () => {
     expect(legPlace({ direction: 'Departure', statusKey: 'scheduled', phase: 'departed' })).toBe('air');
     expect(legPlace({ direction: 'Departure', statusKey: 'inOperation' })).toBe('ground');
     expect(legPlace({ direction: 'Departure', statusKey: 'scheduled' })).toBeNull();
+    // A departure whose map flight landed at its destination is no longer in the air, whatever its actual time says.
+    for (const phase of ['landed', 'Arrived']) {
+      expect(legPlace({ direction: 'Departure', statusKey: 'departed', actualAt: at(-50), phase, nowMs: NOW }), phase)
+        .toBeNull();
+    }
+    // Without a map phase, «En vuelo» keeps a departure that left for DEPARTED_AIRBORNE_MS at most.
+    const hours = h => h * 60;
+    expect(legPlace({ direction: 'Departure', statusKey: 'departed', actualAt: at(-hours(2)), nowMs: NOW })).toBe('air');
+    expect(legPlace({ direction: 'Departure', statusKey: 'departed', actualAt: at(-DEPARTED_AIRBORNE_MS / 60_000),
+      nowMs: NOW })).toBe('air');
+    expect(legPlace({ direction: 'Departure', statusKey: 'departed', actualAt: at(-hours(10)), nowMs: NOW })).toBeNull();
+    // ...unless the map says it still flies.
+    expect(legPlace({ direction: 'Departure', statusKey: 'departed', actualAt: at(-hours(10)), phase: 'enroute',
+      nowMs: NOW })).toBe('air');
     // A visit that is over or will not happen is neither.
     for (const statusKey of ['cancelled', 'diverted', 'completed']) {
       expect(legPlace({ direction: 'Arrival', statusKey, actualAt: at(-5), phase: 'landed' }), statusKey).toBeNull();
@@ -220,6 +235,25 @@ describe('En vuelo y En tierra (M8)', () => {
     expect(filterBoard(withMap, 'arrivals').map(strip => strip.id))
       .toEqual(['a-gone', 'a-landed', 'a-cancelled', 'a-enroute']);
     expect(filterBoard(withMap, 'departures').map(strip => strip.id)).toEqual(['d-gone', 'd-waiting']);
+  });
+
+  it('takes a departure out of «En vuelo» once its map flight landed or it left hours ago', () => {
+    const flights = [
+      // PUJ→SDQ: left 40 minutes ago, the map says it landed at Santo Domingo.
+      departure({ id: 'd-landed', flightNumber: 'ZZ501', turnaroundId: 'tat-5', actualAt: at(-40), scheduledAt: at(-45) }),
+      // Left this morning, ten hours ago, and the map does not list it any more.
+      departure({ id: 'd-morning', flightNumber: 'ZZ601', turnaroundId: 'tat-6', actualAt: at(-600),
+        scheduledAt: at(-605) }),
+      // Left an hour ago: still in the air.
+      departure({ id: 'd-flying', flightNumber: 'ZZ701', turnaroundId: 'tat-7', actualAt: at(-60), scheduledAt: at(-65) }),
+    ];
+    const mapFlights = [{ flightKey: 'l:d-landed', legId: 'd-landed', direction: 'Departure', phase: 'landed' }];
+    const result = board(flights, { mapFlights });
+    expect(result.inFlight.map(strip => strip.id)).toEqual(['d-flying']);
+    expect(result.all.find(strip => strip.id === 'd-landed').place).toBeNull();
+    expect(result.all.find(strip => strip.id === 'd-morning').place).toBeNull();
+    expect(result.departures.map(strip => strip.id)).toEqual(['d-morning', 'd-flying', 'd-landed']);
+    expect(result.counts.inFlight).toBe(1);
   });
 });
 

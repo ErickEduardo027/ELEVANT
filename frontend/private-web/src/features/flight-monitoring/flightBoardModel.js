@@ -98,6 +98,16 @@ export function stripStatus(flight, { direction, time, standCode, actualAt, nowM
 // departure); and those of an arrival that landed.
 const AIRBORNE_PHASES = new Set(['departed', 'enroute', 'approaching']);
 const LANDED_PHASES = new Set(['landed', 'arrived']);
+// How long a departure that left counts as in the air without a map phase that says so: the planning snapshot does not
+// say when it lands, so «En vuelo» keeps it no longer than the longest flight out of the station's region (Santo Domingo
+// to Europe is under 9 h), and a departure of the morning does not stay there the rest of the day.
+export const DEPARTED_AIRBORNE_MS = 9 * 60 * 60 * 1000;
+// Without the board's time or the leg's actual time the snapshot alone decides: in the air once it left.
+function stillAirborne(actualAt, nowMs) {
+  const left = actualAt ? Date.parse(actualAt) : Number.NaN;
+  if (!Number.isFinite(left) || !Number.isFinite(nowMs)) return true;
+  return nowMs - left <= DEPARTED_AIRBORNE_MS;
+}
 // A leg whose visit is over or will not happen is neither in the air nor on the ground.
 const OUT_OF_PLAY = new Set(['cancelled', 'diverted', 'completed']);
 
@@ -107,17 +117,21 @@ const OUT_OF_PLAY = new Set(['cancelled', 'diverted', 'completed']);
  * - a cancelled, diverted or completed leg: `null`;
  * - an arrival: `ground` once it landed (its actual time, or a landed phase) or its visit is in operation, `air` while
  *   its phase says it flies, else `null` (still at its origin, as far as the board knows);
- * - a departure: `air` once it left (its actual time or an airborne phase), `ground` while its visit is in operation,
- *   else `null` (the visit's arrival decides it: buildFlightBoard).
+ * - a departure: `null` once its map flight says it landed at its destination; `air` while its phase says it flies, or
+ *   once it left (its actual time or the `departed` status) for at most DEPARTED_AIRBORNE_MS after its actual time at
+ *   `nowMs` (the snapshot does not say when it lands; the map's phase does, when the map has it); `ground` while its
+ *   visit is in operation, else `null` (the visit's arrival decides it: buildFlightBoard).
  */
-export function legPlace({ direction, statusKey, actualAt = null, phase = null } = {}) {
+export function legPlace({ direction, statusKey, actualAt = null, phase = null, nowMs = null } = {}) {
   if (OUT_OF_PLAY.has(statusKey)) return null;
   const mapPhase = normalize(phase);
   if (direction === 'Arrival') {
     if (actualAt || LANDED_PHASES.has(mapPhase) || statusKey === 'landed' || statusKey === 'inOperation') return 'ground';
     return AIRBORNE_PHASES.has(mapPhase) ? 'air' : null;
   }
-  if (actualAt || statusKey === 'departed' || AIRBORNE_PHASES.has(mapPhase)) return 'air';
+  if (LANDED_PHASES.has(mapPhase)) return null;
+  if (AIRBORNE_PHASES.has(mapPhase)) return 'air';
+  if (actualAt || statusKey === 'departed') return stillAirborne(actualAt, nowMs) ? 'air' : null;
   return statusKey === 'inOperation' ? 'ground' : null;
 }
 
@@ -166,7 +180,8 @@ function stripOf(flight, direction, { nowMs, t, mapFlights }) {
     sortAt: sortValue(time),
     searchText: searchable([flight.flightNumber, flight.airline, flight.registration, flight.supervisor,
       arrival ? flight.origin : flight.destination, standCode].filter(Boolean).join(' ')),
-    ownPlace: legPlace({ direction, statusKey: status.key, actualAt: times.actualAt, phase: mapFlight?.phase ?? null }),
+    ownPlace: legPlace({ direction, statusKey: status.key, actualAt: times.actualAt, phase: mapFlight?.phase ?? null,
+      nowMs }),
   };
 }
 

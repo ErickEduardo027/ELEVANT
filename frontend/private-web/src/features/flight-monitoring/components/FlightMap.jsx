@@ -142,6 +142,22 @@ function FlightMapView({
 }
 
 /**
+ * The flight keys of every map flight that shares a visit with one of `keys` (`null` for no filter): the air picture
+ * draws a visit's aircraft under the key of its arrival or of its departure, so a kept leg keeps the aircraft of both.
+ */
+function visitKeysOf(keys, mapFlights) {
+  if (!Array.isArray(keys)) return null;
+  const flights = Array.isArray(mapFlights) ? mapFlights.filter(flight => flight != null) : [];
+  const visitOf = flight => flight.visitKey ?? (flight.turnaroundId == null ? null : `t:${String(flight.turnaroundId)}`);
+  const kept = new Set(keys.map(String));
+  const visits = new Set(flights.filter(flight => kept.has(String(flight.flightKey))).map(visitOf).filter(Boolean));
+  for (const flight of flights) {
+    if (flight.flightKey != null && visits.has(visitOf(flight))) kept.add(String(flight.flightKey));
+  }
+  return [...kept];
+}
+
+/**
  * Monitoreo inside the OCC shell: the same map with the live traffic of the station (useMapSituation over the air
  * picture and the map flights, at the cadences of contracts 2.7). The page's flights (ids are leg ids) are joined to
  * the map flights with matchFlight: a flight whose aircraft the traffic draws is drawn once, as traffic, and a click on
@@ -194,13 +210,15 @@ function LiveFlightMap({
   }, [clear, selectedFlightId, selectedHex]);
 
   // The board's filter on the map (M8): the map flights of the strips it keeps, by key, and the chosen flight always;
-  // `null` while the board keeps every flight.
+  // `null` while the board keeps every flight. The routes are the kept legs'; the aircraft, every leg of a kept visit,
+  // since the air picture draws one aircraft per visit under the key of either leg (traffic/situationModel.js).
   const chosenKey = chosenMapFlight?.flightKey ?? null;
   const emphasis = useMemo(() => {
     if (!Array.isArray(emphasisedFlightIds)) return null;
     const keys = emphasisedFlightIds.map(id => matchFlight(mapFlights, String(id))?.flightKey).filter(Boolean);
     return chosenKey === null ? keys : [...keys, chosenKey];
   }, [emphasisedFlightIds, mapFlights, chosenKey]);
+  const aircraftEmphasis = useMemo(() => visitKeysOf(emphasis, mapFlights), [emphasis, mapFlights]);
   // The great circles of every AVIAM flight (M8), the chosen one's left to its own route; the board's filter dims the
   // others. Written again only when the map flights, the filter or the chosen flight change.
   const theme = useOptionalTheme()?.theme === 'light' ? 'light' : 'dark';
@@ -234,7 +252,7 @@ function LiveFlightMap({
   return (
     <FlightMapView flights={flights} selectedFlightId={selectedFlightId} onSelectFlight={onSelectFlight} traffic={traffic}
       weather={weather} drawnFlights={drawnFlights} selection={selection} onSelect={handleSelect} framePoints={framePoints}
-      overlays={routeOverlays} overlayData={routeData} flightEmphasis={emphasis}>
+      overlays={routeOverlays} overlayData={routeData} flightEmphasis={aircraftEmphasis}>
       <MapSourceStatus status={live.status} picture={live.picture} sourceState={live.sourceState} clock={live.clock}
         onRetry={live.retry} />
       <SelectionCard target={target} detail={pageDetail} telemetry={live.telemetry} slot={dataBlockSlot}

@@ -1166,7 +1166,9 @@ Tercer paso del carril M8 (rama `feat/occ-monitoreo-mundial`, sin desplegar). So
   - Dónde está el avión (`legPlace`) se decide primero con la instantánea de planificación: la hora real, el estado de la visita y si está en operación.
   - Antes de la hora real, se decide con la fase del vuelo del mapa que la página ya recibe del mapa (`onSelectionFlights`). No hay una segunda lectura (contratos 2.7).
   - Una visita decide en conjunto: una llegada deja de estar en tierra cuando su salida despega, y una salida espera en tierra con su llegada aterrizada.
+  - Una salida sale de «En vuelo» cuando la fase del vuelo del mapa dice que aterrizó en su destino (`landed` o `arrived`). Sin esa fase, la instantánea no dice cuándo aterriza: cuenta en el aire como máximo 9 horas desde su hora real (`DEPARTED_AIRBORNE_MS`), así que una salida de la mañana no sigue «En vuelo» el resto del día (28 de noviembre de 2026).
 - *Enlace con el mapa.* La página pasa a FlightMap los ids de las tiras que conserva el filtro o la búsqueda (`emphasisedFlightIds`; `null` con «Todos» y sin búsqueda).
+  - La imagen aérea dibuja un solo avión por visita, bajo la clave de su llegada o de su salida. Por eso FlightMap conserva el avión de todos los tramos de una visita conservada (misma `visitKey`); las rutas siguen siendo solo las de los tramos conservados.
   - OccMap (`flightEmphasis`) atenúa los demás aviones de AVIAM con el feature state `outside` de la fuente de tráfico, con opacidad ×0,3 (`OUTSIDE_FILTER_OPACITY`). Solo escribe las claves cuyo estado cambia, así que un filtro nuevo no reescribe los datos del tráfico.
   - Sus rutas llevan `outside` y bajan a opacidad 0,12.
   - El vuelo elegido nunca se atenúa.

@@ -589,6 +589,28 @@ describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
     expect(map.featureStateOf('occ-traffic', `f:${TRAFFIC_FLIGHT_KEY.demoArrival}`)).toEqual({ outside: false });
   });
 
+  it('M8: keeps the aircraft of a kept visit, whichever leg the air picture draws it under', async () => {
+    const { map, rerender } = renderLive();
+    loadStyle(map);
+    await flush();
+    const routes = () => map.getSource('occ-flight-routes').setDataCalls.at(-1)?.features ?? [];
+    // The board keeps the departure ZZ162 alone, nothing chosen: the visit's aircraft is drawn under its arrival's key
+    // (still inbound), and it is the departure's aircraft too, so it is not dimmed; the departure's route alone is kept.
+    rerender({ emphasisedFlightIds: [String(departureRow.legId)] });
+    await flush();
+    expect(map.featureStateOf('occ-traffic', `f:${TRAFFIC_FLIGHT_KEY.arrival}`)?.outside).toBeFalsy();
+    expect(map.featureStateOf('occ-traffic', `f:${TRAFFIC_FLIGHT_KEY.demoArrival}`)).toEqual({ outside: true });
+    expect(routes().filter(feature => !feature.properties.outside).map(feature => feature.id))
+      .toEqual([TRAFFIC_FLIGHT_KEY.departure]);
+    // The board keeps the arrival ZZ161 alone: its aircraft stays too.
+    rerender({ emphasisedFlightIds: [String(arrivalRow.legId)] });
+    await flush();
+    expect(map.featureStateOf('occ-traffic', `f:${TRAFFIC_FLIGHT_KEY.arrival}`)?.outside).toBeFalsy();
+    expect(map.featureStateOf('occ-traffic', `f:${TRAFFIC_FLIGHT_KEY.demoArrival}`)).toEqual({ outside: true });
+    expect(routes().filter(feature => !feature.properties.outside).map(feature => feature.id))
+      .toEqual([TRAFFIC_FLIGHT_KEY.arrival]);
+  });
+
   it('shows the chosen flight drawn by the traffic in cyan, by the page\'s leg id', async () => {
     const { map, rerender } = renderLive();
     loadStyle(map);
