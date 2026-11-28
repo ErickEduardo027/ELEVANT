@@ -8,7 +8,8 @@ import {
   AIRCRAFT_3D_LAYER_ID, MAX_MODEL_SCALE, SUN_STEP_DEG, UNUSED_MESH_MS, createAircraft3dLayer, sceneLighting,
 } from './aircraft3dLayer';
 import { triangleCount } from './aircraftGeometry';
-import { linearRgb, mercatorFrame, planInstances } from './instancePlan';
+import { linearRgb, mercatorFrame, planInstances, planSprites } from './instancePlan';
+import { createTrafficSprites } from './trafficSprites';
 import { AIRCRAFT_TYPES } from './types';
 
 // The layer's life with the real three, in Node, and an injected renderer: three's scene, meshes, lights and raycaster
@@ -717,5 +718,100 @@ describe('the 3D aircraft layer (design G1, G3 and G4)', () => {
     map.zoom = 11;
     layer.render(fakeContext('gl'), input);
     expect(scaleOf(0)).toBeCloseTo(MAX_MODEL_SCALE, 6);
+  });
+});
+
+// PR M2: the sprites of the animated traffic, drawn by the same layer, with a 2D canvas that records nothing.
+describe('the sprites of the animated traffic (PR M2)', () => {
+  function fakeCanvas(width, height) {
+    const context = new Proxy({}, {
+      get: (target, key) => (key in target ? target[key] : () => {}),
+      set: (target, key, value) => {
+        target[key] = value;
+        return true;
+      },
+    });
+    return { width, height, getContext: type => (type === '2d' ? context : null) };
+  }
+
+  function spriteWorld({ createCanvas = fakeCanvas } = {}) {
+    vi.stubGlobal('Path2D', class Path2D {});
+    const { createRenderer } = fakeRenderers();
+    const made = [];
+    const onSpritesFailedChange = vi.fn();
+    let answer = { revision: 0, plan: new Map(), sprites: null };
+    const layer = createAircraft3dLayer({
+      three: THREE_PARTS, originLngLat: ARP, getInstances: () => answer, createRenderer, createCanvas,
+      onSpritesFailedChange, minModelPx: 30,
+      createSprites: options => {
+        const sprites = createTrafficSprites(options);
+        vi.spyOn(sprites, 'sync');
+        made.push(sprites);
+        return sprites;
+      },
+    });
+    const map = { ...fakeMap(), zoom: 15 };
+    map.getZoom = () => map.zoom;
+    layer.onAdd(map, fakeContext('gl'));
+    return {
+      layer, map, made, createRenderer, onSpritesFailedChange,
+      answer: next => {
+        answer = next;
+      },
+    };
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('draws the sprites of each new answer in one draw call, sized at the zoom of every frame, and picks them', () => {
+    const { layer, map, made, answer, createRenderer } = spriteWorld();
+    const view = viewOf();
+    const items = [aircraft('f:p:a', { bearing: 10, metres: 300, trackDeg: 90 }),
+      aircraft('h:p:b', { kind: 'other', bearing: 40, metres: 900, onGround: false, altM: 600 })];
+    answer({ revision: 1, plan: new Map(), sprites: planSprites(items, { originLngLat: ARP }) });
+    layer.render(fakeContext('gl'), view.input);
+    expect(made).toHaveLength(1);
+    expect(made[0].sync).toHaveBeenCalledTimes(1);
+    expect(layer.stats()).toMatchObject({ instances: 0, drawCalls: 1, sprites: 2, spritesFailed: false });
+    // The square of a sprite is its pixel size times the metres of a pixel at the frame's zoom (512 px tiles).
+    const metresPerPixel = zoom => (40_075_016.686 / 512) * Math.cos((ARP[1] * Math.PI) / 180) / 2 ** zoom;
+    expect(made[0].metresPerPx()).toBeCloseTo(metresPerPixel(15), 6);
+    map.zoom = 17;
+    layer.render(fakeContext('gl'), view.input);
+    expect(made[0].metresPerPx()).toBeCloseTo(metresPerPixel(17), 6);
+    // The same revision copies nothing; a new one (the next frame of a moving aircraft) does.
+    expect(made[0].sync).toHaveBeenCalledTimes(1);
+    const moved = items.map(item => ({ ...item, lat: item.lat + 0.0002 }));
+    answer({ revision: 2, plan: new Map(), sprites: planSprites(moved, { originLngLat: ARP }) });
+    layer.render(fakeContext('gl'), view.input);
+    expect(made[0].sync).toHaveBeenCalledTimes(2);
+    // Picked on the CPU where the frame drew it: the sprite's centre, not where it was.
+    const at = view.toPixel([...localOf(moved[1]), 0]);
+    expect(layer.pick(at)).toEqual({ kind: 'aircraft', id: 'h:p:b' });
+    expect(layer.pick({ x: at.x + 200, y: at.y + 200 })).toBeNull();
+    // The scene holds them as one InstancedMesh in its own group, never among the models.
+    const { scene } = createRenderer.mock.results[0].value;
+    expect(meshesOf(scene)).toEqual([]);
+    const group = scene.children.find(child => child.name === 'traffic-sprites');
+    expect(group.children).toHaveLength(1);
+    expect(group.children[0]).toMatchObject({ isInstancedMesh: true, count: 2, frustumCulled: false });
+    expect(group.children[0].material).toMatchObject({ transparent: true, depthTest: false, depthWrite: false });
+    layer.onRemove();
+    expect(layer.stats().sprites ?? 0).toBe(0);
+  });
+
+  it('without a 2D canvas for the atlas it says so once and keeps drawing its models', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { layer, onSpritesFailedChange, answer, createRenderer } = spriteWorld({ createCanvas: () => null });
+    const items = [aircraft('f:p:a', { bearing: 10, metres: 300 })];
+    answer({ revision: 1, plan: planOf(items), sprites: planSprites(items, { originLngLat: ARP }) });
+    layer.render(fakeContext('gl'), viewOf().input);
+    expect(onSpritesFailedChange).toHaveBeenCalledExactlyOnceWith(true);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(layer.stats()).toMatchObject({ instances: 2, sprites: 0, spritesFailed: true, failed: false });
+    answer({ revision: 2, plan: planOf(items), sprites: planSprites(items, { originLngLat: ARP }) });
+    layer.render(fakeContext('gl'), viewOf().input);
+    expect(onSpritesFailedChange).toHaveBeenCalledTimes(1);
+    expect(createRenderer.mock.results[0].value.calls.filter(call => call === 'render').length).toBeGreaterThan(0);
   });
 });
