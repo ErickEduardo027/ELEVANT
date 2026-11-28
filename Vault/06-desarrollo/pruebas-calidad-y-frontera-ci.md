@@ -714,9 +714,17 @@ fecha), que esa verificación no cubre.
   Chrome, la vista y la densidad, y falla si el renderizador es SwiftShader.
 - **Puertas en GPU.** Al menos 30 cuadros por segundo y un p95 de 33,4 ms como
   mucho; en la spec de fluidez, además, que un avión en movimiento se redibuje
-  30 veces por segundo o más; en la de «Seguir en 3D», 30 cuadros por segundo
-  con y sin seguir. `OCC_PERF_OUT` guarda cada resultado en un archivo JSON
-  fuera del repositorio.
+  30 veces por segundo o más; en la de «Seguir en 3D», los 30 cuadros por
+  segundo y el p95 de 33,4 ms con y sin seguir (el p95 desde el 28 de noviembre
+  de 2026). `OCC_PERF_OUT` guarda cada resultado en un archivo JSON fuera del
+  repositorio.
+- **Perfil de CPU.**
+  [`map-lab.follow3d-profile.spec.mjs`](../../frontend/private-web/tests/visual/lab/map-lab.follow3d-profile.spec.mjs)
+  solo corre con `OCC_PROFILE_OUT=<archivo.cpuprofile>`: graba el perfilador
+  de Chrome mientras sigue en 3D la llegada de `airfield-3d-replay`
+  (`OCC_PROFILE_SECONDS`, 15 s por defecto), guarda el perfil, que abre
+  DevTools, e imprime las funciones con más tiempo propio y total y las capas
+  y teselas que MapLibre recorre en cada cuadro.
 - **En la aplicación.** Ctrl+Alt+F muestra u oculta un medidor de cuadros
   plano sobre el mapa (cuadros por segundo de los últimos 2 s, cuadro p95,
   aviones dibujados y la GPU). Está oculto por defecto y sirve para mirar una

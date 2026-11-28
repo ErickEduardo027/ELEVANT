@@ -1,5 +1,5 @@
 import { NOON, labIdle, openLab, shoot } from '../support/map.mjs';
-import { GPU_GATES, gpuReport, gpuRun, measureFrames, recordPerf } from '../support/perf.mjs';
+import { expectGpuGates, gpuReport, gpuRun, measureFrames, recordPerf } from '../support/perf.mjs';
 import { expect, production, test } from '../support/test.mjs';
 
 // CN-29, CN-30 and CN-31 in Chrome, on the map lab's invented data (screenshots in test-results/visual for review):
@@ -10,7 +10,8 @@ import { expect, production, test } from '../support/test.mjs';
 //   runway), taxi-in, parked (on the stand's point, with its heading), push-back, taxi-out and take-off, each followed
 //   in 3D with its panel; the orbit at four angles and the tower's view; Esc stops and flies the camera back;
 // - the fluency of follow mode on the running replay (the frames MapLibre draws, their frame time and long tasks,
-//   support/perf.mjs), printed for the pull request; on the real GPU (OCC_VISUAL_GPU) at least 30 frames a second.
+//   support/perf.mjs), printed for the pull request; on the real GPU (OCC_VISUAL_GPU) at least 30 frames a second and a
+//   p95 frame time within 33 ms, with and without following.
 
 const ARRIVAL = 'p:5c900000-0000-4000-8000-000000000893';
 const DEPARTURE = 'p:5c900000-0000-4000-8000-000000000894';
@@ -199,9 +200,10 @@ test.describe('route, follow mode in 3D and real positions (CN-29, CN-30, CN-31)
     // What follow mode must not add is blocked time; software WebGL (SwiftShader) bounds the frames per second, the
     // real GPU (OCC_VISUAL_GPU) holds the plan's floor of 30 drawn frames a second.
     expect(result.blockedMsPerMin / 1_000).toBeLessThan(10);
+    // From PR M2 step 7 (2026-11-28: the GeoJSON overlays cut into tiles down to zoom 16), also the p95 of 33 ms.
     if (gpuRun) {
-      expect(before.renderFps, 'the replay in 3D: frames MapLibre draws per second').toBeGreaterThanOrEqual(GPU_GATES.minFps);
-      expect(result.renderFps, 'followed in 3D: frames MapLibre draws per second').toBeGreaterThanOrEqual(GPU_GATES.minFps);
+      expectGpuGates(before, 'the replay in 3D');
+      expectGpuGates(result, 'followed in 3D');
     } else expect(result.renderFps).toBeGreaterThan(5);
   });
 });
