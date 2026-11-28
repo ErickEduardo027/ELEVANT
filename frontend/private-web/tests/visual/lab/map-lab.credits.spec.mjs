@@ -14,6 +14,10 @@ test.describe('map lab «Créditos y licencias» (M5)', () => {
   test('the dialog is drawn with the OCC panel, veil and text, and is kept for review', async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await openLab(page, `scene=airfield-3d-models&t=${NOON}`);
+    // The compact attribution opens closed (core/mapEngine.js): its ⓘ opens it, then its last link opens the dialog.
+    const attribution = page.getByTestId('map-lab-map').locator('details.maplibregl-ctrl-attrib');
+    if (await attribution.getAttribute('open') === null) await attribution.locator('summary').click();
+    await expect(attribution).toHaveAttribute('open', '');
     await page.locator('a.occ-map-credits-link').first().click();
     const dialog = page.getByRole('dialog', { name: 'Créditos y licencias' });
     await expect(dialog).toBeVisible();
