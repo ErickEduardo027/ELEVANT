@@ -14,7 +14,8 @@ import { ALTITUDE_STOPS_FT, altitudeGradient, mapColorsFor } from '../style/mapC
 // the ADS-B maps the OCC knows draw it: the low altitudes, where the airport works, get as much room as the high ones.
 
 const THIN_SPACE = ' ';
-// Which ticks a narrow scale leaves out first (occ-map.css): the minor ones, then all but the ends and 10 000 ft.
+// Which ticks a narrow scale leaves out first (occ-map.css): the minor ones, then all but the ends and 10 000 ft, and
+// last 10 000 ft, so the narrowest scale keeps only its ends.
 const MINOR_TICKS = new Set([500, 2000, 6000, 30000]);
 const MAJOR_TICKS = new Set([0, 10000, 40000]);
 const levelOf = feet => {

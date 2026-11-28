@@ -1650,6 +1650,7 @@ describe('OccMap', () => {
     // ticks of a narrow altitude scale and keep the credit of a narrow map on one line.
     expect(preludes.filter(prelude => prelude.startsWith('@'))).toEqual(['@media (pointer: coarse)',
       '@media (forced-colors: active)', '@container (max-width: 27rem)', '@container (max-width: 18rem)',
+      '@container (max-width: 12rem)',
       '@container occ-map (min-width: 36.0625rem)', '@container occ-map (max-width: 36rem)']);
     const selectors = preludes.filter(prelude => !prelude.startsWith('@')).flatMap(prelude => prelude.split(',').map(part => part.trim()));
     expect(selectors.length).toBeGreaterThan(10);
