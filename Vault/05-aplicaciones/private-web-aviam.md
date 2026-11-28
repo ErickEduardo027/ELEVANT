@@ -2556,11 +2556,15 @@ Las decisiones están en la actualización del 27 de noviembre de 2026 «M4» de
   vuelo, y «Seguir en 3D» en una posición con su avión estacionado.
 - **Ultra zoom y «Muy cerca».** Siguiendo en 3D el zoom llega a 22 (19,5 fuera
   de la órbita), sin que la cámara entre en el modelo. La vista «Muy cerca»
-  pone la cámara de 25 a 40 m detrás de la cola, según el tipo.
-- **Etiquetas de cerca.** Pasado el zoom 19,5 se ocultan los rótulos del otro
-  tráfico, los designadores de las posiciones y las referencias; queda solo el
-  rótulo del avión seguido. Las señales de las posiciones siguen a la vista.
-  Vuelven al alejar o con Esc.
+  pone la cámara de 25 a 40 m detrás de la cola, según el tipo. En el Mapa de
+  posiciones, fijado en PUJ, seguir suelta el encuadre del aeropuerto y la
+  órbita conserva el zoom 22; al dejar de seguir vuelven el encuadre y el zoom
+  de la pantalla (integración de M4 y M9).
+- **Etiquetas de cerca.** Pasado el zoom 19,5 se ocultan los rótulos de todo el
+  tráfico, los designadores de las posiciones y las referencias. Del avión
+  seguido se ocultan también su anillo de elección, el rótulo y la estela, que
+  se dibujaban sobre su cola; el panel de «Seguir en 3D» lo nombra. Las señales
+  de las posiciones siguen a la vista. Vuelven al alejar o con Esc.
 - **Cielo, sol y sombra.** En 3D y siguiendo en 3D el mapa tiene cielo con los
   colores OCC de cada tema
   ([`mapSky.js`](../../frontend/private-web/src/features/maps/core/mapSky.js)).
