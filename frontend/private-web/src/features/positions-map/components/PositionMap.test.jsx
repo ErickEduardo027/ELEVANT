@@ -18,9 +18,15 @@ import {
 } from '../../maps/testing/trafficFixtures';
 import { createMotionStore } from '../../maps/traffic/motionStore';
 import { buildSituation, toFlightsModel, toPictureModel } from '../../maps/traffic/situationModel';
+import { createAircraft3dController } from '../../maps/core/aircraft3d';
 import PositionMap from './PositionMap';
 
 vi.mock('maplibre-gl', async () => (await import('../../../../tests/fakeMapLibre.js')).sharedFakeMapLibre().module);
+// M9: what the map asks of its 3D aircraft, read through the real controller.
+vi.mock('../../maps/core/aircraft3d', async importOriginal => {
+  const actual = await importOriginal();
+  return { ...actual, createAircraft3dController: vi.fn(actual.createAircraft3dController) };
+});
 
 const fake = sharedFakeMapLibre();
 // Synthetic states over the reference points: A1 occupied, A2 free and A3 planned (placed by OCC), B21 disabled and
@@ -152,6 +158,8 @@ describe('PositionMap on the map engine', () => {
     loadStyle(view.map);
     expect(view.map.getLayer('occ-airfield-building-3d')).toBeFalsy();
     expect(view.map.getSource('occ-airfield-structures')).toBeFalsy();
+    // Nor the liveries and the ground traffic of its 3D aircraft.
+    expect(createAircraft3dController.mock.calls.at(-1)[0]).toMatchObject({ liveries: false });
     expect(screen.queryByTestId('map-layers-menu')).not.toBeInTheDocument();
     // The default view is not written in the URL.
     expect(window.location.search).toBe('?stationId=s-1');
@@ -434,6 +442,8 @@ describe('PositionMap fixed on PUJ (M9, Mapa de posiciones)', () => {
       expect(map.getLayer(id), id).toBeTruthy();
     }
     expect(map.getSource('occ-airfield-structures').data.features.length).toBeGreaterThan(0);
+    // Its 3D aircraft wear their airlines' liveries, with the ground traffic near the field (M9).
+    expect(createAircraft3dController.mock.calls.at(-1)[0]).toMatchObject({ liveries: true, governor: true });
   });
 
   it('offers only Aeródromo and Rampa: 1 and 2 do nothing, and a `view=` of another view is ignored', () => {
