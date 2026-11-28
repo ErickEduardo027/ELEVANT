@@ -197,9 +197,11 @@ const boxOf = (left, top, width, height) => ({ left, top, width, height, right: 
 // the panels are 12 px apart. The status bar runs along the foot (60 px from the bottom with its gap); over it the
 // left column (24rem) holds «Tablero», «Alertas» at its foot and, below 1536 px, the «Inspector»: any of them open takes
 // 404 px from the left. From 1536 px the inspector floats in its own column left of the reserve: 472 px from the right.
+// With the panels hidden (`focus=map`), «Mostrar paneles» sits alone at the top left.
 const PANEL_PLACES = Object.freeze({
   map: [0, 0, 1440, 900],
   status: [12, 848, 1316, 40],
+  showPanels: [12, 12, 140, 32],
   board: { folded: [12, 12, 132, 40], open: [12, 12, 384, 560] },
   figures: { folded: [408, 12, 100, 40], open: [408, 12, 920, 56] },
   alerts: { folded: [12, 796, 132, 40], open: [12, 584, 384, 252] },
@@ -222,8 +224,8 @@ const PLACES_1366 = Object.freeze({
 let laidOut = null;
 
 /**
- * Lays out what jsdom does not: the console's map box, its panels by fold and its status bar, from `places`; the
- * inspector by where the overlay put it (its own column from 1536 px: `inspectorWide`).
+ * Lays out what jsdom does not: the console's map box, its panels by fold, its status bar and «Mostrar paneles», from
+ * `places`; the inspector by where the overlay put it (its own column from 1536 px: `inspectorWide`).
  */
 function layOutPanels(places = PANEL_PLACES) {
   const original = Element.prototype.getBoundingClientRect;
@@ -234,6 +236,7 @@ function layOutPanels(places = PANEL_PLACES) {
     let place = places[id]?.[fold];
     if (this.hasAttribute('data-occ-console-map')) place = places.map;
     else if (this.hasAttribute('data-occ-console-status')) place = places.status;
+    else if (this.hasAttribute('data-occ-console-show')) place = places.showPanels;
     return place ? boxOf(...place) : original.call(this);
   });
 }
@@ -527,8 +530,10 @@ describe('the OCC console', () => {
     renderConsole({ mapService: simulatedMap({ on: true }) });
     await boardReady();
     const announced = await screen.findByText('Llegada nueva: ZZ9001');
-    // In the area the panels leave, and no wider than it: it wraps rather than run over a panel or the control column.
+    // In the area the panels leave (under «Mostrar paneles» too, on the maximised map), and no wider than it: it wraps
+    // rather than run over a panel or the control column.
     const place = announced.closest('[data-occ-arrival-place]');
+    expect(place.style.top).toContain('--occ-map-inset-top');
     expect(place.style.left).toContain('--occ-map-inset-left');
     expect(place.style.maxWidth).toContain('--occ-map-inset-left');
     expect(place.style.maxWidth).toContain('--occ-map-clear-right');
@@ -756,14 +761,16 @@ describe('the OCC console', () => {
     renderConsole({ url: `${PAGE}?focus=map` });
     expect(await screen.findByRole('button', { name: 'Mostrar paneles' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Tablero' })).not.toBeInTheDocument();
-    // The status bar stays, still measured: only its height is taken from the map, at the bottom.
+    // The status bar stays, still measured: only its height is taken from the map, at the bottom; «Mostrar paneles»
+    // takes its own at the top, so the pill of a new arrival opens under it, never over it.
     const map = screen.getByTestId('occ-map');
     expect(map).toContainElement(statusBar());
     expect(await within(statusBar()).findByTestId('occ-console-provenance')).toBeInTheDocument();
     expect(within(statusBar()).queryByRole('button', { name: 'Ocultar paneles' })).not.toBeInTheDocument();
+    expect(statusBar()).not.toContainElement(screen.getByRole('button', { name: 'Mostrar paneles' }));
     await remeasure();
     expect(['top', 'right', 'bottom', 'left'].map(side => map.style.getPropertyValue(`--occ-map-inset-${side}`)))
-      .toEqual(['0px', '0px', '60px', '0px']);
+      .toEqual(['52px', '0px', '60px', '0px']);
 
     await userEvent.click(screen.getByRole('button', { name: 'Mostrar paneles' }));
     await waitFor(() => expect(search().has('focus')).toBe(false));

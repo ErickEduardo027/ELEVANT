@@ -26,7 +26,9 @@ import { OCC_FLOATING_PANEL_LAYOUT } from '../../occ-ui/OccFloatingPanel';
 /**
  * The edge of the map each panel of the console takes room from (maps/ui/stageInsets.js, measured by useStageInsets):
  * the panels of the columns take it from the side they sit at (STAGE_SIDE_EDGE, resolved by where their middle falls);
- * the strip of figures from the top; the band and the status bar from the bottom.
+ * the strip of figures from the top; the band and the status bar from the bottom; and «Mostrar paneles», alone at the
+ * top left of the maximised map (`focus=map`, ConsolePage.jsx), from the top, so the pill of a new arrival opens under
+ * it instead of over it.
  */
 export const CONSOLE_PANEL_EDGES = Object.freeze({
   board: STAGE_SIDE_EDGE,
@@ -35,6 +37,7 @@ export const CONSOLE_PANEL_EDGES = Object.freeze({
   inspector: STAGE_SIDE_EDGE,
   positions: 'bottom',
   status: 'bottom',
+  showPanels: 'top',
 });
 
 // A folded panel of a column: its pill at the head of the column, as wide as its title.

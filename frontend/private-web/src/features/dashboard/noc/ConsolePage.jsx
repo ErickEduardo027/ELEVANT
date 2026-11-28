@@ -481,6 +481,7 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
   const inspectorRef = panelRef('inspector');
   const positionsRef = panelRef('positions');
   const statusRef = panelRef('status');
+  const showPanelsRef = panelRef('showPanels');
   const boardState = useMemo(() => boardStateOf(live, board), [board, live]);
   const planningState = useMemo(() => panelStateOf(planning), [planning]);
   const positionsState = useMemo(() => panelStateOf(positions), [positions]);
@@ -562,8 +563,9 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
         <ConsoleOverlay layout="float" wide={wide} showPanels={!focusMap} status={status} statusRef={statusRef}
           {...panels} />
       ) : null}
+      {/* Measured as the top of the maximised map, so the pill of a new arrival opens under it. */}
       {layout === 'map' && focusMap ? (
-        <button type="button" onClick={showPanels}
+        <button ref={showPanelsRef} type="button" onClick={showPanels} data-occ-console-show=""
           className={`absolute left-3 top-3 z-20 bg-occ-panel-float ${CONSOLE_ACTION}`}>
           {t('focus.show')}
         </button>
@@ -587,7 +589,7 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
       </MapDock>
     </>
   ), [focusMap, layout, live.clock, live.picture, live.retry, live.sourceState, live.status, panels, pill, showPanels,
-    status, statusRef, t, wide, mapFlights, station.stationCode, followOperational]);
+    showPanelsRef, status, statusRef, t, wide, mapFlights, station.stationCode, followOperational]);
 
   // Over the map, the map is the whole section and everything floats in it (M1); in the fallback, the section scrolls:
   // the map's box with its list, then the grid of panels.

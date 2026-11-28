@@ -137,9 +137,9 @@ describe('ConsoleOverlay (M1, «pantalla completa con paneles flotantes»)', () 
 
   it('names the edge of the map each of its panels takes room from (maps/ui/stageInsets.js)', () => {
     // The panels of the columns take room from the side they sit at (CN-32); the figures, the band and the status bar
-    // from theirs.
+    // from theirs, and «Mostrar paneles» over the maximised map from the top (M1).
     expect(CONSOLE_PANEL_EDGES).toEqual({ board: 'side', figures: 'top', alerts: 'side', inspector: 'side',
-      positions: 'bottom', status: 'bottom' });
+      positions: 'bottom', status: 'bottom', showPanels: 'top' });
     expect(Object.isFrozen(CONSOLE_PANEL_EDGES)).toBe(true);
   });
 });
