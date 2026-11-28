@@ -131,9 +131,10 @@ describe('FlightMap', () => {
     // Monitoreo draws no stands; PUJ is its reference point, not a DOM marker.
     expect(style.sources['occ-stands']).toBeUndefined();
     expect(style.sources['occ-reference']).toBeDefined();
-    // M8: the globe with its atmosphere (in the light theme of the shell's default here), and a zoom out to 1.
+    // M8: the globe with its atmosphere, in the dark theme the map follows (its `theme` prop is ignored), and a zoom
+    // out to 1.
     expect(style.projection).toEqual({ type: 'globe' });
-    expect(style.sky).toEqual(globeSky('light'));
+    expect(style.sky).toEqual(globeSky('dark'));
     expect(map.options.minZoom).toBe(1);
     expect(map.options.maxZoom).toBe(19.5);
     // It opens on the Dominican Republic and Puerto Rico, which the selector reads as Región.
