@@ -304,9 +304,29 @@ function RouteSwatch() {
 }
 function AirportSwatch({ kind }) {
   const { airports: colours } = mapColorsFor(useOptionalTheme()?.theme);
+  // A Dominican airport on the globe (M8): the dot of an international one, larger, edged in the colour of its code.
+  const rd = kind === 'rd';
+  const style = rd
+    ? { fill: colours.international, stroke: colours.label, strokeWidth: 1.5 }
+    : { fill: colours[kind], stroke: colours.halo, strokeWidth: 1.5 };
   return (
     <svg {...SWATCH_PROPS} data-swatch="airport" data-airport={kind}>
-      <circle cx="10" cy="10" r={kind === 'home' ? 6.5 : 4.5} style={{ fill: colours[kind], stroke: colours.halo, strokeWidth: 1.5 }} />
+      <circle cx="10" cy="10" r={kind === 'home' ? 6.5 : rd ? 6 : 4.5} style={style} />
+    </svg>
+  );
+}
+
+// The world from afar on the globe (M8, style/worldBaseLayers.js): drawn in the Mundo and Región views. Its swatch is a
+// flat tile of the land with a lit dot (the night) or a darker band (the relief), never the image's own colours.
+const WORLD_BASE_VIEWS = new Set(['world', 'region']);
+function WorldBaseSwatch({ theme }) {
+  const colours = mapColorsFor(theme);
+  return (
+    <svg {...SWATCH_PROPS} data-swatch="world-base" data-world-base={theme === 'light' ? 'light' : 'dark'}>
+      <rect x="0" y="0" width="20" height="20" rx="2" style={{ fill: colours.basemap.land }} />
+      {theme !== 'light'
+        ? <circle cx="12" cy="9" r="2.5" style={{ fill: colours.basemap.placeLabel }} />
+        : <path d="M0 13 L7 8 L12 11 L20 6 L20 20 L0 20 Z" style={{ fill: colours.airports.halo, opacity: 0.35 }} />}
     </svg>
   );
 }
@@ -355,8 +375,9 @@ function WideEntry({ swatch, name, hint }) {
 export default function MapLegend({ stands, bounds = null, defaultOpen = true, foldKey = null, className = '' }) {
   const {
     standsOnScreen, chipsOnScreen, standMarksOnScreen, flightsOnScreen, airfieldOnScreen, trafficOnScreen, layers,
-    activeView, referencesOnScreen, layersMenuOpen = false, setLayersMenuOpen, follow,
+    activeView, referencesOnScreen, layersMenuOpen = false, setLayersMenuOpen, follow, views,
   } = useOccMap();
+  const theme = useOptionalTheme()?.theme;
   const { t, language } = useTranslation(mapMessages);
   const [open, setOpen] = useState(defaultOpen);
   // A new fold key folds the legend (adjusted while rendering, no effect); the first one is the starting state's.
@@ -394,10 +415,15 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, f
     [referencesOnScreen, language]);
 
   const word = entry => entry[language] ?? entry.es;
-  const airports = stands === undefined && airportsShown({ layers, activeView }) ? AIRPORT_KINDS : [];
+  // The globe (M8): the Dominican airports emphasised, and the world from afar in the Mundo and Región views.
+  const globe = Array.isArray(views) && views.includes('world');
+  const airports = stands === undefined && airportsShown({ layers, activeView })
+    ? (globe ? [...AIRPORT_KINDS, 'rd'] : AIRPORT_KINDS) : [];
   const routes = stands === undefined && routesShown({ layers, activeView });
+  const worldBase = stands === undefined && globe && WORLD_BASE_VIEWS.has(activeView);
+  const worldBaseKey = theme === 'light' ? 'light' : 'dark';
   const listsOthers = traffic.length > 0 || flights || chips || states.length > 0 || signals.length > 0
-    || marks.length > 0 || tags.length > 0 || airports.length > 0 || routes;
+    || marks.length > 0 || tags.length > 0 || airports.length > 0 || routes || worldBase;
   const framesMap = references.length > 0 || airfield.length > 0;
   const shown = listsOthers || framesMap;
   if (!shown) return null;
@@ -433,6 +459,10 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, f
             </li>
           ))}
           {routes && <WideEntry swatch={<RouteSwatch />} name={t('routes.name')} hint={t('routes.hint')} />}
+          {worldBase && (
+            <WideEntry swatch={<WorldBaseSwatch theme={theme} />} name={t(`worldBase.${worldBaseKey}.name`)}
+              hint={t(`worldBase.${worldBaseKey}.hint`)} />
+          )}
           {flights && <WideEntry swatch={<FlightSwatch />} name={t('legend.flight')} hint={t('legend.flightHint')} />}
           {chips && <WideEntry swatch={<ChipSwatch />} name={t('legend.chip')} hint={t('legend.chipHint')} />}
           {states.map(state => (

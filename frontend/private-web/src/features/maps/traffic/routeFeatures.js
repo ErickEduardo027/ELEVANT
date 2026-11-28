@@ -1,6 +1,7 @@
 import { createTranslator } from '../../../i18n/languageStore';
 import { normalizeStandCode } from '../../../services/standCodes';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
+import { counterpartPoint } from '../airport/worldAirports';
 import { FLIGHT_ROUTE_PARTS, buildFlightRoute } from '../kinematics/flightRoute';
 import { ROUTE_LABELS, kinematicsMessages } from '../kinematics/kinematicsMessages';
 import { STAND_REFERENCE } from '../stands/standReference';
@@ -24,8 +25,8 @@ const EMPTY = Object.freeze({ type: 'FeatureCollection', features: Object.freeze
 const finite = value => typeof value === 'number' && Number.isFinite(value);
 const text = value => (typeof value === 'string' && value.trim() !== '' ? value.trim() : null);
 const isPoint = point => Array.isArray(point) && finite(point[0]) && finite(point[1]);
-const pointOfAirport = airport => (finite(airport?.longitude) && finite(airport?.latitude)
-  ? [airport.longitude, airport.latitude] : null);
+// The counterpart's position: the API row's, else the region's or the world's airport of its code (M8).
+const pointOfAirport = counterpartPoint;
 
 const centresByLayout = new WeakMap();
 

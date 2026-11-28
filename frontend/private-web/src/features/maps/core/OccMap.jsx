@@ -16,6 +16,7 @@ import { mapStandCode } from '../../positions-map/positionsMapMappers';
 import { airfieldFeatures } from '../airport/airfieldFeatures';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { haversineM } from '../airport/geo';
+import { WORLD_AIRPORTS } from '../airport/worldAirports';
 import { followCamera, needsReframe, stepCamera } from '../kinematics/followCamera';
 import {
   ORBIT, angleDiffDeg, createOrbit, orbitAdvance, orbitAuto, orbitDrag, orbitRotate, orbitTarget, orbitTilt, orbitWheel,
@@ -44,6 +45,7 @@ import {
   referenceLayersShown, referenceOverlay,
 } from '../style/referenceLayers';
 import { SELECTION_SOURCE, selectionFeatures, selectionOverlay } from '../style/selectionLayers';
+import { worldBaseOverlay } from '../style/worldBaseLayers';
 import { FLIGHT_SOURCE, flightOverlay, flightsInView, toFlightFeatures } from '../traffic/flightLayers';
 import { nightShadeFeatures } from '../traffic/nightShade';
 import { counterpartCodes, mapRunwayInUse, referencesOnScreen as referencesOnScreenOf } from '../traffic/referenceFeatures';
@@ -694,7 +696,9 @@ const OccMapView = forwardRef(function OccMapView({
     runway: { arrival: runwayArrival, departure: runwayDeparture, source: runwaySource },
     counterparts: counterpartsKey === '' ? EMPTY : counterpartsKey.split('|'),
     language,
-  }), [layout, runwayArrival, runwayDeparture, runwaySource, counterpartsKey, language]);
+    // The globe (M8): the world's airports too, the Dominican ones emphasised.
+    world: hasWorld ? WORLD_AIRPORTS : null,
+  }), [layout, runwayArrival, runwayDeparture, runwaySource, counterpartsKey, language, hasWorld]);
   const nightWord = t('reference.night');
   const nightData = useMemo(() => nightShadeFeatures(referenceMinute, { label: nightWord }), [referenceMinute, nightWord]);
   // The wind at the airfield (PR M8), from the METAR of the weather with the runway in use, at the server's minute (a
@@ -1746,8 +1750,11 @@ const OccMapView = forwardRef(function OccMapView({
     const overlays = [
       selectionOverlay(),
       ...(props.layout ? [airfieldOverlay()] : []),
-      // The region's airports with the traffic they are context for (owner request of 2026-11-15).
-      referenceOverlay({ airports: props.drawsTraffic, theme: props.theme }),
+      // The globe (M8): the world from afar (Blue or Black Marble of NASA GIBS), under the night of the references.
+      ...(props.hasWorld ? [worldBaseOverlay({ theme: props.theme })] : []),
+      // The region's airports with the traffic they are context for (owner request of 2026-11-15), and on the globe the
+      // world's, the Dominican ones emphasised (M8).
+      referenceOverlay({ airports: props.drawsTraffic, theme: props.theme, world: props.hasWorld }),
       ...(props.drawsStands ? [standOverlay({ labels: props.standLabels, theme: props.theme })] : []),
       ...(props.drawsFlights ? [flightOverlay()] : []),
       ...(props.drawsTraffic ? [trafficOverlay({ theme: props.theme })] : []),

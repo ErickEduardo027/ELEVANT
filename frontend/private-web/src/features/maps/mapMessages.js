@@ -197,6 +197,13 @@ export const mapMessages = {
       international: 'Aeropuerto internacional',
       regional: 'Aeropuerto regional',
       other: 'Otro aeródromo',
+      // The globe of Monitoreo (M8): the Dominican airports, larger and always labelled.
+      rd: 'Aeropuerto de República Dominicana',
+    },
+    // The world seen from afar on the globe of Monitoreo (M8, style/worldBaseLayers.js), by theme.
+    worldBase: {
+      light: { name: 'Relieve y fondo marino', hint: 'NASA Blue Marble, desde lejos' },
+      dark: { name: 'Luces de las ciudades', hint: 'NASA Black Marble (2016), desde lejos' },
     },
     // The map tooltip of a runway or a taxiway: what the airport layout says of it.
     airfield: {
@@ -692,6 +699,11 @@ export const mapMessages = {
       international: 'International airport',
       regional: 'Regional airport',
       other: 'Other aerodrome',
+      rd: 'Dominican Republic airport',
+    },
+    worldBase: {
+      light: { name: 'Relief and sea floor', hint: 'NASA Blue Marble, from afar' },
+      dark: { name: 'City lights', hint: 'NASA Black Marble (2016), from afar' },
     },
     airfield: {
       runway: 'Runway {id}',
