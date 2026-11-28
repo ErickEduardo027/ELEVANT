@@ -2292,6 +2292,13 @@ lecturas de M5: la API no cambia.
   GeoJSON de antes. Ctrl+Alt+F muestra un medidor de cuadros oculto. Las
   decisiones y la medición en GPU real están en la actualización del 27 de
   noviembre de 2026 de [ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md).
+  En la rama de integración (28 de noviembre de 2026) la capa animada respeta
+  además «Muy cerca» de «Seguir en 3D» (sin rótulos ni anillo, sin placa ni
+  anillo de estimado del avión seguido), el doble clic elige por la CPU, el
+  filtro del tablero de Monitoreo atenúa también las siluetas y rótulos
+  animados, los cuadros animados conservan libreas y sombras de contacto, y en
+  el globo no anima por debajo del zoom 12: allí los iconos GeoJSON dibujan
+  todo el tráfico. Detalle en la nota de integración de M2 de ADR-0043.
 - **Qué se mueve y de dónde sale.**
   [`motionStore.js`](../../frontend/private-web/src/features/maps/traffic/motionStore.js)
   une cada lectura con la cinemática pura de `kinematics/`. Un avión en vivo
