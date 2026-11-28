@@ -12,9 +12,12 @@ import { resetLanguageForTests } from '../../../i18n/languageStore';
 import { assignPlanningOperation, getPlanningOptions } from '../../../services/planningService';
 import { loadSatelliteImageInfo } from '../../../services/satelliteService';
 import { createSimulatedOccMapAdapter } from '../../../services/occMapService';
+import { createSimulatedRegionWeatherAdapter } from '../../../services/regionWeatherService';
 import { DepartmentAccessProvider } from '../../access/DepartmentAccessContext';
 import { createOccShellValue, OccShellTestProvider } from '../../admin-occ/shell/testing/occShellFixtures';
 import { MDPC_LAYOUT } from '../../maps/airport/airportLayout';
+import { MODE_3D_STORAGE_KEY } from '../../maps/core/aircraft3d';
+import { createRegionWeatherScenario } from '../../maps/testing/weatherFixtures';
 import { attachStandGeometry } from '../../maps/stands/standModel';
 import { resetPanelFoldsForTests } from '../../occ-ui/occPanelMemory';
 import { parseMetar } from '../../weather/metar';
@@ -40,12 +43,11 @@ vi.mock('../../weather/useMdpcWeather', async () => ({
 vi.mock('../../../services/weatherService', () => ({
   loadRecentMetars: vi.fn(() => new Promise(() => {})), loadCurrentObservation: vi.fn(() => new Promise(() => {})),
 }));
-vi.mock('../../../services/satelliteService', () => ({
+// Panorama draws the weather since lane M7: its satellite layers keep their real https templates; GIBS is never read.
+vi.mock('../../../services/satelliteService', async () => ({
+  ...(await vi.importActual('../../../services/satelliteService')),
   loadSatelliteImageInfo: vi.fn(() => new Promise(() => {})),
   imageAgeMinutes: vi.fn(() => 25),
-  SATELLITE_OPACITY: { goes: 0.7, imerg: 0.82 },
-  SATELLITE_LAYERS: { goes: 'goes', imerg: 'imerg' },
-  satelliteTileAt: () => null,
 }));
 // What the console loads with next/dynamic: its view (ConsolePage.jsx, its own chunk in the app), here at once, and the
 // stand-in the weather detail drew for its satellite map until M7 retired it (the tests check it stays away).
@@ -133,9 +135,9 @@ function shellWith(overrides = {}) {
 }
 
 function renderConsole({ url = PAGE, services = consoleServices(), mapService = simulatedMap(), shell = shellWith(),
-  scope = false, access = OCC_ACCESS } = {}) {
+  scope = false, access = OCC_ACCESS, regionWeatherService } = {}) {
   window.history.replaceState({}, '', url);
-  const route = <ConsoleRoute services={services} mapService={mapService} />;
+  const route = <ConsoleRoute services={services} mapService={mapService} regionWeatherService={regionWeatherService} />;
   const view = render(
     <DepartmentAccessProvider initialAccess={access} load={vi.fn().mockResolvedValue(access)} observe={false}>
       <OccShellTestProvider value={shell}>{scope ? <LanguageScope>{route}</LanguageScope> : route}</OccShellTestProvider>
@@ -260,6 +262,40 @@ afterEach(() => {
 });
 
 describe('the OCC console', () => {
+  it('opens in Región in 3D with the regional weather and «Meteorología PUJ»; 3 and 4 go to Aeródromo and Rampa (M7)', async () => {
+    window.localStorage.setItem(MODE_3D_STORAGE_KEY, '3d');
+    weatherView.current = weatherOf('success', observation(20));
+    const regionWeatherService = createSimulatedRegionWeatherAdapter({ scenario: createRegionWeatherScenario(),
+      shift: true });
+    const { map } = renderConsole({ regionWeatherService });
+    await boardReady();
+    await act(async () => fake.state.emit(map, 'style.load'));
+    // Región, tilted (cameraPresets.js: CAMERA_3D_WIDE), north up.
+    await waitFor(() => expect(map.getPitch()).toBe(35));
+    expect(map.getBearing()).toBe(0);
+    // The regional layers are in the style, and their four reads went through the injected adapter once each.
+    const sources = Object.keys(map.getStyle().sources);
+    for (const id of ['occ-weather-loop-0', 'occ-weather-radar-0', 'occ-weather-stations', 'occ-weather-sigmet',
+      'occ-weather-wind']) expect(sources, id).toContain(id);
+    await waitFor(() => expect(regionWeatherService.calls.map(call => call.read).sort())
+      .toEqual(['radar', 'region', 'sigmets', 'wind']));
+    // The METAR stations and the SIGMET in force reach the map; the radar sources are pinned to the API's frames.
+    await waitFor(() => expect(map.getSource('occ-weather-stations').data.features.map(item => item.properties.icao))
+      .toContain('MDSD'));
+    expect(map.getSource('occ-weather-sigmet').data.features.map(item => item.properties.id)).toEqual(['MDCS-SIGMET-A1']);
+    expect(map.getSource('occ-weather-radar-5').serialize().tiles[0]).toContain('ridge::TJUA-N0Q-');
+    // «Meteorología PUJ» floats in the area the panels leave, with its METAR.
+    const panel = screen.getByTestId('weather-panel');
+    expect(panel.closest('[data-occ-weather-place]').style.left).toContain('--occ-map-inset-left');
+    expect(within(panel).getAllByText(/MDPC/).length).toBeGreaterThan(0);
+    // The keys of the views as before: 3 Aeródromo, 4 Rampa.
+    act(() => { fireEvent.keyDown(map.getCanvas(), { key: '3' }); });
+    await waitFor(() => expect(search().get('view')).toBe('airfield'));
+    act(() => { fireEvent.keyDown(map.getCanvas(), { key: '4' }); });
+    await waitFor(() => expect(search().get('view')).toBe('ramp'));
+    window.localStorage.removeItem(MODE_3D_STORAGE_KEY);
+  });
+
   it('shows the scoped OCC facts of PUJ without a station selector or synthetic claims', async () => {
     renderConsole();
     await boardReady();
@@ -274,7 +310,10 @@ describe('the OCC console', () => {
     expect(await within(alerts).findByText('Incidencia reportada en rampa')).toBeInTheDocument();
     expect(screen.queryByText('incident_reported')).not.toBeInTheDocument();
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
-    expect(screen.queryByText(/sintéticos|FlyAware|42 vuelos/i)).not.toBeInTheDocument();
+    // No made-up claim of the console's own. Since Panorama opens in Región (lane M7, 2026-11-28) the aircraft of the
+    // fixture are in sight, so the map credits their source as it names itself («Datos sintéticos» of the test feed).
+    expect(screen.queryAllByText(/sintéticos|FlyAware|42 vuelos/i)
+      .filter(element => !element.closest('[data-map-credit]'))).toEqual([]);
     expect(screen.getByRole('heading', { level: 1, name: 'Panorama operativo' })).toBeInTheDocument();
     // The provenance line under the map says where the data comes from.
     const provenance = await screen.findByTestId('occ-console-provenance');
