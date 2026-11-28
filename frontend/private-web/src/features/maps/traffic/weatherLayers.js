@@ -539,7 +539,10 @@ export function weatherLayerNotes({ layers = {}, view = null, imagery = null, we
 // The regional weather (lane M7). The builders below are pure: the answers of the API (the shapes of
 // OccRegionWeatherResponse, OccSigmetsResponse and OccRadarFramesResponse), the instant and the language are parameters.
 
-/** The frames of the satellite loop: six images ten minutes apart, the last the latest GIBS reports. */
+/**
+ * The frames of the satellite loop: the latest six images GIBS has of the band on screen (its DescribeDomains, hotfix of
+ * 2026-11-28), or, when that list cannot be read, six images ten minutes apart ending at the band's latest one.
+ */
 export const LOOP_FRAME_COUNT = 6;
 export const LOOP_STEP_MINUTES = 10;
 /** The frames of the radar the map keeps: the latest six the API lists. */
@@ -631,6 +634,21 @@ export function loopFrameTimes(latestTime, { count = LOOP_FRAME_COUNT, stepMinut
 }
 
 /**
+ * The instants of the loop's frames from the instants GIBS has of the band (`available`, any order): the latest `count`,
+ * oldest first, skipping the holes of its domain (with GeoColor's domain of 2026-11-28 at 17:20 UTC, 15:20, 15:30,
+ * 15:40, 15:50, 16:10 and 16:20). Fewer than `count` repeat the oldest, so every loop source is pinned to an image GIBS
+ * has. Empty without a GIBS instant.
+ */
+export function loopFrameTimesFrom(available, { count = LOOP_FRAME_COUNT } = {}) {
+  if (!Array.isArray(available)) return Object.freeze([]);
+  const times = [...new Set(available.filter(time => GIBS_TIME.test(time ?? '') && finite(Date.parse(time))))]
+    .sort((a, b) => Date.parse(a) - Date.parse(b))
+    .slice(-count);
+  if (times.length === 0) return Object.freeze([]);
+  return Object.freeze([...Array.from({ length: count - times.length }, () => times[0]), ...times]);
+}
+
+/**
  * The band of the loop at `ms`: GeoColor while the sun is up at Punta Cana (its visible picture), the infrared once it
  * has set (twilight and night), when the visible has nothing to show.
  */
@@ -640,13 +658,15 @@ export function loopBandAt(ms) {
 }
 
 /**
- * The frames of the loop for `band` ending at `latestTime`: `[{ index, source, layer, time, tiles }]`, oldest first,
+ * The frames of the loop for `band`: from `times`, the instants GIBS has of that band (loopFrameTimesFrom), or else
+ * ending at `latestTime` ten minutes apart (loopFrameTimes). `[{ index, source, layer, time, tiles }]`, oldest first,
  * one per loop source, each pinned once (OccMap gives a source new tiles only when its frame changes). Empty for an
  * unknown band or without a time.
  */
-export function loopFrames({ band = 'ir', latestTime = null } = {}) {
+export function loopFrames({ band = 'ir', times = null, latestTime = null } = {}) {
   if (!Object.hasOwn(LOOP_BANDS, band)) return Object.freeze([]);
-  return Object.freeze(loopFrameTimes(latestTime).map((time, index) => Object.freeze({
+  const instants = Array.isArray(times) ? loopFrameTimesFrom(times) : loopFrameTimes(latestTime);
+  return Object.freeze(instants.map((time, index) => Object.freeze({
     index, source: loopSourceId(index), layer: loopLayerId(index), time, tiles: Object.freeze([loopTileAt(band, time)]),
   })));
 }

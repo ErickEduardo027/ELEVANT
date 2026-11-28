@@ -62,7 +62,7 @@ import {
 import { trafficOverlay } from '../traffic/trafficLayers';
 import {
   SATELLITE_KEYS, SATELLITE_SOURCES, SIGMET_LAYER_IDS, STATION_LAYER_IDS, WIND_FEATURE_ID, WIND_LAYER_IDS, WIND_SOURCE,
-  satelliteTiles, wantedImagery, wantedRegional, weatherLayerNotes, weatherOnScreen, weatherOverlay, windFeatures,
+  loopBandAt, satelliteTiles, wantedImagery, wantedRegional, weatherLayerNotes, weatherOnScreen, weatherOverlay, windFeatures,
   windTooltip, withPinnedImagery,
 } from '../traffic/weatherLayers';
 import { aircraftCard, flightRowOf } from '../ui/aircraftCard';
@@ -872,12 +872,13 @@ const OccMapView = forwardRef(function OccMapView({
   // The satellite images (PR M8): read only while the menu shows one and the map is in Región or Aproximación, and
   // shown only once their tiles are pinned to the time GIBS reports.
   const wanted = wantedImagery({ groups: menuGroups, view: layerView, drawsWeather });
-  // The satellite loop (lane M7) ends at the latest GOES-East time GIBS reports: read while the loop is wanted too.
+  // The satellite loop (lane M7) runs the images GIBS has of the band of the hour (its DescribeDomains, hotfix of
+  // 2026-11-28): read only while the loop is wanted.
   const wantedWide = wantedRegional({ groups: menuGroups, view: layerView, drawsRegional });
-  const imagery = useSatelliteImagery({ goes: wanted.goes || wantedWide.loop, imerg: wanted.imerg,
-    service: satelliteService });
-  const regional = useMemo(() => (drawsRegional ? regionalDrawing({ regionWeather, goes: imagery.goes,
-    nowMs: referenceMinute, language }) : null), [drawsRegional, regionWeather, imagery.goes, referenceMinute, language]);
+  const imagery = useSatelliteImagery({ goes: wanted.goes, imerg: wanted.imerg,
+    loop: wantedWide.loop ? loopBandAt(referenceMinute) : null, service: satelliteService });
+  const regional = useMemo(() => (drawsRegional ? regionalDrawing({ regionWeather, loopImages: imagery.loop,
+    nowMs: referenceMinute, language }) : null), [drawsRegional, regionWeather, imagery.loop, referenceMinute, language]);
   const menuGroupsKey = JSON.stringify(withPinnedRegional(withPinnedImagery(menuGroups, imagery), regional));
   const shownGroups = useMemo(() => ({ ...JSON.parse(menuGroupsKey), ...JSON.parse(groupsKey) }),
     [menuGroupsKey, groupsKey]);

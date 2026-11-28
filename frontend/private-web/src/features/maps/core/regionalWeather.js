@@ -18,14 +18,18 @@ const WITH_DATA = new Set(['Live', 'Stale']);
 export const REGIONAL_TICK_MS = 300;
 
 /**
- * The frames of the satellite loop at the server's minute `nowMs`: the band of the hour (GeoColor by day at PUJ, the
- * infrared at night) ending at the latest GOES-East time GIBS reported (`goes`, what useSatelliteImagery answers).
- * `status` is `ready` with frames, `unavailable` when GIBS has no image, else `loading`.
+ * The frames of the satellite loop at the server's minute `nowMs`, from the images GIBS has of the band it shows
+ * (`images`, useSatelliteImagery's `loop`: `{ status, band, times }`; hotfix of 2026-11-28): the latest six of that band,
+ * skipping the holes of its domain, never another band's time. Until they arrive the band is the one of the hour
+ * (GeoColor by day at PUJ, the infrared at night). `status` is `ready` with frames, `unavailable` when GIBS has no image,
+ * else `loading`.
  */
-export function regionalLoop(goes, nowMs, demo = false) {
-  const band = loopBandAt(nowMs);
-  if (goes?.status === 'unavailable') return Object.freeze({ ...NO_LOOP, status: 'unavailable', band, demo });
-  const frames = goes?.status === 'ready' ? loopFrames({ band, latestTime: goes.time }) : EMPTY_FRAMES;
+export function regionalLoop(images, nowMs, demo = false) {
+  const hourBand = loopBandAt(nowMs);
+  if (images?.status === 'unavailable') return Object.freeze({ ...NO_LOOP, status: 'unavailable', band: hourBand, demo });
+  const ready = images?.status === 'ready' && Object.hasOwn(LOOP_BANDS, images.band ?? '');
+  const band = ready ? images.band : hourBand;
+  const frames = ready ? loopFrames({ band, times: images.times }) : EMPTY_FRAMES;
   return Object.freeze({ status: frames.length > 0 ? 'ready' : 'loading', band, frames, demo });
 }
 
@@ -37,13 +41,14 @@ export function regionalRadar(read, demo = false) {
 }
 
 /**
- * What the map draws of `regionWeather` (`{ region, sigmets, wind, radar, demo }`) at `nowMs`: `{ loop, radar,
+ * What the map draws of `regionWeather` (`{ region, sigmets, wind, radar, demo }`) and of the loop's images
+ * (`loopImages`, useSatelliteImagery's `loop`) at `nowMs`: `{ loop, radar,
  * stations, sigmets, notes }`, the FeatureCollections of the stations and the SIGMETs, and the reads the layers menu
  * explains (weatherLayerNotes' `regional`).
  */
-export function regionalDrawing({ regionWeather, goes, nowMs, language = 'es' }) {
+export function regionalDrawing({ regionWeather, loopImages, nowMs, language = 'es' }) {
   const demo = regionWeather?.demo === true;
-  const loop = regionalLoop(goes, nowMs, demo);
+  const loop = regionalLoop(loopImages, nowMs, demo);
   const radar = regionalRadar(regionWeather?.radar, demo);
   return Object.freeze({
     loop,
