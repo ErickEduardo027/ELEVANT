@@ -93,13 +93,14 @@ describe('the 3D chunk loader (design G1)', () => {
     ]);
     // The parts of three that the models and the layer use, by name.
     // CN-30: with what the detailed aircraft adds (groups, meshes, standard and basic materials, canvas textures in
-    // sRGB, spheres for its lights with an additive glow, double-sided paint).
+    // sRGB, spheres for its lights with an additive glow, double-sided paint); M4: the contact shadows' subtractive blend.
     expect(Object.keys(loaded.three).sort()).toEqual([
       'AdditiveBlending', 'BoxGeometry', 'BufferGeometry', 'Camera', 'CanvasTexture', 'Color', 'CylinderGeometry',
       'DirectionalLight', 'DoubleSide', 'DynamicDrawUsage', 'ExtrudeGeometry', 'Float32BufferAttribute', 'Group',
       'HemisphereLight', 'InstancedBufferAttribute', 'InstancedMesh', 'LatheGeometry', 'LineBasicMaterial', 'LineSegments',
       'Matrix4', 'Mesh', 'MeshBasicMaterial', 'MeshLambertMaterial', 'MeshStandardMaterial', 'Raycaster', 'SRGBColorSpace',
-      'Scene', 'Shape', 'SphereGeometry', 'Vector2', 'Vector3', 'WebGLRenderer', 'mergeGeometries',
+      'Scene', 'Shape', 'SphereGeometry', 'SubtractiveBlending', 'Vector2', 'Vector3', 'WebGLRenderer',
+      'mergeGeometries',
     ]);
     expect(Object.isFrozen(loaded.three)).toBe(true);
     expect(triangleCount(loaded.buildAircraftGeometry(loaded.three, AIRCRAFT_TYPES.A320))).toBeGreaterThanOrEqual(1500);
@@ -125,7 +126,8 @@ describe('the 3D chunk loader (design G1)', () => {
     layer.render({ drawingBufferWidth: 800, drawingBufferHeight: 600 },
       { defaultProjectionData: { mainMatrix: Float64Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1) } });
     expect(drawn).toHaveLength(1);
-    expect(layer.stats()).toMatchObject({ meshes: 1, instances: 2, drawCalls: 1, lost: false });
+    // M4: and one draw call for its contact shadow.
+    expect(layer.stats()).toMatchObject({ meshes: 1, instances: 2, contacts: 1, drawCalls: 2, lost: false });
     layer.onRemove(map);
   });
 });

@@ -155,7 +155,8 @@ function referenceLayer(id, type, group, { slot = REFERENCE_SLOT, source = REFER
     filter,
     ...(layout ? { layout } : {}),
     paint,
-    metadata: { 'occ:group': group, ...thresholds },
+    // M4: the words and marks are hidden close up (core/mapEngine.js: setCloseUp).
+    metadata: { 'occ:group': group, ...thresholds, ...(type === 'symbol' ? { 'occ:closeUp': 'hide' } : {}) },
   };
 }
 
@@ -228,7 +229,7 @@ export function referenceOverlay({ theme = 'dark', airports = true, world = fals
           'text-halo-color': occColor('nav'),
           'text-halo-width': 1.2,
         },
-        metadata: { 'occ:group': REFERENCE_GROUP, 'occ:maxThreshold': 'codes' },
+        metadata: { 'occ:group': REFERENCE_GROUP, 'occ:maxThreshold': 'codes', 'occ:closeUp': 'hide' },
       },
       ...ringLayers('region', { 'occ:maxThreshold': 'approach' }),
       ...ringLayers('approach', { 'occ:minThreshold': 'approach', 'occ:maxThreshold': 'airfield' }),

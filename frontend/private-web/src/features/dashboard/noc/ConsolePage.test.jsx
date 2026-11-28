@@ -795,6 +795,9 @@ describe('the camera around the panels', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Pausar movimiento' }));
     expect(screen.getByRole('button', { name: 'Reanudar movimiento' })).toHaveAttribute('aria-pressed', 'true');
     expect(within(screen.getByTestId('map-motion-control')).queryByRole('status')).toBeNull();
+    // M4: the rail also carries «Seguir en 3D», right after the views (Panorama has no rail «Seguir», the S key is it).
+    const dock = screen.getByTestId('map-preset-switcher').parentElement;
+    expect(within(dock).getByRole('button', { name: 'Seguir en 3D' })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('«Ver y seguir» leaves the camera to a person who moves it before the map settles', async () => {

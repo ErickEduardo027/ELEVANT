@@ -53,7 +53,8 @@ describe('reference layers', () => {
     // The label sits above the mark, clear of the stands south of the reference point.
     expect(layer.layout).toMatchObject({ 'text-anchor': 'bottom', 'text-offset': [0, -0.9], 'text-optional': true });
     expect(MAP_IMAGE_IDS).toContain(layer.layout['icon-image']);
-    expect(layer.metadata).toEqual({ 'occ:group': 'reference', 'occ:maxThreshold': 'codes' });
+    // M4: hidden close up (core/mapEngine.js: setCloseUp).
+    expect(layer.metadata).toEqual({ 'occ:group': 'reference', 'occ:maxThreshold': 'codes', 'occ:closeUp': 'hide' });
     expect([layer.paint['icon-color'], layer.paint['text-color']]).toEqual([occColor('text'), occColor('text')]);
     // The first feature of the reference source, at the reference point of PUJ.
     expect(referenceFeatures().features[0]).toEqual({
@@ -97,21 +98,23 @@ describe('reference layers', () => {
     expect(summary).toEqual([
       ['occ-region-airports', 'airfield', 'circle', OURAIRPORTS_SOURCE, { 'occ:group': 'reference.airports', 'occ:maxThreshold': 'airfield' }],
       ['occ-region-airport-labels', 'airfield', 'symbol', OURAIRPORTS_SOURCE, { 'occ:group': 'reference.airports', 'occ:maxThreshold': 'airfield' }],
-      ['occ-reference-arp', 'airfield', 'symbol', REFERENCE_SOURCE, { 'occ:group': 'reference', 'occ:maxThreshold': 'codes' }],
+      ['occ-reference-arp', 'airfield', 'symbol', REFERENCE_SOURCE, { 'occ:group': 'reference', 'occ:maxThreshold': 'codes', 'occ:closeUp': 'hide' }],
       ['occ-reference-rings-region', 'reference', 'line', REFERENCE_SOURCE, { 'occ:group': 'rings', 'occ:maxThreshold': 'approach' }],
-      ['occ-reference-ring-labels-region', 'reference', 'symbol', REFERENCE_SOURCE, { 'occ:group': 'rings', 'occ:maxThreshold': 'approach' }],
+      ['occ-reference-ring-labels-region', 'reference', 'symbol', REFERENCE_SOURCE,
+        { 'occ:group': 'rings', 'occ:maxThreshold': 'approach', 'occ:closeUp': 'hide' }],
       ['occ-reference-rings-approach', 'reference', 'line', REFERENCE_SOURCE,
         { 'occ:group': 'rings', 'occ:minThreshold': 'approach', 'occ:maxThreshold': 'airfield' }],
       ['occ-reference-ring-labels-approach', 'reference', 'symbol', REFERENCE_SOURCE,
-        { 'occ:group': 'rings', 'occ:minThreshold': 'approach', 'occ:maxThreshold': 'airfield' }],
+        { 'occ:group': 'rings', 'occ:minThreshold': 'approach', 'occ:maxThreshold': 'airfield', 'occ:closeUp': 'hide' }],
       ['occ-reference-centrelines', 'reference', 'line', OURAIRPORTS_SOURCE, { 'occ:group': 'centrelines' }],
       ['occ-reference-centreline-ticks', 'reference', 'line', OURAIRPORTS_SOURCE, { 'occ:group': 'centrelines', 'occ:minThreshold': 'approach' }],
-      ['occ-reference-centreline-label', 'reference', 'symbol', OURAIRPORTS_SOURCE, { 'occ:group': 'centrelines' }],
+      ['occ-reference-centreline-label', 'reference', 'symbol', OURAIRPORTS_SOURCE, { 'occ:group': 'centrelines', 'occ:closeUp': 'hide' }],
       ['occ-reference-navaids', 'reference', 'symbol', OURAIRPORTS_SOURCE,
-        { 'occ:group': 'navaids', 'occ:minThreshold': 'approach', 'occ:maxThreshold': 'polygons' }],
+        { 'occ:group': 'navaids', 'occ:minThreshold': 'approach', 'occ:maxThreshold': 'polygons', 'occ:closeUp': 'hide' }],
       ['occ-night', 'shade', 'fill', NIGHT_SOURCE, { 'occ:group': 'daynight', 'occ:maxThreshold': 'airfield' }],
       ['occ-night-edge', 'shade', 'line', NIGHT_SOURCE, { 'occ:group': 'daynight', 'occ:maxThreshold': 'airfield' }],
-      ['occ-night-label', 'shade', 'symbol', NIGHT_SOURCE, { 'occ:group': 'daynight', 'occ:maxThreshold': 'airfield' }],
+      ['occ-night-label', 'shade', 'symbol', NIGHT_SOURCE,
+        { 'occ:group': 'daynight', 'occ:maxThreshold': 'airfield', 'occ:closeUp': 'hide' }],
     ]);
     // Every group is a key of the layers menu, and every threshold is one the map derives.
     expect(Object.values(REFERENCE_GROUPS)).toEqual(['rings', 'centrelines', 'reference.airports', 'navaids', 'daynight']);

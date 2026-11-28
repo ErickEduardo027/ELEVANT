@@ -18,10 +18,11 @@ import { airportStructures } from '../airport/structures';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { haversineM } from '../airport/geo';
 import { WORLD_AIRPORTS } from '../airport/worldAirports';
+import { resolveAircraftType } from '../aircraft/types';
 import { followCamera, needsReframe, stepCamera } from '../kinematics/followCamera';
 import {
-  ORBIT, angleDiffDeg, createOrbit, orbitAdvance, orbitAuto, orbitDrag, orbitRotate, orbitTarget, orbitTilt, orbitWheel,
-  orbitZoom, stepOrbitCamera,
+  CLOSE_UP_ZOOM, ORBIT, ORBIT_VIEWS, angleDiffDeg, closeChaseZoom, closestOrbitZoom, createOrbit, orbitAdvance,
+  orbitAuto, orbitDrag, orbitRotate, orbitTarget, orbitTilt, orbitWheel, orbitZoom, stepOrbitCamera,
 } from '../kinematics/orbitCamera';
 import { mapMessages } from '../mapMessages';
 import { ghostFeatures, placedLocation, placingGhost } from '../stands/placing';
@@ -67,7 +68,7 @@ import AltitudeLegend from '../ui/AltitudeLegend';
 import MapTooltip from '../ui/MapTooltip';
 import { remoteSatelliteImagery, useSatelliteImagery } from '../useSatelliteImagery';
 import {
-  createAircraft3dController, parkedFromStands, projected3d, readMode3d, translatePick, writeMode3d,
+  createAircraft3dController, parkedFromStands, parkedTrafficByStand, projected3d, readMode3d, translatePick, writeMode3d,
 } from './aircraft3d';
 import { buildAttribution } from './attribution';
 import {
@@ -81,6 +82,7 @@ import {
   writeLayerOverrides,
 } from './layersMenu';
 import { createMapEngine } from './mapEngine';
+import { skyFor } from './mapSky';
 import { matchFlight, relatedEntities } from './mapSelection';
 import MapUnavailable from './MapUnavailable';
 import { OccMapContext } from './OccMapContext';
@@ -230,7 +232,39 @@ const FOLLOW_3D_RESTORE_MS = 1_000;
 const FOLLOW_3D_SUBJECT_MS = 500;
 const FOLLOW_3D_ROUTE_MS = 100;
 const NO_HOLD = Object.freeze({ rotate: 0, tilt: 0, zoom: 0 });
+// M4: how far under CLOSE_UP_ZOOM the camera goes back before the hidden labels return.
+const CLOSE_UP_RELEASE = 0.2;
 const FOLLOW_3D_OFF = Object.freeze({ on: false, orbit: null, hold: NO_HOLD, camera: null, saved: null, entry: null });
+
+// M4 (2026-11-28): the sky of the map (core/mapSky.js) is on in the 3D views and while «Seguir en 3D» follows, in the
+// map's theme, and off in 2D.
+function syncSky(engine, applied, theme) {
+  engine?.setSky?.(skyFor({ theme, pitchMode: applied?.pitchMode, following3d: applied?.follow3d?.on === true }));
+}
+
+// The orbit of `view` for the followed `item` (M4): «Muy cerca» takes the zoom its type's length and the map's height
+// give (kinematics/orbitCamera.js: closeChaseZoom); every other view its own.
+function orbitFor(view, { item = null, engine = null, trackDeg = 0, auto = false } = {}) {
+  if (view !== 'close') return createOrbit(view, { trackDeg, auto });
+  return createOrbit('close', { trackDeg, auto, zoom: closeChaseZoom(orbitSizing(item, engine)) });
+}
+
+// What the orbit's zoom of a followed `item` depends on (M4): its type's length, its latitude and the map's height.
+function orbitSizing(item, engine) {
+  const type = item ? resolveAircraftType({ typeIcao: item.typeIcao ?? null, model: item.model ?? null,
+    sizeCategory: item.sizeCategory ?? null, emitterCategory: item.emitterCategory ?? null }) : null;
+  return { lengthM: type?.spec?.lengthM ?? null, latDeg: item?.lat ?? 0,
+    viewportHeightPx: engine?.getViewport?.()?.height ?? null };
+}
+
+// The nearest zoom of the orbit round `item` (M4: kinematics/orbitCamera.js: closestOrbitZoom), kept in `f3` while
+// the aircraft's type, its whole degree of latitude and the map's height stay.
+function closestZoomOf(f3, item, engine) {
+  const sizing = orbitSizing(item, engine);
+  const key = `${item?.id}|${item?.typeIcao ?? item?.model ?? ''}|${Math.round(sizing.latDeg)}|${sizing.viewportHeightPx}`;
+  if (f3.closest?.key !== key) f3.closest = { key, zoom: closestOrbitZoom(sizing) };
+  return f3.closest.zoom;
+}
 
 // The orbit's gestures on the map's element (CN-30): a drag (any button) turns and tilts, two pointers turn, pinch and
 // tilt, the wheel zooms. `changeOrbit(change)` applies them. Returns the function that removes them.
@@ -708,6 +742,13 @@ const OccMapView = forwardRef(function OccMapView({
   // Where each stand is drawn, and what the stand layers draw at the map's minute: the countdowns change on the
   // minute, and a re-read of the same positions builds the same features.
   const attached = useMemo(() => attachStandGeometry(stands, layout), [stands, layout]);
+  // M4: the traffic aircraft parked on each stand, which a double click on the stand or its inspector's «Seguir en 3D»
+  // follows; kept while what it says does not change, so the map context does not change with every read.
+  const parkedTargetsNow = useMemo(() => parkedTrafficByStand(attached, trafficAircraft,
+    parkedAircraftIds(trafficAircraft, attached)), [attached, trafficAircraft]);
+  const parkedTargetsKey = JSON.stringify([...parkedTargetsNow]);
+  const parkedTargets = useMemo(() => new Map(JSON.parse(parkedTargetsKey)
+    .map(([code, target]) => [code, Object.freeze(target)])), [parkedTargetsKey]);
   const clock = useMinuteClock({ frozenAt: standsProp === undefined ? NO_CLOCK : frozenAt });
   const standFeatures = useMemo(() => buildStandFeatures(attached, { nowMs: clock, language, labels: standLabels }),
     [attached, clock, language, standLabels]);
@@ -858,8 +899,14 @@ const OccMapView = forwardRef(function OccMapView({
     applied.follow3d = { ...FOLLOW_3D_OFF };
     const engine = engineRef.current;
     engine?.setOrbitMode(false);
+    // M4: the labels hidden close up come back, and the sky goes with the 3D follow unless the 3D views keep it.
+    engine?.setCloseUp?.(false);
+    syncSky(engine, applied, latest.current?.theme);
     // The next write plans no followed aircraft: its detailed model goes.
     applied.loop?.wake();
+    // Fix M4: the camera it flies back to is kept for the 3D that may take over while it flies (another aircraft's
+    // double click): that one goes back to the view from before the first 3D, not to a camera partway through this ease.
+    applied.lastFollow3dSaved = restore && saved ? { saved, at: performance.now() } : null;
     if (restore && saved && engine?.map) {
       engine.easeTo({ center: saved.center, zoom: saved.zoom, bearing: saved.bearing ?? 0, pitch: saved.pitch ?? 0,
         duration: FOLLOW_3D_RESTORE_MS, essential: false });
@@ -1492,6 +1539,21 @@ const OccMapView = forwardRef(function OccMapView({
     else props.onPick?.(hit);
   }, [store, showTooltip, requestView, windTooltipOf]);
 
+  // A double click (M4): on an aircraft (its 2D symbol, its 3D model, or a stand it is parked on) it chooses it and
+  // starts «Seguir en 3D», and MapLibre does not zoom; anywhere else MapLibre zooms in as always.
+  const handleDoubleClick = useCallback(event => {
+    const props = latest.current;
+    if (!event || props?.placing) return;
+    const { hit } = event;
+    const three = props.followInfo?.three;
+    if (!hit || hit.id == null || !three) return;
+    let target = null;
+    if (hit.kind === 'flight' || hit.kind === 'aircraft') target = { kind: hit.kind, id: String(hit.id) };
+    else if (hit.kind === 'stand') target = three.parkedAt(String(hit.id));
+    // M4: the double click flies in to «Muy cerca».
+    if (target !== null && three.startOn(target, { view: 'close' })) event.preventDefault?.();
+  }, []);
+
   // The card of the aircraft whose traffic feature is `id`, as the last write drew it (owner request of 2026-11-15:
   // ui/aircraftCard.js), with its flight among the screen's map flights; null when the map draws no such aircraft.
   const aircraftTooltipOf = useCallback(id => {
@@ -1584,6 +1646,9 @@ const OccMapView = forwardRef(function OccMapView({
     const f3 = applied.follow3d;
     const dtS = Math.max(0, dtMs) / 1_000;
     if (!reduced) f3.orbit = orbitAdvance(f3.orbit, dtS, f3.hold);
+    // M4: past zoom 19.5 the camera would end inside a long fuselage; the orbit stops where the type's length allows.
+    const closest = closestZoomOf(f3, item, engine);
+    if (f3.orbit.zoom > closest) f3.orbit = orbitZoom(f3.orbit, closest - f3.orbit.zoom);
     const fieldElevationM = (latest.current?.layout?.meta?.elevationFt ?? 0) * METRES_PER_FOOT;
     // The 3D model moves with the camera every frame, and the camera pivots at the height the model is drawn at
     // (aircraft/attitude.js: never under the runway).
@@ -1604,6 +1669,9 @@ const OccMapView = forwardRef(function OccMapView({
       next = reduced || f3.camera === null ? target : stepOrbitCamera(f3.camera, target, dtS);
     }
     f3.camera = next;
+    // M4: close up (past zoom 19.5, a fifth of a level back before it lets go, so a zoom resting on it does not flicker)
+    // the map hides the labels that would crowd the aircraft; the engine changes nothing while the answer stays.
+    engine.setCloseUp?.(next.zoom > CLOSE_UP_ZOOM - (engine.isCloseUp?.() ? CLOSE_UP_RELEASE : 0));
     applied.followMoving = true;
     applied.followFrameAt = tMs;
     try {
@@ -1716,7 +1784,10 @@ const OccMapView = forwardRef(function OccMapView({
     const controller = appliedRef.current.aircraft3d;
     if (!event || !controller?.state().enabled) return event;
     let hit;
-    return Object.defineProperty({ point: event.point, lngLat: event.lngLat, originalEvent: event.originalEvent }, 'hit', {
+    const base = { point: event.point, lngLat: event.lngLat, originalEvent: event.originalEvent };
+    // A double click's (M4) keeps the call that cancels MapLibre's zoom.
+    if (typeof event.preventDefault === 'function') base.preventDefault = event.preventDefault;
+    return Object.defineProperty(base, 'hit', {
       enumerable: true,
       get() {
         if (hit === undefined) {
@@ -1845,6 +1916,7 @@ const OccMapView = forwardRef(function OccMapView({
       },
       onResize: refit,
       onClick: event => handleClick(with3dHit(event)),
+      onDoubleClick: event => handleDoubleClick(with3dHit(event)),
       onPointerMove: event => handlePointer(with3dHit(event)),
       onUserGesture: handleGesture,
     });
@@ -1868,6 +1940,7 @@ const OccMapView = forwardRef(function OccMapView({
     }) : null;
     Object.assign(appliedRef.current, { aircraft3d, reached3d: null });
     aircraft3d?.setEnabled(props.pitchMode === '3d');
+    syncSky(engine, appliedRef.current, props.theme);
     if (props.layout) engine.setData(AIRFIELD_SOURCE, airfieldFeatures(props.layout));
     if (props.layout && props.drawsStructures) engine.setData(AIRFIELD_STRUCTURES_SOURCE, airportStructures(props.layout));
     engine.setInsets(props.padding);
@@ -1884,6 +1957,7 @@ const OccMapView = forwardRef(function OccMapView({
       stopFrames?.();
       stopFollowFrames?.();
       // «Seguir en 3D» (CN-30) does not outlive its engine (a theme change re-creates the map).
+      appliedRef.current.lastFollow3dSaved = null;
       if (appliedRef.current.follow3d?.on) {
         appliedRef.current.follow3d = { ...FOLLOW_3D_OFF };
         setFollow3dUi(null);
@@ -1901,8 +1975,8 @@ const OccMapView = forwardRef(function OccMapView({
       engine.destroy();
       if (engineRef.current === engine) engineRef.current = null;
     };
-  }, [store, applyView, handleCamera, handleClick, handlePointer, handleStatus, refit, updateOnScreen, writeTraffic,
-    updateTrafficOnScreen, writeFrameRoute, followFrame, followAnimating, handleGesture, with3dHit]);
+  }, [store, applyView, handleCamera, handleClick, handleDoubleClick, handlePointer, handleStatus, refit, updateOnScreen,
+    writeTraffic, updateTrafficOnScreen, writeFrameRoute, followFrame, followAnimating, handleGesture, with3dHit]);
 
   // The URL view: fly only when it differs from the last view applied, so a view this map asked for flies once.
   useEffect(() => {
@@ -2155,26 +2229,62 @@ const OccMapView = forwardRef(function OccMapView({
   // «Seguir en 3D» (CN-30): starts on the chosen aircraft the map draws (following it, in the URL too), with the camera
   // of «Persecución» flown in from where it was, the 3D aircraft on for it whatever the 2D/3D choice, and MapLibre's own
   // gestures handed to the orbit; «Dejar de seguir», Esc or another aircraft chosen end it and fly the camera back.
-  const startFollow3d = useCallback(() => {
+  // `view` (M4) is the view it starts in: «Persecución» unless it names another (the double click: «Muy cerca»).
+  // `handoff` says it takes over from a 3D that ended for it (a double click waiting for its selection).
+  const startFollow3d = useCallback((view, { handoff = false } = {}) => {
     const engine = engineRef.current;
     const applied = appliedRef.current;
     const info = latest.current?.followInfo;
     if (!engine?.map || !applied.follow3d || applied.follow3d.on || !(info?.canFollow || info?.following)) return;
     const camera = engine.getCamera();
     if (!camera) return;
+    // A click handler passes its event: only a view's name is one.
+    const start = typeof view === 'string' && Object.hasOwn(ORBIT_VIEWS, view) ? view : 'chase';
+    // Taking over from a 3D still flying back (or one that ended for it), it keeps that one's camera to return to; the
+    // entry flies from where the camera is now.
+    const last = applied.lastFollow3dSaved;
+    applied.lastFollow3dSaved = null;
+    const resumed = last && (handoff || performance.now() - last.at < FOLLOW_3D_RESTORE_MS) ? last.saved : null;
     applied.follow3d = {
-      ...FOLLOW_3D_OFF, on: true, saved: camera, entry: { from: camera, startMs: null },
-      orbit: createOrbit('chase', { trackDeg: applied.chosen?.trackDeg ?? camera.bearing ?? 0 }), subjectAt: null,
+      ...FOLLOW_3D_OFF, on: true, saved: resumed ?? camera, entry: { from: camera, startMs: null },
+      orbit: orbitFor(start, { item: applied.chosen, engine,
+        trackDeg: applied.chosen?.trackDeg ?? camera.bearing ?? 0 }),
+      subjectAt: null,
     };
     engine.setOrbitMode(true);
+    syncSky(engine, applied, latest.current.theme);
     if (!latest.current.urlFollow) latest.current.setFollow(true);
     setFollowNotice(null);
-    setFollow3dUi({ view: 'chase', auto: false });
+    setFollow3dUi({ view: start, auto: false });
     applied.loop?.wake();
   }, []);
   const stopFollow3d = useCallback(() => {
     stopFollowing({ notice: false, restore: true });
   }, [stopFollowing]);
+  // M4: «Seguir en 3D» on an aircraft that may not be chosen yet (a double click, a stand's inspector): `target` is the
+  // selection a click on it makes. Chosen and drawn, it starts now; else the map chooses it (onSelect) and starts once
+  // the selection names it (pendingFollow3dRef). Answers whether the map takes it: false for something it cannot follow.
+  const pendingFollow3dRef = useRef(null);
+  // `view` is the view it starts in (the double click: «Muy cerca»).
+  const startFollow3dOn = useCallback((target, { view = 'chase' } = {}) => {
+    const props = latest.current;
+    if (!props?.followInfo?.available || !target || target.id == null) return false;
+    const id = selectedAircraftId(props.traffic?.aircraft ?? EMPTY, target);
+    if (id === null) return false;
+    const current = props.selection;
+    const currentId = current?.kind === 'flight' || current?.kind === 'aircraft'
+      ? selectedAircraftId(props.traffic?.aircraft ?? EMPTY, current) : null;
+    if (currentId === id) {
+      pendingFollow3dRef.current = null;
+      if (!appliedRef.current.follow3d?.on) startFollow3d(view);
+      return true;
+    }
+    pendingFollow3dRef.current = { id, view, from: current ? `${current.kind}:${current.id}` : '',
+      handoff: appliedRef.current.follow3d?.on === true };
+    props.onSelect?.({ kind: target.kind, id: String(target.id) });
+    return true;
+  }, [startFollow3d]);
+  const parkedAt = useCallback(code => parkedTargets.get(mapStandCode(code)) ?? null, [parkedTargets]);
   // A change of the orbit from the panel or a gesture: `change(orbit)` gives the next one.
   const changeOrbit = useCallback(change => {
     const applied = appliedRef.current;
@@ -2193,7 +2303,7 @@ const OccMapView = forwardRef(function OccMapView({
     subject: followSubject,
     start: startFollow3d,
     stop: stopFollow3d,
-    setView: view => changeOrbit(orbit => createOrbit(view, {
+    setView: view => changeOrbit(orbit => orbitFor(view, { item: appliedRef.current.chosen, engine: engineRef.current,
       trackDeg: appliedRef.current.chosen?.trackDeg ?? 0, auto: orbit.auto })),
     rotate: sign => changeOrbit(orbit => orbitRotate(orbit, Math.sign(sign) * ORBIT.rotateStepDeg)),
     tilt: sign => changeOrbit(orbit => orbitTilt(orbit, Math.sign(sign) * ORBIT.tiltStepDeg)),
@@ -2205,16 +2315,35 @@ const OccMapView = forwardRef(function OccMapView({
       f3.hold = { ...f3.hold, [kind]: Math.sign(sign) || 0 };
       appliedRef.current.loop?.wake();
     },
-    reset: () => changeOrbit(orbit => createOrbit(orbit.view === 'orbit' ? 'chase' : orbit.view, {
-      trackDeg: appliedRef.current.chosen?.trackDeg ?? 0 })),
+    reset: () => changeOrbit(orbit => orbitFor(orbit.view === 'orbit' ? 'chase' : orbit.view, {
+      item: appliedRef.current.chosen, engine: engineRef.current, trackDeg: appliedRef.current.chosen?.trackDeg ?? 0 })),
     setAuto: on => changeOrbit(orbit => orbitAuto(orbit, on)),
-  }), [follow3dUi, followSubject, startFollow3d, stopFollow3d, changeOrbit]);
+    // M4: start on an aircraft by the selection a click on it makes, and the aircraft parked on a stand.
+    startOn: startFollow3dOn,
+    parkedAt,
+  }), [follow3dUi, followSubject, startFollow3d, stopFollow3d, changeOrbit, startFollow3dOn, parkedAt]);
   const followInfo = useMemo(() => Object.freeze({
     available: followAvailable, following: followingNow, canFollow, toggle: toggleFollow, three: follow3d,
   }), [followAvailable, followingNow, canFollow, toggleFollow, follow3d]);
   useLayoutEffect(() => {
     latest.current.followInfo = followInfo;
   });
+  // A «Seguir en 3D» waiting for its selection (M4) starts once the selection names its aircraft and the map can follow
+  // it; another choice in between forgets it. After the effect above that ends the 3D of an aircraft no longer chosen,
+  // so following B from A's 3D lands on B: the URL keeps following (that effect let it go).
+  useEffect(() => {
+    const pending = pendingFollow3dRef.current;
+    if (pending === null) return;
+    if (followedId === pending.id) {
+      if (!canFollow) return;
+      pendingFollow3dRef.current = null;
+      if (appliedRef.current.follow3d?.on) return;
+      latest.current.setFollow(true);
+      startFollow3d(pending.view, { handoff: pending.handoff });
+      return;
+    }
+    if (selectionKey !== pending.from) pendingFollow3dRef.current = null;
+  }, [followedId, canFollow, selectionKey, startFollow3d]);
 
   // The source of the aircraft data on screen (owner decision 6, contracts 2.5), while traffic is on screen. Its credit,
   // «Datos de aeronaves: {source}» with its links, is the one line ui/MapSourceStatus.jsx draws at the bottom left of
@@ -2330,6 +2459,7 @@ const OccMapView = forwardRef(function OccMapView({
     const applied = appliedRef.current;
     if (!engine || applied.pitchMode === pitchMode) return;
     applied.pitchMode = pitchMode;
+    syncSky(engine, applied, latest.current?.theme);
     // While following, the tilt of 2D or 3D is follow mode's to set (PR M6): the change a person asked for engages it
     // again, one move of the map's own to the aircraft's framing with the new tilt (one jump under reduced motion, whose
     // frames would otherwise wait for the aircraft to near the edge). A tilt the person set gives way; their zoom stays.

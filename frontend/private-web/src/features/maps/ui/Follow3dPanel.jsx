@@ -14,8 +14,9 @@ import { flightFacts, operationFacts } from './followPanelModel';
 
 // The panel of «Seguir en 3D» (CN-30): docked on the right of the map while its camera orbits the followed aircraft
 // (core/OccMap.jsx), collapsible, a bottom sheet on a narrow screen. It shows:
-// - the camera: the five views, turn / tilt / zoom in steps or held, «Restablecer vista», «Girar automáticamente» and
-//   «Dejar de seguir» (Esc does the same; a drag on the map orbits, the wheel zooms);
+// - the camera: the six views («Muy cerca», M4, flies in close behind the tail), turn / tilt / zoom in steps or held,
+//   «Restablecer vista», «Girar automáticamente» and «Dejar de seguir» (Esc does the same; a drag on the map orbits,
+//   the wheel zooms);
 // - the flight: the identity, the route, the instruments (altitude, speed, vertical rate, heading), the squawk, how far
 //   from Punta Cana and when it arrives, and its phase, read twice a second from the map's own frames;
 // - the operation of an ELEVANT flight from its map flight row (code, state, stand, the times of its leg, the delay, the

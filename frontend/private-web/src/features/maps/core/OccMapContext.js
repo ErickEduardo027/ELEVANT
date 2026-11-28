@@ -42,8 +42,11 @@ import { VIEW_NAMES } from './cameraPresets';
 //   follow (it moves its traffic), whether it follows now (`follow=1`), whether the selection names an aircraft it
 //   draws, and the action of the S key (ui/MapFollowButton.jsx, the data block's «Seguir»). CN-30: `follow.three` is
 //   «Seguir en 3D»: `{ on, view, auto, subject, start(), stop(), setView(view), rotate(sign), tilt(sign), zoom(sign),
-//   hold(kind, sign), reset(), setAuto(on) }`, `subject` a store of the followed aircraft as the frames draw it (the
-//   panel's, ui/Follow3dPanel.jsx); outside an OccMap there is none.
+//   hold(kind, sign), reset(), setAuto(on), startOn(target), parkedAt(code) }`, `subject` a store of the followed
+//   aircraft as the frames draw it (the panel's, ui/Follow3dPanel.jsx); outside an OccMap there is none. M4:
+//   `startOn({ kind, id })` starts it on the aircraft a click on it would select, choosing it first when it is not the
+//   selection (a double click on the map, a stand's inspector), and answers whether the map can follow it;
+//   `parkedAt(code)` is the selection of the traffic aircraft parked on that stand, or null.
 // - board filter (M8, OccMap's `flightEmphasis`): `boardFilter`, whether the filter of Monitoreo's board dims AVIAM
 //   aircraft on the map, for the legend.
 // Outside an OccMap the value is a map that does nothing and shows nothing.

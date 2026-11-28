@@ -6,6 +6,7 @@ import OccMap from '../../maps/core/OccMap';
 import { mapMessages } from '../../maps/mapMessages';
 import { STAND_REFERENCE } from '../../maps/stands/standReference';
 import MapDock from '../../maps/ui/MapDock';
+import MapFollow3dButton from '../../maps/ui/MapFollow3dButton';
 import MapFollowButton from '../../maps/ui/MapFollowButton';
 import MapLayersMenu from '../../maps/ui/MapLayersMenu';
 import MapLegend from '../../maps/ui/MapLegend';
@@ -52,12 +53,13 @@ const AIRPORT_AIRCRAFT_3D = Object.freeze({ liveries: true });
 // It also draws the airport in 3D (OccMap `structures`): taxiway pavement, raised terminals and jet bridges, all est.
 // Its 3D aircraft wear their airlines' liveries, and other traffic on the ground near the field is drawn in 3D too
 // (OccMap `aircraft3d.liveries`).
+// `follow3dButton` (M4) adds «Seguir en 3D» under «Seguir» (Mapa de posiciones opts in; Planificación does not).
 const PositionMap = forwardRef(function PositionMap({
   positions = EMPTY, selectedPositionId = null, onSelectPosition, viewMode = '2d', initialCamera, onCameraChange,
   allowBuildingExtrusion = false, dashboardLabels = false, onMapClick, placing = false, placingCode = null,
   pendingLocation = null, onCancelPlacing, weather, traffic, trafficSelection = null, onSelectTraffic,
   focusSelectedOnStart = false, legendFoldKey = null, railTools = null, fixedOnAirport = false, onViewModeChange,
-  children,
+  follow3dButton = false, children,
 }, ref) {
   const { t } = useTranslation(positionsMapMessages);
   const { t: tMap } = useTranslation(mapMessages);
@@ -140,6 +142,7 @@ const PositionMap = forwardRef(function PositionMap({
       <MapDock>
         <MapPresetSwitcher views={fixedOnAirport ? AIRPORT_VIEWS : undefined} toggle3d={!fixedOnAirport} />
         <MapFollowButton />
+        {follow3dButton ? <MapFollow3dButton /> : null}
         {railTools}
         <MapMotionControl />
         {fixedOnAirport ? <MapLayersMenu /> : null}

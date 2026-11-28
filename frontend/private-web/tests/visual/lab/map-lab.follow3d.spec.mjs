@@ -166,6 +166,42 @@ test.describe('route, follow mode in 3D and real positions (CN-29, CN-30, CN-31)
     }
   });
 
+  // M4 (2026-11-27): a double click on the aircraft enters «Seguir en 3D» in the «Muy cerca» view, past zoom 19.5, with
+  // the other labels hidden and the sky on; MapLibre does not zoom on that double click.
+  for (const [phase, seconds] of [['approach', 60], ['taxi-in', TOUCHDOWN_S + 150], ['parked', ON_BLOCK_S + 60]]) {
+    test(`a double click follows the aircraft very close in 3D: ${phase}`, async ({ page }, testInfo) => {
+      await openLab(page, `scene=airfield-3d-replay&t=${at(seconds)}&flightId=${ARRIVAL}`);
+      await labIdle(page);
+      const where = await page.evaluate(id => window.__occMapLab.aircraftAt(id), `f:${ARRIVAL}`);
+      expect(where, 'the aircraft on the map').not.toBeNull();
+      // The aircraft in the middle of the map, clear of the open legend and the data block.
+      await page.evaluate(center => window.__occMapLab.jumpTo({ center }), where);
+      await labIdle(page);
+      // Where the map draws it: above its ground point when it flies (its height, on a tilted map), found by its card
+      // under the pointer, as a person aims at the aircraft they see.
+      const point = await page.evaluate(lngLat => window.__occMapLab.project(lngLat), where);
+      const box = await page.getByTestId('occ-map').locator('canvas').first().boundingBox();
+      let y = null;
+      for (let up = 0; up <= 240 && y === null; up += 4) {
+        await page.mouse.move(box.x + point.x, box.y + point.y - up);
+        await page.waitForTimeout(80);
+        const card = page.getByRole('tooltip');
+        if (await card.count() > 0 && /CM893/.test(await card.first().innerText())) y = box.y + point.y - up;
+      }
+      expect(y, 'the aircraft under the pointer').not.toBeNull();
+      await page.mouse.dblclick(box.x + point.x, y);
+      await expect(panel(page)).toBeVisible();
+      await expect(panel(page).getByRole('radio', { name: 'Muy cerca' })).toBeChecked();
+      await expect.poll(async () => (await page.evaluate(() => window.__occMapLab.getCamera()))?.zoom ?? 0)
+        .toBeGreaterThan(19.5);
+      await settle(page);
+      const camera = await page.evaluate(() => window.__occMapLab.getCamera());
+      expect(camera.zoom).toBeLessThanOrEqual(22);
+      console.log(`M4 «Muy cerca» ${phase}: zoom ${camera.zoom.toFixed(2)}, pitch ${camera.pitch.toFixed(1)}°`);
+      await shoot(page, testInfo, `m4-muy-cerca-${phase}`);
+    });
+  }
+
   test('keeps the frame budget while following in 3D', async ({ page }) => {
     const seconds = Number(process.env.OCC_FLUENCY_SECONDS ?? 20);
     await page.emulateMedia({ reducedMotion: 'no-preference' });

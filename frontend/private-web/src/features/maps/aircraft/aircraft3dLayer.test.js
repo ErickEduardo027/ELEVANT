@@ -9,8 +9,10 @@ import {
   patchLiveryShader, sceneLighting,
 } from './aircraft3dLayer';
 import { triangleCount } from './aircraftGeometry';
+import { CONTACT_SHADOW, contactShadowStrength } from './contactShadow';
 import { linearRgb, liveryInstanceColours, mercatorFrame, planInstances } from './instancePlan';
 import { LIVERY_ZONES } from './liveries';
+import { sunPosition } from '../traffic/solar';
 import { AIRCRAFT_TYPES } from './types';
 
 // The layer's life with the real three, in Node, and an injected renderer: three's scene, meshes, lights and raycaster
@@ -262,7 +264,9 @@ describe('the 3D aircraft layer (design G1, G3 and G4)', () => {
     expect(meshesOf(scene)).toHaveLength(2);
 
     const triangles = triangleCount(grown.geometry) * 6 + triangleCount(b738.geometry) * 2;
-    expect(layer.stats()).toEqual({ meshes: 2, instances: 8, triangles, drawCalls: 2, lost: false, failed: false });
+    // M4: and one draw call for the four contact shadows of the aircraft on the ground.
+    expect(layer.stats()).toEqual({ meshes: 2, instances: 8, contacts: 4, triangles, drawCalls: 3, lost: false,
+      failed: false });
   });
 
   it('disposes a mesh unused for 5 minutes together with its geometry', () => {
@@ -286,7 +290,7 @@ describe('the 3D aircraft layer (design G1, G3 and G4)', () => {
     layer.render(gl, input);
     expect(b738.count).toBe(0);
     expect(meshOf(scene, 'B738')).toBe(b738);
-    expect(layer.stats()).toMatchObject({ meshes: 2, instances: 4, drawCalls: 1 });
+    expect(layer.stats()).toMatchObject({ meshes: 2, instances: 4, contacts: 2, drawCalls: 2 });
     clock = 2_000 + UNUSED_MESH_MS - 1;
     layer.render(gl, input);
     expect(meshOf(scene, 'B738')).toBe(b738);
@@ -630,7 +634,8 @@ describe('the 3D aircraft layer (design G1, G3 and G4)', () => {
     expect(map.off.mock.calls.map(([type]) => type)).toEqual(['webglcontextlost', 'webglcontextrestored']);
     expect(map.listenerCount('webglcontextlost') + map.listenerCount('webglcontextrestored')).toBe(0);
     expect(scene.children).toHaveLength(0);
-    expect(layer.stats()).toEqual({ meshes: 0, instances: 0, triangles: 0, drawCalls: 0, lost: false, failed: false });
+    expect(layer.stats()).toEqual({ meshes: 0, instances: 0, contacts: 0, triangles: 0, drawCalls: 0, lost: false,
+      failed: false });
     // Removed, it draws, picks and rebuilds nothing.
     layer.render(gl, view.input);
     expect(made[0].calls.filter(call => call === 'render')).toHaveLength(1);
@@ -661,9 +666,10 @@ describe('the 3D aircraft layer (design G1, G3 and G4)', () => {
     const a320 = meshOf(scene, 'A320');
     const b738 = meshOf(scene, 'B738');
     const triangles = triangleCount(a320.geometry) + triangleCount(b738.geometry);
-    // Two aircraft, two shadows, one drop line: three draw calls.
-    expect(layer.stats()).toEqual({ meshes: 2, instances: 4, triangles: 2 * triangles, drawCalls: 3, lost: false,
-      failed: false });
+    // Two aircraft, two shadows, one drop line and one contact shadow (M4: the one on the ground; the other flies at
+    // 300 m, above CONTACT_SHADOW.fadeM): four draw calls.
+    expect(layer.stats()).toEqual({ meshes: 2, instances: 4, contacts: 1, triangles: 2 * triangles, drawCalls: 4,
+      lost: false, failed: false });
 
     expect(layer.setQuality({ shadows: false, dropLines: false })).toEqual({ shadows: false, dropLines: false });
     expect(map.triggerRepaint).toHaveBeenCalledTimes(1);
@@ -671,7 +677,8 @@ describe('the 3D aircraft layer (design G1, G3 and G4)', () => {
     expect(made[0].calls.filter(call => call === 'render')).toHaveLength(2);
     expect([a320.count, b738.count]).toEqual([1, 1]);
     expect(lines.visible).toBe(false);
-    expect(layer.stats()).toEqual({ meshes: 2, instances: 2, triangles, drawCalls: 2, lost: false, failed: false });
+    expect(layer.stats()).toEqual({ meshes: 2, instances: 2, contacts: 0, triangles, drawCalls: 2, lost: false,
+      failed: false });
     // The aircraft are still there to pick.
     const [x, y] = localOf(GROUND[0]);
     expect(layer.pick(view.toPixel([x, y, 3.5]))).toEqual({ kind: 'aircraft', id: 'f:p:a' });
@@ -687,7 +694,7 @@ describe('the 3D aircraft layer (design G1, G3 and G4)', () => {
     expect(layer.setQuality({ dropLines: true })).toEqual({ shadows: true, dropLines: true });
     expect(lines.visible).toBe(true);
     expect(layer.setQuality()).toEqual({ shadows: true, dropLines: true });
-    expect(layer.stats().drawCalls).toBe(3);
+    expect(layer.stats()).toMatchObject({ contacts: 1, drawCalls: 4 });
   });
 
   it("draws the traffic's models no shorter than minModelPx at the zoom of the frame, and parked ones to scale", () => {
@@ -719,6 +726,139 @@ describe('the 3D aircraft layer (design G1, G3 and G4)', () => {
     map.zoom = 11;
     layer.render(fakeContext('gl'), input);
     expect(scaleOf(0)).toBeCloseTo(MAX_MODEL_SCALE, 6);
+  });
+
+  it('the sun of Punta Cana at the render clock lights noon as day and midnight as night (M4)', () => {
+    // PUJ is UTC-4: local noon is near 16:30 UTC, local midnight near 04:30 UTC.
+    const noon = sunPosition(Date.parse('2026-11-28T16:30:00Z'), ARP);
+    const midnight = sunPosition(Date.parse('2026-11-28T04:30:00Z'), ARP);
+    expect(noon.elevationDeg).toBeGreaterThan(45);
+    expect(sceneLighting(noon).phase).toBe('day');
+    expect(sceneLighting(midnight).phase).toBe('night');
+    // By day the sun is stronger than the night's overhead light, and at noon in late November it stands to the south.
+    expect(sceneLighting(noon).directional.intensity).toBeGreaterThan(sceneLighting(midnight).directional.intensity);
+    expect(sceneLighting(noon).directional.direction[1]).toBeLessThan(0);
+    // In the layer the clock drives it: the same layer goes from day to night as getSun follows the clock.
+    const { createRenderer, made } = fakeRenderers();
+    let clock = Date.parse('2026-11-28T16:30:00Z');
+    const layer = createAircraft3dLayer({ three: THREE_PARTS, originLngLat: ARP, createRenderer,
+      getSun: () => sunPosition(clock, ARP), getInstances: () => ({ revision: 1, plan: planOf(GROUND) }) });
+    const gl = fakeContext('gl');
+    const { input } = viewOf();
+    layer.onAdd(fakeMap(), gl);
+    layer.render(gl, input);
+    const sunLight = made[0].scene.children.find(child => child.isDirectionalLight);
+    expect(sunLight.intensity).toBe(sceneLighting(noon).directional.intensity);
+    clock = Date.parse('2026-11-28T04:30:00Z');
+    layer.render(gl, input);
+    expect(sunLight.intensity).toBe(sceneLighting(midnight).directional.intensity);
+  });
+
+  it('draws a soft contact shadow under each aircraft on the ground, fading as it climbs (M4)', () => {
+    const { createRenderer, made } = fakeRenderers();
+    const climbing = aircraft('f:p:climb', { bearing: 40, metres: 1_500, onGround: false, altM: 20, typeIcao: 'B738' });
+    let state = { revision: 1, plan: planOf([...GROUND, climbing]) };
+    const layer = createAircraft3dLayer({ three: THREE_PARTS, originLngLat: ARP, createRenderer, getInstances: () => state });
+    const map = fakeMap();
+    const gl = fakeContext('gl');
+    const view = viewOf();
+    layer.onAdd(map, gl);
+    layer.render(gl, view.input);
+    const { scene } = made[0];
+    // One mesh for all of them, in a group of its own, so the scene's own meshes stay the types'.
+    expect(meshesOf(scene).map(mesh => mesh.name).sort()).toEqual(['A320', 'B738']);
+    const group = scene.children.find(child => child.isGroup);
+    const contacts = group.children[0];
+    expect(contacts.isInstancedMesh).toBe(true);
+    expect(contacts.name).toBe('contact-shadows');
+    expect(contacts.count).toBe(4);
+    // It only darkens the ground (premultiplied subtractive), writes no depth and goes first: the models cover it.
+    expect(contacts.material.blending).toBe(THREE_PARTS.SubtractiveBlending);
+    expect(contacts.material.premultipliedAlpha).toBe(true);
+    expect(contacts.material.depthWrite).toBe(false);
+    expect(contacts.material.vertexColors).toBe(true);
+    expect(contacts.renderOrder).toBe(-1);
+    // Its disc is darkest in the middle (vertex colours) and each instance carries its strength: full on the ground,
+    // less for the one climbing through 20 m.
+    expect(contacts.geometry.getAttribute('color').getX(0)).toBeCloseTo(CONTACT_SHADOW.darkness, 6);
+    const strengths = Array.from({ length: 4 }, (_, index) => contacts.instanceColor.getX(index));
+    expect(strengths.filter(value => value === 1)).toHaveLength(3);
+    const climbStrength = Math.min(...state.plan.get('B738').contactStrengths);
+    expect(climbStrength).toBeGreaterThan(0);
+    expect(climbStrength).toBeLessThan(1);
+    expect(Math.min(...strengths)).toBeCloseTo(climbStrength, 6);
+    // Under the aircraft, along its heading: the first A320 (track 90°) is long east-west.
+    const [x, y] = localOf(GROUND[0]);
+    const matrix = contacts.instanceMatrix.array.slice(0, 16);
+    expect(matrix[12]).toBeCloseTo(x, 3);
+    expect(matrix[13]).toBeCloseTo(y, 3);
+    expect(matrix[14]).toBeCloseTo(CONTACT_SHADOW.heightM, 6);
+    expect(Math.abs(matrix[4])).toBeCloseTo(CONTACT_SHADOW.alongShare * AIRCRAFT_TYPES.A320.lengthM, 3);
+    expect(layer.stats()).toMatchObject({ contacts: 4 });
+
+    // The governor's «shadows and drop lines» switch takes them away and gives them back.
+    layer.setQuality({ shadows: false });
+    expect(contacts.count).toBe(0);
+    expect(layer.stats().contacts).toBe(0);
+    layer.setQuality({ shadows: true });
+    expect(contacts.count).toBe(4);
+
+    // Above CONTACT_SHADOW.fadeM the climbing one has none; a new revision copies the rest.
+    state = { revision: 2, plan: planOf([...GROUND, { ...climbing, altM: 200 }]) };
+    layer.render(gl, view.input);
+    expect(contacts.count).toBe(3);
+    expect(contactShadowStrength(200)).toBe(0);
+
+    // onRemove disposes its mesh, its disc and its material.
+    const seen = disposals(contacts, contacts.geometry, contacts.material);
+    layer.onRemove(map, gl);
+    expect(seen.size).toBe(3);
+  });
+
+  it('gives the detailed aircraft its own contact shadow, scaled as its model and faded by its height (M4)', () => {
+    const { createRenderer, made } = fakeRenderers();
+    const built = [];
+    const buildDetail = () => {
+      const model = { object: new THREE_PARTS.Group(), pivot: { y: 0, z: 0 }, textured: false, setState: vi.fn(),
+        dispose: vi.fn(), refreshLogo: () => false };
+      built.push(model);
+      return model;
+    };
+    const [lon, lat] = destinationPoint(ARP, 90, 400);
+    let detail = Object.freeze({ id: 'f:p:followed', key: 'A320|cmp|', spec: AIRCRAFT_TYPES.A320, code: 'A320',
+      livery: { id: 'cmp' }, registration: null, lon, lat, headingDeg: 0, heightM: 0, pitchDeg: 0, bankDeg: 0,
+      gearDown: true, lights: {}, gsMs: 0, onStand: false });
+    const layer = createAircraft3dLayer({ three: THREE_PARTS, originLngLat: ARP, createRenderer, buildDetail,
+      getInstances: () => ({ revision: 1, plan: new Map(), detail }) });
+    const gl = fakeContext('gl');
+    const view = viewOf();
+    layer.onAdd(fakeMap(), gl);
+    layer.render(gl, view.input);
+    expect(built).toHaveLength(1);
+    const detailScene = made[0].scene;
+    const contact = detailScene.children.find(child => child.name === 'contact-shadows');
+    expect(contact.isMesh && !contact.isInstancedMesh).toBe(true);
+    expect(contact.visible).toBe(true);
+    expect(contact.renderOrder).toBe(-1);
+    expect(contact.material.blending).toBe(THREE_PARTS.SubtractiveBlending);
+    expect(contact.material.color.r).toBe(1);
+    // North-up: its long axis is the y axis of its frame, the type's length times alongShare.
+    expect(contact.matrix.elements[5]).toBeCloseTo(CONTACT_SHADOW.alongShare * AIRCRAFT_TYPES.A320.lengthM, 6);
+    expect(contact.matrix.elements[0]).toBeCloseTo(CONTACT_SHADOW.acrossShare * AIRCRAFT_TYPES.A320.spanM, 6);
+    expect(layer.stats().detail.drawCalls).toBe(2);
+    // Climbing it fades; out of reach of the ground it is gone.
+    detail = { ...detail, heightM: 15 };
+    layer.render(gl, view.input);
+    expect(contact.material.color.r).toBeCloseTo(contactShadowStrength(15), 6);
+    expect(contact.visible).toBe(true);
+    detail = { ...detail, heightM: 120 };
+    layer.render(gl, view.input);
+    expect(contact.visible).toBe(false);
+    // The governor's switch hides it with the silhouette.
+    detail = { ...detail, heightM: 0 };
+    layer.setQuality({ shadows: false });
+    layer.render(gl, view.input);
+    expect(contact.visible).toBe(false);
   });
 });
 

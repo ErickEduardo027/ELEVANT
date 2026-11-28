@@ -5,8 +5,8 @@ import { GROUND_TRAFFIC_3D_RADIUS_M, liveryInstanceColours } from '../aircraft/i
 import { LIVERIES } from '../aircraft/liveries';
 import {
   AIRCRAFT_3D_SLOT, DETAIL_MIN_ZOOM, GOVERNOR, GOVERNOR_PAUSED, MODE_3D_STORAGE_KEY, RETRY_LOAD_MS,
-  createAircraft3dController, createGovernor, detailOf, parkedFromStands, projected3d, readMode3d, translatePick,
-  writeMode3d,
+  createAircraft3dController, createGovernor, detailOf, parkedFromStands, parkedTrafficByStand, projected3d, readMode3d,
+  translatePick, writeMode3d,
 } from './aircraft3d';
 import { GLOBE_MERCATOR_ZOOM } from '../style/occStyle';
 
@@ -92,6 +92,23 @@ describe('parkedFromStands', () => {
       flightNumber: 'CM 893' });
     expect(second).toMatchObject({ id: 'f:owner', airlineIcao: 'JBU', airlineIata: 'B6', callsign: 'JBU1234',
       flightNumber: 'B6 1234' });
+  });
+});
+
+describe('parkedTrafficByStand (M4)', () => {
+  it('names the traffic aircraft parked on each stand as a click on it selects it, and no stand without one', () => {
+    const stands = [stand('A5'), stand('A6', { turnaroundId: 't-busy' }), { ...stand('A7', { turnaroundId: 't-old' }),
+      retired: true }, stand('A6', { turnaroundId: 't-busy' })];
+    const parked = aviam('f:parked', { turnaroundId: 't-busy', gsMs: 0 });
+    const retiredOwner = aviam('f:old', { turnaroundId: 't-old', gsMs: 0 });
+    const targets = parkedTrafficByStand(stands, [parked, retiredOwner], new Set(['f:parked', 'f:old']));
+    expect([...targets]).toEqual([['A6', { kind: 'flight', id: 'parked' }]]);
+    expect(Object.isFrozen(targets.get('A6'))).toBe(true);
+    // An aircraft of the visit that is not on its box (it still moves), or other traffic, is not the stand's.
+    expect(parkedTrafficByStand(stands, [parked], new Set()).size).toBe(0);
+    expect(parkedTrafficByStand(stands, [other('abc123', { turnaroundId: 't-busy' })], new Set(['h:abc123'])).size)
+      .toBe(0);
+    expect(parkedTrafficByStand(null, null).size).toBe(0);
   });
 });
 

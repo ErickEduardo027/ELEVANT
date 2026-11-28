@@ -185,6 +185,32 @@ export function parkedFromStands(stands = [], aircraft = [], parkedIds = NO_IDS)
 }
 
 /**
+ * The traffic aircraft parked on each stand (M4, «Seguir en 3D»): a Map from the stand's code to the selection of the
+ * AVIAM aircraft of the traffic that is on its box for the stand's visit (`parkedIds`, stands/standFeatures.js:
+ * parkedAircraftIds), `{ kind, id }` as a click on that aircraft selects it, frozen. A double click on such a stand, or
+ * its inspector's «Seguir en 3D», follows that aircraft; a stand whose aircraft the traffic does not draw has none.
+ */
+export function parkedTrafficByStand(stands = [], aircraft = [], parkedIds = NO_IDS) {
+  const drawn = Array.isArray(aircraft) ? aircraft : [];
+  const byTurnaround = new Map();
+  for (const item of drawn) {
+    if (item?.turnaroundId != null && item.kind === 'aviam' && parkedIds.has(item.id)) byTurnaround.set(item.turnaroundId, item);
+  }
+  const targets = new Map();
+  if (byTurnaround.size === 0) return targets;
+  for (const stand of Array.isArray(stands) ? stands : []) {
+    if (stand === null || typeof stand !== 'object' || isRetired(stand)) continue;
+    const owner = byTurnaround.get(stand.display?.visit?.turnaroundId);
+    if (!owner) continue;
+    const code = mapStandCode(standCodeOf(stand));
+    if (code === '' || targets.has(code)) continue;
+    const hit = translatePick({ id: owner.id }, drawn);
+    if (hit !== null) targets.set(code, Object.freeze({ kind: hit.kind, id: hit.id }));
+  }
+  return targets;
+}
+
+/**
  * What a 3D pick names, as the 2D picking names it (core/mapEngine.js: pickAt): `f:<flightKey>` a flight, `h:<hex>`
  * an aircraft of other traffic, `s:<code>` the stand whose parked aircraft it is. `drawn` (the aircraft of the last
  * write) says what an id of the traffic is. Answers `{ kind, id, feature }`, with the traffic's feature id for the
