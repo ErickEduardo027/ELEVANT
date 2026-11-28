@@ -1695,6 +1695,18 @@ describe('OccMap', () => {
       transform: 'translateX(-50%)' });
     expect(all('.occ-map .occ-map-page-chips ~ .occ-map-source-status .occ-map-source-chips')).toEqual([
       { top: 'calc(var(--occ-map-inset-top, 0px) + var(--occ-map-gap) + 3.25rem)' }]);
+    // The list of a map that cannot draw fills the area the floating panels leave, short of the column, so the
+    // panels stay usable beside it.
+    expect(all('.occ-map .occ-map-unavailable')).toEqual([{ top: 'var(--occ-map-inset-top, 0px)',
+      right: 'var(--occ-map-clear-right)', bottom: 'var(--occ-map-inset-bottom, 0px)',
+      left: 'var(--occ-map-inset-left, 0px)' }]);
+    // A menu of the rail opens under the panels floating along the top (Mapa de posiciones' bar), never over them,
+    // and still ends at the bottom of the column.
+    const [flyout] = all('.occ-map .occ-map-flyout');
+    expect(flyout).toMatchObject({
+      top: 'calc(max(var(--occ-map-gap), var(--occ-map-inset-top, 0px)) - var(--occ-map-gap) - var(--occ-map-zoom-height) - 8px)',
+      'max-height': 'calc(100% + var(--occ-map-zoom-height) + 8px + var(--occ-map-gap) - max(var(--occ-map-gap), var(--occ-map-inset-top, 0px)))',
+    });
   });
 });
 // The traffic of PR M5 at the lab's noon: the synthetic air picture and map flights, the demo arrival estimated on

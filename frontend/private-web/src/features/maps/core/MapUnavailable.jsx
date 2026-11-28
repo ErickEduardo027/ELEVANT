@@ -1,9 +1,10 @@
 // What a map screen shows when the engine cannot draw (no WebGL2, or a map that failed to start): the screen's own
 // title and description, and the stands or flights of the map as a list to keep working with. Each adapter passes
-// its own strings, so today's texts stay as they are.
+// its own strings, so today's texts stay as they are. It fills the area the screen's floating panels leave
+// (occ-map.css: .occ-map-unavailable; M1), so they stay usable beside it.
 export default function MapUnavailable({ title, description, listLabel, items = [], selectedId = null, onSelect }) {
   return (
-    <div role="alert" data-testid="map-unavailable" className="absolute inset-0 z-20 overflow-y-auto bg-occ-panel p-5 text-occ-text">
+    <div role="alert" data-testid="map-unavailable" className="occ-map-unavailable absolute z-20 overflow-y-auto bg-occ-panel p-5 text-occ-text">
       <h3 className="text-base font-semibold">{title}</h3>
       {description && <p className="mt-1 max-w-prose text-sm text-occ-muted">{description}</p>}
       {items.length > 0 && (

@@ -221,13 +221,17 @@
 }
 
 /* A menu of the rail («Capas», «Leyenda»): it flies out to the left of the column, over a panel floating there, from
-   the top of the zoom group down to the bottom of the column at most, and scrolls when what it lists is longer. */
+   the top of the zoom group, or from under the panels floating along the top of the map (M1: Mapa de posiciones' bar,
+   Panorama's figures), so a legend open at the start never covers the screen's own bar, down to the bottom of the
+   column at most, and scrolls when what it lists is longer. */
 .occ-map .occ-map-flyout {
   position: absolute;
   z-index: 1;
-  top: calc(-1 * (var(--occ-map-zoom-height) + 8px));
+  top: calc(max(var(--occ-map-gap), var(--occ-map-inset-top, 0px)) - var(--occ-map-gap) - var(--occ-map-zoom-height)
+    - 8px);
   right: calc(100% + 8px);
-  max-height: calc(100% + var(--occ-map-zoom-height) + 8px);
+  max-height: calc(100% + var(--occ-map-zoom-height) + 8px + var(--occ-map-gap)
+    - max(var(--occ-map-gap), var(--occ-map-inset-top, 0px)));
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-color: var(--occ-line-strong) transparent;
@@ -310,6 +314,16 @@
 
 .occ-map .occ-map-chip ~ .occ-map-source-status .occ-map-source-chips {
   top: calc(var(--occ-map-inset-top, 0px) + var(--occ-map-gap) + 3.25rem);
+}
+
+/* The list a map that cannot draw shows instead (core/MapUnavailable.jsx): in the area the floating panels leave, so
+   the panels of the screen (Monitoreo's board and inspector, Mapa de posiciones' bar, list and band) stay usable
+   beside it, never under it, and short of the control column (M1). */
+.occ-map .occ-map-unavailable {
+  top: var(--occ-map-inset-top, 0px);
+  right: var(--occ-map-clear-right);
+  bottom: var(--occ-map-inset-bottom, 0px);
+  left: var(--occ-map-inset-left, 0px);
 }
 
 /* A screen's own notices over its full-screen map (M1: Mapa de posiciones' planning note, its placing of a stand and
