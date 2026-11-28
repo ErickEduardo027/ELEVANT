@@ -11,8 +11,8 @@ import { MAP_PERMISSIONS } from '../maps/mapPermissions';
 // (services/regionWeatherService.js): the METARs and TAFs of the region's airports, the SIGMETs, the wind grid and the
 // radar frames. Each read is one useOccResource on the shell's loop (contracts 2.7): gated by the map permissions,
 // paused while the tab is hidden, dropped and not asked again after a 401/403/404, and on its own poll, never on an
-// announcement. A failed read waits twice as long for each failure, up to REGION_WEATHER_MAX_DELAY_MS. The host passes
-// the adapter; this hook never chooses the source.
+// announcement, and never sooner than the answer's `refreshAfterSeconds`. A failed read waits twice as long for each
+// failure, up to REGION_WEATHER_MAX_DELAY_MS. The host passes the adapter; this hook never chooses the source.
 
 /** The longest a failing regional read waits before it asks again: half an hour. */
 export const REGION_WEATHER_MAX_DELAY_MS = 1_800_000;
@@ -38,6 +38,17 @@ export function regionWeatherDelayMs(entry, failures = 0) {
   const base = entry.pollMs;
   if (!(failures > 0)) return base;
   return Math.max(base, Math.min(base * 2 ** failures, REGION_WEATHER_MAX_DELAY_MS));
+}
+
+/**
+ * When a regional read asks again: its own pace (regionWeatherDelayMs), but never sooner than the API asked in the last
+ * answer's `refreshAfterSeconds` (contracts of lane M6: the wind grid answers 3600 while the service is up, an
+ * Unavailable answer 300–900 while a failure is waited out).
+ */
+export function regionWeatherPollMs(entry, failures = 0, data = null) {
+  const own = regionWeatherDelayMs(entry, failures);
+  const asked = data?.refreshAfterSeconds;
+  return typeof asked === 'number' && Number.isFinite(asked) && asked > 0 ? Math.max(own, asked * 1000) : own;
 }
 
 const WITH_DATA = new Set(['Live', 'Stale']);
@@ -68,7 +79,7 @@ function useRegionRead(name, { adapter, stationId, enabled, permission }) {
       throw error;
     }
   }, [adapter, entry.method, stationId]);
-  const pollMs = useCallback(() => regionWeatherDelayMs(entry, failures.current), [entry]);
+  const pollMs = useCallback(data => regionWeatherPollMs(entry, failures.current, data), [entry]);
   const resource = useOccResource({ key: entry.key, load, permission, scopeKey: enabled ? stationId : '', enabled,
     resources: entry.resources, pollMs, coalesceMs: entry.coalesceMs, isEmpty: answeredEmpty });
   const { status, data, fetchedAt, refreshFailed, retry } = resource;

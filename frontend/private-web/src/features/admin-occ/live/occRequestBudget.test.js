@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { CONSOLE_READS } from '../../dashboard/noc/consoleReads';
 import { AIRFIELD_PICTURE_POLL_MS, airPictureDelayMs, MAP_SITUATION_READS } from '../../maps/useMapSituation';
 import { occMountedFiles, readSource } from '../../../styles/occSourceScan';
-import { REGION_WEATHER_READS, regionWeatherDelayMs } from '../../weather/useRegionWeather';
+import { REGION_WEATHER_READS, regionWeatherDelayMs, regionWeatherPollMs } from '../../weather/useRegionWeather';
 import { ADMIN_OCC_NAVIGATION } from '../navigation';
 import { OCC_COALESCE_MS, OCC_HINT_COALESCE_MS, OCC_OBSERVER_POLL_MS } from './occCadence';
 import {
@@ -482,6 +482,9 @@ describe('OCC request budget', () => {
       expect(regionWeatherDelayMs(own, 0)).toBe(own.pollMs);
       expect(regionWeatherDelayMs(own, 1)).toBe(own.pollMs * 2);
       expect(regionWeatherDelayMs(own, 10)).toBe(1_800_000);
+      // The answer's refreshAfterSeconds only ever slows it down (2026-11-28).
+      expect(regionWeatherPollMs(own, 0, { refreshAfterSeconds: 60 })).toBe(own.pollMs);
+      expect(regionWeatherPollMs(own, 0, { refreshAfterSeconds: 3600 })).toBe(3_600_000);
     }
     expect(OCC_REQUEST_PLAN.weather.find(entry => entry.key === 'radarFrames').pollMs).toBe(300_000);
   });

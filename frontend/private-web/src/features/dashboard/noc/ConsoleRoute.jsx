@@ -23,6 +23,7 @@ import { CONSOLE_SERVICES, useConsoleData } from './useConsoleData';
 
 const NO_STANDS = Object.freeze([]);
 const HEX = /^[0-9a-f]{6}$/i;
+const NOT_DRAWN = Object.freeze({ wind: false });
 
 function ConsoleLoading() {
   const { t } = useTranslation(consoleMessages);
@@ -66,8 +67,9 @@ export default function ConsoleRoute({ mapService = occMapService, services = CO
   // The weather is read only with the PUJ scope.
   const weather = useMdpcWeather({ enabled: ready });
   const [regionAdapter] = useState(() => regionWeatherService ?? defaultRegionWeatherAdapter());
+  // The wind grid is not drawn yet: it is not read (2026-11-28).
   const regionWeather = useRegionWeather({ adapter: regionAdapter, stationId: stationId ?? '', enabled: ready,
-    demo: regionAdapter.simulated === true });
+    wanted: NOT_DRAWN, demo: regionAdapter.simulated === true });
   const flightsByTurnaround = flightsByTurnaroundOf(live.flights?.flights);
   // The stands read on the clock the map draws its aircraft at (PR M6, the render clock, paused with the motion) and
   // with the aircraft inside their box, so a demo stand turns Ocupada in the moment its aircraft parks.

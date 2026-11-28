@@ -273,12 +273,13 @@ describe('the OCC console', () => {
     // Región, tilted (cameraPresets.js: CAMERA_3D_WIDE), north up.
     await waitFor(() => expect(map.getPitch()).toBe(35));
     expect(map.getBearing()).toBe(0);
-    // The regional layers are in the style, and their four reads went through the injected adapter once each.
+    // The regional layers are in the style, and their reads went through the injected adapter once each; the wind grid,
+    // not drawn yet, is not read (2026-11-28).
     const sources = Object.keys(map.getStyle().sources);
     for (const id of ['occ-weather-loop-0', 'occ-weather-radar-0', 'occ-weather-stations', 'occ-weather-sigmet',
       'occ-weather-wind']) expect(sources, id).toContain(id);
     await waitFor(() => expect(regionWeatherService.calls.map(call => call.read).sort())
-      .toEqual(['radar', 'region', 'sigmets', 'wind']));
+      .toEqual(['radar', 'region', 'sigmets']));
     // The METAR stations and the SIGMET in force reach the map; the radar sources are pinned to the API's frames.
     await waitFor(() => expect(map.getSource('occ-weather-stations').data.features.map(item => item.properties.icao))
       .toContain('MDSD'));

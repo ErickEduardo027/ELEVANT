@@ -9,10 +9,11 @@ import { DepartmentPermissionCodes } from '../access/testAccess';
 import { createOccShellValue, OccShellTestProvider } from '../admin-occ/shell/testing/occShellFixtures';
 import { MAP_PERMISSIONS } from '../maps/mapPermissions';
 import {
-  createRegionWeatherScenario, WEATHER_NOON, WEATHER_STATION_ID,
+  createRegionWeather, createRegionWeatherScenario, createSigmets, WEATHER_NOON, WEATHER_STATION_ID,
 } from '../maps/testing/weatherFixtures';
 import {
-  REGION_WEATHER_MAX_DELAY_MS, REGION_WEATHER_READS, regionReadStatus, regionWeatherDelayMs, useRegionWeather,
+  REGION_WEATHER_MAX_DELAY_MS, REGION_WEATHER_READS, regionReadStatus, regionWeatherDelayMs, regionWeatherPollMs,
+  useRegionWeather,
 } from './useRegionWeather';
 
 const NOON = Date.parse(WEATHER_NOON);
@@ -67,15 +68,41 @@ describe('useRegionWeather (lane M7)', () => {
     expect(result.current.demo).toBe(false);
   });
 
-  it('polls on its own pace: the radar index every five minutes, the rest every ten', async () => {
+  it('polls on its own pace: the radar index every five minutes, the rest every ten, the wind grid as the API asks', async () => {
     const { adapter } = setup();
+    const count = read => adapter.calls.filter(call => call.read === read).length;
     await flush();
     await flush(300_000);
-    expect(adapter.calls.filter(call => call.read === 'radar')).toHaveLength(2);
-    expect(adapter.calls.filter(call => call.read === 'region')).toHaveLength(1);
+    expect(count('radar')).toBe(2);
+    expect(count('region')).toBe(1);
     await flush(300_000);
-    expect(adapter.calls.filter(call => call.read === 'radar')).toHaveLength(3);
-    for (const read of ['region', 'sigmets', 'wind']) expect(adapter.calls.filter(call => call.read === read)).toHaveLength(2);
+    expect(count('radar')).toBe(3);
+    for (const read of ['region', 'sigmets']) expect(count(read)).toBe(2);
+    // The wind grid answers refreshAfterSeconds 3600: asked again after an hour, not after ten minutes.
+    expect(count('wind')).toBe(1);
+    await flush(3_000_000);
+    expect(count('wind')).toBe(2);
+  });
+
+  it("never asks sooner than the answer's refreshAfterSeconds (2026-11-28)", async () => {
+    const scenario = createRegionWeatherScenario();
+    const slow = (answer, seconds) => ({ ...answer, refreshAfterSeconds: seconds });
+    const waited = createRegionWeatherScenario({
+      region: slow(createRegionWeather({ status: 'Unavailable' }), 900),
+      sigmets: slow(createSigmets({ status: 'Unavailable' }), 900),
+      wind: slow(scenario.wind, 3600),
+      radar: slow(scenario.radar, 900),
+    });
+    const { adapter } = setup({}, { scenario: waited });
+    const count = read => adapter.calls.filter(call => call.read === read).length;
+    await flush();
+    await flush(600_000);
+    for (const read of ['region', 'sigmets', 'wind', 'radar']) expect(count(read), read).toBe(1);
+    await flush(300_000);
+    for (const read of ['region', 'sigmets', 'radar']) expect(count(read), read).toBe(2);
+    expect(count('wind')).toBe(1);
+    await flush(2_700_000);
+    expect(count('wind')).toBe(2);
   });
 
   it('waits while the tab is hidden and reads once it shows again', async () => {
@@ -144,6 +171,13 @@ describe('useRegionWeather (lane M7)', () => {
     expect(regionWeatherDelayMs(radar)).toBe(300_000);
     expect(regionWeatherDelayMs(radar, 2)).toBe(1_200_000);
     expect(regionWeatherDelayMs(radar, 9)).toBe(REGION_WEATHER_MAX_DELAY_MS);
+    // The API's refreshAfterSeconds only ever slows a read down.
+    expect(regionWeatherPollMs(radar, 0, { refreshAfterSeconds: 3600 })).toBe(3_600_000);
+    expect(regionWeatherPollMs(radar, 0, { refreshAfterSeconds: 900 })).toBe(900_000);
+    expect(regionWeatherPollMs(radar, 0, { refreshAfterSeconds: 60 })).toBe(300_000);
+    expect(regionWeatherPollMs(radar, 2, { refreshAfterSeconds: 900 })).toBe(1_200_000);
+    expect(regionWeatherPollMs(radar, 0, null)).toBe(300_000);
+    expect(regionWeatherPollMs(radar, 0, { refreshAfterSeconds: Number.NaN })).toBe(300_000);
     expect(['success', 'empty', 'forbidden', 'unauthorized', 'timeout', 'error', 'idle', 'loading'].map(regionReadStatus))
       .toEqual(['success', 'empty', 'unauthorized', 'unauthorized', 'error', 'error', 'loading', 'loading']);
   });
