@@ -7,8 +7,11 @@ import { destinationPoint, METRES_PER_NM } from '../airport/geo';
 import { thresholdsFromFits } from '../core/cameraPresets';
 import {
   AIRCRAFT_3D_COLORS, AIRCRAFT_3D_RADIUS_NM, DROP_LINE_MIN_M, SHADOW, TYPE_MEMO_LIMIT, instanceKey, linearRgb,
-  mercatorFrame, planInstances, typeMemoSizeForTests, pivotOf, poseMatrix,
+  mercatorFrame, planInstances, planSprites, typeMemoSizeForTests, pivotOf, poseMatrix,
 } from './instancePlan';
+import { SPRITE_CELLS, cellUv } from './spriteAtlas';
+import { altitudeColour, mapColorsFor } from '../style/mapColors';
+import { DEMO_PLATE_IMAGE, ESTIMATED_RING_IMAGE } from '../style/trafficImages';
 import { AIRCRAFT_TYPES, CATEGORY_FALLBACKS } from './types';
 
 // Synthetic aircraft around the ARP of Punta Cana: invented ids and places, the shape of the map's RenderAircraft
@@ -393,5 +396,93 @@ describe('poseMatrix and attitudes (CN-30)', () => {
     // Left out when the detailed model draws it.
     expect(planInstances([climbing], [], { zoom: 16, minZoom: 15, originLngLat: MDPC_LAYOUT.meta.arp,
       excludeId: 'f:climb' }).size).toBe(0);
+  });
+});
+
+// PR M2: what the animated layer draws of the traffic, at the positions of one frame.
+describe('planSprites (PR M2)', () => {
+  const hex = channels => `#${channels.map(value => Math.round(value * 255).toString(16).padStart(2, '0')).join('')}`;
+  const tintOf = (sprites, index) => hex(Array.from(sprites.colors.slice(3 * index, 3 * index + 3)));
+  const spriteAt = (sprites, index) => ({
+    id: sprites.ids[index],
+    xy: [sprites.matrices[16 * index + 12], sprites.matrices[16 * index + 13]],
+    size: [sprites.sizes[2 * index], sprites.sizes[2 * index + 1]],
+    offset: [sprites.offsets[2 * index], sprites.offsets[2 * index + 1]],
+    cell: Array.from(sprites.cells.slice(4 * index, 4 * index + 4)),
+    opacity: sprites.opacities[index],
+    plain: sprites.plain[index],
+  });
+
+  it('draws one silhouette per aircraft where the frame puts it, turned to its track and tinted by its altitude', () => {
+    const climbing = aircraft('f:climb', { bearing: 90, metres: 2_000, onGround: false, altM: 1_200, trackDeg: 90 });
+    const taxiing = aircraft('h:taxi', { kind: 'other', bearing: 200, metres: 600, trackDeg: 45 });
+    const far = aircraft('h:far', { kind: 'other', bearing: 10, metres: 200 * METRES_PER_NM, onGround: false, altM: 9_000 });
+    const sprites = planSprites([climbing, taxiing, far], { originLngLat: ARP });
+    expect(sprites.count).toBe(3);
+    // Other traffic on the ground first, then in the air, then the ELEVANT flights.
+    expect([...sprites.ids]).toEqual(['h:taxi', 'h:far', 'f:climb']);
+    const frame = mercatorFrame(ARP);
+    const climb = spriteAt(sprites, 2);
+    expect(climb.xy[0]).toBeCloseTo(frame.toLocal([climbing.lon, climbing.lat])[0], 1);
+    expect(climb.xy[1]).toBeCloseTo(frame.toLocal([climbing.lon, climbing.lat])[1], 1);
+    // T(x, y, 0) · Rz(−track): a track of 90 points the nose (+y) east.
+    const nose = new Vector3(0, 1, 0).applyMatrix4(matrixOf(sprites, 2)).sub(new Vector3(...climb.xy, 0));
+    expect(nose.x).toBeCloseTo(1, 6);
+    expect(nose.y).toBeCloseTo(0, 6);
+    // Sizes in CSS pixels, as the icons are drawn (trafficFeatures: TRAFFIC_SCALES): 30 × 1.25 for an ELEVANT A320.
+    expect(climb.size).toEqual([37.5, 37.5]);
+    expect(climb.cell).toEqual(cellUv('ac-narrow-solid').map(value => expect.closeTo(value, 6)));
+    // The altitude scale of the map (3 900 ft rounds to the hundred), the ground's grey, far traffic at any distance.
+    expect(tintOf(sprites, 2)).toBe(altitudeColour('dark', { altFt: 3_900 }));
+    expect(tintOf(sprites, 0)).toBe(mapColorsFor('dark').altitude.ground);
+    expect(tintOf(sprites, 1)).toBe(altitudeColour('dark', { altFt: 29_500 }));
+    expect(spriteAt(sprites, 0).size).toEqual([0.6 * 30, 0.6 * 30]);
+    expect(Array.from(sprites.halos.slice(0, 3)).map(value => Math.round(value * 255)))
+      .toEqual([0x0b, 0x12, 0x18]);
+  });
+
+  it('marks the chosen, departing, stale, estimated and demo aircraft as the GeoJSON layers do', () => {
+    const chosen = aircraft('f:chosen', { onGround: false, altM: 300 });
+    const departure = aircraft('f:dep', { direction: 'Departure', bearing: 90, metres: 300 });
+    const stale = aircraft('h:stale', { kind: 'other', quality: 'stale', opacity: 0.8, bearing: 180, metres: 300 });
+    const estimated = aircraft('f:est', { quality: 'estimated', bearing: 270, metres: 300 });
+    const demo = aircraft('f:demo', { isDemo: true, bearing: 0, metres: 900 });
+    const sprites = planSprites([chosen, departure, stale, estimated, demo], { originLngLat: ARP, selectedId: 'f:chosen',
+      bearingDeg: -17 });
+    const ids = [...sprites.ids];
+    // The chosen one after the rest, in the accent at 1.4; the ring and the plate last, without an id.
+    expect(ids).toEqual(['h:stale', 'f:dep', 'f:est', 'f:demo', 'f:chosen', null, null]);
+    expect(tintOf(sprites, 4)).toBe(OCC_PALETTE['--occ-accent']);
+    expect(spriteAt(sprites, 4).size).toEqual([1.4 * 30, 1.4 * 30]);
+    expect(spriteAt(sprites, 1).cell).toEqual(cellUv('ac-narrow-hollow').map(value => expect.closeTo(value, 6)));
+    expect(spriteAt(sprites, 0).opacity).toBeCloseTo(0.4, 6);
+    const ring = spriteAt(sprites, 5);
+    expect(ring.cell).toEqual(cellUv(ESTIMATED_RING_IMAGE).map(value => expect.closeTo(value, 6)));
+    expect(ring.size).toEqual([40 * 1.25, 40 * 1.25]);
+    expect(tintOf(sprites, 5)).toBe(OCC_PALETTE['--occ-muted']);
+    const plate = spriteAt(sprites, 6);
+    expect(plate).toMatchObject({ plain: 1, size: [SPRITE_CELLS[DEMO_PLATE_IMAGE].width, SPRITE_CELLS[DEMO_PLATE_IMAGE].height] });
+    // Below the silhouette (its half size 13.75 px takes the 25 px step) and upright on a map turned −17°.
+    expect(plate.offset).toEqual([0, -25]);
+    const up = new Vector3(0, 1, 0).applyMatrix4(matrixOf(sprites, 6)).sub(new Vector3(...plate.xy, 0));
+    expect(Math.atan2(up.x, up.y) * (180 / Math.PI)).toBeCloseTo(-17, 6);
+  });
+
+  it('leaves out the silhouettes of models and of aircraft on their stand, never their marks', () => {
+    const modelled = aircraft('f:model', { quality: 'estimated' });
+    const parked = aircraft('f:parked', { isDemo: true, bearing: 90, metres: 200 });
+    const chosenParked = aircraft('f:chosen', { bearing: 180, metres: 200 });
+    const sprites = planSprites([modelled, parked, chosenParked], { originLngLat: ARP, selectedId: 'f:chosen',
+      modelIds: new Set(['f:model']), parkedIds: new Set(['f:parked', 'f:chosen']) });
+    expect([...sprites.ids]).toEqual(['f:chosen', null, null]);
+    expect(planSprites([], { originLngLat: ARP }).count).toBe(0);
+    expect(planSprites([{ ...modelled, hiddenInStand: true }], { originLngLat: ARP }).count).toBe(0);
+  });
+
+  it('plans models at any distance with radiusNm Infinity (the animated 3D)', () => {
+    const far = aircraft('h:far', { kind: 'other', bearing: 45, metres: 40 * METRES_PER_NM, onGround: false, altM: 3_000 });
+    expect(planInstances([far], [], OPTIONS).size).toBe(0);
+    const plan = planInstances([far], [], { ...OPTIONS, radiusNm: Infinity });
+    expect(plan.get('A320')).toMatchObject({ aircraftCount: 1, ids: ['h:far', null] });
   });
 });

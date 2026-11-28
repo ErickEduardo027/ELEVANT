@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { destinationPoint } from '../airport/geo';
 import { LIVERIES } from '../aircraft/liveries';
+import { mercatorFrame } from '../aircraft/instancePlan';
+import { createKeyframes, writeKeyframes } from '../traffic/keyframes';
 import {
   AIRCRAFT_3D_SLOT, DETAIL_MIN_ZOOM, GOVERNOR, GOVERNOR_PAUSED, MODE_3D_STORAGE_KEY, RETRY_LOAD_MS,
   createAircraft3dController, createGovernor, detailOf, parkedFromStands, readMode3d, translatePick, writeMode3d,
@@ -140,8 +142,9 @@ describe('the governor', () => {
 });
 
 // The controller's world: an engine that records its custom layers, a chunk that resolves when told, a stub layer.
-function world({ fail = false, webgl = true } = {}) {
+function world({ fail = false, webgl = true, animate = false } = {}) {
   let clock = 0;
+  let frameT = 0;
   let resolveLoad;
   let rejectLoad;
   const engine = {
@@ -182,7 +185,7 @@ function world({ fail = false, webgl = true } = {}) {
   const onChange = vi.fn();
   const controller = createAircraft3dController({
     engine, originLngLat: ARP, fieldElevationM: 14, load, onChange, now: () => clock, getNow: () => Date.parse('2026-11-13T15:00:00Z'),
-    webgl: () => webgl,
+    webgl: () => webgl, animate, frameTime: () => frameT,
   });
   const settle = async () => {
     if (fail) rejectLoad();
@@ -194,6 +197,10 @@ function world({ fail = false, webgl = true } = {}) {
     engine, modules, made, load, onChange, controller, settle,
     advance: ms => {
       clock += ms;
+    },
+    // The frame loop's instant the animation draws at (PR M2).
+    at: ms => {
+      frameT = ms;
     },
     frame: ms => {
       clock += ms;
@@ -425,3 +432,120 @@ describe('createAircraft3dController', () => {
   });
 });
 
+
+// PR M2: the traffic animated by the layer, every frame, from the keyframes of the writes.
+describe('the animated traffic (PR M2)', () => {
+  const frame = mercatorFrame(ARP);
+  // The aircraft written at t = 0 and drawn 120 m further north-east at the next write, 500 ms later.
+  function writeOf(aircraft, { t0 = 0, t1 = 500, metres = 120 } = {}) {
+    const keyframes = createKeyframes();
+    const ahead = aircraft.map(item => {
+      const [lon, lat] = destinationPoint([item.lon, item.lat], 45, metres);
+      return { ...item, lon, lat };
+    });
+    writeKeyframes(keyframes, { t0Ms: t0, t1Ms: t1, from: aircraft, ahead });
+    return { keyframes, ahead };
+  }
+  const xyOf = (sprites, id) => {
+    const index = sprites.ids.indexOf(id);
+    return [sprites.matrices[16 * index + 12], sprites.matrices[16 * index + 13]];
+  };
+
+  it('in 2D loads the layer for the animation and draws every aircraft as a sprite where each frame puts it', async () => {
+    const { controller, load, engine, made, settle, at } = world({ animate: true });
+    const aircraft = [aviam('f:k-1'), other('abc123')];
+    const { keyframes, ahead } = writeOf(aircraft);
+    // The 3D is off and the zoom far below its threshold: the animation alone loads the chunk; the icons stay meanwhile.
+    expect(controller.plan({ aircraft, zoom: 9, minZoom: 15, animation: { keyframes } }).size).toBe(0);
+    expect(load).toHaveBeenCalledOnce();
+    expect(controller.animating()).toBe(false);
+    await settle();
+    expect(engine.layers).toHaveLength(1);
+    expect(controller.state()).toMatchObject({ enabled: false, status: 'off', notice: null });
+    const ids = controller.plan({ aircraft, zoom: 9, minZoom: 15, animation: { keyframes } });
+    expect([...ids].sort()).toEqual(['f:k-1', 'h:abc123']);
+    expect(controller.animating()).toBe(true);
+    expect(controller.drawnIds()).toBe(ids);
+
+    // At the write, halfway and at the next write: the sprites stand where the keyframes put them.
+    const { getInstances } = made[0].options;
+    at(0);
+    const first = getInstances();
+    expect(first.plan.size).toBe(0);
+    expect(xyOf(first.sprites, 'f:k-1')).toEqual(frame.toLocal([aircraft[0].lon, aircraft[0].lat])
+      .map(value => expect.closeTo(value, 1)));
+    at(250);
+    const middle = getInstances();
+    expect(middle.revision).toBeGreaterThan(first.revision);
+    const [x0, y0] = xyOf(first.sprites, 'f:k-1');
+    const [x1, y1] = xyOf(middle.sprites, 'f:k-1');
+    expect(Math.hypot(x1 - x0, y1 - y0)).toBeGreaterThan(40);
+    expect(Math.hypot(x1 - x0, y1 - y0)).toBeLessThan(80);
+    at(500);
+    expect(xyOf(getInstances().sprites, 'h:abc123')).toEqual(frame.toLocal([ahead[1].lon, ahead[1].lat])
+      .map(value => expect.closeTo(value, 1)));
+    // Moving until the pair ends (and its frame of grace); then the frames rest on the same answer.
+    expect(controller.animationMoving(250)).toBe(true);
+    expect(controller.animationMoving(600)).toBe(false);
+    at(600);
+    const resting = getInstances();
+    at(700);
+    expect(getInstances()).toBe(resting);
+    // A pick reaches the layer while it animates, also in 2D.
+    made[0].pick = vi.fn(() => ({ kind: 'aircraft', id: 'h:abc123' }));
+    expect(controller.pick({ x: 1, y: 2 })).toEqual({ kind: 'aircraft', id: 'h:abc123' });
+  });
+
+  it('in 3D draws the models of every aircraft in sight at the positions of the frame, at any distance', async () => {
+    const { controller, made, settle, at } = world({ animate: true });
+    controller.setEnabled(true);
+    const [farLon, farLat] = near(30 * 1_852, 120);
+    const aircraft = [aviam('f:k-1'), other('abc123', { lon: farLon, lat: farLat, altM: 3_000 }),
+      other('def456', { onGround: true, altM: 0 })];
+    const { keyframes, ahead } = writeOf(aircraft);
+    controller.plan({ aircraft, ...AT_RAMP, animation: { keyframes } });
+    await settle();
+    controller.plan({ aircraft, ...AT_RAMP, animation: { keyframes } });
+    at(500);
+    const { plan, sprites } = made[0].options.getInstances();
+    // The B738 30 NM out is a model too (no 6 NM circle); other traffic on the ground stays a sprite (contracts 2.4).
+    expect(plan.get('B738').ids).toEqual(['h:abc123', null]);
+    expect(plan.get('A320').ids).toEqual(['f:k-1', null]);
+    expect([...sprites.ids]).toEqual(['h:def456']);
+    const [x, y] = frame.toLocal([ahead[1].lon, ahead[1].lat]);
+    expect(plan.get('B738').matrices[12]).toBeCloseTo(x, 0);
+    expect(plan.get('B738').matrices[13]).toBeCloseTo(y, 0);
+    // Paused by the governor, the 3D gives way to the sprites of every aircraft.
+    controller.pause();
+    expect(controller.animating()).toBe(true);
+    controller.plan({ aircraft, ...AT_RAMP, animation: { keyframes } });
+    const paused = made[0].options.getInstances();
+    expect(paused.plan.size).toBe(0);
+    expect([...paused.sprites.ids].sort()).toEqual(['f:k-1', 'h:abc123', 'h:def456']);
+  });
+
+  it('keeps the GeoJSON icons without WebGL2, without keyframes and once the sprites cannot be built', async () => {
+    const aircraft = [aviam('f:k-1')];
+    const { keyframes } = writeOf(aircraft);
+    const flat = world({ animate: true, webgl: false });
+    expect(flat.controller.plan({ aircraft, zoom: 9, minZoom: 15, animation: { keyframes } }).size).toBe(0);
+    expect(flat.load).not.toHaveBeenCalled();
+    expect(flat.controller.animating()).toBe(false);
+
+    const still = world({ animate: true });
+    still.controller.plan({ aircraft, zoom: 9, minZoom: 15 });
+    expect(still.load).not.toHaveBeenCalled();
+
+    const { controller, engine, made, settle, onChange } = world({ animate: true });
+    controller.plan({ aircraft, zoom: 9, minZoom: 15, animation: { keyframes } });
+    await settle();
+    expect(controller.plan({ aircraft, zoom: 9, minZoom: 15, animation: { keyframes } }).size).toBe(1);
+    onChange.mockClear();
+    made[0].options.onSpritesFailedChange(true);
+    await Promise.resolve();
+    expect(onChange).toHaveBeenCalled();
+    expect(engine.layers).toEqual([]);
+    expect(controller.animating()).toBe(false);
+    expect(controller.plan({ aircraft, zoom: 9, minZoom: 15, animation: { keyframes } }).size).toBe(0);
+  });
+});

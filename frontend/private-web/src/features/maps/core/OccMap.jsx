@@ -946,8 +946,9 @@ const OccMapView = forwardRef(function OccMapView({
   const trafficFocusRef = useRef(null);
 
   // The 3D aircraft of a write (PR M7, core/aircraft3d.js): the aircraft it drew and those the stands draw, planned at the
-  // camera's zoom from the polygons threshold on; answers the ids the 3D draws, whose 2D silhouettes give way.
-  const plan3d = useCallback((drawn, selectedId = null) => {
+  // camera's zoom from the polygons threshold on; answers the ids the 3D draws, whose 2D silhouettes give way. PR M2: a
+  // write of moving traffic hands over its keyframes too, so the layer animates every aircraft each frame.
+  const plan3d = useCallback((drawn, selectedId = null, { animated = false } = {}) => {
     const applied = appliedRef.current;
     const controller = applied.aircraft3d;
     if (!controller) return NO_IDS;
@@ -957,7 +958,9 @@ const OccMapView = forwardRef(function OccMapView({
     const parked = applied.drawsStands ? parkedFromStands(latest.current.attached, drawn, applied.parkedIds ?? NO_IDS) : EMPTY;
     // «Seguir en 3D» (CN-30): the followed aircraft gets its detailed model at any zoom, even with the 3D off or paused.
     const followedId = applied.follow3d?.on ? selectedId : null;
-    return controller.plan({ aircraft: drawn, parked, zoom, minZoom, selectedId, followedId });
+    const animation = animated && applied.keyframes ? { keyframes: applied.keyframes } : null;
+    return controller.plan({ aircraft: drawn, parked, zoom, minZoom, selectedId, followedId, animation,
+      parkedIds: applied.parkedIds ?? NO_IDS });
   }, [store]);
 
   // The aircraft of a write where they are drawn at `t` (CN-18): those in or around the area in sight
@@ -1049,9 +1052,12 @@ const OccMapView = forwardRef(function OccMapView({
     const standsShown = applied.drawsStands === true && standsDrawnAt(engine.getCamera()?.zoom, store.get().thresholds);
     applied.standsShown = standsShown;
     applied.parkedIds = standsShown ? parkedAircraftIds(drawn, latest.current.attached) : NO_IDS;
+    const modelIds = plan3d(drawn, chosenId, { animated: Boolean(motion) });
+    // PR M2: the aircraft the layer animates leave it their dashed ring and «Demo» plate too.
+    const animatedIds = applied.aircraft3d?.animating?.() ? modelIds : null;
     const data = trafficFeatures(drawn, {
       selection: chosen, focusId: trafficFocusRef.current, labelsOn: shown?.['traffic.labels'] === true, language: words,
-      parkedIds: applied.parkedIds, modelIds: plan3d(drawn, chosenId),
+      parkedIds: applied.parkedIds, modelIds, animatedIds,
     });
     const diff = trafficDiff(applied.trafficById, data.features);
     if (isEmptyDiff(diff)) return;
@@ -1643,7 +1649,8 @@ const OccMapView = forwardRef(function OccMapView({
   // (core/aircraft3d.js: translatePick); where the 3D draws nothing under the pointer, the 2D pick stands.
   const with3dHit = useCallback(event => {
     const controller = appliedRef.current.aircraft3d;
-    if (!event || !controller?.state().enabled) return event;
+    // PR M2: the animated traffic draws its 2D aircraft in the layer too, so they are picked there.
+    if (!event || !(controller?.state().enabled || controller?.animating?.())) return event;
     let hit;
     return Object.defineProperty({ point: event.point, lngLat: event.lngLat, originalEvent: event.originalEvent }, 'hit', {
       enumerable: true,
@@ -1716,6 +1723,12 @@ const OccMapView = forwardRef(function OccMapView({
     });
     // Follow mode after the traffic in every frame, so the camera frames the aircraft where that frame drew it.
     const stopFollowFrames = loop?.subscribe(followFrame, { isAnimating: followAnimating });
+    // PR M2: while an aircraft the 3D layer animates moves, one repaint per frame (the layer interpolates its keyframes
+    // at the loop's instant); when nothing moves the map rests.
+    const animationMoving = tMs => appliedRef.current.aircraft3d?.animationMoving?.(tMs) === true;
+    const stopAnimationFrames = loop?.subscribe(tMs => {
+      if (animationMoving(tMs)) engineRef.current?.map?.triggerRepaint?.();
+    }, { isAnimating: animationMoving });
     const onReducedMotion = () => loop.setReducedMotion(reduced.matches === true);
     reduced?.addEventListener?.('change', onReducedMotion);
     const stopClock = motionClock?.subscribe?.(() => store.set({ motion: motionState() }));
@@ -1785,6 +1798,10 @@ const OccMapView = forwardRef(function OccMapView({
       theme: props.theme,
       getNow: () => sunClock.now(),
       governor: props.aircraft3dOptions?.governor !== false,
+      // PR M2: the traffic animated by the layer at the loop's instant, for what is in or around the area in sight.
+      animate: loop !== null && props.aircraft3dOptions?.animate !== false,
+      frameTime: () => loop?.now() ?? sunClock.now(),
+      frameZone: () => widenBounds(engine.getVisibleBounds(latest.current?.padding), TRAFFIC_MARGIN),
       onChange: () => {
         if (appliedRef.current.aircraft3d !== aircraft3d) return;
         store.set({ view3d: aircraft3d.state() });
@@ -1807,6 +1824,7 @@ const OccMapView = forwardRef(function OccMapView({
       pointer.event = null;
       stopFrames?.();
       stopFollowFrames?.();
+      stopAnimationFrames?.();
       // «Seguir en 3D» (CN-30) does not outlive its engine (a theme change re-creates the map).
       if (appliedRef.current.follow3d?.on) {
         appliedRef.current.follow3d = { ...FOLLOW_3D_OFF };
