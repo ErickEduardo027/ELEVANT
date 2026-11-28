@@ -5,8 +5,10 @@ import { GROUND_TRAFFIC_3D_RADIUS_M, liveryInstanceColours } from '../aircraft/i
 import { LIVERIES } from '../aircraft/liveries';
 import {
   AIRCRAFT_3D_SLOT, DETAIL_MIN_ZOOM, GOVERNOR, GOVERNOR_PAUSED, MODE_3D_STORAGE_KEY, RETRY_LOAD_MS,
-  createAircraft3dController, createGovernor, detailOf, parkedFromStands, readMode3d, translatePick, writeMode3d,
+  createAircraft3dController, createGovernor, detailOf, parkedFromStands, projected3d, readMode3d, translatePick,
+  writeMode3d,
 } from './aircraft3d';
+import { GLOBE_MERCATOR_ZOOM } from '../style/occStyle';
 
 // The 3D aircraft without three or a map (PR M7): the remembered choice, the stands' aircraft, the pick translation,
 // the governor and the controller with a fake engine, a fake chunk and a stub layer. Synthetic aircraft around the ARP.
@@ -482,3 +484,20 @@ describe('createAircraft3dController', () => {
   });
 });
 
+describe('projected3d (M8)', () => {
+  it('leaves Mercator as it is and holds the 3D back on the globe below the zoom where it is Mercator again', () => {
+    const limits = { globeMercatorZoom: GLOBE_MERCATOR_ZOOM };
+    expect(projected3d({ ...limits, zoom: 5, minZoom: 13.4, followedId: 'f:1' })).toEqual({ minZoom: 13.4, followedId: 'f:1' });
+    expect(projected3d({ ...limits, projection: 'mercator', zoom: 3, minZoom: 9, followedId: 'f:1' }))
+      .toEqual({ minZoom: 9, followedId: 'f:1' });
+    // On the globe: the threshold is at least 12, and the followed aircraft keeps its 2D symbol below 12.
+    expect(projected3d({ ...limits, projection: 'globe', zoom: 5, minZoom: 13.4, followedId: 'f:1' }))
+      .toEqual({ minZoom: 13.4, followedId: null });
+    expect(projected3d({ ...limits, projection: 'globe', zoom: 11.99, minZoom: 9, followedId: 'f:1' }))
+      .toEqual({ minZoom: 12, followedId: null });
+    expect(projected3d({ ...limits, projection: 'globe', zoom: 12, minZoom: 9, followedId: 'f:1' }))
+      .toEqual({ minZoom: 12, followedId: 'f:1' });
+    expect(projected3d({ ...limits, projection: 'globe', zoom: undefined, minZoom: undefined, followedId: 'f:1' }))
+      .toEqual({ minZoom: undefined, followedId: null });
+  });
+});

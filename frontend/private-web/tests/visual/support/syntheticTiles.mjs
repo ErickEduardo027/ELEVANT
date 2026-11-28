@@ -328,10 +328,19 @@ const RAIN_SCALE = Object.freeze([
   [0, [77, 166, 255]], [0.25, [38, 191, 89]], [0.45, [245, 222, 41]], [0.6, [252, 145, 28]], [0.75, [222, 41, 41]],
   [0.92, [166, 51, 199]],
 ]);
+// The world base of the globe (M8): an opaque ground (`base`, RGB) with blobs over it. Blue Marble's relief is a deep
+// blue sea with green-brown land on the invented island; Black Marble's night a near-black ground with the lights of a
+// few invented cities. The map greys and dims both (src/features/maps/style/worldBaseLayers.js).
+const RELIEF = Object.freeze([[-70.2, 18.9, 1.1, 1], [-66.5, 18.2, 0.45, 0.9]]);
+const LIGHTS = Object.freeze([
+  [-69.9, 18.48, 0.12, 1], [-70.7, 19.45, 0.09, 0.9], [-68.37, 18.57, 0.06, 0.8], [-66.1, 18.42, 0.12, 1],
+]);
 // What each layer paints for a cover from 0 to 1: GOES's clouds white, IMERG's rain in the colours of RAIN_SCALE.
 const SATELLITE_LOOKS = Object.freeze({
   goes: { blobs: CLOUDS, colour: () => [236, 240, 242], maxAlpha: 225 },
   imerg: { blobs: RAIN, colour: cover => RAIN_SCALE.findLast(([from]) => cover >= from)[1], maxAlpha: 235 },
+  bluemarble: { base: [18, 52, 96], blobs: RELIEF, colour: () => [104, 122, 70], maxAlpha: 255 },
+  blackmarble: { base: [6, 8, 14], blobs: LIGHTS, colour: () => [250, 214, 140], maxAlpha: 255 },
 });
 
 const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
@@ -387,7 +396,8 @@ const satelliteTiles = new Map();
 
 /**
  * The PNG tile `z/x/y` of the synthetic satellite image `layer` (`goes` or `imerg`), 256 px a side: transparent where
- * there is no cloud or rain. Kept once made. `null` for another layer.
+ * there is no cloud or rain; or of the world base (`bluemarble` or `blackmarble`, M8), opaque. Kept once made. `null` for
+ * another layer.
  */
 export function syntheticSatelliteTile(layer, z, x, y) {
   const look = SATELLITE_LOOKS[layer];
@@ -405,8 +415,15 @@ export function syntheticSatelliteTile(layer, z, x, y) {
         cover += strength * Math.exp(-(dx * dx + dy * dy) / (radius * radius));
       }
       const alpha = Math.round(Math.min(1, cover) * look.maxAlpha);
-      if (alpha === 0) continue;
       const at = (py * SATELLITE_TILE_PX + px) * 4;
+      if (look.base) {
+        // An opaque ground: the blob's colour mixed over it by its cover.
+        const mix = Math.min(1, cover);
+        const colour = look.colour(mix);
+        rgba.set([...look.base.map((value, index) => Math.round(value + (colour[index] - value) * mix)), 255], at);
+        continue;
+      }
+      if (alpha === 0) continue;
       rgba.set([...look.colour(Math.min(1, cover)), alpha], at);
     }
   }

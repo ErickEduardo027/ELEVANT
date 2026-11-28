@@ -27,10 +27,15 @@ import { useIsTabletBreakpoint } from './useIsTabletBreakpoint';
 // Below 1024 px the board opens in a drawer from «Ver vuelos». One selection, the URL's (contratos 2.1,
 // maps/core/useMapSelection.js): a strip writes `flightId=` with the leg id and keeps every other key, the map reads the
 // same flight and writes `hex=` for other traffic, and a link with a leg id (or its turnaround) selects that flight. The
-// station and the health of its sources live in the status bar; a failed refresh keeps the flights on the board under
-// its stale notice. The page's own toasts sit at the bottom right of the work area, apart from the frame's.
+// station and the health of its sources live in the status bar. The board's filter (M8: «Llegadas», «Salidas», «En
+// vuelo», «En tierra», «Todos», and the search) reaches the map, which dims the AVIAM flights and routes it leaves out;
+// a failed refresh keeps the flights on the board under its stale notice. The page's own toasts sit at the bottom right
+// of the work area, apart from the frame's.
 
 const NO_FLIGHTS = Object.freeze([]);
+// The ids the board's filter keeps as one text, so a list equal to the last one keeps its identity (M8); `null` for none.
+const keyOfStrips = strips => strips.map(strip => strip.id).join('|');
+const idsOfKey = key => (key === null ? null : (key === '' ? NO_FLIGHTS : key.split('|')));
 
 /**
  * How the screen is laid out, as pure classes so a test can read what jsdom does not lay out. The board is 24rem wide:
@@ -125,8 +130,16 @@ export default function FlightMonitoringPage({
   const code = data?.station?.code ?? stationCode;
   const timeZone = data?.station?.ianaTimeZone ?? STATION_TIME_ZONE;
 
-  const board = useMemo(() => buildFlightBoard(flights, { nowMs, t, stationCode: code }), [flights, nowMs, t, code]);
+  // The map flights the map has read (M8): their phases tell the board «En vuelo» and «En tierra» (no read of its own).
+  const mapFlights = mapChoice?.flights ?? null;
+  const board = useMemo(() => buildFlightBoard(flights, { nowMs, t, stationCode: code, mapFlights }),
+    [flights, nowMs, t, code, mapFlights]);
   const shown = filterBoard(board, filter, search);
+  // The board's filter on the map (M8): the flights it keeps stand out and the rest is dimmed; nothing is dimmed while
+  // it keeps every flight. Kept by its ids, so the clock's re-renders hand the map the same list; the key is a template
+  // literal so the React Compiler knows it for a string and keeps compiling the page.
+  const emphasisKey = filter !== 'all' || search.trim() !== '' ? `${keyOfStrips(shown)}` : null;
+  const emphasisedFlightIds = useMemo(() => idsOfKey(emphasisKey), [emphasisKey]);
   const { toasts, dismissToast } = useFlightAlerts(flights, displayConnection);
 
   // The chosen flight: the URL's, when it names a flight of the page (its leg, its `l:` key or its turnaround).
@@ -212,7 +225,8 @@ export default function FlightMonitoringPage({
               // The same props as before: every flight of the page, so a click on the map finds any of them; the
               // inspector replaces the page's card (`detail`).
               <FlightMap flights={flights} selectedFlightId={mapSelectedId} onSelectFlight={selectFromMap} theme={theme}
-                detail={null} onSelectionFlights={hearMapChoice} dataBlockSlot={inspector ? liveSlot : null} />
+                detail={null} onSelectionFlights={hearMapChoice} dataBlockSlot={inspector ? liveSlot : null}
+                emphasisedFlightIds={emphasisedFlightIds} />
             ) : (
               <div role="status"
                 className="absolute inset-0 flex items-center justify-center rounded-md border border-occ-line bg-occ-panel p-8 text-center text-sm text-occ-muted">

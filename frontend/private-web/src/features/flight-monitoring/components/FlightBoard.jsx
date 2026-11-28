@@ -15,7 +15,7 @@ import {
 import { flightMonitoringMessages } from '../flightMonitoringMessages';
 
 // «Tablero de vuelos» of Monitoreo de vuelos (design E.2, template B; CN-32): the flights of the station as flight
-// strips, dense and in columns, with «Llegadas», «Salidas» and «Todos», a search and a header whose columns sort the
+// strips, dense and in columns, with «Llegadas», «Salidas», «En vuelo», «En tierra» (M8) and «Todos», a search and a header whose columns sort the
 // board (Hora, Vuelo, Estado, Ruta, Pos.; a second click turns the order). Each strip carries its delay chip (CN-32) next
 // to «Demo» and «est.». A strip selects its flight in the one selection of the screen (contratos 2.1), which the map and
 // the inspector share; a flight chosen on the map or through a link has its strip brought into view. The header names
@@ -69,6 +69,8 @@ function emptyTextOf(filter, search, t) {
   if (search.trim() !== '') return { title: t('empty.no-results.title'), description: t('empty.no-results.description') };
   if (filter === 'arrivals') return { title: t('empty.arrivals') };
   if (filter === 'departures') return { title: t('empty.departures') };
+  if (filter === 'inFlight') return { title: t('empty.inFlight') };
+  if (filter === 'onGround') return { title: t('empty.onGround') };
   return { title: t('empty.no-flights.title'), description: t('empty.no-flights.description') };
 }
 
@@ -76,7 +78,8 @@ function emptyTextOf(filter, search, t) {
  * The board panel. `board` is buildFlightBoard's model and `state` its remote state (`{ status, staleSince, onRetry }`,
  * the five states of OccRemoteView: the first load, the day with flights, the empty day, a failed read with «Reintentar»,
  * no permission; `staleSince` the instant of the flights kept on screen after a failed refresh); `labels` the texts of
- * those states. `filter` (`arrivals`, `departures` or `all`) and `search` are the page's, heard through
+ * those states. `filter` (FLIGHT_BOARD_FILTERS: `arrivals`, `departures`, `inFlight`, `onGround` or `all`; the page
+ * dims on the map the flights it leaves out, M8) and `search` are the page's, heard through
  * `onFilterChange(id)` and `onSearchChange(text)`. The order of the columns is the board's own (sortBoard), by time at
  * first. `selectedId` is the id of the selected strip (the leg id as text) and `onSelect(strip)` hears a strip; `nowMs`
  * is the server's time and `timeZone` the station's. Each strip forwards `data-testid="flight-list-item"`.

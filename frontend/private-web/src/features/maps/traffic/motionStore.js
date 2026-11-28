@@ -3,6 +3,7 @@ import { normalizeStandCode } from '../../../services/standCodes';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { haversineM, initialBearing } from '../airport/geo';
 import { indexLayout, matchStand } from '../airport/layoutIndex';
+import { counterpartPoint } from '../airport/worldAirports';
 import { runwayEnd, runwayEnds, runwayIdsInUse, runwayInUse } from '../airport/runwayInUse';
 import { demoClock, endDemoTrajectory, fitDemoTrajectory } from '../kinematics/demoProfile';
 import {
@@ -82,7 +83,8 @@ export const STAND_PARKING = Object.freeze({ easeMs: 2_000, turnTauS: 1.5 });
 
 const finite = value => typeof value === 'number' && Number.isFinite(value);
 const text = value => (typeof value === 'string' && value.trim() !== '' ? value.trim() : null);
-const pointOf = airport => (finite(airport?.longitude) && finite(airport?.latitude) ? [airport.longitude, airport.latitude] : null);
+// A counterpart's position: the API row's, else the region's or the world's airport of its code (M8).
+const pointOf = counterpartPoint;
 const angleBetween = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
 const milestoneAt = (row, code) => (Array.isArray(row?.milestones) ? row.milestones : [])
   .find(item => item?.code === code && item?.actualAt != null)?.actualAt ?? null;

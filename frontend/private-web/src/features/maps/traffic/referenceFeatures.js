@@ -4,6 +4,7 @@ import { destinationPoint, METRES_PER_NM, roundCoord, toEnu } from '../airport/g
 import { REGION_CONTEXT } from '../airport/regionContext';
 import { ALIGNED_DEG, runwayEnds, runwayInUse } from '../airport/runwayInUse';
 import { metarWindForRunway } from '../airport/runwayWind';
+import { WORLD_AIRPORTS, isEmphasisedAirport } from '../airport/worldAirports';
 import { PUJ_ARP } from '../core/cameraPresets';
 import { mapMessages } from '../mapMessages';
 import { HOME_AIRPORT_IATA } from '../style/basemapLayers';
@@ -298,7 +299,7 @@ export function airportLabel(airport) {
  * (airportKind), its label «MDSD/SDQ» (airportLabel) and `counterpart: true` for the airport of a flight of today
  * (`counterparts`, codes as counterpartCodes gives them; never the home airport).
  */
-export function regionAirportFeatures(region = REGION_CONTEXT, { counterparts = [] } = {}) {
+export function regionAirportFeatures(region = REGION_CONTEXT, { counterparts = [], emphasis = false } = {}) {
   const wanted = new Set((counterparts ?? []).map(code => String(code).toUpperCase()));
   return (region?.airports ?? [])
     .filter(airport => typeof (airport?.icao ?? airport?.ident) === 'string' && isPoint(airport.p))
@@ -313,8 +314,24 @@ export function regionAirportFeatures(region = REGION_CONTEXT, { counterparts = 
         iata,
         label: airportLabel(airport),
         counterpart: kind !== 'home' && (wanted.has(icao) || (iata !== null && wanted.has(iata))),
+        ...(emphasis ? { rd: isEmphasisedAirport(airport) } : {}),
       }, point([airport.p[0], airport.p[1]]));
     });
+}
+
+/**
+ * The world's airports the globe of Monitoreo adds (M8, airport/worldAirports.js: WORLD_AIRPORTS) to those of the
+ * region: every one whose ICAO is not in `region`, as regionAirportFeatures writes them, `world: true`, and `rd: true`
+ * for a Dominican one, which the map draws larger and always labels. They are large airports but for the Dominican
+ * extras, whose kind follows their name.
+ */
+export function worldAirportFeatures(world = WORLD_AIRPORTS, { region = REGION_CONTEXT, counterparts = [] } = {}) {
+  const known = new Set((region?.airports ?? []).map(airport => airport?.icao ?? airport?.ident));
+  const airports = (world ?? [])
+    .filter(airport => typeof airport?.icao === 'string' && !known.has(airport.icao))
+    .map(airport => ({ ...airport, ident: airport.icao, type: isEmphasisedAirport(airport) ? undefined : 'large_airport' }));
+  return regionAirportFeatures({ airports }, { counterparts, emphasis: true })
+    .map(item => ({ ...item, properties: { ...item.properties, world: true } }));
 }
 
 // The frequency of a navaid as a chart writes it: an NDB in kHz, a VOR-DME in MHz; Spanish takes a decimal comma.
@@ -357,17 +374,20 @@ export function referenceFeatures() {
  * map draws from OurAirports data. The extended centrelines of the layout's runway ends, whose thresholds and headings
  * come from it (`centreline`, `tick`, `centrelineLabel`), and the airports of the region (`airport`) and the navaids
  * (`navaid`) of region.context.json. `runway` is the runway in use (airport/runwayInUse.js; the layout's usual one by
- * default) and `counterparts` the codes of today's counterparts.
+ * default) and `counterparts` the codes of today's counterparts. `world` (M8, the globe of Monitoreo: WORLD_AIRPORTS)
+ * adds the world's airports after the region's (worldAirportFeatures) and marks the Dominican ones `rd`.
  */
 export function ourAirportsFeatures({
-  layout = MDPC_LAYOUT, region = REGION_CONTEXT, runway = null, counterparts = [], language = 'es',
+  layout = MDPC_LAYOUT, region = REGION_CONTEXT, runway = null, counterparts = [], language = 'es', world = null,
 } = {}) {
+  const emphasis = Array.isArray(world);
   const inUse = runway ?? runwayInUse({ layout });
   return {
     type: 'FeatureCollection',
     features: [
       ...extendedCentrelines(layout, { runway: inUse, language }),
-      ...regionAirportFeatures(region, { counterparts }),
+      ...regionAirportFeatures(region, { counterparts, emphasis }),
+      ...(emphasis ? worldAirportFeatures(world, { region, counterparts }) : []),
       ...navaidFeatures(region, language),
     ],
   };

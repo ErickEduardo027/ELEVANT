@@ -5,10 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GPUInitializationError, SERVED_WORKER_URL, sharedFakeMapLibre } from '../../../../tests/fakeMapLibre';
 import { LanguageScope } from '../../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../../i18n/languageStore';
-import { PUJ_ARP, presetTargets } from '../../maps/core/cameraPresets';
+import { PUJ_ARP, RD_BOUNDS, WORLD_CAMERA, boundsCenter, presetTargets } from '../../maps/core/cameraPresets';
 import { liveEngineCount } from '../../maps/core/mapEngine';
 import { STAND_REFERENCE } from '../../maps/stands/standReference';
-import { OPENFREEMAP_TILEJSON } from '../../maps/style/occStyle';
+import { OPENFREEMAP_TILEJSON, globeSky } from '../../maps/style/occStyle';
 import { referenceFeatures } from '../../maps/style/referenceLayers';
 import { administratorAccess, DepartmentAccessProvider } from '../../access/DepartmentAccessContext';
 import { DepartmentPermissionCodes } from '../../access/testAccess';
@@ -120,7 +120,7 @@ describe('FlightMap', () => {
     expect(within(english).getByRole('button', { name: 'ZZ101' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('mounts one map on the NOC style (no demotiles) with the worker URL set and opens on the region view', () => {
+  it('mounts one map on the NOC style (no demotiles) with the worker URL set and opens on the Dominican Republic', () => {
     const { map } = renderFlights();
     expect(fake.state.liveMaps()).toEqual([map]);
     expect(fake.state.workerUrl).toBe(SERVED_WORKER_URL);
@@ -131,9 +131,16 @@ describe('FlightMap', () => {
     // Monitoreo draws no stands; PUJ is its reference point, not a DOM marker.
     expect(style.sources['occ-stands']).toBeUndefined();
     expect(style.sources['occ-reference']).toBeDefined();
-    expect(map.getZoom()).toBeCloseTo(fitWidth(TARGETS.region.bounds), 6);
-    expect(map.getCenter().lng).toBeCloseTo(PUJ_ARP[0], 9);
-    expect(map.getCenter().lat).toBeCloseTo(PUJ_ARP[1], 9);
+    // M8: the globe with its atmosphere, in the dark theme the map follows (its `theme` prop is ignored), and a zoom
+    // out to 1.
+    expect(style.projection).toEqual({ type: 'globe' });
+    expect(style.sky).toEqual(globeSky('dark'));
+    expect(map.options.minZoom).toBe(1);
+    expect(map.options.maxZoom).toBe(19.5);
+    // It opens on the Dominican Republic and Puerto Rico, which the selector reads as Región.
+    expect(map.getZoom()).toBeCloseTo(fitWidth(RD_BOUNDS), 6);
+    expect(map.getCenter().lng).toBeCloseTo(boundsCenter(RD_BOUNDS)[0], 9);
+    expect(map.getCenter().lat).toBeCloseTo(boundsCenter(RD_BOUNDS)[1], 9);
     expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-view', 'region');
     expect(screen.getByTestId('flight-map-container').querySelectorAll('.maplibregl-canvas')).toHaveLength(1);
     expect(document.querySelector('.maplibregl-marker')).toBeNull();
@@ -144,8 +151,34 @@ describe('FlightMap', () => {
     expect(references).toEqual(referenceFeatures());
     expect(within(screen.getByTestId('map-preset-switcher')).getByRole('button', { name: /Región/ }))
       .toHaveAttribute('aria-pressed', 'true');
-    // With no flight on screen the legend has nothing to explain.
-    expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
+    // With no flight on screen the legend explains only the world base of the globe (M8), drawn from afar.
+    expect(within(screen.getByTestId('map-legend')).getAllByRole('listitem', { hidden: true }).map(item => item.textContent))
+      .toEqual(['Luces de las ciudadesNASA Black Marble (2016), desde lejos']);
+    expect(map.options.style.sources['occ-world-base'].tiles[0]).toContain('/VIIRS_Black_Marble/default/2016-01-01/');
+  });
+
+  it('offers «0 Mundo» first on its selector: the key and the button fly to the globe, and view=world stays in the URL (M8)', async () => {
+    const user = userEvent.setup();
+    const { map } = renderFlights();
+    loadStyle(map);
+    const switcher = screen.getByTestId('map-preset-switcher');
+    const buttons = within(switcher).getAllByRole('button');
+    expect(buttons.map(button => button.getAttribute('aria-keyshortcuts'))).toEqual(['0', '1', '2', '3', '4']);
+    expect(buttons[0]).toHaveAccessibleName('Mundo');
+    expect(buttons[0]).toHaveAttribute('title', 'Mundo (0)');
+    expect(buttons[0]).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.keyDown(screen.getByTestId('occ-map'), { key: '0' });
+    expect(map.getZoom()).toBeCloseTo(WORLD_CAMERA.zoom, 6);
+    expect(map.getCenter().lng).toBeCloseTo(WORLD_CAMERA.center[0], 9);
+    expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-view', 'world');
+    expect(within(switcher).getByRole('button', { name: 'Mundo' })).toHaveAttribute('aria-pressed', 'true');
+    expect(new URLSearchParams(window.location.search).get('view')).toBe('world');
+
+    await user.click(within(switcher).getByRole('button', { name: /Región/ }));
+    expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-view', 'region');
+    await user.click(within(switcher).getByRole('button', { name: 'Mundo' }));
+    expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-view', 'world');
   });
 
   it('shows its legend, the only «Leyenda» of the map, while a flight is on screen', () => {
@@ -157,8 +190,8 @@ describe('FlightMap', () => {
     // It opens folded (CN-32): its rail button says so, and its list is there to open.
     expect(within(legend).getByRole('button', { name: 'Leyenda' })).toHaveAttribute('aria-expanded', 'false');
     expect(within(legend).getAllByRole('listitem', { hidden: true }).map(item => item.textContent))
-      .toEqual(['VueloApunta según su rumbo; al norte si no se conoce']);
-    // Away from the flight there is nothing to explain; the legend comes back with it.
+      .toEqual(['Luces de las ciudadesNASA Black Marble (2016), desde lejos', 'VueloApunta según su rumbo; al norte si no se conoce']);
+    // Away from the flight (and closer than the world base) there is nothing to explain; the legend comes back with it.
     act(() => map.jumpTo({ center: [-70.55, 19.45], zoom: 12 }));
     expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
     act(() => map.jumpTo({ center: [-68.12, 18.78], zoom: 12 }));
@@ -181,7 +214,7 @@ describe('FlightMap', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(map.getSource('occ-flights').data.features).toHaveLength(1);
     expect(within(screen.getByTestId('map-legend')).getAllByRole('listitem', { hidden: true }).map(item => item.textContent))
-      .toEqual(['VueloApunta según su rumbo; al norte si no se conoce']);
+      .toEqual(['Luces de las ciudadesNASA Black Marble (2016), desde lejos', 'VueloApunta según su rumbo; al norte si no se conoce']);
     cleanup();
 
     act(() => resetLanguageForTests('en'));
@@ -201,12 +234,12 @@ describe('FlightMap', () => {
     expect(view.map.cameraCalls.filter(call => call.method !== 'setPadding').map(call => call.method)).toEqual(['jumpTo']);
     view.unmount();
 
-    // A linked flight farther out, or none with a position, opens on the region.
+    // A linked flight farther out, or none with a position, opens on the Dominican Republic (M8).
     view = renderFlights({ flights: [flight({ id: 7, ...FAR })], selectedFlightId: 7 });
-    expect(view.map.getZoom()).toBeCloseTo(fitWidth(TARGETS.region.bounds), 6);
+    expect(view.map.getZoom()).toBeCloseTo(fitWidth(RD_BOUNDS), 6);
     view.unmount();
     view = renderFlights({ flights: [flight({ id: 7, latitude: null, longitude: null })], selectedFlightId: 7 });
-    expect(view.map.getZoom()).toBeCloseTo(fitWidth(TARGETS.region.bounds), 6);
+    expect(view.map.getZoom()).toBeCloseTo(fitWidth(RD_BOUNDS), 6);
   });
 
   it('flights with a position reach the flight source in one setData instead of markers, and a symbol click selects the flight', () => {
@@ -295,10 +328,10 @@ describe('FlightMap', () => {
     expect(map.getCenter().lat).toBeCloseTo((PUJ_ARP[1] + FAR.latitude) / 2, 9);
     expect(map.getPitch()).toBe(0);
 
-    // Without a flight on the map it goes back to the region.
+    // Without a flight on the map it goes back to the Dominican Republic it opened on (M8).
     rerender({ flights: [] });
     await user.click(screen.getByRole('button', { name: 'Restablecer vista' }));
-    expect(map.getZoom()).toBeCloseTo(fitWidth(TARGETS.region.bounds), 6);
+    expect(map.getZoom()).toBeCloseTo(fitWidth(RD_BOUNDS), 6);
     // Both buttons only fly: the URL keeps no view.
     expect(window.location.search).toBe('?stationId=s-1');
     expect(screen.getByRole('button', { name: 'Restablecer vista' })).toHaveAttribute('title', 'Restablecer vista');
@@ -405,9 +438,13 @@ describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
     expect(runwayOf(map)).toEqual(['Pista 08 (estimada por el viento)']);
     expect(features(map).filter(item => item.properties.kind === 'centreline' && item.properties.inUse)
       .map(item => [item.properties.ident, item.properties.source])).toEqual([['08', 'wind']]);
-    // The map flights name the counterparts: Santo Domingo is emphasised, the other airports of the region are not.
+    // The map flights name the counterparts: Santo Domingo is emphasised, the other airports of the region are not; on
+    // the globe (M8) the world's airports of today's other flights are too, and every Dominican airport is marked rd.
     const airports = features(map).filter(item => item.properties.kind === 'airport');
-    expect(airports.filter(item => item.properties.counterpart).map(item => item.properties.label)).toEqual(['MDSD/SDQ']);
+    expect(airports.filter(item => item.properties.counterpart && !item.properties.world).map(item => item.properties.label))
+      .toEqual(['MDSD/SDQ']);
+    expect(airports.filter(item => item.properties.rd).map(item => item.properties.icao)).toEqual(
+      expect.arrayContaining(['MDPC', 'MDSD', 'MDST', 'MDLR', 'MDPP', 'MDCY', 'MDJB', 'MDBH', 'MDCR', 'MDSI']));
     // The reference sources are written when what they draw changes, not on every read of the traffic or the flights.
     const writesOf = () => ['occ-reference', 'occ-reference-ourairports'].map(id => map.getSource(id).setDataCalls.length);
     const writes = writesOf();
@@ -505,6 +542,73 @@ describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
     expect(onSelectFlight).toHaveBeenLastCalledWith(null);
     expect(new URLSearchParams(window.location.search).get('hex')).toBe(TRAFFIC_HEX.overflight);
     expect(new URLSearchParams(window.location.search).get('stationId')).toBe('s-1');
+  });
+
+  it('M8: draws the great circles of every AVIAM flight, leaves the chosen one to its route and dims what the board filters out', async () => {
+    const { map, rerender } = renderLive();
+    // One thin line in the reference slot, part of the style from the start (no setStyle).
+    expect(map.options.style.sources['occ-flight-routes']).toMatchObject({ type: 'geojson' });
+    expect(map.options.style.layers.find(layer => layer.id === 'occ-flight-routes-line'))
+      .toMatchObject({ type: 'line', source: 'occ-flight-routes', metadata: { 'occ:group': 'traffic.routes' } });
+    loadStyle(map);
+    await flush();
+    const routes = () => map.getSource('occ-flight-routes').setDataCalls.at(-1)?.features ?? [];
+    const keys = createMapFlights().flights.map(row => row.flightKey);
+    expect(routes().map(feature => feature.id).sort()).toEqual([...keys].sort());
+    expect(routes().every(feature => feature.properties.outside === false)).toBe(true);
+    const arrivalRoute = routes().find(feature => feature.id === TRAFFIC_FLIGHT_KEY.arrival);
+    expect(arrivalRoute.properties).toMatchObject({ direction: 'Arrival', code: 'MIA' });
+    // An arrival ends at the station.
+    const end = arrivalRoute.geometry.coordinates.at(-1);
+    expect(end[0]).toBeCloseTo(createMapFlights().stationAirport.longitude, 3);
+    // Written again only when what they draw changes, not on every read.
+    const writes = map.getSource('occ-flight-routes').setDataCalls.length;
+    await flush(30_000);
+    expect(map.getSource('occ-flight-routes').setDataCalls).toHaveLength(writes);
+
+    // The chosen flight keeps its own highlighted route: its great circle is left out.
+    rerender({ selectedFlightId: arrivalRow.legId });
+    await flush();
+    expect(routes().map(feature => feature.id)).not.toContain(TRAFFIC_FLIGHT_KEY.arrival);
+
+    // The board's filter keeps the departure: every other route is dimmed, and so is every other AVIAM aircraft but the
+    // chosen one.
+    rerender({ selectedFlightId: arrivalRow.legId, emphasisedFlightIds: [String(departureRow.legId)] });
+    await flush();
+    expect(routes().filter(feature => !feature.properties.outside).map(feature => feature.id))
+      .toEqual([TRAFFIC_FLIGHT_KEY.departure]);
+    expect(map.featureStateOf('occ-traffic', `f:${TRAFFIC_FLIGHT_KEY.demoArrival}`)).toEqual({ outside: true });
+    expect(map.featureStateOf('occ-traffic', `f:${TRAFFIC_FLIGHT_KEY.departure}`)?.outside).toBeUndefined();
+    expect(map.featureStateOf('occ-traffic', `f:${TRAFFIC_FLIGHT_KEY.arrival}`)?.outside).toBeUndefined();
+    expect(within(screen.getByTestId('map-legend')).getByText('Fuera del filtro del tablero')).toBeInTheDocument();
+
+    // No filter: nothing dimmed.
+    rerender({ selectedFlightId: arrivalRow.legId, emphasisedFlightIds: null });
+    await flush();
+    expect(routes().every(feature => feature.properties.outside === false)).toBe(true);
+    expect(map.featureStateOf('occ-traffic', `f:${TRAFFIC_FLIGHT_KEY.demoArrival}`)).toEqual({ outside: false });
+  });
+
+  it('M8: keeps the aircraft of a kept visit, whichever leg the air picture draws it under', async () => {
+    const { map, rerender } = renderLive();
+    loadStyle(map);
+    await flush();
+    const routes = () => map.getSource('occ-flight-routes').setDataCalls.at(-1)?.features ?? [];
+    // The board keeps the departure ZZ162 alone, nothing chosen: the visit's aircraft is drawn under its arrival's key
+    // (still inbound), and it is the departure's aircraft too, so it is not dimmed; the departure's route alone is kept.
+    rerender({ emphasisedFlightIds: [String(departureRow.legId)] });
+    await flush();
+    expect(map.featureStateOf('occ-traffic', `f:${TRAFFIC_FLIGHT_KEY.arrival}`)?.outside).toBeFalsy();
+    expect(map.featureStateOf('occ-traffic', `f:${TRAFFIC_FLIGHT_KEY.demoArrival}`)).toEqual({ outside: true });
+    expect(routes().filter(feature => !feature.properties.outside).map(feature => feature.id))
+      .toEqual([TRAFFIC_FLIGHT_KEY.departure]);
+    // The board keeps the arrival ZZ161 alone: its aircraft stays too.
+    rerender({ emphasisedFlightIds: [String(arrivalRow.legId)] });
+    await flush();
+    expect(map.featureStateOf('occ-traffic', `f:${TRAFFIC_FLIGHT_KEY.arrival}`)?.outside).toBeFalsy();
+    expect(map.featureStateOf('occ-traffic', `f:${TRAFFIC_FLIGHT_KEY.demoArrival}`)).toEqual({ outside: true });
+    expect(routes().filter(feature => !feature.properties.outside).map(feature => feature.id))
+      .toEqual([TRAFFIC_FLIGHT_KEY.arrival]);
   });
 
   it('shows the chosen flight drawn by the traffic in cyan, by the page\'s leg id', async () => {

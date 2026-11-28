@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { REGION_RADIUS_NM, parseCsv, selectMdpcRows } from './ourAirports.mjs';
+import {
+  REGION_RADIUS_NM, WORLD_AIRPORT_FIELDS, parseCsv, selectMdpcRows, selectWorldAirports, worldAirportsJson,
+} from './ourAirports.mjs';
 import { overpassQuery, trimOverpassResponse } from './overpass.mjs';
 
 // Synthetic rows in the shape of the OurAirports CSV tables: invented identifiers and positions, no real extract.
@@ -68,6 +70,48 @@ describe('OurAirports selection', () => {
     expect(rows.regionalAirports[1].icao).toBe('ZZNA');
     expect(REGION_RADIUS_NM).toBe(300);
     expect(() => selectMdpcRows({ airports: [] })).toThrow(/MDPC/u);
+  });
+});
+
+// Synthetic rows for the world extract (M8): invented codes and positions.
+const WORLD = [
+  'id,ident,type,name,latitude_deg,longitude_deg,iso_country,scheduled_service,icao_code,iata_code,gps_code',
+  '1,ZZBB,large_airport,Big Hub ,40.123456,-3.654321,ES,yes,ZZBB,ZBB,ZZBB',
+  '2,ZZAA,large_airport,Alpha Hub,10.5,20.25,XX,yes,ZZAA,ZAA,',
+  '3,ZZNS,large_airport,No Service,1,1,XX,no,ZZNS,ZNS,',
+  '4,ZZNI,large_airport,No Iata,1,1,XX,yes,ZZNI,,',
+  '5,ZZMD,medium_airport,Medium Elsewhere,1,1,XX,yes,ZZMD,ZMD,',
+  '6,MDZM,medium_airport,Dominican Medium,18.5,-69.9,DO,no,,,MDZM',
+  '7,MDZS,small_airport,Dominican Small With Iata,18.9,-70.7,DO,no,MDZS,ZDS,',
+  '8,MDZX,small_airport,Dominican Strip,18.9,-70.7,DO,no,MDZX,,',
+  '9,DO-0001,seaplane_base,Dominican Seaplane,18.5,-68.4,DO,no,,ZSP,',
+  '10,XX-0002,large_airport,No Code,1,1,XX,yes,,ZNC,',
+  '11,ZZAA,large_airport,Alpha Duplicate,0,0,XX,yes,ZZAA,ZAA,',
+].join('\n');
+
+describe('OurAirports world extract (M8)', () => {
+  it('keeps the large airports with service and IATA and every Dominican airport, as sorted tuples', () => {
+    const rows = selectWorldAirports(parseCsv(WORLD));
+    expect(WORLD_AIRPORT_FIELDS).toEqual(['icao', 'iata', 'name', 'lon', 'lat', 'country']);
+    expect(rows).toEqual([
+      ['MDZM', null, 'Dominican Medium', -69.9, 18.5, 'DO'],
+      ['MDZS', 'ZDS', 'Dominican Small With Iata', -70.7, 18.9, 'DO'],
+      ['ZZAA', 'ZAA', 'Alpha Hub', 20.25, 10.5, 'XX'],
+      ['ZZBB', 'ZBB', 'Big Hub', -3.6543, 40.1235, 'ES'],
+    ]);
+  });
+
+  it('writes one airport a line, LF, with its schema and meta, and parses back', () => {
+    const rows = selectWorldAirports(parseCsv(WORLD));
+    const text = worldAirportsJson(rows, { url: 'https://example.test/airports.csv', fetchedAt: '2026-11-27T00:00:00Z' });
+    expect(text.endsWith('\n')).toBe(true);
+    expect(text).not.toContain('\r');
+    expect(text).toContain('\n    ["ZZBB","ZBB","Big Hub",-3.6543,40.1235,"ES"]\n');
+    const parsed = JSON.parse(text);
+    expect(parsed.schema).toBe(1);
+    expect(parsed.meta).toMatchObject({ source: 'OurAirports', license: 'public domain', fetchedAt: '2026-11-27T00:00:00Z',
+      fields: WORLD_AIRPORT_FIELDS });
+    expect(parsed.airports).toEqual(rows);
   });
 });
 

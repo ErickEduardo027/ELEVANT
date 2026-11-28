@@ -60,6 +60,9 @@ export const MAP_COLORS = deepFreeze({
     routes: { line: '#ff7a8a', label: '#ffd3d9', halo: '#07111f' },
     // The night shade (PR M8, style/referenceLayers.js): a near-black a little over the land and the sea.
     night: { color: '#0a1014', opacity: 0.45 },
+    // The globe of Monitoreo (M8, style/occStyle.js: globeSky): a near-black space, a blue rim of atmosphere and a fog
+    // of the sea's own navy at the horizon.
+    sky: { space: '#03080f', horizon: '#2b5c8f', fog: '#081a36' },
     // The fill of each stand state (stands/standLayers.js), under the vocabulary's outline, dash and marks.
     stands: {
       available: { color: '#3fae6a', opacity: 0.22 },
@@ -97,6 +100,8 @@ export const MAP_COLORS = deepFreeze({
     routes: { line: '#c2334a', label: '#7a1426', halo: '#fdfefe' },
     // On the light map the night must still darken it: a deep blue-grey, lighter in weight.
     night: { color: '#1b2a3d', opacity: 0.22 },
+    // A pale sky round the light globe, a white rim and the light sea's blue as fog.
+    sky: { space: '#9cc4ea', horizon: '#e8f1fa', fog: '#b0d0ee' },
     stands: {
       available: { color: '#2f9a58', opacity: 0.2 },
       planned: { color: '#2f6fe0', opacity: 0.24 },

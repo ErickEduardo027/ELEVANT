@@ -196,11 +196,21 @@ export const mapMessages = {
     // The region's airports (style/referenceLayers.js), in the legend.
     // The routes from Punta Cana (style/routeLayers.js), in the legend.
     routes: { name: 'Rutas desde Punta Cana', hint: 'grosor según vuelos diarios (AeroDataBox)' },
+    // The great circles of every AVIAM flight (M8, style/flightRouteLayers.js) and the board's filter on the map.
+    flightRoutes: { name: 'Rutas de los vuelos de AVIAM', hint: 'círculo máximo entre los aeropuertos' },
+    boardFilter: { name: 'Fuera del filtro del tablero', hint: 'vuelos y rutas atenuados' },
     airports: {
       home: 'Punta Cana (MDPC)',
       international: 'Aeropuerto internacional',
       regional: 'Aeropuerto regional',
       other: 'Otro aeródromo',
+      // The globe of Monitoreo (M8): the Dominican airports, larger and always labelled.
+      rd: 'Aeropuerto de República Dominicana',
+    },
+    // The world seen from afar on the globe of Monitoreo (M8, style/worldBaseLayers.js), by theme.
+    worldBase: {
+      light: { name: 'Relieve y fondo marino', hint: 'NASA Blue Marble, desde lejos' },
+      dark: { name: 'Luces de las ciudades', hint: 'NASA Black Marble (2016), desde lejos' },
     },
     // The map tooltip of a runway or a taxiway: what the airport layout says of it.
     airfield: {
@@ -456,6 +466,8 @@ export const mapMessages = {
           other: 'Otro tráfico',
           labels: 'Etiquetas de todo el tráfico',
           trails: 'Estelas de todo el tráfico',
+          // M8: the great circles of every AVIAM flight (style/flightRouteLayers.js), on Monitoreo's globe.
+          routes: 'Rutas de los vuelos de AVIAM',
         },
         route: 'Ruta del vuelo elegido',
         // The references of PR M8 (design E7).
@@ -694,11 +706,18 @@ export const mapMessages = {
       sources: { adsb: 'ADS-B', estimated: 'Estimated', reported: 'On-blocks recorded (AVIAM)' },
     },
     routes: { name: 'Routes from Punta Cana', hint: 'width by daily flights (AeroDataBox)' },
+    flightRoutes: { name: 'AVIAM flight routes', hint: 'great circle between the airports' },
+    boardFilter: { name: 'Outside the board filter', hint: 'flights and routes dimmed' },
     airports: {
       home: 'Punta Cana (MDPC)',
       international: 'International airport',
       regional: 'Regional airport',
       other: 'Other aerodrome',
+      rd: 'Dominican Republic airport',
+    },
+    worldBase: {
+      light: { name: 'Relief and sea floor', hint: 'NASA Blue Marble, from afar' },
+      dark: { name: 'City lights', hint: 'NASA Black Marble (2016), from afar' },
     },
     airfield: {
       runway: 'Runway {id}',
@@ -921,6 +940,7 @@ export const mapMessages = {
           other: 'Other traffic',
           labels: 'Labels for all traffic',
           trails: 'Trails for all traffic',
+          routes: 'AVIAM flight routes',
         },
         route: 'Route of the selected flight',
         rings: 'Range rings',

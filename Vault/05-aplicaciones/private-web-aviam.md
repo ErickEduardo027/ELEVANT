@@ -2804,7 +2804,26 @@ API, lo que leen las pantallas ni su cadencia.
   por debajo, en lugar del tablero, que vuelve al cerrarlo. El panel reúne lo que
   el mapa sabe del avión («En vivo», con «Seguir»), los horarios con su demora,
   la escala con sus hitos y los enlaces a Planificación y Mapa de posiciones;
-  ninguna tarjeta flota sobre el mapa.
+  ninguna tarjeta flota sobre el mapa. Desde el carril M8 del plan de mapas
+  (27 de noviembre de 2026, rama `feat/occ-monitoreo-mundial`, sin desplegar)
+  el mapa es un globo con atmósfera que se aleja hasta el zoom 1, abre
+  encuadrando la República Dominicana y Puerto Rico y ofrece la vista
+  «0 Mundo» antes de las cuatro; Panorama y Mapa de posiciones siguen en
+  Mercator con sus cuatro vistas
+  ([ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)). Desde lejos, en
+  Mundo y Región, el globo lleva debajo una imagen de NASA GIBS (Black Marble en
+  el tema oscuro, Blue Marble en el claro, en grises y con su crédito) y los
+  aeropuertos grandes del mundo de OurAirports; los dominicanos van más grandes
+  y, desde que se ve el Caribe, siempre rotulados. Esos aeropuertos también dan
+  la posición del origen o destino de un vuelo cuando la API no la trae
+  ([datos](../../frontend/private-web/src/features/maps/airport/data/README.md)).
+  El globo traza además, finas y tenues, las rutas de círculo máximo de todos
+  los vuelos de AVIAM del día; la del vuelo elegido sigue resaltada. El tablero
+  suma los filtros «En vuelo» y «En tierra» a «Llegadas», «Salidas» y «Todos»,
+  y el mapa atenúa los vuelos y rutas que el filtro o la búsqueda dejan fuera
+  (28 de noviembre de 2026, sin desplegar). El carril se verificó solo con
+  pruebas unitarias y el MapLibre simulado; falta verlo en un navegador, y la
+  capa 3D bajo el globo llega con M2.
 - **Mapa de posiciones.** 2D/3D, «Centrar PUJ» y pantalla completa pasan al riel
   del mapa. El detalle de la posición usa el mismo panel acoplado, y sus rótulos
   ya no van en mayúsculas.

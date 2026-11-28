@@ -102,6 +102,12 @@ describe('map selection in the URL', () => {
     expect(writeSelection(ramp, { terminal: 'C' }).get('view')).toBe('ramp');
     expect(readSelection(`${BASE}&view=weather&terminal=A`)).toMatchObject({ view: null, terminal: null });
     expect(readSelection(`${BASE}&view=airfield&terminal=A`)).toMatchObject({ view: 'airfield', terminal: null });
+    // M8: the world view is in the contract (only a map with the globe flies to it), and it takes no terminal.
+    expect(readSelection(`${BASE}&view=world&terminal=A`)).toMatchObject({ view: 'world', terminal: null });
+    expect(writeSelection(ramp, { view: 'world' }).get('view')).toBe('world');
+    expect(writeSelection(ramp, { view: 'world' }).has('terminal')).toBe(false);
+    // The RD framing of Monitoreo's opening is not a view of the URL.
+    expect(readSelection(`${BASE}&view=rd`)).toMatchObject({ view: null });
   });
 
   it('a flight id resolves against flightKey, visitKey, leg id and turnaround id (legacy flightId links keep working)', () => {

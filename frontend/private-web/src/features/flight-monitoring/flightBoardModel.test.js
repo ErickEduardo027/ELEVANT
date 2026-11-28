@@ -4,8 +4,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createTranslator } from '../../i18n/languageStore';
 import OccFlightStrip from '../occ-ui/OccFlightStrip';
 import {
-  buildFlightBoard, DEFAULT_FLIGHT_BOARD_SORT, FLIGHT_BOARD_FILTERS, FLIGHT_BOARD_SORT_KEYS, FLIGHT_BOARD_STATUS_KEYS,
-  filterBoard, findBoardFlight, flightDirection, nextBoardSort, sortBoard, stripStatus,
+  buildFlightBoard, DEFAULT_FLIGHT_BOARD_SORT, DEPARTED_AIRBORNE_MS, FLIGHT_BOARD_FILTERS, FLIGHT_BOARD_SORT_KEYS,
+  FLIGHT_BOARD_STATUS_KEYS, FLIGHT_PLACES, filterBoard, findBoardFlight, flightDirection, legPlace, nextBoardSort,
+  sortBoard, stripStatus,
 } from './flightBoardModel';
 import { flightMonitoringMessages } from './flightMonitoringMessages';
 
@@ -48,7 +49,8 @@ describe('buildFlightBoard', () => {
     expect(result.arrivals.map(strip => strip.id)).toEqual(['a-landed', 'a-tie', 'a-a', 'a-b', 'a-late']);
     expect(result.departures.map(strip => strip.id)).toEqual(['d-1', 'd-none']);
     expect(result.all.map(strip => strip.id)).toEqual(['a-landed', 'a-tie', 'a-a', 'a-b', 'd-1', 'a-late', 'd-none']);
-    expect(result.counts).toEqual({ arrivals: 5, departures: 2, all: 7 });
+    // M8: every leg here shares one visit, whose landed arrival keeps its departures on the ground with it.
+    expect(result.counts).toEqual({ arrivals: 5, departures: 2, inFlight: 0, onGround: 3, all: 7 });
     expect(Object.isFrozen(result) && Object.isFrozen(result.all) && Object.isFrozen(result.all[0])).toBe(true);
   });
 
@@ -145,7 +147,7 @@ describe('filterBoard', () => {
 
   it('filters by direction and search without regard to case', () => {
     const result = board(flights);
-    expect(FLIGHT_BOARD_FILTERS).toEqual(['arrivals', 'departures', 'all']);
+    expect(FLIGHT_BOARD_FILTERS).toEqual(['arrivals', 'departures', 'inFlight', 'onGround', 'all']);
     expect(filterBoard(result, 'arrivals').map(strip => strip.id)).toEqual(['a1', 'a2']);
     expect(filterBoard(result, 'departures').map(strip => strip.id)).toEqual(['d1']);
     expect(filterBoard(result, 'all', '  zz10 ').map(strip => strip.id)).toEqual(['a1', 'a2']);
@@ -159,6 +161,99 @@ describe('filterBoard', () => {
     expect(filterBoard(result, 'departures', 'zz10')).toEqual([]);
     expect(filterBoard(null, 'all')).toEqual([]);
     expect(() => filterBoard(result, 'delayed')).toThrow(RangeError);
+  });
+});
+
+describe('En vuelo y En tierra (M8)', () => {
+  it('legPlace says where the aircraft of a leg is from the leg, its actual time and its map phase', () => {
+    expect(FLIGHT_PLACES).toEqual({ air: 'air', ground: 'ground' });
+    // An arrival: on the ground once landed or in operation, in the air while its map flight flies.
+    expect(legPlace({ direction: 'Arrival', statusKey: 'scheduled' })).toBeNull();
+    expect(legPlace({ direction: 'Arrival', statusKey: 'scheduled', phase: 'Enroute' })).toBe('air');
+    expect(legPlace({ direction: 'Arrival', statusKey: 'scheduled', phase: 'approaching' })).toBe('air');
+    expect(legPlace({ direction: 'Arrival', statusKey: 'scheduled', phase: 'landed' })).toBe('ground');
+    expect(legPlace({ direction: 'Arrival', statusKey: 'landed', actualAt: at(-5) })).toBe('ground');
+    expect(legPlace({ direction: 'Arrival', statusKey: 'noStand', actualAt: at(-5) })).toBe('ground');
+    expect(legPlace({ direction: 'Arrival', statusKey: 'inOperation' })).toBe('ground');
+    // A departure: in the air once it left, on the ground while its visit is in operation.
+    expect(legPlace({ direction: 'Departure', statusKey: 'departed', actualAt: at(-5) })).toBe('air');
+    expect(legPlace({ direction: 'Departure', statusKey: 'scheduled', phase: 'departed' })).toBe('air');
+    expect(legPlace({ direction: 'Departure', statusKey: 'inOperation' })).toBe('ground');
+    expect(legPlace({ direction: 'Departure', statusKey: 'scheduled' })).toBeNull();
+    // A departure whose map flight landed at its destination is no longer in the air, whatever its actual time says.
+    for (const phase of ['landed', 'Arrived']) {
+      expect(legPlace({ direction: 'Departure', statusKey: 'departed', actualAt: at(-50), phase, nowMs: NOW }), phase)
+        .toBeNull();
+    }
+    // Without a map phase, «En vuelo» keeps a departure that left for DEPARTED_AIRBORNE_MS at most.
+    const hours = h => h * 60;
+    expect(legPlace({ direction: 'Departure', statusKey: 'departed', actualAt: at(-hours(2)), nowMs: NOW })).toBe('air');
+    expect(legPlace({ direction: 'Departure', statusKey: 'departed', actualAt: at(-DEPARTED_AIRBORNE_MS / 60_000),
+      nowMs: NOW })).toBe('air');
+    expect(legPlace({ direction: 'Departure', statusKey: 'departed', actualAt: at(-hours(10)), nowMs: NOW })).toBeNull();
+    // ...unless the map says it still flies.
+    expect(legPlace({ direction: 'Departure', statusKey: 'departed', actualAt: at(-hours(10)), phase: 'enroute',
+      nowMs: NOW })).toBe('air');
+    // A visit that is over or will not happen is neither.
+    for (const statusKey of ['cancelled', 'diverted', 'completed']) {
+      expect(legPlace({ direction: 'Arrival', statusKey, actualAt: at(-5), phase: 'landed' }), statusKey).toBeNull();
+    }
+    expect(legPlace()).toBeNull();
+  });
+
+  it('filters the strips in the air and on the ground, deciding per visit, with the map phases when the map has read', () => {
+    const flights = [
+      // Landed and waiting with its departure: both on the ground.
+      leg({ id: 'a-landed', flightNumber: 'ZZ101', turnaroundId: 'tat-1', actualAt: at(-20), scheduledAt: at(-30) }),
+      departure({ id: 'd-waiting', flightNumber: 'ZZ102', turnaroundId: 'tat-1', scheduledAt: at(40) }),
+      // Its departure left: the arrival is no longer on the ground, the departure flies.
+      leg({ id: 'a-gone', flightNumber: 'ZZ201', turnaroundId: 'tat-2', actualAt: at(-90), scheduledAt: at(-95) }),
+      departure({ id: 'd-gone', flightNumber: 'ZZ202', turnaroundId: 'tat-2', actualAt: at(-10), scheduledAt: at(-15) }),
+      // Still at its origin as far as the snapshot knows; the map flight says it flies.
+      leg({ id: 'a-enroute', flightNumber: 'ZZ301', turnaroundId: 'tat-3', scheduledAt: at(50) }),
+      // Cancelled: in no list but Todos.
+      leg({ id: 'a-cancelled', flightNumber: 'ZZ401', turnaroundId: 'tat-4', turnaroundStatus: 'Cancelled',
+        actualAt: at(-5) }),
+    ];
+    const snapshotOnly = board(flights);
+    expect(snapshotOnly.inFlight.map(strip => strip.id)).toEqual(['d-gone']);
+    expect(snapshotOnly.onGround.map(strip => strip.id)).toEqual(['a-landed', 'd-waiting']);
+    expect(snapshotOnly.all.find(strip => strip.id === 'a-enroute').place).toBeNull();
+    expect(snapshotOnly.all.find(strip => strip.id === 'a-gone').place).toBeNull();
+    expect(snapshotOnly.all.find(strip => strip.id === 'a-cancelled').place).toBeNull();
+    expect(Object.isFrozen(snapshotOnly.all[0])).toBe(true);
+    expect('ownPlace' in snapshotOnly.all[0]).toBe(false);
+
+    // The map flights the map has read (contracts 1.3), matched by their leg id: no read of the board's own.
+    const mapFlights = [{ flightKey: 'l:a-enroute', legId: 'a-enroute', direction: 'Arrival', phase: 'enroute' }];
+    const withMap = board(flights, { mapFlights });
+    expect(withMap.inFlight.map(strip => strip.id)).toEqual(['d-gone', 'a-enroute']);
+    expect(withMap.counts).toMatchObject({ inFlight: 2, onGround: 2, all: 6 });
+    expect(filterBoard(withMap, 'inFlight', 'zz3').map(strip => strip.id)).toEqual(['a-enroute']);
+    expect(filterBoard(withMap, 'onGround').map(strip => strip.id)).toEqual(['a-landed', 'd-waiting']);
+    // Llegadas, Salidas and Todos keep their meaning.
+    expect(filterBoard(withMap, 'arrivals').map(strip => strip.id))
+      .toEqual(['a-gone', 'a-landed', 'a-cancelled', 'a-enroute']);
+    expect(filterBoard(withMap, 'departures').map(strip => strip.id)).toEqual(['d-gone', 'd-waiting']);
+  });
+
+  it('takes a departure out of «En vuelo» once its map flight landed or it left hours ago', () => {
+    const flights = [
+      // PUJ→SDQ: left 40 minutes ago, the map says it landed at Santo Domingo.
+      departure({ id: 'd-landed', flightNumber: 'ZZ501', turnaroundId: 'tat-5', actualAt: at(-40), scheduledAt: at(-45) }),
+      // Left this morning, ten hours ago, and the map does not list it any more.
+      departure({ id: 'd-morning', flightNumber: 'ZZ601', turnaroundId: 'tat-6', actualAt: at(-600),
+        scheduledAt: at(-605) }),
+      // Left an hour ago: still in the air.
+      departure({ id: 'd-flying', flightNumber: 'ZZ701', turnaroundId: 'tat-7', actualAt: at(-60), scheduledAt: at(-65) }),
+    ];
+    const mapFlights = [{ flightKey: 'l:d-landed', legId: 'd-landed', direction: 'Departure', phase: 'landed' }];
+    const result = board(flights, { mapFlights });
+    expect(result.inFlight.map(strip => strip.id)).toEqual(['d-flying']);
+    expect(result.all.find(strip => strip.id === 'd-landed').place).toBeNull();
+    expect(result.all.find(strip => strip.id === 'd-morning').place).toBeNull();
+    expect(result.departures.map(strip => strip.id)).toEqual(['d-morning', 'd-flying', 'd-landed']);
+    expect(result.counts.inFlight).toBe(1);
   });
 });
 

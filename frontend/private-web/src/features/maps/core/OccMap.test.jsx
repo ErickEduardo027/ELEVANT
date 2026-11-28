@@ -1669,6 +1669,50 @@ const attributionOf = map => map.controls.find(entry => entry.control instanceof
 const NOWHERE = { center: [-72.4, 22.4], zoom: 11 };
 
 describe('OccMap traffic (PR M5)', () => {
+  it('M8: the board filter dims by feature state the AVIAM aircraft it leaves out, and writes no traffic data', () => {
+    const traffic = { ...noonTraffic(), flights: createMapFlights().flights };
+    const keys = traffic.flights.map(row => row.flightKey);
+    function FilterProbe() {
+      const { boardFilter } = useOccMap();
+      return <pre data-testid="filter-probe">{String(boardFilter)}</pre>;
+    }
+    const view = render(<OccMap defaultView="region" traffic={traffic}><FilterProbe /></OccMap>);
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    const outside = id => map.featureStateOf('occ-traffic', id)?.outside;
+    // No filter: nothing dimmed.
+    expect(keys.map(key => outside(`f:${key}`))).toEqual(keys.map(() => undefined));
+    expect(screen.getByTestId('filter-probe').textContent).toBe('false');
+    // The AVIAM icons multiply their opacity by the feature state.
+    expect(JSON.stringify(map.options.style.layers.find(layer => layer.id === 'occ-traffic-aviam'))).toContain('"feature-state","outside"');
+    const writes = map.getSource('occ-traffic').updateDataCalls.length;
+
+    view.rerender(<OccMap defaultView="region" traffic={traffic} flightEmphasis={[TRAFFIC_FLIGHT_KEY.arrival]}>
+      <FilterProbe /></OccMap>);
+    expect(outside(`f:${TRAFFIC_FLIGHT_KEY.arrival}`)).toBeUndefined();
+    for (const key of keys.filter(key => key !== TRAFFIC_FLIGHT_KEY.arrival)) expect(outside(`f:${key}`), key).toBe(true);
+    expect(screen.getByTestId('filter-probe').textContent).toBe('true');
+    // The same filter in a new list writes no state again.
+    const states = map.calls.filter(call => call.method === 'setFeatureState').length;
+    view.rerender(<OccMap defaultView="region" traffic={traffic} flightEmphasis={[TRAFFIC_FLIGHT_KEY.arrival]}>
+      <FilterProbe /></OccMap>);
+    expect(map.calls.filter(call => call.method === 'setFeatureState')).toHaveLength(states);
+
+    // Another filter changes only the keys whose state changes.
+    view.rerender(<OccMap defaultView="region" traffic={traffic}
+      flightEmphasis={[TRAFFIC_FLIGHT_KEY.arrival, TRAFFIC_FLIGHT_KEY.demoArrival]}><FilterProbe /></OccMap>);
+    expect(outside(`f:${TRAFFIC_FLIGHT_KEY.demoArrival}`)).toBe(false);
+    expect(map.calls.filter(call => call.method === 'setFeatureState')).toHaveLength(states + 1);
+
+    // Taken away: every key it dimmed is cleared; a filter that keeps every flight dims nothing.
+    view.rerender(<OccMap defaultView="region" traffic={traffic} flightEmphasis={null}><FilterProbe /></OccMap>);
+    expect(keys.map(key => outside(`f:${key}`)).filter(Boolean)).toEqual([]);
+    expect(screen.getByTestId('filter-probe').textContent).toBe('false');
+    view.rerender(<OccMap defaultView="region" traffic={traffic} flightEmphasis={keys}><FilterProbe /></OccMap>);
+    expect(screen.getByTestId('filter-probe').textContent).toBe('false');
+    expect(map.getSource('occ-traffic').updateDataCalls).toHaveLength(writes);
+  });
+
   it('draws the traffic with one updateData per read and never re-creates the map', () => {
     const traffic = noonTraffic();
     const view = render(<OccMap defaultView="region" traffic={traffic}><TrafficProbe /></OccMap>);
@@ -3072,5 +3116,27 @@ describe('OccMap weather (PR M8)', () => {
     expect(within(card()).getByText('Viento 120° 9 kt · No oficial')).toBeInTheDocument();
     view.rerender(element({ weather: weatherAt({ status: 'Unavailable' }) }));
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+  });
+});
+
+describe('OccMap world base and world airports (M8)', () => {
+  it('draws them only on the globe, the base under the night and the Dominican airports labelled', () => {
+    const mercator = render(<OccMap defaultView="region" traffic={{ aircraft: [], flights: [] }} />);
+    const flat = fake.state.liveMaps().at(-1);
+    expect(flat.options.style.sources['occ-world-base']).toBeUndefined();
+    expect(flat.options.style.layers.some(layer => layer.id === 'occ-rd-airport-labels')).toBe(false);
+    mercator.unmount();
+
+    render(<OccMap defaultView="region" projection="globe" mapOptions={{ minZoom: 1 }} traffic={{ aircraft: [], flights: [] }} />);
+    const globe = fake.state.liveMaps().at(-1);
+    const { sources, layers } = globe.options.style;
+    expect(sources['occ-world-base']).toMatchObject({ type: 'raster', maxzoom: 8 });
+    const ids = layers.map(layer => layer.id);
+    expect(ids.indexOf('occ-world-base-image')).toBeLessThan(ids.indexOf('occ-night'));
+    expect(ids).toContain('occ-rd-airport-labels');
+    loadStyle(globe);
+    const airports = globe.getSource('occ-reference-ourairports').data.features.filter(item => item.properties.kind === 'airport');
+    expect(airports.find(item => item.properties.icao === 'KJFK')?.properties).toMatchObject({ world: true, rd: false });
+    expect(airports.find(item => item.properties.icao === 'MDSD')?.properties).toMatchObject({ rd: true });
   });
 });

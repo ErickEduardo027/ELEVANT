@@ -1,8 +1,11 @@
 import { createContext, useContext } from 'react';
+import { VIEW_NAMES } from './cameraPresets';
 
 // What OccMap shares with its DOM overlays and with the panels around it, so a list or a switcher needs no ref:
 // - state: `engineStatus` ('starting' | 'ready' | 'unavailable'), `basemapStatus` ('off' | 'loading' | 'ok' |
-//   'degraded'), `activeView` (the view the camera really shows, from presetForZoom), `fits` and `thresholds`;
+//   'degraded'), `activeView` (the view the camera really shows, from presetForZoom), `fits` and `thresholds`, and
+//   `views`, the views the map offers (the four, the world first on a map with the globe, M8, or fewer on a map fixed on
+//   the airport, M9), which the switcher shows;
 // - meta: `standsOnScreen`, the stands whose polygon the map draws in the area the insets leave in sight (from the
 //   polygon threshold on; the legend lists their states, signals and tags), `chipsOnScreen`, the terminals whose chip
 //   it draws there (below that threshold), `standMarksOnScreen`, the stand marks it draws there (`chipArriving`, the
@@ -15,8 +18,7 @@ import { createContext, useContext } from 'react';
 //   they move inside it), and `airfieldOnScreen`, the airfield items the map draws there (`runway`, `taxiway`,
 //   `taxiwayPavement`, `holdBar`, `apron`, `terminal`, `building`, `jetBridge`, in that order);
 // - actions: `requestView(view, { terminal })` flies and writes `view=` in the URL, `flyToPreset(view, { terminal })`
-//   only flies, `flyToStand(code, { minZoom })` centres a stand and `flyToFlight(id, { minZoom })` a flight;
-//   `views`, the views the map offers (all four, or fewer on a map fixed on the airport, M9), which the switcher shows.
+//   only flies, `flyToStand(code, { minZoom })` centres a stand and `flyToFlight(id, { minZoom })` a flight.
 // - traffic (PR M5): `trafficOnScreen`, the aircraft kinds, tags, trails and parts of the chosen flight's route drawn in
 //   that area (traffic/trafficFeatures.js: trafficOnScreen), and `trafficSource`, the air picture's source while traffic
 //   is on screen (`{ name, homeUrl, licenseName, licenseUrl }` or null), whose credit the map shows.
@@ -42,6 +44,8 @@ import { createContext, useContext } from 'react';
 //   «Seguir en 3D»: `{ on, view, auto, subject, start(), stop(), setView(view), rotate(sign), tilt(sign), zoom(sign),
 //   hold(kind, sign), reset(), setAuto(on) }`, `subject` a store of the followed aircraft as the frames draw it (the
 //   panel's, ui/Follow3dPanel.jsx); outside an OccMap there is none.
+// - board filter (M8, OccMap's `flightEmphasis`): `boardFilter`, whether the filter of Monitoreo's board dims AVIAM
+//   aircraft on the map, for the legend.
 // Outside an OccMap the value is a map that does nothing and shows nothing.
 
 const doNothing = () => {};
@@ -50,6 +54,7 @@ export const OCC_MAP_IDLE = Object.freeze({
   engineStatus: 'starting',
   basemapStatus: 'off',
   activeView: null,
+  views: VIEW_NAMES,
   fits: null,
   thresholds: null,
   standsOnScreen: Object.freeze([]),
@@ -61,7 +66,6 @@ export const OCC_MAP_IDLE = Object.freeze({
   flyToPreset: doNothing,
   flyToStand: doNothing,
   flyToFlight: doNothing,
-  views: Object.freeze(['region', 'approach', 'airfield', 'ramp']),
   trafficOnScreen: Object.freeze({ kinds: Object.freeze([]), tags: Object.freeze([]), trails: Object.freeze([]),
     route: Object.freeze([]) }),
   trafficSource: null,
@@ -73,6 +77,7 @@ export const OCC_MAP_IDLE = Object.freeze({
   registerLayersMenu: () => doNothing,
   motion: Object.freeze({ available: false, paused: false, pausedAt: null, dataAt: null, pause: doNothing, resume: doNothing }),
   follow: Object.freeze({ available: false, following: false, canFollow: false, toggle: doNothing }),
+  boardFilter: false,
 });
 
 export const OccMapContext = createContext(OCC_MAP_IDLE);

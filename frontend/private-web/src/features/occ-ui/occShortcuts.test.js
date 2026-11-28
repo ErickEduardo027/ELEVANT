@@ -42,8 +42,9 @@ afterEach(() => {
 });
 
 describe('OCC shortcut table', () => {
-  it('lists exactly the eight keys of the contracts page', () => {
+  it('lists exactly the nine keys of the contracts page, «0 Mundo» of M8 first', () => {
     expect(OCC_SHORTCUTS.map(({ key, action, es, en }) => [key, action, es, en])).toEqual([
+      ['0', 'view.world', 'Mundo', 'World'],
       ['1', 'view.region', 'Región', 'Region'],
       ['2', 'view.approach', 'Aproximación', 'Approach'],
       ['3', 'view.airfield', 'Aeródromo', 'Airfield'],
@@ -53,7 +54,7 @@ describe('OCC shortcut table', () => {
       ['l', 'toggleLayers', 'Capas', 'Layers'],
       ['Escape', 'clearSelection', 'Limpiar', 'Clear'],
     ]);
-    expect(new Set(OCC_SHORTCUTS.map(row => row.action)).size).toBe(8);
+    expect(new Set(OCC_SHORTCUTS.map(row => row.action)).size).toBe(9);
     expect(Object.isFrozen(OCC_SHORTCUTS) && OCC_SHORTCUTS.every(Object.isFrozen)).toBe(true);
   });
 
@@ -63,10 +64,11 @@ describe('OCC shortcut table', () => {
     expect(matchOccShortcut({ key: 'S' })).toBe('toggleFollow');
     expect(matchOccShortcut({ key: 'L' })).toBe('toggleLayers');
     expect(matchOccShortcut({ key: '4' })).toBe('view.ramp');
+    expect(matchOccShortcut({ key: '0' })).toBe('view.world');
     expect(matchOccShortcut({ key: 'Escape' })).toBe('clearSelection');
     expect(matchOccShortcut({ key: 'escape' })).toBe('clearSelection');
 
-    for (const key of ['x', '5', '0', 'Enter', ' ', 'Dead', 'dd']) expect(matchOccShortcut({ key }), key).toBeNull();
+    for (const key of ['x', '5', '9', 'Enter', ' ', 'Dead', 'dd']) expect(matchOccShortcut({ key }), key).toBeNull();
     // Only `event.key` counts: the physical key and the legacy code are not read.
     expect(matchOccShortcut({ code: 'KeyD', keyCode: 68 })).toBeNull();
     expect(matchOccShortcut(null)).toBeNull();

@@ -50,12 +50,12 @@ const panel = () => screen.getByRole('region', { name: 'Tablero de vuelos' });
 const strips = () => screen.queryAllByTestId('flight-list-item');
 
 describe('FlightBoard', () => {
-  it('shows Llegadas, Salidas and Todos with their counts as a group of toggle buttons', async () => {
+  it('shows Llegadas, Salidas, En vuelo, En tierra and Todos with their counts as a group of toggle buttons', async () => {
     const user = userEvent.setup();
     render(<Harness />);
-    const group = within(panel()).getByRole('group', { name: 'Dirección' });
+    const group = within(panel()).getByRole('group', { name: 'Filtro del tablero' });
     expect(within(group).getAllByRole('button').map(button => button.textContent)).toEqual(['Llegadas 2', 'Salidas 1',
-      'Todos 3']);
+      'En vuelo 0', 'En tierra 0', 'Todos 3']);
     expect(within(group).getByRole('button', { name: 'Todos 3' })).toHaveAttribute('aria-pressed', 'true');
     expect(strips()).toHaveLength(3);
 
@@ -64,6 +64,33 @@ describe('FlightBoard', () => {
     expect(strips().map(strip => strip.dataset.occFlightStrip)).toEqual(['d1']);
     await user.click(within(group).getByRole('button', { name: 'Llegadas 2' }));
     expect(strips().map(strip => strip.dataset.occFlightStrip)).toEqual(['a1', 'a2']);
+    // M8: where the aircraft is; nothing yet has left or landed, and each filter says so in its own words.
+    await user.click(within(group).getByRole('button', { name: 'En vuelo 0' }));
+    expect(strips()).toEqual([]);
+    expect(within(panel()).getByText('No hay vuelos en el aire en el tablero.')).toBeInTheDocument();
+    await user.click(within(group).getByRole('button', { name: 'En tierra 0' }));
+    expect(within(panel()).getByText('No hay aviones en tierra en el tablero.')).toBeInTheDocument();
+  });
+
+  it('M8: En vuelo and En tierra keep the strips whose aircraft flies or waits at the station', async () => {
+    const user = userEvent.setup();
+    const flights = [
+      ...FLIGHTS,
+      leg({ id: 'a3', turnaroundId: 'tat-3', flightNumber: 'ZZ301', actualAt: at(-15), scheduledAt: at(-20) }),
+      leg({ id: 'd3', turnaroundId: 'tat-3', direction: 'departure', flightNumber: 'ZZ302', origin: 'PUJ',
+        destination: 'MIA', scheduledAt: at(60) }),
+    ];
+    // The map flights the map has read: a1 is on its way.
+    const board = buildFlightBoard(flights, { nowMs: NOW, t: es, stationCode: 'PUJ',
+      mapFlights: [{ flightKey: 'l:a1', legId: 'a1', direction: 'Arrival', phase: 'enroute' }] });
+    render(<Harness board={board} />);
+    const group = within(panel()).getByRole('group', { name: 'Filtro del tablero' });
+    await user.click(within(group).getByRole('button', { name: 'En vuelo 1' }));
+    expect(strips().map(strip => strip.dataset.occFlightStrip)).toEqual(['a1']);
+    await user.click(within(group).getByRole('button', { name: 'En tierra 2' }));
+    expect(strips().map(strip => strip.dataset.occFlightStrip)).toEqual(['a3', 'd3']);
+    await user.click(within(group).getByRole('button', { name: 'Todos 5' }));
+    expect(strips()).toHaveLength(5);
   });
 
   it('each strip is a flight-list-item button with aria-pressed', async () => {
@@ -163,7 +190,7 @@ describe('FlightBoard', () => {
     expect(within(panel()).getByText('Sin vuelos para mostrar')).toBeInTheDocument();
     expect(within(panel()).getByText('No hay vuelos relacionados con la estación en este momento.')).toBeInTheDocument();
     // No counts nobody counted: the controls are not drawn over an empty day.
-    expect(screen.queryByRole('group', { name: 'Dirección' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Filtro del tablero' })).not.toBeInTheDocument();
     expect(strips()).toEqual([]);
   });
 
@@ -187,7 +214,9 @@ describe('FlightBoard', () => {
     const en = createTranslator(flightMonitoringMessages, 'en');
     render(<LanguageScope><Harness board={buildFlightBoard(FLIGHTS, { nowMs: NOW, t: en, stationCode: 'PUJ' })} /></LanguageScope>);
     expect(screen.getByRole('region', { name: 'Flight board' })).toBeInTheDocument();
-    expect(screen.getByRole('group', { name: 'Direction' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Board filter' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'In flight 0' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'On the ground 0' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Arrivals 2' })).toBeInTheDocument();
     expect(screen.getByLabelText('Search flight')).toHaveAttribute('placeholder', 'Number, airline, registration or supervisor');
     expect(screen.getByRole('list', { name: 'Board legend' })).toBeInTheDocument();

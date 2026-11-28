@@ -54,6 +54,20 @@ export const AIRCRAFT_3D_SLOT = 'models';
  */
 export const DETAIL_MIN_ZOOM = 16.5;
 
+/**
+ * What the 3D may draw under the map's projection (M8): in Mercator, `minZoom` and `followedId` as given; on the globe,
+ * nothing below `globeMercatorZoom` (style/occStyle.js: GLOBE_MERCATOR_ZOOM), where the globe is Mercator again, because
+ * the layer composes Mercator frames until M2 makes it follow the projection: the 3D threshold is at least that zoom and
+ * the followed aircraft («Seguir en 3D») keeps its 2D symbol below it.
+ */
+export function projected3d({ projection = 'mercator', zoom, minZoom, followedId = null, globeMercatorZoom }) {
+  if (projection !== 'globe' || !Number.isFinite(globeMercatorZoom)) return { minZoom, followedId };
+  return {
+    minZoom: Number.isFinite(minZoom) ? Math.max(minZoom, globeMercatorZoom) : minZoom,
+    followedId: Number.isFinite(zoom) && zoom >= globeMercatorZoom ? followedId : null,
+  };
+}
+
 const NO_IDS = Object.freeze(new Set());
 // The layer a 3D pick names in its feature: the custom layer's id (aircraft/aircraft3dLayer.js), which this module may
 // not import (only the 3D chunk does).
