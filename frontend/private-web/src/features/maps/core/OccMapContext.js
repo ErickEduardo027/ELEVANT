@@ -15,7 +15,8 @@ import { createContext, useContext } from 'react';
 //   they move inside it), and `airfieldOnScreen`, the airfield items the map draws there (`runway`, `taxiway`,
 //   `holdBar`, `apron`, `terminal`, in that order);
 // - actions: `requestView(view, { terminal })` flies and writes `view=` in the URL, `flyToPreset(view, { terminal })`
-//   only flies, `flyToStand(code, { minZoom })` centres a stand and `flyToFlight(id, { minZoom })` a flight.
+//   only flies, `flyToStand(code, { minZoom })` centres a stand and `flyToFlight(id, { minZoom })` a flight;
+//   `views`, the views the map offers (all four, or fewer on a map fixed on the airport, M9), which the switcher shows.
 // - traffic (PR M5): `trafficOnScreen`, the aircraft kinds, tags, trails and parts of the chosen flight's route drawn in
 //   that area (traffic/trafficFeatures.js: trafficOnScreen), and `trafficSource`, the air picture's source while traffic
 //   is on screen (`{ name, homeUrl, licenseName, licenseUrl }` or null), whose credit the map shows.
@@ -60,6 +61,7 @@ export const OCC_MAP_IDLE = Object.freeze({
   flyToPreset: doNothing,
   flyToStand: doNothing,
   flyToFlight: doNothing,
+  views: Object.freeze(['region', 'approach', 'airfield', 'ramp']),
   trafficOnScreen: Object.freeze({ kinds: Object.freeze([]), tags: Object.freeze([]), trails: Object.freeze([]),
     route: Object.freeze([]) }),
   trafficSource: null,

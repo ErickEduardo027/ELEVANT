@@ -117,7 +117,8 @@ function PositionsMapScreen({
   const selectedCode = selection?.kind === 'stand' ? selection.id : null;
   const trafficSelection = live ? trafficSelectionOf(selection) : null;
   const [drawerOpen, setDrawerOpen] = useState(() => selectedCode !== null);
-  const [viewMode, setViewMode] = useState('2d');
+  // M9: the map opens in 3D, over the airfield.
+  const [viewMode, setViewMode] = useState('3d');
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
   // The stand band starts folded (its header still counts the stands by state): the map keeps its height.
   const [bandOpen, setBandOpen] = useState(false);
@@ -354,6 +355,8 @@ function PositionsMapScreen({
         onSelectPosition={handleSelectPosition}
         theme={theme}
         viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        fixedOnAirport
         placing={placing !== null}
         placingCode={placing?.code ?? null}
         pendingLocation={placing?.pending ?? null}

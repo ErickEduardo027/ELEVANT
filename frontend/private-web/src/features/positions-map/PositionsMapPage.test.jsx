@@ -459,7 +459,8 @@ describe('PositionsMapPage in English', () => {
     expect(screen.getByText('PUJ · Punta Cana International Airport')).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Filter by terminal' })).toHaveTextContent('All');
     expect(screen.getByPlaceholderText('Search stand, flight or registration...')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Switch to 3D view' })).toBeInTheDocument();
+    // M9: the map opens in 3D, so its tool offers the 2D view.
+    expect(screen.getByRole('button', { name: 'Switch to 2D view' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Center on PUJ' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Full screen' })).toBeInTheDocument();
     // The count of the stands sits on the title's line, and the folded band counts them by the state the map draws.

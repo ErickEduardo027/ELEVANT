@@ -520,6 +520,10 @@ const standPointOf = stand => stand?.geometry?.center ?? lngLatOf(stand);
  *   unavailableList, map }), `fallbackItems` ([{ id, label, kind }]) and `onFallbackSelect(id, item)`;
  * - `isShortcutBlocked()` (an open drawer that is not a modal dialog), `className`, `children` (DOM overlays);
  * - `focusStandOnStart`: a stand selected when the map starts is brought to the centre once the map is ready.
+ * - A map fixed on the airport (M9, Mapa de posiciones): `views` (the views the map offers, all four by default: a view
+ *   left out is not flown to, its key does nothing and a `view=` of it in the URL is ignored; ui/MapPresetSwitcher.jsx
+ *   shows only these) and `airfieldCentre` (`[lng, lat]`: Aeródromo is centred on that point, core/cameraPresets.js);
+ *   `mapOptions` then carries its bounds and minimum zoom (cameraPresets.js: airportLockOptions).
  * - `traffic` (PR M5): `{ aircraft, trails, route, source, flights }` from the map situation (useMapSituation: the
  *   aircraft of traffic/situationModel.js, the trails FeatureCollection, the chosen flight's route, the air picture's
  *   source and, from PR M8, the rows of the map flights, whose counterparts the references emphasise).
@@ -622,12 +626,19 @@ const OccMapView = forwardRef(function OccMapView({
   onFallbackSelect,
   isShortcutBlocked,
   focusStandOnStart = false,
+  views: viewsProp,
+  airfieldCentre = null,
   className = '',
   children,
 }, ref) {
   const { t, language } = useTranslation(mapMessages);
   const { markReady } = useOccBoot();
-  const { view: urlView, terminal: urlTerminal, setView, follow: urlFollow, setFollow } = useMapSelection();
+  const { view: urlViewAny, terminal: urlTerminalAny, setView, follow: urlFollow, setFollow } = useMapSelection();
+  // The views this map offers (M9): a `view=` of another one in the URL is not this map's to fly to.
+  const viewsKey = (Array.isArray(viewsProp) ? VIEW_NAMES.filter(view => viewsProp.includes(view)) : VIEW_NAMES).join(',');
+  const views = useMemo(() => Object.freeze(viewsKey === '' ? [...VIEW_NAMES] : viewsKey.split(',')), [viewsKey]);
+  const urlView = urlViewAny !== null && views.includes(urlViewAny) ? urlViewAny : null;
+  const urlTerminal = urlView === null ? null : urlTerminalAny;
   const [store] = useState(() => createViewStore(initialSnapshot(basemap)));
   const snapshot = useSyncExternalStore(store.subscribe, store.get, store.get);
   const stands = standsProp ?? EMPTY;
@@ -690,7 +701,11 @@ const OccMapView = forwardRef(function OccMapView({
   const paddingKey = insetsKey(normalizeInsets(insets));
   const padding = useMemo(() => insetsFromKey(paddingKey), [paddingKey]);
   const referenceStands = presetStands ?? stands;
-  const targets = useMemo(() => presetTargets({ stands: referenceStands, layout }), [referenceStands, layout]);
+  const centreLng = airfieldCentre?.[0];
+  const centreLat = airfieldCentre?.[1];
+  const targets = useMemo(() => presetTargets({ stands: referenceStands, layout,
+    airfieldCentre: Number.isFinite(centreLng) && Number.isFinite(centreLat) ? [centreLng, centreLat] : null }),
+  [referenceStands, layout, centreLng, centreLat]);
   const groupsKey = JSON.stringify(groups ?? NO_GROUPS);
 
   // The layers menu (PR M5, core/layersMenu.js): the person's choices, read from the browser once, resolved for the
@@ -753,7 +768,7 @@ const OccMapView = forwardRef(function OccMapView({
     latest.current = {
       stands, attached, standFeatures, presetStands: presetStands ?? EMPTY, flights, selection, onSelect, onPick,
       onMapClick, placing: placingNow, placingStand, onCancelPlacing, onCameraChange, isShortcutBlocked, pitchMode,
-      padding, targets, urlView, urlTerminal, defaultView, initialCamera, basemap, overlays, interactive, mapOptions,
+      padding, targets, urlView, urlTerminal, defaultView, initialCamera, basemap, overlays, interactive, mapOptions, views,
       layout, t, language, theme, resumeCameraRef,
       locale: engineLocale(t, labels?.map),
       aircraftDataLabel: t('attribution.aircraftData'),
@@ -859,7 +874,7 @@ const OccMapView = forwardRef(function OccMapView({
 
   // A view asked for by a person: fly now (also to the view already in the URL after a free zoom) and write `view=`.
   const requestView = useCallback((view, { terminal = null } = {}) => {
-    if (!VIEW_NAMES.includes(view)) return;
+    if (!VIEW_NAMES.includes(view) || !(latest.current?.views ?? VIEW_NAMES).includes(view)) return;
     stopFollowing({ notice: true });
     const viewTerminal = view === 'ramp' ? terminal : null;
     lastViewRef.current = viewKey(view, viewTerminal);
@@ -2309,7 +2324,9 @@ const OccMapView = forwardRef(function OccMapView({
     for (const view of VIEW_NAMES) {
       Object.defineProperty(handlers, `view.${view}`, {
         enumerable: true,
-        get: () => (store.get().engineStatus === 'unavailable' ? undefined : () => requestView(view)),
+        // A view the map does not offer (M9) leaves its key alone.
+        get: () => (store.get().engineStatus === 'unavailable' || !(latest.current?.views ?? VIEW_NAMES).includes(view)
+          ? undefined : () => requestView(view)),
       });
     }
     // Follow mode (PR M6): S follows the chosen aircraft the map draws, and stops following; with nothing to follow the
@@ -2400,9 +2417,10 @@ const OccMapView = forwardRef(function OccMapView({
     flyToPreset,
     flyToStand,
     flyToFlight,
+    views,
   }), [
     engineStatus, basemapStatus, activeView, fits, thresholds, standsOnScreen, chipsOnScreen, standMarksOnScreen,
-    flightsOnScreen, airfieldOnScreen, requestView, flyToPreset, flyToStand, flyToFlight,
+    flightsOnScreen, airfieldOnScreen, requestView, flyToPreset, flyToStand, flyToFlight, views,
   ]);
   // With the traffic on screen and its source (PR M5), for the legend and the status over the map, and the layers menu;
   // and the references on screen (PR M8), for the legend.

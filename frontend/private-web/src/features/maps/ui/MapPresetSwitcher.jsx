@@ -22,10 +22,14 @@ const SHORT_LABELS = Object.freeze({
  * stays the button's name and its title). The pressed button is the view the camera really shows, so it stays truthful
  * after a free zoom; a click flies to the view and writes `view=` in the URL. The pressed view is told by its cyan frame
  * as well as by its tint, never by colour alone. The 2D/3D control (PR M7, ui/Map3dToggle.jsx) comes right after it,
- * so every rail with the views offers it.
+ * so every rail with the views offers it. `views` (M9) lists the views it offers, those of its map by default (all four, or
+ * the ones a map fixed on the airport keeps): the others show no button, and their keys do nothing on that map.
+ * `toggle3d={false}` leaves the 2D/3D control to a screen that has its own in the rail (Mapa de posiciones, M9).
  */
-export default function MapPresetSwitcher({ className = '' }) {
-  const { activeView, requestView, engineStatus } = useOccMap();
+export default function MapPresetSwitcher({ className = '', views: viewsProp, toggle3d = true }) {
+  const { activeView, requestView, engineStatus, views: mapViews } = useOccMap();
+  const offered = Array.isArray(viewsProp) ? viewsProp : mapViews;
+  const buttons = Array.isArray(offered) ? VIEW_BUTTONS.filter(({ view }) => offered.includes(view)) : VIEW_BUTTONS;
   const { t, language } = useTranslation(mapMessages);
 
   return (
@@ -36,7 +40,7 @@ export default function MapPresetSwitcher({ className = '' }) {
         data-testid="map-preset-switcher"
         className={`flex flex-col gap-px rounded border border-occ-line bg-occ-panel p-px ${className}`.trim()}
       >
-        {VIEW_BUTTONS.map(({ view, key, label }) => {
+        {buttons.map(({ view, key, label }) => {
           const pressed = activeView === view;
           const word = label[language] ?? label.es;
           return (
@@ -64,7 +68,7 @@ export default function MapPresetSwitcher({ className = '' }) {
           );
         })}
       </div>
-      <Map3dToggle />
+      {toggle3d ? <Map3dToggle /> : null}
     </>
   );
 }

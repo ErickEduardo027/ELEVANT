@@ -1,10 +1,13 @@
 import { forwardRef, useImperativeHandle, useMemo, useRef } from 'react';
 import { useTranslation } from '../../../i18n/LanguageScope';
+import { MDPC_LAYOUT } from '../../maps/airport/airportLayout';
+import { airportLockOptions, PUJ_ARP } from '../../maps/core/cameraPresets';
 import OccMap from '../../maps/core/OccMap';
 import { mapMessages } from '../../maps/mapMessages';
 import { STAND_REFERENCE } from '../../maps/stands/standReference';
 import MapDock from '../../maps/ui/MapDock';
 import MapFollowButton from '../../maps/ui/MapFollowButton';
+import MapLayersMenu from '../../maps/ui/MapLayersMenu';
 import MapLegend from '../../maps/ui/MapLegend';
 import MapMotionControl from '../../maps/ui/MapMotionControl';
 import MapPresetSwitcher from '../../maps/ui/MapPresetSwitcher';
@@ -12,6 +15,10 @@ import { mapStandCode } from '../positionsMapMappers';
 import { positionsMapMessages } from '../positionsMapMessages';
 
 const EMPTY = Object.freeze([]);
+// The views of a map fixed on the airport (M9): no Región nor Aproximación on Mapa de posiciones.
+const AIRPORT_VIEWS = Object.freeze(['airfield', 'ramp']);
+// Its camera stays over PUJ: the MDPC box plus 3 km, never under zoom 13 (cameraPresets.js: airportLockOptions).
+const AIRPORT_LOCK_OPTIONS = Object.freeze(airportLockOptions({ stands: STAND_REFERENCE, layout: MDPC_LAYOUT }));
 
 // The stands map of Mapa de posiciones, Planificación and the console's apron, on the one map engine: a thin adapter
 // over OccMap that keeps the props, the imperative handle, the test id and the fallback strings of the map it
@@ -33,11 +40,16 @@ const EMPTY = Object.freeze([]);
 // ready, as a row of the list does; it starts with the legend folded. `legendFoldKey` folds the legend when it changes.
 // `railTools` (CN-32) are the screen's own map tools, such as Mapa de posiciones' 2D/3D, «Centrar PUJ» and full screen:
 // they go in the map's control rail, after «Seguir» and before the pause.
+// `fixedOnAirport` (M9, only Mapa de posiciones; Planificación and the console stay as they are): the camera is held over
+// PUJ (the airfield box plus 3 km, zoom 13 at least), the map opens on «Aeródromo» centred on the ARP, offers only
+// Aeródromo and Rampa (keys 1 and 2 do nothing) and its rail adds «Capas» (L); its 2D/3D is the screen's own, in
+// `railTools`, so the rail shows no second one. `onViewModeChange(next)` lets the D key change the page's `viewMode`.
 const PositionMap = forwardRef(function PositionMap({
   positions = EMPTY, selectedPositionId = null, onSelectPosition, viewMode = '2d', initialCamera, onCameraChange,
   allowBuildingExtrusion = false, dashboardLabels = false, onMapClick, placing = false, placingCode = null,
   pendingLocation = null, onCancelPlacing, weather, traffic, trafficSelection = null, onSelectTraffic,
-  focusSelectedOnStart = false, legendFoldKey = null, railTools = null, children,
+  focusSelectedOnStart = false, legendFoldKey = null, railTools = null, fixedOnAirport = false, onViewModeChange,
+  children,
 }, ref) {
   const { t } = useTranslation(positionsMapMessages);
   const { t: tMap } = useTranslation(mapMessages);
@@ -83,7 +95,10 @@ const PositionMap = forwardRef(function PositionMap({
       ref={mapRef}
       testId="position-map-container"
       className="rounded-md"
-      defaultView="ramp"
+      defaultView={fixedOnAirport ? 'airfield' : 'ramp'}
+      views={fixedOnAirport ? AIRPORT_VIEWS : undefined}
+      airfieldCentre={fixedOnAirport ? PUJ_ARP : null}
+      mapOptions={fixedOnAirport ? AIRPORT_LOCK_OPTIONS : undefined}
       presetStands={STAND_REFERENCE}
       stands={positions}
       traffic={traffic}
@@ -98,6 +113,7 @@ const PositionMap = forwardRef(function PositionMap({
       initialCamera={initialCamera}
       onCameraChange={onCameraChange}
       pitchMode={threeD ? '3d' : '2d'}
+      onPitchModeChange={onViewModeChange}
       weather={weather}
       groups={{ 'buildings-3d': allowBuildingExtrusion && threeD }}
       labels={{
@@ -111,10 +127,11 @@ const PositionMap = forwardRef(function PositionMap({
     >
       {children}
       <MapDock>
-        <MapPresetSwitcher />
+        <MapPresetSwitcher views={fixedOnAirport ? AIRPORT_VIEWS : undefined} toggle3d={!fixedOnAirport} />
         <MapFollowButton />
         {railTools}
         <MapMotionControl />
+        {fixedOnAirport ? <MapLayersMenu /> : null}
         {/* A stand a link opens with is brought to the centre: the legend starts folded so it does not cover it. */}
         <MapLegend defaultOpen={!dashboardLabels && !(focusSelectedOnStart && selectedPositionId != null)}
           foldKey={legendFoldKey} />
