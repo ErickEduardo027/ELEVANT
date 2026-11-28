@@ -25,9 +25,11 @@ const VIEWS = Object.freeze([
   ['three-quarter', track => track + 135, 60, 19.2],
   ['high', track => track + 30, 35, 18.8],
 ]);
-// The cut round the aircraft (at the centre of the map), and its size on the contact sheet.
-const CUT = Object.freeze({ width: 760, height: 470 });
-const TILE = Object.freeze({ width: 570, height: 352 });
+// The cut round the aircraft (at the centre of the map), and its size on the contact sheet, in CSS pixels. The pictures
+// are taken at twice the pixel density, so the lettering and the logos can be read (QA of 2026-11-28).
+const CUT = Object.freeze({ width: 600, height: 360 });
+const TILE = Object.freeze({ width: 600, height: 360 });
+const SCALE = 2;
 
 const shotsDir = testInfo => process.env.OCC_MODELS_SHOTS ?? path.join(testInfo.project.outputDir, 'models');
 const hexOf = (index, row) => `f0d1${(index * 3 + row).toString(16).padStart(2, '0')}`;
@@ -52,6 +54,7 @@ async function contactSheet(page, files, title, target) {
 
 test.describe('map lab 3D models of every type (M5)', () => {
   test.skip(production, 'The map lab exists in development only.');
+  test.use({ deviceScaleFactor: SCALE });
 
   test('the gallery names every type of the models manifest', () => {
     expect([...GALLERY_TYPES].sort()).toEqual(Object.keys(manifest.types).sort());
