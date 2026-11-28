@@ -4,13 +4,14 @@ import { buildDetailedAircraft, nextBlinkInMs } from './aircraftDetail';
 import { buildAircraftGeometry, triangleCount, withLiveryZones } from './aircraftGeometry';
 import { contactDisc, contactShadowMatrix, contactShadowSize, contactShadowStrength } from './contactShadow';
 import { createGltfModels } from './gltfModels';
-import { LIVERY_ZONES } from './liveries';
+import { DEFAULT_LIVERY, LIVERY_ZONES } from './liveries';
 import { SHADOW, linearRgb, mercatorFrame, poseMatrix } from './instancePlan';
 import { LIVERY_ROWS, createLiveryMaterial, createLiveryTextures, liveryFont, tintLogo } from './liveryMaterial';
-import { buildModelAirframe, instancedModelGeometry, modelFrame, writeLiveryInstances } from './modelAircraft';
+import { buildModelAirframe, instancedModelGeometry, modelFrame, modelMaterialKey, writeLiveryInstances } from './modelAircraft';
 import { detailLevel, instancedLevel, metresPerPixel, wantsL1 } from './modelLevels';
 import { createTrafficLabels } from './trafficLabels';
 import { createTrafficSprites } from './trafficSprites';
+import { AIRCRAFT_TYPES } from './types';
 
 // The 3D aircraft as one MapLibre custom layer (design G1, G3 and G4): three draws the instance plan
 // (aircraft/instancePlan.js) on the map's own canvas and WebGL context, in the depth buffer the terminals' extrusions
@@ -53,6 +54,17 @@ import { createTrafficSprites } from './trafficSprites';
 //   (no 2D canvas for their atlas) say so once (onSpritesFailedChange) and the map keeps its GeoJSON icons. The answer's
 //   `labels` (instancePlan.js: planLabels) are the tags and the chosen aircraft's ring (aircraft/trafficLabels.js), over
 //   everything, laid out on the CPU a few times a second and picked there too; built and failed with the sprites.
+// - Shaders (HOTFIX-3D, 2026-11-28): three compiles a material's program on its first draw and, to read its uniforms,
+//   waits for the driver to finish it: on the owner's laptop «Seguir en 3D» froze the page long enough for Chrome's
+//   «La página no responde». So nothing is drawn with a program that is not ready. The layer compiles in the background
+//   with three's compileAsync (KHR_parallel_shader_compile): at onAdd, in idle time, the programs of the instanced
+//   models, the contact shadows, the drop lines and a detailed aircraft (WARM_TYPE); a loaded L1 or L2 model before it
+//   replaces the procedural one (the procedural model draws until then); the sprites and the tags, and any other
+//   object, before their first draw (they wait on a layer the camera does not see, WAITING_LAYER). The materials are
+//   made once and shared (by type and level, by part and colour) until onRemove, so following another aircraft or a
+//   change of level makes no new program, and outside development and the tests three no longer reads every program's
+//   log (debug.checkShaderErrors). compile() only creates and links programs: it changes none of the GL state MapLibre
+//   or three's resetState() rely on.
 //
 // `three` is a parameter (aircraft/aircraft3dChunk.js: THREE_PARTS), so this module imports neither three nor
 // maplibre-gl. It names three's renderer, so only the 3D chunk may import it (scripts/verify-map-chunks.mjs).
@@ -136,6 +148,61 @@ const NO_IDS = Object.freeze([]);
 // shadow is a dark veil of its instanced model.
 const PROPELLER_RPM = 1200;
 const DETAIL_SHADOW = Object.freeze({ colour: '#0b0f14', opacity: 0.42 });
+
+/** The type of the detailed aircraft whose programs the layer compiles at onAdd (HOTFIX-3D): Copa's 737-800. */
+export const WARM_TYPE = 'B738';
+
+/** The layer of three's camera layers on which an object waits, undrawn, for its programs (HOTFIX-3D). */
+export const WAITING_LAYER = 31;
+const DRAWN_LAYER = 0;
+const PARALLEL_COMPILE = 'KHR_parallel_shader_compile';
+/** What a layer that has drawn nothing yet answers from drawnNow() (HOTFIX-3D). */
+export const NOTHING_DRAWN = Object.freeze({ detail: null, keys: Object.freeze(new Set()), animated: false });
+
+// Whether two answers of drawnNow() say the same.
+function sameDrawn(a, b) {
+  if (a.detail !== b.detail || a.animated !== b.animated || a.keys.size !== b.keys.size) return false;
+  for (const key of a.keys) if (!b.keys.has(key)) return false;
+  return true;
+}
+
+// The value of NODE_ENV (Next inlines it in the browser's bundle), or undefined where there is none.
+function nodeEnv() {
+  try {
+    return process.env.NODE_ENV;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Whether three checks every program's compilation (debug.checkShaderErrors) under `env` (NODE_ENV): only in
+ * development and in the tests, so a broken shader still says so there; in production reading the logs would make the
+ * page wait for every program (HOTFIX-3D).
+ */
+export function shaderErrorChecks(env = nodeEnv()) {
+  return env === 'development' || env === 'test';
+}
+
+// A task for when the page is idle (requestIdleCallback, else a timer): answers its cancel.
+function scheduleIdle(task) {
+  if (typeof globalThis.requestIdleCallback === 'function') {
+    const handle = globalThis.requestIdleCallback(task, { timeout: 500 });
+    return () => globalThis.cancelIdleCallback?.(handle);
+  }
+  const handle = setTimeout(task, 0);
+  return () => clearTimeout(handle);
+}
+
+// The materials of an object and its children, once each.
+function materialsOf(object) {
+  const found = new Set();
+  object.traverse(node => {
+    if (!node.material) return;
+    for (const item of Array.isArray(node.material) ? node.material : [node.material]) found.add(item);
+  });
+  return [...found];
+}
 
 // A canvas for the detailed aircraft's textures where the page has a document; none in Node.
 const documentCanvas = (width, height) => {
@@ -266,13 +333,21 @@ function sameSun(a, b) {
  * - PR M2: `getInstances()` may also answer `sprites` (planSprites), drawn over the models; `theme` colours the atlas's
  *   «Demo» plate and `onSpritesFailedChange(failed)` hears when the sprites cannot be built;
  * - `createRenderer({ canvas, context })`, `buildGeometry(three, spec)`, `createModels(onLoad)` (aircraft/gltfModels.js:
- *   createGltfModels, or null for none) and `now()` (milliseconds, monotonic) are for tests.
+ *   createGltfModels, or null for none) and `now()` (milliseconds, monotonic) are for tests;
+ * - HOTFIX-3D: `checkShaderErrors` is three's debug.checkShaderErrors (shaderErrorChecks: only in development and the
+ *   tests) and `idle(task)` runs the warm-up of the programs when the page is idle, answering its cancel;
+ *   `drawnNow()` → `{ detail, keys, animated }` says what the last frame really drew, so that only that takes the place
+ *   of the 2D symbols: the key of the detailed aircraft drawn (or null), the keys of the plan whose meshes were drawn,
+ *   and whether the animated frame was drawn whole (its sprites, tags, meshes and detailed aircraft); NOTHING_DRAWN
+ *   before the first frame, after onRemove and while the context is lost. `onDrawnChange()` hears every change of it,
+ *   after the frame (or the loss) that made it, so the map writes its traffic again.
  *
  * `pick({ x, y })` (CSS pixels from the canvas's top-left corner) answers `{ kind: 'aircraft', id }` with the plan's id
  * of the aircraft under the pointer, or `null` when the ray meets no aircraft (a shadow is no aircraft), before the
  * first frame, while the context is lost and while the layer has failed: the map then picks in 2D.
  * `setQuality({ shadows, dropLines })` lets the frame loop's governor lighten the scene without switching it off.
- * `stats()` → `{ meshes, instances, contacts, triangles, drawCalls, lost, failed }` (and `sprites`, `spritesFailed`
+ * `stats()` → `{ meshes, instances, contacts, triangles, drawCalls, lost, failed }` (and `programs`, three's programs,
+ * with a renderer that counts them, HOTFIX-3D; `sprites`, `spritesFailed`
  * once the animated traffic asked for sprites, PR M2): the meshes held, the instances and triangles drawn, the contact
  * shadows drawn (M4), the draw calls of the scene, whether the context is lost and whether the layer has failed. It has
  * failed while
@@ -287,6 +362,7 @@ export function createAircraft3dLayer({
   createSprites = createTrafficSprites, createLabels = createTrafficLabels,
   pixelRatio = () => globalThis.devicePixelRatio ?? 1, fonts = globalThis.document?.fonts ?? null,
   createModels = onLoad => (typeof three?.GLTFLoader === 'function' ? createGltfModels({ three, onLoad }) : null),
+  checkShaderErrors = shaderErrorChecks(), idle = scheduleIdle, onDrawnChange,
 } = {}) {
   if (three == null) throw new TypeError('The 3D aircraft layer needs the parts of three');
   if (typeof getInstances !== 'function') throw new TypeError('The 3D aircraft layer needs getInstances()');
@@ -358,6 +434,220 @@ export function createAircraft3dLayer({
     if (!removed) map?.triggerRepaint();
   });
   let liveryTextures = null;
+  // HOTFIX-3D: the materials every model of the layer shares (key → material), kept until onRemove so that three keeps
+  // their programs; the materials whose programs are ready on the current renderer, the objects compiling on it, the
+  // loaded models whose airframe compiled on it, the probes that compile a loaded model before it draws, and the
+  // objects of the warm-up at onAdd with its cancel.
+  const shared = new Map();
+  let compiled = new WeakSet();
+  let compiling = new Set();
+  let readyAirframes = new Set();
+  const probes = new Map();
+  let warmed = null;
+  let cancelWarm = null;
+  let compileWarned = false;
+  // What the last frame really drew (drawnNow), and whether the map hears of a change after this frame.
+  let drawnState = NOTHING_DRAWN;
+
+  function setDrawn(next) {
+    if (sameDrawn(next, drawnState)) return;
+    drawnState = next;
+    onDrawnChange?.();
+  }
+
+  function sharedMaterial(key, make) {
+    let made = shared.get(key);
+    if (made === undefined) {
+      made = make();
+      shared.set(key, made);
+    }
+    return made;
+  }
+
+  // The livery material of a loaded model (PR M5), one per type and level, shared by its meshes.
+  const liveryMaterialOf = (model, spec) => sharedMaterial(modelMaterialKey(model),
+    () => createLiveryMaterial(three, { frame: modelFrame(model, spec), textures: sharedLiveryTextures() }));
+
+  const canPrecompile = () => typeof renderer?.compileAsync === 'function';
+
+  // Whether the programs of `materials` are ready now (three's own check, with the parallel compile only: without it
+  // three calls every program ready at once).
+  function programsReady(materials) {
+    if (renderer?.extensions?.has?.(PARALLEL_COMPILE) !== true || typeof renderer.properties?.get !== 'function') return false;
+    return materials.every(item => renderer.properties.get(item)?.currentProgram?.isReady?.() === true);
+  }
+
+  /**
+   * Whether `object` can be drawn now without three waiting for its programs: true once every material of it compiled
+   * on the current renderer (and always with a renderer without compileAsync, as before). Otherwise it starts compiling
+   * them in the background, with the lights of `target` and the camera `view`, and the map draws again when they are
+   * ready; a renderer replaced or a layer removed meanwhile drops the answer.
+   */
+  function precompiled(object, target, view) {
+    if (renderer === null) return false;
+    if (!canPrecompile()) return true;
+    const materials = materialsOf(object);
+    if (materials.every(item => compiled.has(item))) return true;
+    if (compiling.has(object)) return false;
+    const owner = renderer;
+    const ready = compiled;
+    const waiting = compiling;
+    let promise;
+    try {
+      promise = renderer.compileAsync(object, view, target);
+    } catch (error) {
+      if (!compileWarned) {
+        compileWarned = true;
+        console.warn('The 3D aircraft\'s shaders could not be compiled ahead; they compile when first drawn.', error);
+      }
+      for (const item of materials) ready.add(item);
+      return true;
+    }
+    // Programs three had already (another material of the same kind) are ready at once.
+    if (programsReady(materials)) {
+      for (const item of materials) ready.add(item);
+      return true;
+    }
+    waiting.add(object);
+    Promise.resolve(promise).then(() => {
+      waiting.delete(object);
+      if (owner !== renderer || ready !== compiled) return;
+      for (const item of materials) ready.add(item);
+      if (!removed && !lost) map?.triggerRepaint();
+    }, () => {
+      waiting.delete(object);
+    });
+    return false;
+  }
+
+  // Draws `object` only once its programs are ready: until then it waits on a layer the camera does not see (its
+  // `visible` stays the layer's own, as the lights' blink and the governor's switches set it).
+  function drawWhenCompiled(object, target, view) {
+    if (object == null) return true;
+    const ready = precompiled(object, target, view);
+    object.traverse(node => {
+      if (node.material) node.layers.set(ready ? DRAWN_LAYER : WAITING_LAYER);
+    });
+    return ready;
+  }
+
+  // The objects of the main scene, each drawn once its programs are ready. Answers the keys of the plan whose meshes
+  // are drawn and whether all of them and the animated traffic's sprites and tags are.
+  function gateScene() {
+    const keys = new Set();
+    let whole = true;
+    for (const [key, held] of meshes) {
+      if (held.mesh !== null && drawWhenCompiled(held.mesh, scene, camera)) keys.add(key);
+      // A mesh left out of the plan (waiting to be retired) draws nothing the map needs.
+      else if (held.idleSince === null) whole = false;
+      if (held.shadow?.mesh) drawWhenCompiled(held.shadow.mesh, scene, camera);
+    }
+    drawWhenCompiled(contactMesh, scene, camera);
+    drawWhenCompiled(lines, scene, camera);
+    const spritesDrawn = drawWhenCompiled(sprites?.object, scene, camera);
+    const labelsDrawn = drawWhenCompiled(labels?.object, scene, camera);
+    return { keys, animated: whole && sprites !== null && spritesDrawn && labelsDrawn };
+  }
+
+  // A mesh of one instance with an instance colour, as the types' meshes are, to compile a material with.
+  function instancedProbe(geometry, probeMaterial) {
+    const probe = new three.InstancedMesh(geometry, probeMaterial, 1);
+    probe.instanceColor = new three.InstancedBufferAttribute(new Float32Array(3), 3);
+    return probe;
+  }
+
+  // Whether a type's loaded L1 model can replace its procedural one: once its livery material compiled.
+  function l1Ready(model, spec) {
+    if (!canPrecompile()) return true;
+    const key = modelMaterialKey(model);
+    const livery = liveryMaterialOf(model, spec);
+    if (compiled.has(livery)) return true;
+    let probe = probes.get(key);
+    if (probe === undefined) {
+      const object = instancedProbe(model.geometry, livery);
+      probe = { object, dispose: () => object.dispose() };
+      probes.set(key, probe);
+    }
+    if (!precompiled(probe.object, scene, camera)) return false;
+    probes.delete(key);
+    probe.dispose();
+    return true;
+  }
+
+  // Whether a type's loaded L2 model can be the detailed aircraft's airframe: once a probe of it compiled in the
+  // detailed aircraft's scene (its materials are the shared ones the airframe then uses).
+  function l2Ready(model, detail) {
+    if (!canPrecompile()) return true;
+    const key = modelMaterialKey(model);
+    if (readyAirframes.has(key)) return true;
+    let probe = probes.get(key);
+    if (probe === undefined) {
+      const airframe = buildModelAirframe(three, model, { spec: detail.spec, livery: detail.livery,
+        textures: sharedLiveryTextures(), materials: sharedMaterial });
+      const object = new three.Group();
+      for (const mesh of airframe.meshes) object.add(mesh);
+      probe = { object, dispose: () => airframe.dispose() };
+      probes.set(key, probe);
+    }
+    if (!precompiled(probe.object, detailScene, detailCamera)) return false;
+    probes.delete(key);
+    probe.dispose();
+    readyAirframes.add(key);
+    return true;
+  }
+
+  // The detailed aircraft's shadow and contact shadow materials: one of each, as one detailed aircraft draws at a time.
+  const detailShadowMaterial = () => sharedMaterial('layer:detail-shadow', () => new three.MeshBasicMaterial({
+    color: DETAIL_SHADOW.colour, transparent: true, opacity: DETAIL_SHADOW.opacity, depthWrite: false,
+  }));
+  const detailContactMaterial = () => sharedMaterial('layer:detail-contact', contactShadowMaterial);
+
+  // A canvas small enough to paint the warm-up's textures in no time: their programs are those of any size.
+  const warmCanvas = (width, height) => createCanvas?.(Math.min(width, 8), Math.min(height, 8)) ?? null;
+
+  // The warm-up's objects, never drawn: what the instanced models, the contact shadows and a detailed aircraft draw.
+  function warmObjects() {
+    const geometry = new three.BufferGeometry();
+    geometry.setAttribute('position', new three.Float32BufferAttribute([0, 0, 0, 1, 0, 0, 0, 1, 0], 3));
+    const units = [
+      { object: instancedProbe(geometry, material), detail: false },
+      { object: instancedProbe(contactGeometry, contactMaterial), detail: false },
+      { object: lines, detail: false },
+      { object: new three.Mesh(geometry, detailShadowMaterial()), detail: true },
+      { object: new three.Mesh(contactGeometry, detailContactMaterial()), detail: true },
+    ];
+    let model = null;
+    try {
+      model = buildDetail(three, AIRCRAFT_TYPES[WARM_TYPE], { code: WARM_TYPE, livery: DEFAULT_LIVERY,
+        createCanvas: warmCanvas, night, materials: sharedMaterial });
+      units.push({ object: model.object, detail: true });
+    } catch {
+      // The warm-up is a head start only: the detailed aircraft still waits for its programs when it first shows.
+    }
+    return {
+      units,
+      dispose() {
+        geometry.dispose();
+        // The detailed model kept its textured materials (and so their programs) until the layer went.
+        model?.dispose();
+      },
+    };
+  }
+
+  // The programs the layer will need, compiled when the page is idle after onAdd or on a new renderer.
+  function scheduleWarmUp() {
+    cancelWarm?.();
+    cancelWarm = null;
+    if (!canPrecompile()) return;
+    cancelWarm = idle(() => {
+      cancelWarm = null;
+      if (removed || lost || renderer === null || scene === null || !canPrecompile()) return;
+      warmed ??= warmObjects();
+      for (const unit of warmed.units) {
+        precompiled(unit.object, unit.detail ? detailScene : scene, unit.detail ? detailCamera : camera);
+      }
+    });
+  }
 
   function sharedLiveryTextures() {
     if (liveryTextures === null) {
@@ -393,7 +683,9 @@ export function createAircraft3dLayer({
     if (models === null || typeof key !== 'string' || key.startsWith('@')) return null;
     const scale = mapScale();
     if (!wantsL1({ lengthM: spec.lengthM, metresPerPixel: scale, current })) return null;
-    const model = models.get(key, 'l1');
+    const loaded = models.get(key, 'l1');
+    // HOTFIX-3D: a loaded model replaces the procedural one only once its program is ready (l1Ready).
+    const model = loaded !== null && (current === 'l1' || l1Ready(loaded, spec)) ? loaded : null;
     const level = instancedLevel({ lengthM: spec.lengthM, metresPerPixel: scale, hasModel: model !== null, current });
     return level === 'l1' ? model : null;
   }
@@ -413,8 +705,8 @@ export function createAircraft3dLayer({
     const model = instancedModel(key, spec, 'procedural');
     if (model !== null) {
       const geometry = instancedModelGeometry(three, model, spec, key);
-      return { geometry, triangles: triangleCount(geometry), level: 'l1',
-        material: createLiveryMaterial(three, { frame: modelFrame(model, spec), textures: sharedLiveryTextures() }) };
+      // HOTFIX-3D: the type's one livery material, kept when its level changes (its program with it).
+      return { geometry, triangles: triangleCount(geometry), level: 'l1', material: liveryMaterialOf(model, spec) };
     }
     // M9: the procedural model carries the zone of each vertex for the livery's instance colours (patchLiveryShader).
     const geometry = withLiveryZones(three, buildGeometry(three, spec));
@@ -589,7 +881,7 @@ export function createAircraft3dLayer({
     scene?.remove(held.mesh);
     held.mesh.dispose();
     held.geometry.dispose();
-    held.material?.dispose();
+    // Its material is the layer's (the procedural one, or its type's livery material): kept for its next mesh.
     if (held.shadow != null) {
       if (held.shadow.mesh !== null) {
         scene?.remove(held.shadow.mesh);
@@ -841,10 +1133,8 @@ export function createAircraft3dLayer({
     detailHeld.model.dispose();
     detailHeld.shadow.removeFromParent();
     detailHeld.shadow.geometry.dispose();
-    detailHeld.shadow.material.dispose();
-    // Its contact shadow shares the traffic's disc: only its material is its own.
+    // Its contact shadow shares the traffic's disc; both materials are the layer's (HOTFIX-3D), kept for the next one.
     detailHeld.contact.removeFromParent();
-    detailHeld.contact.material.dispose();
     detailHeld = null;
   }
 
@@ -853,29 +1143,30 @@ export function createAircraft3dLayer({
   function detailModel(detail, time) {
     // PR M5: its type's L2 model once it has loaded, else the procedural one.
     const loaded = models !== null && typeof detail.code === 'string' ? models.get(detail.code, 'l2') : null;
-    const level = detailLevel({ hasModel: loaded !== null });
+    // HOTFIX-3D: the L2 model replaces the procedural airframe only once its programs are ready (l2Ready).
+    const usable = loaded !== null && ((detailHeld?.level === 'l2' && detailHeld.code === detail.code)
+      || l2Ready(loaded, detail));
+    const level = detailLevel({ hasModel: usable });
     if (detailHeld !== null && detailHeld.key === detail.key && detailHeld.level === level) return detailHeld;
     disposeDetail();
-    const airframe = loaded === null ? null : buildModelAirframe(three, loaded, { spec: detail.spec,
-      livery: detail.livery, textures: sharedLiveryTextures() });
+    const airframe = !usable ? null : buildModelAirframe(three, loaded, { spec: detail.spec,
+      livery: detail.livery, textures: sharedLiveryTextures(), materials: sharedMaterial });
     const model = buildDetail(three, detail.spec, {
       code: detail.code, livery: detail.livery, registration: detail.registration, createCanvas, night,
-      logo: logos.get(detail.livery.logoTexture) ?? null, airframe,
+      logo: logos.get(detail.livery.logoTexture) ?? null, airframe, materials: sharedMaterial,
     });
     model.object.matrixAutoUpdate = false;
-    const shadow = new three.Mesh(buildGeometry(three, detail.spec), new three.MeshBasicMaterial({
-      color: DETAIL_SHADOW.colour, transparent: true, opacity: DETAIL_SHADOW.opacity, depthWrite: false,
-    }));
+    const shadow = new three.Mesh(buildGeometry(three, detail.spec), detailShadowMaterial());
     shadow.matrixAutoUpdate = false;
     shadow.frustumCulled = false;
-    const contact = new three.Mesh(contactGeometry, contactShadowMaterial());
+    const contact = new three.Mesh(contactGeometry, detailContactMaterial());
     contact.matrixAutoUpdate = false;
     contact.frustumCulled = false;
     contact.renderOrder = -1;
     contact.name = CONTACT_MESH_NAME;
     detailScene.add(contact, model.object, shadow);
-    detailHeld = { key: detail.key, level, model, shadow, contact, idleSince: null, builtAt: time,
-      logoTexture: detail.livery.logoTexture ?? null };
+    detailHeld = { key: detail.key, code: detail.code ?? null, level, model, shadow, contact, idleSince: null,
+      builtAt: time, logoTexture: detail.livery.logoTexture ?? null, readyOn: null };
     requestLogo(detail.livery);
     return detailHeld;
   }
@@ -921,6 +1212,13 @@ export function createAircraft3dLayer({
     const moving = detail.gsMs > 0.5 || detail.lights?.beacon === true;
     held.model.setState({ gearDown: detail.gearDown, lights: detail.lights ?? {}, timeMs: time, night,
       propellerRpm: moving ? PROPELLER_RPM : 0 });
+    // HOTFIX-3D: drawn once its programs are ready; until then the map draws again when they are.
+    if (held.readyOn !== renderer) {
+      const ready = [held.model.object, held.shadow, held.contact]
+        .map(object => precompiled(object, detailScene, detailCamera)).every(Boolean);
+      if (!ready) return;
+      held.readyOn = renderer;
+    }
     renderer.render(detailScene, detailCamera);
     detailDrawn = held;
     const wait = nextBlinkInMs(time, detail.lights ?? {});
@@ -970,6 +1268,8 @@ export function createAircraft3dLayer({
     try {
       renderer = createRenderer({ canvas: map.getCanvas(), context: nextContext });
       renderer.autoClear = false;
+      // HOTFIX-3D: outside development and the tests three reads no program's log, so no draw waits for one.
+      if (renderer.debug != null) renderer.debug.checkShaderErrors = checkShaderErrors === true;
     } catch (error) {
       renderer = null;
       if (!warned) {
@@ -978,6 +1278,11 @@ export function createAircraft3dLayer({
       }
     }
     rebuild = renderer === null;
+    // Programs belong to a renderer: a new one compiles them again, in the background.
+    compiled = new WeakSet();
+    compiling = new Set();
+    readyAirframes = new Set();
+    if (renderer !== null) scheduleWarmUp();
   }
 
   // On a map whose context works but without a renderer, the layer draws and picks nothing. It reports every change of
@@ -992,6 +1297,8 @@ export function createAircraft3dLayer({
   function onContextLost() {
     lost = true;
     rebuild = true;
+    // Nothing draws while the context is lost: the map shows the 2D symbols again (HOTFIX-3D).
+    setDrawn(NOTHING_DRAWN);
     reportFailed();
   }
 
@@ -1052,16 +1359,24 @@ export function createAircraft3dLayer({
       syncLighting();
       // state.reset() sets the viewport to the canvas: the drawing buffer's is set after it.
       const target = frameContext ?? context;
+      const gated = gateScene();
       renderer.resetState();
       renderer.setViewport(0, 0, target.drawingBufferWidth, target.drawingBufferHeight);
       renderer.render(scene, camera);
-      renderDetail(answer?.detail ?? null, mainMatrix, target, time);
+      const detail = answer?.detail ?? null;
+      renderDetail(detail, mainMatrix, target, time);
       drawn = true;
+      // HOTFIX-3D: only what this frame drew takes the place of its 2D symbol (an object still compiling did not).
+      const detailKey = detailDrawn?.key ?? null;
+      setDrawn({ detail: detailKey, keys: gated.keys,
+        animated: gated.animated && (detail === null || detailKey === detail.key) });
     },
 
     onRemove() {
       removed = true;
       drawn = false;
+      // Taken off the map, the layer draws nothing; the map's controller knows it (no word needed).
+      drawnState = NOTHING_DRAWN;
       stopListening();
       for (const held of meshes.values()) disposeHeld(held);
       meshes.clear();
@@ -1093,6 +1408,15 @@ export function createAircraft3dLayer({
       labels = null;
       liveryTextures?.dispose();
       liveryTextures = null;
+      // HOTFIX-3D: the warm-up, the probes and the shared materials go with the layer.
+      cancelWarm?.();
+      cancelWarm = null;
+      warmed?.dispose();
+      warmed = null;
+      for (const probe of probes.values()) probe.dispose();
+      probes.clear();
+      for (const item of shared.values()) item.dispose();
+      shared.clear();
       if (scene !== null) {
         lines.geometry.dispose();
         lineMaterial.dispose();
@@ -1169,6 +1493,9 @@ export function createAircraft3dLayer({
       return { ...quality };
     },
 
+    /** HOTFIX-3D: what the last frame really drew, `{ detail, keys, animated }` (see above). */
+    drawnNow: () => drawnState,
+
     stats() {
       let instances = 0;
       let triangles = 0;
@@ -1213,8 +1540,11 @@ export function createAircraft3dLayer({
         detail = { key: detailDrawn.key, triangles: detailTriangles, drawCalls: detailCalls,
           textured: detailDrawn.model.textured, ...(detailDrawn.level === 'l2' ? { level: 'l2' } : {}) };
       }
+      // HOTFIX-3D: how many programs three holds, with a renderer that says.
+      const programs = renderer?.info?.programs;
       // `models`: how many types draw their L1 model (PR M5), when any does.
       return { meshes: meshes.size, instances, contacts, triangles, drawCalls, lost, failed,
+        ...(Array.isArray(programs) ? { programs: programs.length } : {}),
         ...(sprites === null && !spritesFailed ? {} : { sprites: spriteCount, spritesFailed }),
         ...(labelStats === null ? {} : { labels: labelStats.count }),
         ...(modelled > 0 ? { models: modelled } : {}), ...(detail === null ? {} : { detail }) };

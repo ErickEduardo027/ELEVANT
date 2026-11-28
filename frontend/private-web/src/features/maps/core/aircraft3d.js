@@ -499,6 +499,9 @@ export function createAircraft3dController({
         if (!enabled && followedId === null) changed();
         else setStatus(layerFailed ? 'failed' : 'ready', layerFailed ? 'failed' : null);
       },
+      // HOTFIX-3D: what the layer really drew changed (an object's programs got ready, or the context was lost): after
+      // this frame the map writes its traffic again, so the 2D symbols give way only to what the 3D draws.
+      onDrawnChange: () => Promise.resolve().then(changed),
       onSpritesFailedChange: failed => {
         spritesFailed = failed === true;
         // After this frame: the map's onChange writes its icons again, never inside the layer's render.
@@ -587,6 +590,10 @@ export function createAircraft3dController({
   // animated traffic.
   const forced = () => (followedId !== null && detailFound !== null) || wantsAnimation();
   const drawingDetail = () => added && !layerFailed && engine?.map != null && (forced() || drawing());
+  // HOTFIX-3D: what the layer's last frame really drew (aircraft3dLayer.js: drawnNow), or null from a layer that does
+  // not say (all it was given counts as drawn, as before). A layer just added, or an aircraft whose programs are still
+  // compiling, draws nothing yet: their 2D symbols stay until it does.
+  const layerDrawn = () => (typeof layer?.drawnNow === 'function' ? layer.drawnNow() : null);
 
   // The eased attitude of an aircraft at the controller's clock (aircraft/attitude.js).
   function attitudeOf(item, onStand) {
@@ -813,19 +820,23 @@ export function createAircraft3dController({
       current = { revision, plan, detail };
       frameCache = null;
       if (animating()) {
-        // Every aircraft of the write, as a model or a sprite, each frame (PR M2).
-        drawnIds = animatedIdsOf(aircraft);
+        // Every aircraft of the write, as a model or a sprite, each frame (PR M2), once the layer drew a whole frame of
+        // them (HOTFIX-3D: until its programs are ready the GeoJSON icons stay).
+        const seen = layerDrawn();
+        drawnIds = seen === null || seen.animated ? animatedIdsOf(aircraft) : NO_IDS;
         if (followChanged) Promise.resolve().then(changed);
         engine.map.triggerRepaint?.();
         return drawnIds;
       }
       const ids = new Set();
+      const seen = layerDrawn();
       if (drawing()) {
-        for (const entry of plan.values()) {
+        for (const [key, entry] of plan) {
+          if (seen !== null && !seen.keys.has(key)) continue;
           for (const id of entry.ids) if (id !== null) ids.add(id);
         }
       }
-      if (detail !== null && drawingDetail()) ids.add(detail.id);
+      if (detail !== null && drawingDetail() && (seen === null || seen.detail === detail.key)) ids.add(detail.id);
       if (followChanged) Promise.resolve().then(changed);
       if (ids.size === 0) {
         drawnIds = NO_IDS;

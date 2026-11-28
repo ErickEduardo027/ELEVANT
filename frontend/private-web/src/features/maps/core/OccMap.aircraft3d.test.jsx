@@ -112,6 +112,13 @@ const trafficProperties = map => {
   }
   return byId;
 };
+// HOTFIX-3D: the 2D symbols give way only to what the layer really drew (aircraft3dLayer.js: drawnNow). One frame of
+// the last layer, and the microtask after it, where the map writes its traffic again.
+const drawLayer = async () => {
+  hoisted.layers.at(-1).layer.render({ drawingBufferWidth: 200, drawingBufferHeight: 100 },
+    { defaultProjectionData: { mainMatrix: Float64Array.from({ length: 16 }, (_, index) => (index % 5 === 0 ? 1 : 0)) } });
+  await settle();
+};
 const plannedIds = () => {
   const { plan } = hoisted.layers.at(-1).options.getInstances();
   return [...plan.values()].flatMap(entry => entry.ids.filter(id => id !== null)).sort();
@@ -202,6 +209,10 @@ describe('OccMap 3D aircraft (PR M7)', () => {
     expect(hoisted.renderers).toHaveLength(1);
     // The layer's plan holds the aircraft near the airfield the write drew; exactly those leave their 2D silhouette.
     // A write after the layer arrived carries the flags.
+    act(() => map.jumpTo({ zoom: map.getZoom() + 0.01 }));
+    // Until the layer drew them, they keep their 2D silhouette (HOTFIX-3D).
+    expect([...trafficProperties(map).values()].some(feature => feature.model3d)).toBe(false);
+    await drawLayer();
     act(() => map.jumpTo({ zoom: map.getZoom() + 0.01 }));
     const planned = plannedIds();
     expect(planned).toEqual(['f:near-1', 'h:abc123']);
@@ -383,6 +394,11 @@ describe('OccMap animated traffic (PR M2)', () => {
     // 2D, and the 3D chunk loaded for the animation: the layer is on the map.
     expect(map.layerIds()).toContain(LAYER_ID);
     server.at += 500;
+    frames.run();
+    // Until the layer drew a whole animated frame, the GeoJSON icon stays (HOTFIX-3D).
+    expect(trafficProperties(map).get(DEMO_ID)).toMatchObject({ model3d: false, animated: false });
+    await drawLayer();
+    server.at += 100;
     frames.run();
     const feature = trafficProperties(map).get(DEMO_ID);
     // Its icon, its dashed ring, its «Demo» plate and its tag are the layer's now (the GeoJSON ones are the fallback).
@@ -663,6 +679,9 @@ describe('OccMap animated traffic (PR M2)', () => {
     await settle();
     server.at += 500;
     frames.run();
+    await drawLayer();
+    server.at += 100;
+    frames.run();
     expect(trafficProperties(map).get(DEMO_ID)).toMatchObject({ animated: true });
     // The GeoJSON icons are not drawn: only the layer's pick finds the aircraft.
     fake.state.setRenderedFeatures(map, () => []);
@@ -703,6 +722,10 @@ describe('OccMap animated traffic (PR M2)', () => {
     await settle();
     server.at += 500;
     frames.run();
+    // Once the layer drew the animated frame (HOTFIX-3D).
+    await drawLayer();
+    server.at += 100;
+    frames.run();
     expect(trafficProperties(map).get(DEMO_ID)).toMatchObject({ animated: true });
     // Out again: the icons are back at once, before the next due write.
     act(() => ref.current.jumpTo({ zoom: GLOBE_MERCATOR_ZOOM - 0.5 }));
@@ -721,8 +744,9 @@ describe('OccMap animated traffic (PR M2)', () => {
     await settle();
     server.at += 500;
     frames.run();
-    expect(trafficProperties(map).get(DEMO_ID)).toMatchObject({ animated: true });
-    // The first frame cannot build the atlas: the layer goes and the next write gives the icons back.
+    // Animated, but the layer drew nothing yet: the GeoJSON icon stays (HOTFIX-3D).
+    expect(trafficProperties(map).get(DEMO_ID)).toMatchObject({ animated: false });
+    // The first frame cannot build the atlas: the layer goes and the icons stay.
     renderOnce(hoisted.layers.at(-1).layer);
     await settle();
     expect(warn).toHaveBeenCalled();

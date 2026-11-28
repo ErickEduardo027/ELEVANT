@@ -77,14 +77,25 @@ export function writeLiveryInstances(three, geometry, { capacity, count, liverie
   down.needsUpdate = true;
 }
 
+/** The key of a loaded model's livery material in a cache of shared materials: one per type and level. */
+export const modelMaterialKey = model => `model:livery:${model.code}:${model.level}`;
+
 /**
  * The airframe of the detailed aircraft from a type's L2 model, in `livery`: `{ meshes, frame, dispose, refreshLogo }`.
  * The body is a one-instance mesh with the livery material (its row of the shared `textures`), the glass and dark
  * parts plain meshes; the model's own geometries are shared with its cache and never disposed here.
  */
-export function buildModelAirframe(three, model, { spec, livery, textures }) {
+export function buildModelAirframe(three, model, { spec, livery, textures, materials: shared = null }) {
   const frame = modelFrame(model, spec);
   const materials = [];
+  // HOTFIX-3D: with a cache of shared materials (`materials(key, make)`), the body's livery material is the model's
+  // and the plain parts' are the cache's: a detailed aircraft built again makes none, and dispose() leaves them.
+  const materialOf = (key, make) => {
+    if (typeof shared === 'function') return shared(key, make);
+    const made = make();
+    materials.push(made);
+    return made;
+  };
   const geometries = [];
   const meshes = [];
   for (const part of model.parts) {
@@ -93,15 +104,15 @@ export function buildModelAirframe(three, model, { spec, livery, textures }) {
       geometry.setAttribute('liveryPart', partAttribute(three, geometry.getAttribute('position').count, 0));
       writeLiveryInstances(three, geometry, { capacity: 1, count: 1, liveries: [livery.id], gear: [1] });
       geometries.push(geometry);
-      const material = createLiveryMaterial(three, { frame, textures });
-      materials.push(material);
+      const material = materialOf(modelMaterialKey(model), () => createLiveryMaterial(three, { frame, textures }));
       const mesh = new three.InstancedMesh(geometry, material, 1);
       mesh.instanceMatrix.array.set([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
       mesh.name = 'fuselage';
       meshes.push(mesh);
     } else {
-      const material = new three.MeshStandardMaterial({ ...(PLAIN[part.name] ?? PLAIN.dark), side: three.DoubleSide });
-      materials.push(material);
+      const plain = Object.hasOwn(PLAIN, part.name) ? part.name : 'dark';
+      const material = materialOf(`model:plain:${plain}`,
+        () => new three.MeshStandardMaterial({ ...PLAIN[plain], side: three.DoubleSide }));
       const mesh = new three.Mesh(part.geometry, material);
       mesh.name = part.name;
       meshes.push(mesh);

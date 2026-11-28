@@ -242,4 +242,6 @@ test.describe('route, follow mode in 3D and real positions (CN-29, CN-30, CN-31)
       expectGpuGates(result, 'followed in 3D');
     } else expect(result.renderFps).toBeGreaterThan(5);
   });
+  // HOTFIX-3D: the cold entry into «Seguir en 3D» is measured in map-lab.follow3d-cold.spec.mjs, each test in a
+  // browser of its own with a cold GPU.
 });

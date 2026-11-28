@@ -397,6 +397,21 @@ describe('MapLab', () => {
       .toEqual(['flownEstimated', 'remaining']);
   });
 
+  it('HOTFIX-3D: pitch=2d opens a 3D scene in 2D (the suite enters «Seguir en 3D» from the 2D map); anything else is ignored', () => {
+    const pressed = () => screen.getByTestId('map-3d-toggle').getAttribute('aria-pressed');
+    let opened = open(`?scene=airfield-3d-replay&t=${NOON}`);
+    loadStyle(opened.map);
+    expect(pressed()).toBe('true');
+    cleanup();
+    opened = open(`?scene=airfield-3d-replay&t=${NOON}&pitch=2d`);
+    loadStyle(opened.map);
+    expect(pressed()).toBe('false');
+    cleanup();
+    opened = open(`?scene=airfield-3d-replay&t=${NOON}&pitch=sideways`);
+    loadStyle(opened.map);
+    expect(pressed()).toBe('true');
+  });
+
   it('uses only occ-* classes', async () => {
     const { readSource } = await import('../../../styles/occSourceScan');
     const { findLegacyColourClasses } = await import('../../../styles/occLegacyBridge');
