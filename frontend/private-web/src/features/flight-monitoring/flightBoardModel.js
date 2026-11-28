@@ -11,9 +11,15 @@ import { isInOperation } from '../occ-ui/statusVocabulary';
 // them is forbidden (contratos 2.7). So a strip says «Demo» from the turnaround's mark and never «est.»: whether an
 // aircraft is drawn at an estimated position only the map knows. The status words are the console's
 // (dashboard/noc/boardModel.js), from the planning snapshot alone.
+// M8: «En vuelo» and «En tierra» say where the aircraft of a strip is. The planning snapshot says it once a leg has its
+// actual time; before that the phase of its map flight does (contracts 1.3), which the page hears from the map
+// (FlightMap's onSelectionFlights, U5) and never reads again (contratos 2.7). Without the map flights, the snapshot alone.
 
 /** The filters of the board, in the order of its segmented control. */
-export const FLIGHT_BOARD_FILTERS = Object.freeze(['arrivals', 'departures', 'all']);
+export const FLIGHT_BOARD_FILTERS = Object.freeze(['arrivals', 'departures', 'inFlight', 'onGround', 'all']);
+
+/** Where the aircraft of a strip is (`strip.place`): in the air or on the ground at the station; `null` when unknown. */
+export const FLIGHT_PLACES = Object.freeze({ air: 'air', ground: 'ground' });
 
 /** The status words of a strip (flightMonitoringMessages `board.status.*`). */
 export const FLIGHT_BOARD_STATUS_KEYS = Object.freeze(['noStand', 'scheduled', 'landed', 'departed', 'inOperation',
@@ -88,6 +94,42 @@ export function stripStatus(flight, { direction, time, standCode, actualAt, nowM
   return { key: 'scheduled', signal: null };
 }
 
+// The phases of a map flight (contracts 1.3) whose aircraft flies: it left its origin (an arrival) or the station (a
+// departure); and those of an arrival that landed.
+const AIRBORNE_PHASES = new Set(['departed', 'enroute', 'approaching']);
+const LANDED_PHASES = new Set(['landed', 'arrived']);
+// A leg whose visit is over or will not happen is neither in the air nor on the ground.
+const OUT_OF_PLAY = new Set(['cancelled', 'diverted', 'completed']);
+
+/**
+ * Where the aircraft of a leg is by the leg alone (`air`, `ground` or `null`), from its status key (stripStatus), its
+ * actual time and the phase of its map flight (`phase`, or null without one):
+ * - a cancelled, diverted or completed leg: `null`;
+ * - an arrival: `ground` once it landed (its actual time, or a landed phase) or its visit is in operation, `air` while
+ *   its phase says it flies, else `null` (still at its origin, as far as the board knows);
+ * - a departure: `air` once it left (its actual time or an airborne phase), `ground` while its visit is in operation,
+ *   else `null` (the visit's arrival decides it: buildFlightBoard).
+ */
+export function legPlace({ direction, statusKey, actualAt = null, phase = null } = {}) {
+  if (OUT_OF_PLAY.has(statusKey)) return null;
+  const mapPhase = normalize(phase);
+  if (direction === 'Arrival') {
+    if (actualAt || LANDED_PHASES.has(mapPhase) || statusKey === 'landed' || statusKey === 'inOperation') return 'ground';
+    return AIRBORNE_PHASES.has(mapPhase) ? 'air' : null;
+  }
+  if (actualAt || statusKey === 'departed' || AIRBORNE_PHASES.has(mapPhase)) return 'air';
+  return statusKey === 'inOperation' ? 'ground' : null;
+}
+
+// One visit decides together: an arrival is no longer on the ground once its departure has left, and a departure whose
+// arrival is on the ground waits there with it.
+function placeOfVisit(strip, visit) {
+  const partner = visit.find(other => other !== strip && other.direction !== strip.direction) ?? null;
+  if (strip.direction === 'Arrival') return strip.ownPlace === 'ground' && partner?.ownPlace === 'air' ? null : strip.ownPlace;
+  if (strip.ownPlace !== null) return strip.ownPlace;
+  return partner?.ownPlace === 'ground' ? 'ground' : null;
+}
+
 const sortValue = time => (time === null ? Number.POSITIVE_INFINITY : time.at);
 
 // By the best time, then the flight number and the id, so equal times keep one order whatever the server sent (as the
@@ -98,14 +140,15 @@ function byTime(left, right) {
   return byNumber || String(left.id).localeCompare(String(right.id));
 }
 
-function stripOf(flight, direction, { nowMs, t }) {
+function stripOf(flight, direction, { nowMs, t, mapFlights }) {
   const times = legTimes(flight, direction);
   const time = bestTime(times);
   const code = normalizeStandCode(flight.stand?.code ?? flight.stand);
   const standCode = code === '' ? null : code;
   const status = stripStatus(flight, { direction, time, standCode, actualAt: times.actualAt, nowMs });
   const arrival = direction === 'Arrival';
-  return Object.freeze({
+  const mapFlight = mapFlights === null ? null : matchFlight(mapFlights, String(flight.id));
+  return {
     id: String(flight.id),
     legId: flight.id,
     turnaroundId: flight.turnaroundId ?? null,
@@ -123,38 +166,61 @@ function stripOf(flight, direction, { nowMs, t }) {
     sortAt: sortValue(time),
     searchText: searchable([flight.flightNumber, flight.airline, flight.registration, flight.supervisor,
       arrival ? flight.origin : flight.destination, standCode].filter(Boolean).join(' ')),
+    ownPlace: legPlace({ direction, statusKey: status.key, actualAt: times.actualAt, phase: mapFlight?.phase ?? null }),
+  };
+}
+
+const visitKeyOf = strip => (strip.turnaroundId == null ? `leg:${strip.id}` : `tat:${String(strip.turnaroundId)}`);
+
+// The strips as the board keeps them: frozen, each with the place its visit decides.
+function placed(strips) {
+  const visits = new Map();
+  for (const strip of strips) {
+    const key = visitKeyOf(strip);
+    visits.set(key, [...(visits.get(key) ?? []), strip]);
+  }
+  return strips.map(strip => {
+    const { ownPlace, ...rest } = strip;
+    return Object.freeze({ ...rest, place: placeOfVisit(strip, visits.get(visitKeyOf(strip))) });
   });
 }
 
 /**
- * The board at `nowMs` (the server's time in milliseconds): `{ arrivals, departures, all, counts: { arrivals,
- * departures, all } }`. Each strip has the shape of OccFlightStrip, `{ id: String(leg id), legId, turnaroundId,
- * direction: 'Arrival' | 'Departure', flightNumber, counterpartIata, time: { at, kind: 'actual' | 'estimated' |
- * 'scheduled' } | null, standCode, status: { key, label, signal }, demo, estimated, sortAt, searchText }`, sorted by its
- * best time, then its number and its id. `standCode` is normalized (A01 is A1); `demo` is the turnaround's mark; a flight
- * neither landing at the station nor leaving it is left out. `t` translates flightMonitoringMessages; `stationCode` tells
- * the direction of a flight that does not say it.
+ * The board at `nowMs` (the server's time in milliseconds): `{ arrivals, departures, inFlight, onGround, all, counts:
+ * { arrivals, departures, inFlight, onGround, all } }`. Each strip has the shape of OccFlightStrip, `{ id: String(leg
+ * id), legId, turnaroundId, direction: 'Arrival' | 'Departure', flightNumber, counterpartIata, time: { at, kind:
+ * 'actual' | 'estimated' | 'scheduled' } | null, standCode, status: { key, label, signal }, demo, estimated, sortAt,
+ * searchText, place }`, sorted by its best time, then its number and its id. `standCode` is normalized (A01 is A1);
+ * `demo` is the turnaround's mark; `place` where its aircraft is (FLIGHT_PLACES or null: legPlace, decided per visit);
+ * a flight neither landing at the station nor leaving it is left out. `t` translates flightMonitoringMessages;
+ * `stationCode` tells the direction of a flight that does not say it; `mapFlights` (M8, optional) are the map flights
+ * the map has read (contracts 1.3), whose phases say whether an aircraft flies before its leg has its actual time.
  */
-export function buildFlightBoard(flights = NO_FLIGHTS, { nowMs, t, stationCode = null } = {}) {
-  const strips = (Array.isArray(flights) ? flights : NO_FLIGHTS)
+export function buildFlightBoard(flights = NO_FLIGHTS, { nowMs, t, stationCode = null, mapFlights = null } = {}) {
+  const known = Array.isArray(mapFlights) ? mapFlights : null;
+  const strips = placed((Array.isArray(flights) ? flights : NO_FLIGHTS)
     .filter(flight => isObject(flight) && flight.id !== null && flight.id !== undefined)
     .flatMap(flight => {
       const direction = flightDirection(flight, stationCode);
-      return direction === null ? [] : [stripOf(flight, direction, { nowMs, t })];
+      return direction === null ? [] : [stripOf(flight, direction, { nowMs, t, mapFlights: known })];
     })
-    .sort(byTime);
+    .sort(byTime));
   const arrivals = Object.freeze(strips.filter(strip => strip.direction === 'Arrival'));
   const departures = Object.freeze(strips.filter(strip => strip.direction === 'Departure'));
+  const inFlight = Object.freeze(strips.filter(strip => strip.place === FLIGHT_PLACES.air));
+  const onGround = Object.freeze(strips.filter(strip => strip.place === FLIGHT_PLACES.ground));
   const all = Object.freeze(strips);
   return Object.freeze({
-    arrivals, departures, all,
-    counts: Object.freeze({ arrivals: arrivals.length, departures: departures.length, all: all.length }),
+    arrivals, departures, inFlight, onGround, all,
+    counts: Object.freeze({ arrivals: arrivals.length, departures: departures.length, inFlight: inFlight.length,
+      onGround: onGround.length, all: all.length }),
   });
 }
 
 /**
- * The strips of `board` that `filter` (`arrivals`, `departures` or `all`) keeps and whose number, airline, registration,
- * supervisor, other airport or stand holds `search`, without regard to case or accents. An unknown filter throws.
+ * The strips of `board` that `filter` (`arrivals`, `departures`, `inFlight`, `onGround` or `all`) keeps and whose
+ * number, airline, registration, supervisor, other airport or stand holds `search`, without regard to case or accents.
+ * An unknown filter throws.
  */
 export function filterBoard(board, filter = 'all', search = '') {
   if (!FLIGHT_BOARD_FILTERS.includes(filter)) throw new RangeError(`Unknown flight board filter: ${String(filter)}`);
