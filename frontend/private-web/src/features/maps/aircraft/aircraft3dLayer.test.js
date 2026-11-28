@@ -1,4 +1,4 @@
-import { Matrix4, PerspectiveCamera, Vector3 } from 'three';
+import { Matrix4, PerspectiveCamera, Vector3, Vector4 } from 'three';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OCC_PALETTE } from '../../occ-ui/occPalette';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
@@ -9,7 +9,7 @@ import {
 } from './aircraft3dLayer';
 import { triangleCount } from './aircraftGeometry';
 import { linearRgb, mercatorFrame, planInstances, planLabels, planSprites } from './instancePlan';
-import { createTrafficSprites } from './trafficSprites';
+import { billboardClip, createTrafficSprites } from './trafficSprites';
 import { AIRCRAFT_TYPES } from './types';
 
 // The layer's life with the real three, in Node, and an injected renderer: three's scene, meshes, lights and raycaster
@@ -833,6 +833,42 @@ describe('the sprites of the animated traffic (PR M2)', () => {
     expect(layer.pick(centre())).toEqual({ kind: 'aircraft', id: 'f:p:a' });
     layer.onRemove();
     expect(layer.stats().labels).toBeUndefined();
+  });
+
+  it('draws the «Demo» plate facing the screen: its size and offset in pixels are the same at pitch 0 and at pitch 60', () => {
+    const { layer, made, answer } = spriteWorld();
+    const demo = aircraft('f:p:demo', { bearing: 30, metres: 400, isDemo: true });
+    const sprites = planSprites([demo], { originLngLat: ARP });
+    answer({ revision: 1, plan: new Map(), sprites });
+    layer.render(fakeContext('gl'), viewOf().input);
+    // The layer hands the sprites the canvas in CSS pixels, which sizes the billboards.
+    expect(made[0].viewport()).toEqual({ width: WIDTH, height: HEIGHT });
+    const index = sprites.plain.indexOf(1);
+    expect(index).toBeGreaterThanOrEqual(0);
+    const [width, height] = sprites.sizes.slice(2 * index, 2 * index + 2);
+    const [offsetX, offsetY] = sprites.offsets.slice(2 * index, 2 * index + 2);
+    const at = new Vector3(...localOf(demo), 0);
+    // The plate on screen as the shader puts it (billboardClip), in CSS pixels from the top-left corner.
+    const plateOn = view => {
+      const clip = new Vector4(at.x, at.y, at.z, 1).applyMatrix4(view.localToClip).toArray();
+      const pixel = ([x, y, , w]) => ({ x: ((x / w + 1) / 2) * WIDTH, y: ((1 - y / w) / 2) * HEIGHT });
+      const corner = (cx, cy) => pixel(billboardClip(clip, [cx * width + offsetX, cy * height + offsetY],
+        { width: WIDTH, height: HEIGHT }));
+      const centre = pixel(clip);
+      const top = corner(0.5, 0.5);
+      const bottom = corner(-0.5, -0.5);
+      return { width: top.x - bottom.x, height: bottom.y - top.y, below: (top.y + bottom.y) / 2 - centre.y };
+    };
+    // Straight down (pitch 0) and pitched 60° from the south, at the same distance.
+    const flat = plateOn(viewOf({ from: [at.x, at.y - 1, at.z + 2_000], target: [at.x, at.y, at.z] }));
+    const pitched = plateOn(viewOf({ from: [at.x, at.y - 2_000 * Math.sin(Math.PI / 3), 2_000 * Math.cos(Math.PI / 3)],
+      target: [at.x, at.y, at.z] }));
+    for (const plate of [flat, pitched]) {
+      expect(plate.width).toBeCloseTo(width, 6);
+      expect(plate.height).toBeCloseTo(height, 6);
+      // Below its aircraft by its offset (y up in the plan, down on screen).
+      expect(plate.below).toBeCloseTo(-offsetY, 6);
+    }
   });
 
   it('without a 2D canvas for the atlas it says so once and keeps drawing its models', () => {

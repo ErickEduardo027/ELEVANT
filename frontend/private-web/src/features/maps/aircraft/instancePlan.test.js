@@ -1,7 +1,7 @@
 import { MercatorCoordinate } from 'maplibre-gl';
 import { Color, Matrix4, Quaternion, SRGBColorSpace, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
-import { OCC_PALETTE } from '../../occ-ui/occPalette';
+import { OCC_PALETTE, occColor } from '../../occ-ui/occPalette';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { destinationPoint, METRES_PER_NM } from '../airport/geo';
 import { thresholdsFromFits } from '../core/cameraPresets';
@@ -11,6 +11,8 @@ import {
 } from './instancePlan';
 import { SPRITE_CELLS, cellUv } from './spriteAtlas';
 import { altitudeColour, mapColorsFor } from '../style/mapColors';
+import { buildOccStyle } from '../style/occStyle';
+import { trafficOverlay } from '../traffic/trafficLayers';
 import { DEMO_PLATE_IMAGE, ESTIMATED_RING_IMAGE } from '../style/trafficImages';
 import { AIRCRAFT_TYPES, CATEGORY_FALLBACKS } from './types';
 
@@ -447,8 +449,7 @@ describe('planSprites (PR M2)', () => {
     const stale = aircraft('h:stale', { kind: 'other', quality: 'stale', opacity: 0.8, bearing: 180, metres: 300 });
     const estimated = aircraft('f:est', { quality: 'estimated', bearing: 270, metres: 300 });
     const demo = aircraft('f:demo', { isDemo: true, bearing: 0, metres: 900 });
-    const sprites = planSprites([chosen, departure, stale, estimated, demo], { originLngLat: ARP, selectedId: 'f:chosen',
-      bearingDeg: -17 });
+    const sprites = planSprites([chosen, departure, stale, estimated, demo], { originLngLat: ARP, selectedId: 'f:chosen' });
     const ids = [...sprites.ids];
     // The chosen one after the rest, in the accent at 1.4; the ring and the plate last, without an id.
     expect(ids).toEqual(['h:stale', 'f:dep', 'f:est', 'f:demo', 'f:chosen', null, null]);
@@ -462,10 +463,38 @@ describe('planSprites (PR M2)', () => {
     expect(tintOf(sprites, 5)).toBe(OCC_PALETTE['--occ-muted']);
     const plate = spriteAt(sprites, 6);
     expect(plate).toMatchObject({ plain: 1, size: [SPRITE_CELLS[DEMO_PLATE_IMAGE].width, SPRITE_CELLS[DEMO_PLATE_IMAGE].height] });
-    // Below the silhouette (its half size 13.75 px takes the 25 px step) and upright on a map turned −17°.
+    // Below the silhouette (its half size 13.75 px takes the 25 px step), in screen pixels: an image with its own
+    // colours is a billboard (aircraft/trafficSprites.js: billboardClip), so its matrix only places its aircraft.
     expect(plate.offset).toEqual([0, -25]);
+    expect(plate.xy).toEqual(spriteAt(sprites, 3).xy);
     const up = new Vector3(0, 1, 0).applyMatrix4(matrixOf(sprites, 6)).sub(new Vector3(...plate.xy, 0));
-    expect(Math.atan2(up.x, up.y) * (180 / Math.PI)).toBeCloseTo(-17, 6);
+    expect(Math.atan2(up.x, up.y)).toBeCloseTo(0, 6);
+  });
+
+  it('paints the chosen aircraft and the estimated ring in the OCC colours of the theme, as the GeoJSON layers do', () => {
+    const chosen = aircraft('f:chosen', { onGround: false, altM: 300 });
+    const estimated = aircraft('f:est', { quality: 'estimated', bearing: 270, metres: 300 });
+    const haloOf = (sprites, index) => hex(Array.from(sprites.halos.slice(3 * index, 3 * index + 3)));
+    const paintOf = (theme, id) => buildOccStyle({ basemap: false, overlays: [trafficOverlay({ theme })], theme })
+      .layers.find(layer => layer.id === id).paint;
+    for (const theme of ['dark', 'light']) {
+      const sprites = planSprites([chosen, estimated], { originLngLat: ARP, selectedId: 'f:chosen', theme });
+      expect([...sprites.ids]).toEqual(['f:est', 'f:chosen', null]);
+      const selected = paintOf(theme, 'occ-traffic-selected');
+      expect(tintOf(sprites, 1)).toBe(occColor('accent', theme));
+      expect(haloOf(sprites, 1)).toBe(occColor('nav', theme));
+      expect(tintOf(sprites, 1)).toBe(selected['icon-color']);
+      expect(haloOf(sprites, 1)).toBe(selected['icon-halo-color']);
+      const ring = paintOf(theme, 'occ-traffic-estimated-ring');
+      expect(tintOf(sprites, 2)).toBe(occColor('muted', theme));
+      expect(haloOf(sprites, 2)).toBe(occColor('nav', theme));
+      expect(tintOf(sprites, 2)).toBe(ring['icon-color']);
+      expect(haloOf(sprites, 2)).toBe(ring['icon-halo-color']);
+    }
+    // The light theme's own tokens, not the dark ones.
+    const light = planSprites([chosen, estimated], { originLngLat: ARP, selectedId: 'f:chosen', theme: 'light' });
+    expect(tintOf(light, 1)).not.toBe(occColor('accent'));
+    expect(tintOf(light, 2)).not.toBe(occColor('muted'));
   });
 
   it('leaves out the silhouettes of models and of aircraft on their stand, never their marks', () => {

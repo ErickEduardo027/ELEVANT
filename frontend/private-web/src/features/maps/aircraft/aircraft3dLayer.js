@@ -379,13 +379,15 @@ export function createAircraft3dLayer({
     };
   }
 
-  // The tags of this frame (PR M2): laid out again when due, written every frame where their aircraft are.
+  // The tags of this frame (PR M2): laid out again when due, written every frame where their aircraft are. The sprites
+  // take the canvas's size too, for the «Demo» plate that faces the screen (trafficSprites.js: billboardClip).
   function syncLabels(answer, target, time) {
     if (labels === null) return;
     const canvas = map?.getCanvas?.();
     const width = canvas?.clientWidth;
     const height = canvas?.clientHeight;
     if (!(width > 0) || !(height > 0)) return;
+    sprites?.setViewport(width, height);
     labels.frame(answer?.labels ?? null, { toPixel: pixelMapper(width, height), viewport: { width, height },
       pixelRatio: (target?.drawingBufferWidth ?? width) / width, nowMs: time });
   }

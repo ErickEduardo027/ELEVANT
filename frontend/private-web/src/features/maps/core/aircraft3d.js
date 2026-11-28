@@ -635,8 +635,8 @@ export function createAircraft3dController({
     const modelIds = new Set();
     for (const entry of models.values()) for (const id of entry.ids) if (id !== null) modelIds.add(id);
     if (detail !== null) modelIds.add(detail.id);
-    const sprites = planSprites(items, { originLngLat, theme, selectedId: animation.selectedId, bearingDeg: bearing,
-      modelIds, parkedIds: animation.parkedIds });
+    const sprites = planSprites(items, { originLngLat, theme, selectedId: animation.selectedId, modelIds,
+      parkedIds: animation.parkedIds });
     const labels = planLabels(items, { originLngLat, selectedId: animation.selectedId, focusId: animation.focusId,
       labelsOn: animation.labelsOn, zoom, words: animation.words, parkedIds: animation.parkedIds,
       language: animation.language, otherTagsMinZoom: animation.otherTagsMinZoom });

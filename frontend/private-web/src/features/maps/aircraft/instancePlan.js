@@ -373,8 +373,8 @@ const clamp01 = value => Math.min(1, Math.max(0, value));
  * The flat sprites of the animated traffic layer (PR M2, aircraft/aircraft3dLayer.js): what the GeoJSON layers draw of
  * each aircraft (traffic/trafficLayers.js), at the positions of this frame. `aircraft` are the aircraft of the frame
  * (the write's items at their interpolated positions, traffic/keyframes.js); options:
- * - `originLngLat` (the ARP of the layer's frame), `theme` (the altitude colours), `selectedId`, `bearingDeg` (the map's,
- *   so the «Demo» plate reads upright);
+ * - `originLngLat` (the ARP of the layer's frame), `theme` (the altitude colours and the chosen aircraft's and the
+ *   estimated ring's OCC colours, as style/occStyle.js swaps them for the GeoJSON layers), `selectedId`;
  * - `modelIds`: aircraft drawn as models (no silhouette, their marks stay); `parkedIds`: ELEVANT aircraft their stand
  *   draws (no silhouette unless chosen, their marks stay).
  * Each sprite is a rectangle of the atlas (aircraft/spriteAtlas.js) on the ground of the frame, sized in CSS pixels, so
@@ -382,7 +382,9 @@ const clamp01 = value => Math.min(1, Math.max(0, value));
  * - a silhouette: its category's (hollow for a departing ELEVANT flight), turned to its track, `scale` as
  *   trafficFeatures sizes it, tinted with the altitude scale (style/mapColors.js: grey on the ground), the chosen one in
  *   the accent, dimmed to half when stale and faded by its own opacity;
- * - an estimated position: its dashed ring, muted; a demo flight: its «Demo» plate below it, upright on the map.
+ * - an estimated position: its dashed ring, muted; a demo flight: its «Demo» plate below it, facing the screen at every
+ *   pitch and bearing as the GeoJSON plate does (aircraft/trafficSprites.js draws an image with its own colours as a
+ *   billboard: its size and offset are screen pixels, its matrix only places its aircraft).
  * Answers `{ count, matrices, colors, halos, opacities, sizes, offsets, cells, plain, ids }`: per sprite 16 floats
  * (T(x, y, 0) · Rz(−angle), column-major), 3 sRGB floats of tint and of halo, its opacity, its width and height in px,
  * its offset in px along its own axes, its atlas rectangle `[u0, v0, du, dv]`, 1 for an image with its own colours, and
@@ -390,7 +392,7 @@ const clamp01 = value => Math.min(1, Math.max(0, value));
  * air, ELEVANT flights, the chosen aircraft, then the rings and the plates.
  */
 export function planSprites(aircraft = [], {
-  originLngLat, theme = 'dark', selectedId = null, bearingDeg = 0, modelIds = null, parkedIds = null,
+  originLngLat, theme = 'dark', selectedId = null, modelIds = null, parkedIds = null,
 } = {}) {
   const frame = mercatorFrame(originLngLat);
   const models = modelIds instanceof Set ? modelIds : new Set();
@@ -419,18 +421,18 @@ export function planSprites(aircraft = [], {
       else if (!aviam) band = ground ? 0 : 1;
       bands[band].push({ id: item.id, x, y, angle: finite(item.trackDeg) ? item.trackDeg : 0, image: icon,
         width: iconPx, height: iconPx, offsetY: 0,
-        tint: selected ? occColor('accent') : altitudeColour(theme, { ground, altFt: altitudeFeet(item) }),
-        halo: selected ? occColor('nav') : halo, opacity: dimmed });
+        tint: selected ? occColor('accent', theme) : altitudeColour(theme, { ground, altFt: altitudeFeet(item) }),
+        halo: selected ? occColor('nav', theme) : halo, opacity: dimmed });
     }
     if (item.quality === 'estimated') {
       const ring = SPRITE_CELLS[ESTIMATED_RING_IMAGE];
       bands[4].push({ id: null, x, y, angle: 0, image: ESTIMATED_RING_IMAGE, width: ring.width * scale,
-        height: ring.height * scale, offsetY: 0, tint: occColor('muted'), halo: occColor('nav'), opacity: own });
+        height: ring.height * scale, offsetY: 0, tint: occColor('muted', theme), halo: occColor('nav', theme), opacity: own });
     }
     if (aviam && item.isDemo === true) {
       const plate = SPRITE_CELLS[DEMO_PLATE_IMAGE];
       const radius = Math.round(((AIRCRAFT_ICON_SIZES[category] - 2 * AIRCRAFT_ICON_INSET) / 2) * scale * 10) / 10;
-      bands[5].push({ id: null, x, y, angle: finite(bearingDeg) ? bearingDeg : 0, image: DEMO_PLATE_IMAGE,
+      bands[5].push({ id: null, x, y, angle: 0, image: DEMO_PLATE_IMAGE,
         width: plate.width, height: plate.height, offsetY: -plateCentrePx(radius), tint: '#ffffff', halo: '#ffffff',
         opacity: dimmed });
     }

@@ -4,7 +4,9 @@ import { ATLAS_RATIO, ATLAS_SIZE, drawSpriteAtlas } from './spriteAtlas';
 // aircraft/instancePlan.js: planSprites, drawn by the 3D aircraft layer (aircraft3dLayer.js) as one InstancedMesh of a
 // unit square on the ground of its frame, textured from the atlas of aircraft/spriteAtlas.js. Its shader sizes each
 // square in CSS pixels (times the metres of a pixel at the frame's zoom, a uniform), so a sprite keeps its size on screen
-// as a MapLibre icon does, and paints a tinted image's shape (red) in its instance colour over its halo (green) in its
+// as a MapLibre icon does; an image with its own colours (the «Demo» plate) is a billboard instead, its size and offset
+// in screen pixels at its aircraft's projected point, so it faces the screen at every pitch as the GeoJSON plate does
+// (billboardClip, which the shader mirrors). It paints a tinted image's shape (red) in its instance colour over its halo (green) in its
 // halo colour; colours are sRGB and written as they are, as MapLibre writes its own. No depth: the sprites draw over the
 // ground and the buildings, in the order of the plan, as the GeoJSON symbols did. `three` is a parameter, as for the
 // layer (aircraft3dChunk.js: THREE_PARTS).
@@ -17,6 +19,7 @@ attribute vec2 instanceOffset;
 attribute vec4 instanceCell;
 attribute float instancePlain;
 uniform float metresPerPx;
+uniform vec2 viewport;
 varying vec2 vUv;
 varying vec3 vTint;
 varying vec3 vHalo;
@@ -32,8 +35,13 @@ void main() {
   vHalo = instanceHalo;
   vOpacity = instanceOpacity;
   vPlain = instancePlain;
-  vec2 local = (position.xy * instanceSize + instanceOffset) * metresPerPx;
-  gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(local, 0.0, 1.0);
+  vec2 local = position.xy * instanceSize + instanceOffset;
+  if (instancePlain > 0.5) {
+    vec4 centre = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+    gl_Position = vec4(centre.xy + local / viewport * 2.0 * centre.w, centre.zw);
+    return;
+  }
+  gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(local * metresPerPx, 0.0, 1.0);
 }
 `;
 
@@ -63,15 +71,29 @@ export const SPRITE_ATTRIBUTES = Object.freeze([
   ['instanceOffset', 'offsets', 2], ['instanceCell', 'cells', 4], ['instancePlain', 'plain', 1],
 ]);
 
+/**
+ * Where the shader puts a corner of a billboard (an image with its own colours, the «Demo» plate): `centreClip` the clip
+ * coordinates `[x, y, z, w]` of its aircraft's point, `localPx` the corner `[x, y]` in CSS pixels from it (x right, y
+ * up: the square's corner times its size plus its offset) and `viewport` `{ width, height }` the canvas in CSS pixels.
+ * Answers the corner's clip coordinates: after the division by w it lies exactly `localPx` from the point on screen,
+ * whatever the pitch, as a MapLibre icon aligned to the viewport does.
+ */
+export function billboardClip(centreClip, [localX, localY], { width, height }) {
+  const [x, y, z, w] = centreClip;
+  return [x + (localX / width) * 2 * w, y + (localY / height) * 2 * w, z, w];
+}
+
 /** A sprite is picked within this share of its half size from its centre. */
 export const PICK_SHARE = 0.75;
 
 const nextPowerOfTwo = value => 2 ** Math.ceil(Math.log2(Math.max(1, value)));
 
 /**
- * The sprites of one layer: `{ object, sync(sprites), setMetresPerPx(value), pick(x, y, toPixel), stats(), dispose() }`.
+ * The sprites of one layer: `{ object, sync(sprites), setMetresPerPx(value), setViewport(width, height),
+ * pick(x, y, toPixel), stats(), dispose() }`.
  * - `object`: the InstancedMesh, for the layer's scene;
  * - `sync(sprites)`: copies planSprites' answer (or null: none) into the mesh;
+ * - `setViewport(width, height)`: the canvas in CSS pixels, which sizes the billboards (billboardClip);
  * - `pick(x, y, toPixel)`: the id of the aircraft whose silhouette is under the CSS pixel, or null; `toPixel(x, y, z)`
  *   answers the CSS pixel `{ x, y }` of a point of the frame;
  * - `createCanvas(width, height)` makes the atlas's canvas; it throws, with nothing built, when there is none or it
@@ -88,7 +110,7 @@ export function createTrafficSprites({ three, createCanvas, theme = 'dark', rati
   texture.colorSpace = three.NoColorSpace ?? '';
   texture.needsUpdate = true;
   const material = new three.ShaderMaterial({
-    uniforms: { atlas: { value: texture }, metresPerPx: { value: 1 } },
+    uniforms: { atlas: { value: texture }, metresPerPx: { value: 1 }, viewport: { value: new three.Vector2(1, 1) } },
     vertexShader: VERTEX_SHADER,
     fragmentShader: FRAGMENT_SHADER,
     transparent: true,
@@ -167,6 +189,14 @@ export function createTrafficSprites({ three, createCanvas, theme = 'dark', rati
     },
 
     metresPerPx: () => material.uniforms.metresPerPx.value,
+
+    setViewport(width, height) {
+      if (Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0) {
+        material.uniforms.viewport.value.set(width, height);
+      }
+    },
+
+    viewport: () => ({ width: material.uniforms.viewport.value.x, height: material.uniforms.viewport.value.y }),
 
     pick(x, y, toPixel) {
       if (current === null) return null;
