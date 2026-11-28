@@ -2812,6 +2812,11 @@ API, lo que leen las pantallas ni su cadencia.
   y, desde que se ve el Caribe, siempre rotulados. Esos aeropuertos también dan
   la posición del origen o destino de un vuelo cuando la API no la trae
   ([datos](../../frontend/private-web/src/features/maps/airport/data/README.md)).
+  El globo traza además, finas y tenues, las rutas de círculo máximo de todos
+  los vuelos de AVIAM del día; la del vuelo elegido sigue resaltada. El tablero
+  suma los filtros «En vuelo» y «En tierra» a «Llegadas», «Salidas» y «Todos»,
+  y el mapa atenúa los vuelos y rutas que el filtro o la búsqueda dejan fuera
+  (28 de noviembre de 2026, sin desplegar).
 - **Mapa de posiciones.** 2D/3D, «Centrar PUJ» y pantalla completa pasan al riel
   del mapa. El detalle de la posición usa el mismo panel acoplado, y sus rótulos
   ya no van en mayúsculas.

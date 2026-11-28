@@ -1156,3 +1156,20 @@ Segundo paso del carril M8. Solo cambia el mapa con el globo (Monitoreo); Panora
 - *Origen o destino sin posición.* `airport/worldAirports.js: counterpartPoint` da la posición del aeropuerto del vuelo: la de la fila de la API si la trae; si no, la del aeropuerto de la región o del mundo con su OACI y luego con su IATA. La usan la ruta (`traffic/routeFeatures.js`) y el plan de movimiento (`traffic/motionStore.js`) en todos los mapas.
 - *Suite visual.* `tests/visual/support/isolate.mjs` responde las dos capas nuevas de GIBS (Blue Marble sin tiempo; Black Marble solo fijada a una fecha) con imágenes sintéticas opacas de `syntheticTiles.mjs`.
 - *Pruebas.* `airport/worldAirports.test.js` (nuevo), `scripts/maps/lib/ourAirports.test.mjs`, `visualSyntheticTiles.test.js`, `MapLegend.test.jsx`, `OccMap.test.jsx`, `FlightMap.test.jsx` y `FlightMonitoringPage.legend.test.jsx`, con el MapLibre simulado. No se vio el resultado en un navegador ni en el VPS; nada de esto acredita un despliegue.
+
+## Actualización (28 de noviembre de 2026). M8 del plan de mapas: rutas de todos los vuelos y filtros del tablero enlazados al mapa
+
+Tercer paso del carril M8 (rama `feat/occ-monitoreo-mundial`, sin desplegar). Solo Monitoreo de vuelos cambia; Panorama y Mapa de posiciones no reciben la capa nueva.
+
+- *Rutas de los vuelos de AVIAM.* `style/flightRouteLayers.js` dibuja el círculo máximo de cada vuelo de los vuelos del mapa (contratos 1.3): del origen a la estación para una llegada y de la estación al destino para una salida, con `counterpartPoint` para el aeropuerto del otro extremo. Un vuelo sin posición del otro extremo, uno cancelado o desviado y el vuelo elegido quedan fuera; este último conserva su propia ruta resaltada (`traffic/trafficLayers.js`). Una línea que cruza el antimeridiano se corta allí (`splitAtAntimeridian`) y queda como MultiLineString, para que nunca dé la vuelta al mundo por el otro lado. Se dibuja como una línea fina (1 px) con el acento de AVIAM a opacidad 0,45, en la ranura `reference`, y no se dibuja desde el umbral `airfield`. Es la clave `traffic.routes` del grupo Tráfico del menú de capas, encendida por defecto en Mundo y Región, y la leyenda la explica. FlightMap escribe la fuente solo cuando cambian los vuelos del mapa, el filtro o el vuelo elegido.
+- *Filtros del tablero.* `flight-monitoring/flightBoardModel.js` suma «En vuelo» y «En tierra» a «Llegadas», «Salidas» y «Todos», que conservan su significado. El grupo pasa a llamarse «Filtro del tablero».
+  - Dónde está el avión (`legPlace`) se decide primero con la instantánea de planificación: la hora real, el estado de la visita y si está en operación.
+  - Antes de la hora real, se decide con la fase del vuelo del mapa que la página ya recibe del mapa (`onSelectionFlights`). No hay una segunda lectura (contratos 2.7).
+  - Una visita decide en conjunto: una llegada deja de estar en tierra cuando su salida despega, y una salida espera en tierra con su llegada aterrizada.
+- *Enlace con el mapa.* La página pasa a FlightMap los ids de las tiras que conserva el filtro o la búsqueda (`emphasisedFlightIds`; `null` con «Todos» y sin búsqueda).
+  - OccMap (`flightEmphasis`) atenúa los demás aviones de AVIAM con el feature state `outside` de la fuente de tráfico, con opacidad ×0,3 (`OUTSIDE_FILTER_OPACITY`). Solo escribe las claves cuyo estado cambia, así que un filtro nuevo no reescribe los datos del tráfico.
+  - Sus rutas llevan `outside` y bajan a opacidad 0,12.
+  - El vuelo elegido nunca se atenúa.
+  - Mientras el filtro atenúa algo, la leyenda dice «Fuera del filtro del tablero» (`OccMapContext.boardFilter`).
+- *Sin cambios en lo fijado.* No cambian noSetStyle, el tope de escritura de GeoJSON (CN-18), el presupuesto de lecturas (CN-19) ni CN-29 a CN-32. La disposición flotante del tablero es de M1 y no se tocó.
+- *Pruebas.* `style/flightRouteLayers.test.js` (nuevo), `flightBoardModel.test.js`, `FlightBoard.test.jsx`, `FlightMonitoringPage.test.jsx`, `FlightMap.test.jsx`, `OccMap.test.jsx`, `MapLegend.test.jsx`, `layersMenu.test.js` y `trafficLayers.test.js`, con el MapLibre simulado. No se vio en un navegador ni en el VPS.
