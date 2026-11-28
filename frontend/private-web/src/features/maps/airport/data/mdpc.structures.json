@@ -1,0 +1,195 @@
+{
+  "schema": 1,
+  "airport": "MDPC",
+  "note": "Estructuras en 3D del plano de MDPC, escritas a mano. Todas las medidas son estimaciones (source 'estimate') que el dueño del producto puede corregir; ninguna sale del AIP ni de las cartas.",
+  "kindDefaults": {
+    "terminal": {
+      "heightM": 12,
+      "source": "estimate"
+    },
+    "fbo": {
+      "heightM": 8,
+      "source": "estimate"
+    },
+    "hangar": {
+      "heightM": 14,
+      "source": "estimate"
+    }
+  },
+  "buildings": [
+    {
+      "layoutId": "term-232933265",
+      "label": "Terminal A (Salidas)",
+      "kind": "terminal",
+      "baseM": 0,
+      "heightM": 12,
+      "source": "estimate",
+      "note": "Altura estimada de la Terminal A (~12 m).",
+      "reviewedBy": null
+    },
+    {
+      "layoutId": "term-340112083",
+      "label": "Terminal A (Llegadas)",
+      "kind": "terminal",
+      "baseM": 0,
+      "heightM": 12,
+      "source": "estimate",
+      "note": "Altura estimada de la Terminal A (~12 m).",
+      "reviewedBy": null
+    },
+    {
+      "layoutId": "term-335430643",
+      "label": "Terminal A (edificio principal)",
+      "kind": "terminal",
+      "baseM": 0,
+      "heightM": 14,
+      "source": "estimate",
+      "note": "Altura estimada de las cubiertas altas del edificio principal; 2 m sobre las alas de la Terminal A, que se solapan con él en OSM.",
+      "reviewedBy": null
+    },
+    {
+      "layoutId": "term-335430650",
+      "label": "Terminal B",
+      "kind": "terminal",
+      "baseM": 0,
+      "heightM": 15,
+      "source": "estimate",
+      "note": "Altura estimada de la Terminal B (~15 m).",
+      "reviewedBy": null
+    },
+    {
+      "layoutId": "term-1226633320",
+      "label": "Terminal B (edificio oeste)",
+      "kind": "terminal",
+      "baseM": 0,
+      "heightM": 13,
+      "source": "estimate",
+      "note": "Edificio sin nombre en OSM al oeste de la Terminal B, junto a B27–B32; altura estimada, 2 m bajo la Terminal B, con la que se solapa en OSM.",
+      "reviewedBy": null
+    }
+  ],
+  "jetBridges": [
+    {
+      "stand": "B20",
+      "terminalId": "term-335430650",
+      "edgeIndex": 7,
+      "designType": "A320",
+      "doorAftOfNoseM": 6,
+      "rotundaLateralM": 8,
+      "rotundaRadiusM": 2.3,
+      "rotundaRiseM": 0.6,
+      "tunnelWidthM": 2.6,
+      "tunnelHeightM": 3,
+      "baseHeightM": 3.4,
+      "source": "estimate",
+      "note": "Pasarela procedural, medidas estimadas: rotonda contra la cara del muelle de la Terminal B que mira a la posición, túnel hasta la puerta delantera izquierda de un A320 de referencia.",
+      "reviewedBy": null
+    },
+    {
+      "stand": "B21",
+      "terminalId": "term-335430650",
+      "edgeIndex": 23,
+      "designType": "A320",
+      "doorAftOfNoseM": 6,
+      "rotundaLateralM": 8,
+      "rotundaRadiusM": 2.3,
+      "rotundaRiseM": 0.6,
+      "tunnelWidthM": 2.6,
+      "tunnelHeightM": 3,
+      "baseHeightM": 3.4,
+      "source": "estimate",
+      "note": "Pasarela procedural, medidas estimadas: rotonda contra la cara del muelle de la Terminal B que mira a la posición, túnel hasta la puerta delantera izquierda de un A320 de referencia.",
+      "reviewedBy": null
+    },
+    {
+      "stand": "B22",
+      "terminalId": "term-335430650",
+      "edgeIndex": 9,
+      "designType": "A320",
+      "doorAftOfNoseM": 6,
+      "rotundaLateralM": 8,
+      "rotundaRadiusM": 2.3,
+      "rotundaRiseM": 0.6,
+      "tunnelWidthM": 2.6,
+      "tunnelHeightM": 3,
+      "baseHeightM": 3.4,
+      "source": "estimate",
+      "note": "Pasarela procedural, medidas estimadas: rotonda contra la cara del muelle de la Terminal B que mira a la posición, túnel hasta la puerta delantera izquierda de un A320 de referencia.",
+      "reviewedBy": null
+    },
+    {
+      "stand": "B23",
+      "terminalId": "term-335430650",
+      "edgeIndex": 21,
+      "designType": "A320",
+      "doorAftOfNoseM": 6,
+      "rotundaLateralM": 8,
+      "rotundaRadiusM": 2.3,
+      "rotundaRiseM": 0.6,
+      "tunnelWidthM": 2.6,
+      "tunnelHeightM": 3,
+      "baseHeightM": 3.4,
+      "source": "estimate",
+      "note": "Pasarela procedural, medidas estimadas: rotonda contra la cara del muelle de la Terminal B que mira a la posición, túnel hasta la puerta delantera izquierda de un A320 de referencia.",
+      "reviewedBy": null
+    },
+    {
+      "stand": "B24",
+      "terminalId": "term-335430650",
+      "edgeIndex": 11,
+      "designType": "A320",
+      "doorAftOfNoseM": 6,
+      "rotundaLateralM": 8,
+      "rotundaRadiusM": 2.3,
+      "rotundaRiseM": 0.6,
+      "tunnelWidthM": 2.6,
+      "tunnelHeightM": 3,
+      "baseHeightM": 3.4,
+      "source": "estimate",
+      "note": "Pasarela procedural, medidas estimadas: rotonda contra la cara del muelle de la Terminal B que mira a la posición, túnel hasta la puerta delantera izquierda de un A320 de referencia.",
+      "reviewedBy": null
+    },
+    {
+      "stand": "B25",
+      "terminalId": "term-335430650",
+      "edgeIndex": 17,
+      "designType": "A320",
+      "doorAftOfNoseM": 6,
+      "rotundaLateralM": 8,
+      "rotundaRadiusM": 2.3,
+      "rotundaRiseM": 0.6,
+      "tunnelWidthM": 2.6,
+      "tunnelHeightM": 3,
+      "baseHeightM": 3.4,
+      "source": "estimate",
+      "note": "Pasarela procedural, medidas estimadas: rotonda contra la cara del muelle de la Terminal B que mira a la posición, túnel hasta la puerta delantera izquierda de un A320 de referencia.",
+      "reviewedBy": null
+    },
+    {
+      "stand": "B26",
+      "terminalId": "term-335430650",
+      "edgeIndex": 11,
+      "designType": "A320",
+      "doorAftOfNoseM": 6,
+      "rotundaLateralM": 8,
+      "rotundaRadiusM": 2.3,
+      "rotundaRiseM": 0.6,
+      "tunnelWidthM": 2.6,
+      "tunnelHeightM": 3,
+      "baseHeightM": 3.4,
+      "source": "estimate",
+      "note": "Pasarela procedural, medidas estimadas: rotonda contra la cara del muelle de la Terminal B que mira a la posición, túnel hasta la puerta delantera izquierda de un A320 de referencia.",
+      "reviewedBy": null
+    }
+  ],
+  "taxiwayPavement": {
+    "kinds": [
+      "taxiway",
+      "taxilane"
+    ],
+    "halfWidthM": 11.5,
+    "source": "estimate",
+    "note": "Media anchura estimada: 23 m de calzada para toda calle de rodaje del plano, que no guarda el ancho de cada una.",
+    "reviewedBy": null
+  }
+}
