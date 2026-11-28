@@ -843,6 +843,9 @@ const OccMapView = forwardRef(function OccMapView({
     syncSky(engine, applied, latest.current?.theme);
     // The next write plans no followed aircraft: its detailed model goes.
     applied.loop?.wake();
+    // Fix M4: the camera it flies back to is kept for the 3D that may take over while it flies (another aircraft's
+    // double click): that one goes back to the view from before the first 3D, not to a camera partway through this ease.
+    applied.lastFollow3dSaved = restore && saved ? { saved, at: performance.now() } : null;
     if (restore && saved && engine?.map) {
       engine.easeTo({ center: saved.center, zoom: saved.zoom, bearing: saved.bearing ?? 0, pitch: saved.pitch ?? 0,
         duration: FOLLOW_3D_RESTORE_MS, essential: false });
@@ -1863,6 +1866,7 @@ const OccMapView = forwardRef(function OccMapView({
       stopFrames?.();
       stopFollowFrames?.();
       // «Seguir en 3D» (CN-30) does not outlive its engine (a theme change re-creates the map).
+      appliedRef.current.lastFollow3dSaved = null;
       if (appliedRef.current.follow3d?.on) {
         appliedRef.current.follow3d = { ...FOLLOW_3D_OFF };
         setFollow3dUi(null);
@@ -2134,7 +2138,8 @@ const OccMapView = forwardRef(function OccMapView({
   // of «Persecución» flown in from where it was, the 3D aircraft on for it whatever the 2D/3D choice, and MapLibre's own
   // gestures handed to the orbit; «Dejar de seguir», Esc or another aircraft chosen end it and fly the camera back.
   // `view` (M4) is the view it starts in: «Persecución» unless it names another (the double click: «Muy cerca»).
-  const startFollow3d = useCallback(view => {
+  // `handoff` says it takes over from a 3D that ended for it (a double click waiting for its selection).
+  const startFollow3d = useCallback((view, { handoff = false } = {}) => {
     const engine = engineRef.current;
     const applied = appliedRef.current;
     const info = latest.current?.followInfo;
@@ -2143,8 +2148,13 @@ const OccMapView = forwardRef(function OccMapView({
     if (!camera) return;
     // A click handler passes its event: only a view's name is one.
     const start = typeof view === 'string' && Object.hasOwn(ORBIT_VIEWS, view) ? view : 'chase';
+    // Taking over from a 3D still flying back (or one that ended for it), it keeps that one's camera to return to; the
+    // entry flies from where the camera is now.
+    const last = applied.lastFollow3dSaved;
+    applied.lastFollow3dSaved = null;
+    const resumed = last && (handoff || performance.now() - last.at < FOLLOW_3D_RESTORE_MS) ? last.saved : null;
     applied.follow3d = {
-      ...FOLLOW_3D_OFF, on: true, saved: camera, entry: { from: camera, startMs: null },
+      ...FOLLOW_3D_OFF, on: true, saved: resumed ?? camera, entry: { from: camera, startMs: null },
       orbit: orbitFor(start, { item: applied.chosen, engine,
         trackDeg: applied.chosen?.trackDeg ?? camera.bearing ?? 0 }),
       subjectAt: null,
@@ -2177,7 +2187,8 @@ const OccMapView = forwardRef(function OccMapView({
       if (!appliedRef.current.follow3d?.on) startFollow3d(view);
       return true;
     }
-    pendingFollow3dRef.current = { id, view, from: current ? `${current.kind}:${current.id}` : '' };
+    pendingFollow3dRef.current = { id, view, from: current ? `${current.kind}:${current.id}` : '',
+      handoff: appliedRef.current.follow3d?.on === true };
     props.onSelect?.({ kind: target.kind, id: String(target.id) });
     return true;
   }, [startFollow3d]);
@@ -2236,7 +2247,7 @@ const OccMapView = forwardRef(function OccMapView({
       pendingFollow3dRef.current = null;
       if (appliedRef.current.follow3d?.on) return;
       latest.current.setFollow(true);
-      startFollow3d(pending.view);
+      startFollow3d(pending.view, { handoff: pending.handoff });
       return;
     }
     if (selectionKey !== pending.from) pendingFollow3dRef.current = null;

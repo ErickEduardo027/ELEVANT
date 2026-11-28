@@ -270,6 +270,51 @@ describe('OccMap double click on an aircraft (M4)', () => {
     expect(threeProbe()).toEqual({ on: true, view: 'close', following: true });
   });
 
+  // Fix M4: the first click of the double click on another aircraft ends the 3D and starts the ease back; the 3D the
+  // double click starts goes back to the view from before the first one, not to that ease partway.
+  it('a double click on another aircraft while it follows keeps the view from before the first 3D to go back to', () => {
+    const { map, seconds, root, rerender } = renderFollow3d();
+    const before = { center: map.getCenter().toArray(), zoom: map.getZoom(), pitch: map.getPitch() };
+    under(map, [demoUnder]);
+    act(() => { fake.state.doubleClick(map, AT); });
+    expect(threeProbe().on).toBe(true);
+    seconds(2);
+    // The first click chooses the other aircraft: the 3D ends and flies back; MapLibre's ease is partway, close in.
+    act(() => rerender(null));
+    expect(threeProbe().on).toBe(false);
+    const partway = { center: [-68.3601, 18.5701], zoom: 19.5, pitch: 70 };
+    act(() => { map.jumpTo(partway); });
+    act(() => rerender({ kind: 'flight', id: KEY.demoArrival }));
+    act(() => { fake.state.doubleClick(map, AT); });
+    expect(threeProbe()).toEqual({ on: true, view: 'close', following: true });
+    seconds(2);
+    fireEvent(root, createEvent.keyDown(root, { key: 'Escape' }));
+    const back = map.cameraCalls.filter(call => call.method === 'easeTo').at(-1).options;
+    expect(haversineM(back.center, before.center)).toBeLessThan(1);
+    expect(back.zoom).toBeCloseTo(before.zoom, 6);
+    expect(back.pitch).toBeCloseTo(before.pitch, 6);
+  });
+
+  it('a 3D started once the ease back is over keeps the camera it starts from', () => {
+    let now = 1_000;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const { map, seconds, root, rerender } = renderFollow3d();
+    under(map, [demoUnder]);
+    act(() => { fake.state.doubleClick(map, AT); });
+    seconds(1);
+    act(() => rerender(null));
+    now += 1_500;
+    const later = { center: [-68.3601, 18.5701], zoom: 17.25, pitch: 30 };
+    act(() => { map.jumpTo(later); });
+    act(() => rerender({ kind: 'flight', id: KEY.demoArrival }));
+    act(() => { fake.state.doubleClick(map, AT); });
+    seconds(1);
+    fireEvent(root, createEvent.keyDown(root, { key: 'Escape' }));
+    const back = map.cameraCalls.filter(call => call.method === 'easeTo').at(-1).options;
+    expect(haversineM(back.center, later.center)).toBeLessThan(1);
+    expect(back.zoom).toBeCloseTo(later.zoom, 6);
+  });
+
   it('another choice before the page chooses the aircraft forgets the waiting «Seguir en 3D»', () => {
     const onSelect = vi.fn();
     const { map, rerender } = renderFollow3d({ selection: null, onSelect });
