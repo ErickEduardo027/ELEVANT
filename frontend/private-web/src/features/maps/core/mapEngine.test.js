@@ -902,7 +902,7 @@ describe('map engine', () => {
     expect(setup().map.listenerCount('render')).toBe(0);
   });
 
-  it('rendererInfo reads the GPU from the map's WebGL context, unmasked where it can (PR M2)', () => {
+  it('rendererInfo reads the GPU from the WebGL context of the map, unmasked where it can (PR M2)', () => {
     const { engine, map } = ready(setup());
     expect(engine.rendererInfo()).toBeNull();
     const debug = { UNMASKED_RENDERER_WEBGL: 0x9246, UNMASKED_VENDOR_WEBGL: 0x9245 };

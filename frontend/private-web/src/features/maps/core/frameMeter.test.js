@@ -10,17 +10,17 @@ describe('frame meter (PR M2)', () => {
   });
 
   it('frameStats: fps over the span, p50 and p95 of the gaps, share over 33.3 ms', () => {
-    // 60 frames at 16 ms, then 3 of 40 ms, over one second.
+    // 50 frames at 16 ms, then 5 of 40 ms, over one second: 54 gaps, 5 of them slow.
     const times = [];
     let at = 0;
-    for (let i = 0; i < 60; i += 1) times.push((at += 16));
-    for (let i = 0; i < 3; i += 1) times.push((at += 40));
+    for (let i = 0; i < 50; i += 1) times.push((at += 16));
+    for (let i = 0; i < 5; i += 1) times.push((at += 40));
     const stats = frameStats(times, 1_000);
-    expect(stats.frames).toBe(63);
-    expect(stats.fps).toBe(63);
+    expect(stats.frames).toBe(55);
+    expect(stats.fps).toBe(55);
     expect(stats.p50Ms).toBe(16);
     expect(stats.p95Ms).toBe(40);
-    expect(stats.overBudgetShare).toBeCloseTo(3 / 62, 3);
+    expect(stats.overBudgetShare).toBeCloseTo(5 / 54, 3);
   });
 
   it('a gap over restGapMs is the map resting, not a slow frame', () => {
