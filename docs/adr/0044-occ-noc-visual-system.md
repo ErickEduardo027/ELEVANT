@@ -1048,3 +1048,18 @@ La rama de integración (`feat/occ-mapas-integracion`, sin desplegar) une la lí
 - **El medidor de cuadros (M2, Ctrl+Alt+F)** sigue arriba a la izquierda del área a la vista (los `insets`). Por eso queda fuera de los paneles medidos, como la barra de Mapa de posiciones y las cifras de Panorama, y por encima de ellos (z 12 frente a 10).
 - **Las reglas de los controles de MapLibre** quedan bajo el host del mapa (`.occ-map > .occ-map-host`, M1), también las del enlace «Créditos y licencias» de M5. M7 retiró el mapa GOES anidado para el que M1 las escribió, pero valen para cualquier otro.
 - **Pruebas.** `ConsoleOverlay.test.jsx` suma el lugar de «Meteorología PUJ», su borde y las tres columnas. `ConsolePage.test.jsx` comprueba que el panel flota en la columna derecha, en lugar de la franja de la clave. La prueba de Esc del detalle de la píldora enfoca el enlace de NOAA AWC, porque el botón GOES-East ya no existe. La de las reglas de `occ-map.css` (`OccMap.test.jsx`) incluye el enlace de créditos. La suite visual no se corrió sobre esta unión.
+
+## Nota del 28 de noviembre de 2026: la suite visual sobre la rama de integración de los mapas
+
+La suite visual (Chrome con SwiftShader y `next dev`, tema oscuro) corrió sobre `feat/occ-mapas-integracion`, sin desplegar: `console`, `flight-monitoring`, `occ-monitoring`, `positions-map`, `positions-map.screens`, `positions-map.interactions` y `positions-map.airport3d`, y en el laboratorio `map-lab.credits`, `map-lab.models` y `map-lab.follow3d`. Las tres pantallas se fotografiaron además a 1366×768 y 1920×1080, en oscuro y en claro, y se revisaron a mano. Lo que la revisión cambió:
+
+- **La leyenda y los menús del riel** terminan encima de los paneles que flotan abajo (la banda de posiciones, la banda y la barra de estado de Panorama): su altura máxima resta `--occ-map-inset-bottom`. Abierta a 1440×900, la leyenda de Mapa de posiciones tapaba el filtro «Todas» de la banda abierta.
+- **La escala de altitud más estrecha** deja solo sus extremos (0 y 40 000+): por debajo de 12rem se oculta también 10 000. Con «Meteorología PUJ» abierto a 1366 px, los números se montaban.
+- **La escala náutica y los créditos** salen de debajo del panel abierto de «Seguir en 3D», y la escala de altitud libra el crédito de los datos de aeronaves aunque este ocupe varias líneas (`--occ-map-credit-height`, que escribe `MapSourceStatus`).
+- **El TAF de «Meteorología PUJ»** nombra el día en que acaba cuando pasa de medianoche: «Válido de las 08:00 a las 08:00 del sáb 14, hora local». Antes, un TAF de 24 h decía «de las 08:00 a las 08:00».
+- **Pruebas que seguían reglas anteriores:**
+  - `console.spec.mjs` espera Panorama en Región (M7) y pliega «Meteorología PUJ» antes de comprobar que el borde derecho queda libre a 1440 px.
+  - `positions-map.interactions.spec.mjs` apunta al centro del área a la vista (los `--occ-map-inset-*` de M1), no al del lienzo.
+  - `positions-map.spec.mjs` provoca la relectura con el evento `online`. Desde CN-19 las pantallas del OCC no escuchan el foco de la ventana.
+
+**Límites.** Las capturas usan la API simulada de la suite visual y no acreditan un despliegue ni una revisión en el VPS. Las especificaciones de la suite corrieron solo en oscuro; en claro solo se tomaron las capturas de revisión. La primera apertura de una ruta con `next dev` en frío agotó a veces la espera de `main#main-content`, y pasó al repetirla.
