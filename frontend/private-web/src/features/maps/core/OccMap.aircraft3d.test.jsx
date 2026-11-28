@@ -18,6 +18,7 @@ import { MODE_3D_STORAGE_KEY } from './aircraft3d';
 import { PUJ_ARP } from './cameraPresets';
 import { createRenderClock } from './frameLoop';
 import OccMap from './OccMap';
+import { useOccMap } from './OccMapContext';
 
 // The 3D aircraft wired into OccMap (PR M7), on the fake MapLibre and the real 3D layer with an injected renderer:
 // three's scene and raycaster need no WebGL, its renderer does. The chunk is the real one, handed over by a mocked
@@ -413,6 +414,114 @@ describe('OccMap animated traffic (PR M2)', () => {
     const resting = repaints(map);
     expect(getInstances()).toBe(getInstances());
     expect(repaints(map)).toBe(resting);
+  });
+
+  it('writes the GeoJSON at most twice a second while the layer animates the traffic; the keyframes carry the rest', async () => {
+    hoisted.createCanvas = fakeCanvas;
+    vi.stubGlobal('Path2D', class Path2D {});
+    window.localStorage.setItem(MODE_3D_STORAGE_KEY, '2d');
+    // Two seconds of 16 ms frames at zoom 16 on the demo flight on final: some 30 px a second, 15 writes a second
+    // without the animation (CN-18).
+    const writesIn2s = async options => {
+      const frames = controlledFrames();
+      const { server, traffic } = demoTraffic();
+      const ref = createRef();
+      const view = render(<OccMap ref={ref} defaultView="approach" traffic={traffic} mapOptions={{ fadeDuration: 0 }}
+        aircraft3d={options} />);
+      const map = fake.state.liveMaps().at(-1);
+      loadStyle(map);
+      await settle();
+      server.at += 500;
+      frames.run();
+      const [lon, lat] = map.getSource('occ-traffic').data.features
+        .find(feature => feature.properties.id === DEMO_ID).geometry.coordinates;
+      act(() => { ref.current.jumpTo({ center: [lon, lat], zoom: 16 }); });
+      frames.run();
+      const source = map.getSource('occ-traffic');
+      const before = source.updateDataCalls.length;
+      const answers = [];
+      for (let frame = 0; frame < 125; frame += 1) {
+        server.at += 16;
+        frames.run();
+        if (options === null) answers.push(spriteXY(hoisted.layers.at(-1).options.getInstances().sprites, DEMO_ID));
+      }
+      const written = source.updateDataCalls.length - before;
+      view.unmount();
+      vi.restoreAllMocks();
+      return { written, answers };
+    };
+    const animated = await writesIn2s(null);
+    expect(animated.written).toBeGreaterThanOrEqual(3);
+    expect(animated.written).toBeLessThanOrEqual(5);
+    // Between the writes every frame draws the aircraft further along (the keyframes of the last write).
+    const steps = animated.answers.slice(1).map((xy, index) => Math.hypot(xy[0] - animated.answers[index][0],
+      xy[1] - animated.answers[index][1]));
+    expect(steps.every(step => step > 0)).toBe(true);
+    vi.stubGlobal('Path2D', class Path2D {});
+    const icons = await writesIn2s({ animate: false });
+    expect(icons.written).toBeGreaterThanOrEqual(20);
+  });
+
+  it('reads what the map draws when it settles at most once a second while the traffic moves, the last one after', async () => {
+    hoisted.createCanvas = fakeCanvas;
+    vi.stubGlobal('Path2D', class Path2D {});
+    const frames = controlledFrames();
+    const { server, traffic } = demoTraffic();
+    render(<OccMap defaultView="approach" traffic={traffic} mapOptions={{ fadeDuration: 0 }} />);
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    await settle();
+    server.at += 500;
+    frames.run();
+    const queries = () => map.calls.filter(call => call.method === 'queryRenderedFeatures').length;
+    act(() => fake.state.emit(map, 'idle'));
+    const once = queries();
+    // MapLibre settles after each write while the traffic moves: those reads wait for their second.
+    for (let index = 0; index < 5; index += 1) act(() => fake.state.emit(map, 'idle'));
+    expect(queries()).toBe(once);
+    expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-settled', 'true');
+    await act(() => new Promise(resolve => { setTimeout(resolve, 1_100); }));
+    expect(queries()).toBeGreaterThan(once);
+  });
+
+  it('«Seguir en 3D» poses the camera on the animated aircraft every frame without a write every frame', async () => {
+    hoisted.createCanvas = fakeCanvas;
+    vi.stubGlobal('Path2D', class Path2D {});
+    const frames = controlledFrames();
+    const { server, traffic } = demoTraffic();
+    function Start() {
+      const { follow } = useOccMap();
+      return <button type="button" onClick={() => follow.three.start()}>start</button>;
+    }
+    render(<OccMap defaultView="airfield" traffic={traffic} selection={{ kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival }}
+      mapOptions={{ fadeDuration: 0 }}><Start /></OccMap>);
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    await settle();
+    server.at += 16;
+    frames.run();
+    act(() => { screen.getByRole('button', { name: 'start' }).click(); });
+    await settle();
+    // The fly-in.
+    for (let frame = 0; frame < 125; frame += 1) {
+      server.at += 16;
+      frames.run();
+    }
+    const controller = hoisted.layers.at(-1);
+    expect(controller).toBeDefined();
+    const source = map.getSource('occ-traffic');
+    const writes = source.updateDataCalls.length;
+    const centers = [];
+    for (let frame = 0; frame < 62; frame += 1) {
+      server.at += 16;
+      frames.run();
+      centers.push(map.getCenter().toArray());
+    }
+    // About a second: twice a second the traffic is written (it was every frame), and the camera moves every frame.
+    expect(source.updateDataCalls.length - writes).toBeLessThanOrEqual(3);
+    const moves = centers.slice(1).map((center, index) => Math.hypot(center[0] - centers[index][0],
+      center[1] - centers[index][1]));
+    expect(moves.every(move => move > 0)).toBe(true);
   });
 
   it('keeps the GeoJSON icons when the layer cannot build its sprites, and without motion', async () => {

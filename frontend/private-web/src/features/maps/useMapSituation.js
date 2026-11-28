@@ -40,6 +40,26 @@ export { MAP_PERMISSIONS };
 // The reads the motion store has taken before the first one (PR M2).
 const NO_READS = Object.freeze({ picture: null, flights: null });
 
+// The reads a motion store has taken (PR M2): `take(picture, flights)` hands it a new pair (outside any render) and tells
+// the subscribers; the same pair again does nothing.
+function createIngestedReads(motion) {
+  let current = NO_READS;
+  const listeners = new Set();
+  return {
+    get: () => current,
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    take(picture, flights) {
+      if (current.picture === picture && current.flights === flights) return;
+      motion.ingest({ picture, flights });
+      current = Object.freeze({ picture, flights });
+      for (const listener of listeners) listener();
+    },
+  };
+}
+
 /**
  * CN-31: the pace of the air picture while the server reads the airfield every few seconds between its reads of the
  * whole circle. Within the CN-19 budget: the console's minute goes from 16 to 22 requests at rest.
@@ -242,12 +262,11 @@ export function useMapSituation({ stationId = null, enabled = true, service = oc
   const [tickAt, setTickAt] = useState(0);
   const picture = pictureRead.data;
   const flights = flightsRead.data;
-  const [ingested, setIngested] = useState(NO_READS);
+  const [reads] = useState(() => createIngestedReads(motion));
   useEffect(() => {
-    if (ingested.picture === picture && ingested.flights === flights) return;
-    motion.ingest({ picture, flights });
-    setIngested({ picture, flights });
-  }, [flights, ingested, motion, picture]);
+    reads.take(picture, flights);
+  }, [flights, picture, reads]);
+  const ingested = useSyncExternalStore(reads.subscribe, reads.get, reads.get);
   const caughtUp = ingested.picture === picture && ingested.flights === flights;
   const nowMs = Math.max(ingested.picture?.serverTime ?? 0, ingested.flights?.serverTime ?? 0, tickAt);
   const estimated = useMemo(() => ({ estimates: motion.estimatesAt(nowMs), changeAt: motion.nextChangeAt(nowMs),
