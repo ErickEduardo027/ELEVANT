@@ -46,7 +46,10 @@ export const LIVERY_BANDS = Object.freeze({
 export const LIVERY_ATLAS = Object.freeze({ width: 1024, rowHeight: 64, nameWidth: 768, markWidth: 256 });
 
 /** Where the name stands on the body: from this share of the length (from the tail), above the windows. */
-export const NAME_PLACE = Object.freeze({ start: 0.45, maxLength: 0.4, bottomC: 0.3, heightC: 0.6, maxHeightM: 1.2 });
+// `end` the share of the length a name moved ahead of a nacelle at its height ends by (the cockpit's panes start at
+// 0.93), `clearance` its gap ahead of that nacelle (its propeller), as a share of the length.
+export const NAME_PLACE = Object.freeze({ start: 0.45, maxLength: 0.4, bottomC: 0.3, heightC: 0.6, maxHeightM: 1.2,
+  end: 0.9, clearance: 0.02 });
 
 /** The fallback of the app's typeface (Manrope, OFL, loaded by app/layout.jsx as --font-manrope). */
 export const LIVERY_FONT_FALLBACK = '"Segoe UI", "Helvetica Neue", Arial, sans-serif';
@@ -229,9 +232,6 @@ export function liveryFrame(positions, spec, index = null) {
   };
   const root = chordAt(finRoot + 0.05 * finHeight) ?? [yMin, yMin + 0.16 * L];
   const mark = finMark(chordAt, root, finRoot, finHeight);
-  // The name above the windows, ahead of the wing.
-  const nameHeight = Math.min(NAME_PLACE.heightC * radius, NAME_PLACE.maxHeightM);
-  const nameLength = Math.min((LIVERY_ATLAS.nameWidth / LIVERY_ATLAS.rowHeight) * nameHeight, NAME_PLACE.maxLength * length);
   // The nacelles: each one where silhouette.js places it, found in the model by its cross-section (nacelleSection).
   const engines = [];
   for (const nacelle of nacelles(spec) ?? []) {
@@ -245,6 +245,7 @@ export function liveryFrame(positions, spec, index = null) {
     engines.push({ x, z, reachM: LIVERY_BANDS.engineReach * width, y0M: (along?.[0] ?? nacelle.backY) - margin,
       y1M: (along?.[1] ?? nacelle.frontY) + margin });
   }
+  const name = namePlace({ yMin, length, axisZ, radius }, engines);
   return Object.freeze({
     halfLengthM: length / 2,
     yMinM: yMin,
@@ -255,10 +256,30 @@ export function liveryFrame(positions, spec, index = null) {
       rootZM: finRoot, topZM: finTop, aftYM: root[0], rootChordM: root[1] - root[0], markYM: mark.y, markZM: mark.z,
       markWidthM: mark.width,
     }),
-    name: Object.freeze({ y0M: yMin + NAME_PLACE.start * length, lengthM: nameLength,
-      z0M: axisZ + NAME_PLACE.bottomC * radius, heightM: nameHeight }),
+    name: Object.freeze(name),
     engines: Object.freeze(engines.slice(0, MAX_ENGINES).map(Object.freeze)),
   });
+}
+
+/**
+ * Where the name stands: above the windows, from NAME_PLACE.start of the length toward the nose. A nacelle at its height
+ * (the high wing of a turboprop) would hide it from the side (QA of 2026-11-28: the ATR 72's name behind its
+ * propeller): then it starts ahead of that nacelle and ends before the cockpit, smaller if it must.
+ */
+function namePlace({ yMin, length, axisZ, radius }, engines) {
+  const aspect = LIVERY_ATLAS.nameWidth / LIVERY_ATLAS.rowHeight;
+  const z0 = axisZ + NAME_PLACE.bottomC * radius;
+  let height = Math.min(NAME_PLACE.heightC * radius, NAME_PLACE.maxHeightM);
+  let y0 = yMin + NAME_PLACE.start * length;
+  let span = Math.min(aspect * height, NAME_PLACE.maxLength * length);
+  const level = engines.filter(engine => engine.z + engine.reachM > z0 && engine.z - engine.reachM < z0 + height);
+  const ahead = Math.max(...level.map(engine => engine.y1M + NAME_PLACE.clearance * length));
+  if (level.length > 0 && ahead > y0) {
+    y0 = ahead;
+    span = Math.max(0, Math.min(span, yMin + NAME_PLACE.end * length - y0));
+  }
+  height = Math.min(height, span / aspect);
+  return { y0M: y0, lengthM: span, z0M: z0, heightM: height };
 }
 
 /** The fin's mark: this share of the fin's chord wide, clear of the accent and of the tip by these shares of its height. */

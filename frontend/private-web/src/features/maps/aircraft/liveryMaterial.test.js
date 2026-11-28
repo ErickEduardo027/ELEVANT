@@ -7,7 +7,7 @@ import { THREE_PARTS } from './aircraft3dChunk';
 import { MODELS_BASE_URL, createGltfModels } from './gltfModels';
 import { DEFAULT_LIVERY, LIVERIES } from './liveries';
 import {
-  FIXED_ZONES, LIVERY_ATLAS, LIVERY_BANDS, LIVERY_GLSL, LIVERY_ROWS, LIVERY_ZONES, LOGO_MAX_PX, createLiveryMaterial,
+  FIXED_ZONES, LIVERY_ATLAS, LIVERY_BANDS, LIVERY_GLSL, LIVERY_ROWS, LIVERY_ZONES, LOGO_MAX_PX, NAME_PLACE, createLiveryMaterial,
   createLiveryTextures, frameUniforms, injectLivery, letteringUv, liveryColours, liveryFrame, liveryPaletteData, liveryRow,
   liveryZone, nacelleSection, paintLiveryAtlas, sliceModel, tintLogo,
 } from './liveryMaterial';
@@ -248,6 +248,22 @@ describe('liveryFrame and the zones of the vendored models', () => {
       && Math.hypot(Math.abs(point[0]) - engine.x, point[2] - engine.z) < engine.reachM);
     expect(outer.length).toBeGreaterThan(5);
     expect(outer.filter(point => liveryZone(point, frame) === 6).length / outer.length).toBeGreaterThan(0.9);
+  }, 30_000);
+
+  // QA of 2026-11-28: the ATR 72's name stood behind its propeller.
+  it('sets the name ahead of a nacelle at its height (ATR 72) and leaves it after the wing root of a jet', async () => {
+    const atr = await loadModel('AT76', 'l2');
+    const frame = liveryFrame(positionsOf(atr), AIRCRAFT_TYPES.AT76, indexOf(atr));
+    const length = 2 * frame.halfLengthM;
+    for (const engine of frame.engines) expect(frame.name.y0M).toBeGreaterThan(engine.y1M);
+    expect(frame.name.y0M + frame.name.lengthM).toBeLessThanOrEqual(frame.yMinM + NAME_PLACE.end * length + 1e-6);
+    expect(frame.name.lengthM).toBeGreaterThan(0.1 * length);
+    expect(frame.name.lengthM / frame.name.heightM).toBeCloseTo(LIVERY_ATLAS.nameWidth / LIVERY_ATLAS.rowHeight, 6);
+    for (const icao of ['A320', 'CRJ9']) {
+      const model = await loadModel(icao, 'l1');
+      const jet = liveryFrame(positionsOf(model), AIRCRAFT_TYPES[icao], indexOf(model));
+      expect(jet.name.y0M, icao).toBeCloseTo(jet.yMinM + NAME_PLACE.start * 2 * jet.halfLengthM, 6);
+    }
   }, 30_000);
 
   it('finds two nacelles a side on a four-engined type only, and the rear pods of a T-tail jet', () => {
