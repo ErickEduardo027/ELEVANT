@@ -182,6 +182,7 @@ export function createSimulatedRegionWeatherAdapter({ scenario = {}, now = () =>
   return Object.freeze({
     clock,
     calls,
+    simulated: true,
     ...Object.fromEntries(OPERATIONS.map(([read, { method }]) => [method, reader(read)])),
   });
 }

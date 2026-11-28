@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { aviationReferenceService } from '../../../services/aviationReferenceService';
 import { occMapService } from '../../../services/occMapService';
+import { defaultRegionWeatherAdapter } from '../../../services/regionWeatherService';
 import { AviationReferenceProvider } from '../../aviation-reference/AviationReferenceContext';
 import { useOccBoot } from '../../admin-occ/boot/occBootContext';
 import { useOccStation } from '../../admin-occ/useOccStation';
@@ -14,6 +15,7 @@ import { useStandDisplay } from '../../maps/stands/useStandDisplay';
 import { standInputsOf } from '../../maps/traffic/standInputs';
 import { useMapSituation } from '../../maps/useMapSituation';
 import { useMdpcWeather } from '../../weather/useMdpcWeather';
+import { useRegionWeather } from '../../weather/useRegionWeather';
 import { consoleMessages } from './consoleMessages';
 import { useStandAircraft } from './standAircraft';
 import { flightsByTurnaroundOf } from './standTimeline';
@@ -39,6 +41,8 @@ const ConsoleView = dynamic(() => import('./ConsolePage'), { ssr: false, loading
  *   selection (useMapSelection);
  * - the map situation, read once for the map, the board and the inspector (useMapSituation over `mapService`);
  * - the AeroDataBox reference reads under `referenceService` (aviation-reference/AviationReferenceContext.jsx);
+ * - the regional weather of the map (lane M7: useRegionWeather over `regionWeatherService`, by default the API's once the
+ *   shared client offers its reads, else Disabled without a request; a simulated adapter is tagged «Demo»);
  * - the console's own reads (useConsoleData over `services`), today's weather (useMdpcWeather) and the stands as the
  *   map draws them (useStandDisplay over the positions board and the map flights).
  * Without the PUJ scope nothing is read and the console says so (`role="alert"`). The OCC boot screen leaves once the
@@ -46,7 +50,7 @@ const ConsoleView = dynamic(() => import('./ConsolePage'), { ssr: false, loading
  * missing (contratos 2.6).
  */
 export default function ConsoleRoute({ mapService = occMapService, services = CONSOLE_SERVICES,
-  referenceService = aviationReferenceService }) {
+  referenceService = aviationReferenceService, regionWeatherService }) {
   const { session } = useAuth();
   const station = useOccStation();
   const { t } = useTranslation(consoleMessages);
@@ -61,6 +65,9 @@ export default function ConsoleRoute({ mapService = occMapService, services = CO
     stationCode: ready ? station.stationCode : '', services });
   // The weather is read only with the PUJ scope.
   const weather = useMdpcWeather({ enabled: ready });
+  const [regionAdapter] = useState(() => regionWeatherService ?? defaultRegionWeatherAdapter());
+  const regionWeather = useRegionWeather({ adapter: regionAdapter, stationId: stationId ?? '', enabled: ready,
+    demo: regionAdapter.simulated === true });
   const flightsByTurnaround = flightsByTurnaroundOf(live.flights?.flights);
   // The stands read on the clock the map draws its aircraft at (PR M6, the render clock, paused with the motion) and
   // with the aircraft inside their box, so a demo stand turns Ocupada in the moment its aircraft parks.
@@ -99,6 +106,7 @@ export default function ConsoleRoute({ mapService = occMapService, services = CO
     // The AeroDataBox reference reads (ADR-0028, note of 15 November 2026): the aircraft, the delays and the routes.
     <AviationReferenceProvider service={referenceService}>
       <ConsoleView station={stationScope} live={live} data={data} stands={stands} weather={weather}
+        regionWeather={regionWeather}
         selection={selection} accountId={session?.accountId ?? null} onShown={showView} />
     </AviationReferenceProvider>
   );

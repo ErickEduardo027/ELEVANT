@@ -270,7 +270,7 @@ export const mapMessages = {
       stands: 'Posiciones del mapa',
       flights: 'Vuelos del mapa',
     },
-    attribution: { aircraftData: 'Datos de aeronaves', weather: 'Clima' },
+    attribution: { aircraftData: 'Datos de aeronaves', weather: 'Clima', radar: 'Radar' },
     controls: {
       zoomIn: 'Acercar',
       zoomOut: 'Alejar',
@@ -803,7 +803,7 @@ export const mapMessages = {
       stands: 'Stands on the map',
       flights: 'Flights on the map',
     },
-    attribution: { aircraftData: 'Aircraft data', weather: 'Weather' },
+    attribution: { aircraftData: 'Aircraft data', weather: 'Weather', radar: 'Radar' },
     controls: {
       zoomIn: 'Zoom in',
       zoomOut: 'Zoom out',

@@ -54,8 +54,9 @@ import {
 } from '../traffic/trafficFeatures';
 import { trafficOverlay } from '../traffic/trafficLayers';
 import {
-  SATELLITE_KEYS, SATELLITE_SOURCES, WIND_FEATURE_ID, WIND_LAYER_IDS, WIND_SOURCE, satelliteTiles, wantedImagery,
-  weatherLayerNotes, weatherOnScreen, weatherOverlay, windFeatures, windTooltip, withPinnedImagery,
+  SATELLITE_KEYS, SATELLITE_SOURCES, SIGMET_LAYER_IDS, STATION_LAYER_IDS, WIND_FEATURE_ID, WIND_LAYER_IDS, WIND_SOURCE,
+  satelliteTiles, wantedImagery, wantedRegional, weatherLayerNotes, weatherOnScreen, weatherOverlay, windFeatures,
+  windTooltip, withPinnedImagery,
 } from '../traffic/weatherLayers';
 import { aircraftCard, flightRowOf } from '../ui/aircraftCard';
 import AltitudeLegend from '../ui/AltitudeLegend';
@@ -63,6 +64,9 @@ import MapTooltip from '../ui/MapTooltip';
 import { remoteSatelliteImagery, useSatelliteImagery } from '../useSatelliteImagery';
 import { createAircraft3dController, parkedFromStands, readMode3d, translatePick, writeMode3d } from './aircraft3d';
 import { buildAttribution } from './attribution';
+import {
+  applyRegionalDrawing, createRegionalApplied, radarCredit, regionalDrawing, startRegionalLoop, withPinnedRegional,
+} from './regionalWeather';
 import {
   PUJ_ARP, VIEW_NAMES, boundsCenter, cameraAngles, fitZooms, isInBounds, isRetired, lngLatOf, presetForZoom,
   presetTargets, sameFits, standCodeOf, standsInView, targetFor, thresholdsFromFits, transitionFor, unionBounds,
@@ -549,6 +553,12 @@ const standPointOf = stand => stand?.geometry?.center ?? lngLatOf(stand);
  *   browser's) only while the layers menu shows one and the map is in Región or Aproximación, and shown only once its
  *   tiles are pinned to the time GIBS reports. `layerOverrides` (read once, at start) replaces the choices kept in the
  *   browser, which then stay as they are: the scenes of the map lab open with their own layers.
+ * - The regional weather (lane M7, core/regionalWeather.js): `regionWeather` (what features/weather/useRegionWeather.js
+ *   answers), given at start with `weather`, adds the regional layers (traffic/weatherLayers.js: regionalOverlay): the
+ *   GOES-East loop (its frames pinned to the latest time GIBS reports, run by opacity), the radar frames of the API, the
+ *   METAR stations and the SIGMETs, in Región and Aproximación, each shown only once it has something pinned, listed in
+ *   the legend and explained in the layers menu; the radar's provider joins the attribution while it is on screen.
+ *   `regional3d` tilts Región and Aproximación too in 3D (cameraPresets.js: CAMERA_3D_WIDE).
  * - The motion of the traffic (PR M6, design H): when `traffic.motion` is given at start (traffic/motionStore.js, with
  *   its render clock as `motion.clock`), the map runs one frame loop for the life of its engine (core/frameLoop.js).
  *   Each frame samples the aircraft at the render clock's time and writes them with one updateData of what changed:
@@ -594,6 +604,8 @@ const OccMapView = forwardRef(function OccMapView({
   flights: flightsProp,
   traffic,
   weather,
+  regionWeather,
+  regional3d = false,
   satelliteService = remoteSatelliteImagery,
   layerOverrides: layerOverridesProp,
   overlays = EMPTY,
@@ -669,6 +681,8 @@ const OccMapView = forwardRef(function OccMapView({
   // The weather (PR M8): whether the map draws it is read at start; a map without it still takes no wind for the runway.
   const [drawsWeather] = useState(() => weather !== undefined);
   const weatherNow = weather ?? null;
+  // The regional weather (lane M7): drawn by a map given it at start, with the weather.
+  const [drawsRegional] = useState(() => weather !== undefined && regionWeather !== undefined);
   const runway = useMemo(() => mapRunwayInUse({ layout, arrivals, weather: weatherNow, nowMs: referenceMinute }),
     [layout, arrivals, weatherNow, referenceMinute]);
   const { arrival: runwayArrival, departure: runwayDeparture, source: runwaySource } = runway;
@@ -717,8 +731,13 @@ const OccMapView = forwardRef(function OccMapView({
   // The satellite images (PR M8): read only while the menu shows one and the map is in Región or Aproximación, and
   // shown only once their tiles are pinned to the time GIBS reports.
   const wanted = wantedImagery({ groups: menuGroups, view: layerView, drawsWeather });
-  const imagery = useSatelliteImagery({ goes: wanted.goes, imerg: wanted.imerg, service: satelliteService });
-  const menuGroupsKey = JSON.stringify(withPinnedImagery(menuGroups, imagery));
+  // The satellite loop (lane M7) ends at the latest GOES-East time GIBS reports: read while the loop is wanted too.
+  const wantedWide = wantedRegional({ groups: menuGroups, view: layerView, drawsRegional });
+  const imagery = useSatelliteImagery({ goes: wanted.goes || wantedWide.loop, imerg: wanted.imerg,
+    service: satelliteService });
+  const regional = useMemo(() => (drawsRegional ? regionalDrawing({ regionWeather, goes: imagery.goes,
+    nowMs: referenceMinute, language }) : null), [drawsRegional, regionWeather, imagery.goes, referenceMinute, language]);
+  const menuGroupsKey = JSON.stringify(withPinnedRegional(withPinnedImagery(menuGroups, imagery), regional));
   const shownGroups = useMemo(() => ({ ...JSON.parse(menuGroupsKey), ...JSON.parse(groupsKey) }),
     [menuGroupsKey, groupsKey]);
   // What the traffic draws depends on its own groups only: the references and the weather (PR M8), whose defaults follow
@@ -765,6 +784,9 @@ const OccMapView = forwardRef(function OccMapView({
       language, shownTrails, layersMenuOpen, setLayersMenuOpen });
     // The weather (PR M8): whether the map draws it, the satellite images and the wind it draws.
     Object.assign(latest.current, { drawsWeather, imagery, windData });
+    // The regional weather (lane M7): what it draws, and whether Región and Aproximación tilt in 3D.
+    Object.assign(latest.current, { drawsRegional, regional, regional3d: regional3d === true,
+      regionalFrozenAt: frozenAt });
     // Follow mode (PR M6): what the URL says and how to change it.
     Object.assign(latest.current, { urlFollow: urlFollow === true, setFollow });
     // The 3D aircraft (PR M7): whether they are on, and how the page or the browser changes it.
@@ -847,7 +869,7 @@ const OccMapView = forwardRef(function OccMapView({
       return false;
     }
     pendingViewRef.current = null;
-    moveCamera({ ...camera, ...cameraAngles(view, latest.current.pitchMode) }, { animate });
+    moveCamera({ ...camera, ...cameraAngles(view, latest.current.pitchMode, { wide: latest.current.regional3d }) }, { animate });
     return true;
   }, [cameraFor, moveCamera, store]);
 
@@ -908,7 +930,7 @@ const OccMapView = forwardRef(function OccMapView({
     if (!camera) return false;
     stopFollowing({ notice: true });
     const view = presetForZoom(camera.zoom, store.get().fits) ?? 'ramp';
-    moveCamera({ ...camera, ...cameraAngles(view, latest.current.pitchMode) });
+    moveCamera({ ...camera, ...cameraAngles(view, latest.current.pitchMode, { wide: latest.current.regional3d }) });
     return true;
   }, [cameraFor, moveCamera, store, stopFollowing]);
 
@@ -1165,12 +1187,21 @@ const OccMapView = forwardRef(function OccMapView({
       : referencesOnScreenOf(engine.renderedFeatures(referenceIds, padding));
     // The weather drawn there (PR M8): the wind, read back from the map; a satellite image while its group is shown
     // (once pinned) below the airfield threshold, as a raster is not read back. Listed after the references.
-    const { groups: shown, imagery: images } = latest.current;
+    const { groups: shown, imagery: images, regional: wide } = latest.current;
+    const belowAirfield = !(zoom >= thresholds?.airfield);
+    const drawsWide = wide != null && belowAirfield;
     const weatherShown = appliedRef.current.drawsWeather && bounds !== null ? weatherOnScreen({
       wind: shown?.['weather.wind'] === false ? EMPTY : engine.renderedFeatures(WIND_LAYER_IDS, padding),
-      rasters: Object.fromEntries(SATELLITE_KEYS.map(key => [key,
-        shown?.[`weather.${key}`] === true && !(zoom >= thresholds?.airfield)])),
+      rasters: Object.fromEntries([...SATELLITE_KEYS, 'loop', 'radar'].map(key => [key,
+        shown?.[`weather.${key}`] === true && belowAirfield])),
       imagery: images,
+      // The regional weather (lane M7): the frames pinned, and the stations and SIGMETs read back from the map.
+      loop: wide?.loop ?? null,
+      radar: wide?.radar ?? null,
+      stations: drawsWide && shown?.['weather.stations'] === true
+        ? engine.renderedFeatures(STATION_LAYER_IDS, padding) : EMPTY,
+      sigmets: drawsWide && shown?.['weather.sigmet'] === true
+        ? engine.renderedFeatures(SIGMET_LAYER_IDS, padding) : EMPTY,
     }) : null;
     const onScreen = weatherShown === null || weatherShown.kinds.length === 0
       ? references
@@ -1705,6 +1736,9 @@ const OccMapView = forwardRef(function OccMapView({
     // The weather of this engine (PR M8): the wind written, the tiles each satellite image is pinned to, and the credit
     // shown.
     Object.assign(appliedRef.current, { drawsWeather: props.drawsWeather, wind: null, rasterTiles: {}, credit: '' });
+    // The regional weather of this engine (lane M7): what it was given, and its frame loop (started below).
+    Object.assign(appliedRef.current, { regional: props.drawsRegional ? createRegionalApplied() : null,
+      regionalLoop: null });
     focusRef.current = null;
     pendingViewRef.current = null;
     // The camera of the map this one replaces after a theme change (OccMap), else the URL view, else the camera the
@@ -1714,7 +1748,7 @@ const OccMapView = forwardRef(function OccMapView({
     if (props.resumeCameraRef) props.resumeCameraRef.current = null;
     const initialView = resume ? null : props.urlView ?? (props.initialCamera ? null : props.defaultView);
     const initialTerminal = props.urlView ? props.urlTerminal : null;
-    const angles = cameraAngles(initialView ?? props.defaultView, props.pitchMode);
+    const angles = cameraAngles(initialView ?? props.defaultView, props.pitchMode, { wide: props.regional3d });
     // A view starts over its target, so a map that has no size yet waits there and not at MapLibre's [0, 0].
     const start = initialView === null
       ? { ...angles, ...(resume ?? props.initialCamera) }
@@ -1731,7 +1765,7 @@ const OccMapView = forwardRef(function OccMapView({
       ...(props.drawsFlights ? [flightOverlay()] : []),
       ...(props.drawsTraffic ? [trafficOverlay({ theme: props.theme })] : []),
       // The weather (PR M8): the satellite images under the references, the wind over the stands.
-      ...(props.drawsWeather ? [weatherOverlay()] : []),
+      ...(props.drawsWeather ? [weatherOverlay({ regional: props.drawsRegional })] : []),
       ...props.overlays,
     ];
     // The keys of the layers menu this style has layers for (PR M5).
@@ -1783,8 +1817,16 @@ const OccMapView = forwardRef(function OccMapView({
     if (initialView === null) handleCamera(engine.getCamera(), { byUser: false });
     else applyView(initialView, { terminal: initialTerminal, animate: false });
     if (props.placing) engine.setCursor('crosshair');
+    // The loop of the regional frames (lane M7): held on the latest frame under reduced motion or a frozen clock.
+    const regionalLoop = props.drawsRegional ? startRegionalLoop(engine, {
+      getDrawing: () => latest.current?.regional ?? null,
+      isStill: () => Number.isFinite(latest.current?.regionalFrozenAt) || reducedMotionQuery()?.matches === true,
+    }) : null;
+    appliedRef.current.regionalLoop = regionalLoop;
 
     return () => {
+      regionalLoop?.stop();
+      if (appliedRef.current.regionalLoop === regionalLoop) appliedRef.current.regionalLoop = null;
       if (pointer.frame) cancelFrame(pointer.frame);
       pointer.frame = 0;
       pointer.event = null;
@@ -1947,6 +1989,16 @@ const OccMapView = forwardRef(function OccMapView({
     }
     updateOnScreen();
   }, [imagery, updateOnScreen]);
+  // The regional weather (lane M7): the stations and the SIGMETs when their features change, each frame source pinned
+  // once, the loop's band; then its frame loop writes the opacities again and the legend follows.
+  useEffect(() => {
+    const engine = engineRef.current;
+    const applied = appliedRef.current;
+    if (!engine || !applied.regional || regional === null) return;
+    if (applyRegionalDrawing(engine, applied.regional, regional)) markSettled(rootRef.current, false);
+    applied.regionalLoop?.rewrite();
+    updateOnScreen();
+  }, [regional, updateOnScreen]);
 
   // The traffic (PR M5): the aircraft, again whenever the selection, the shown groups or the language change what
   // they draw, then what is on screen. A read that moved nothing writes nothing. With motion (PR M6) the write is at
@@ -2136,21 +2188,31 @@ const OccMapView = forwardRef(function OccMapView({
   // The credit of the aerodrome weather (PR M8): «Clima: NOAA Aviation Weather Center» in the map's attribution while
   // the wind is on screen (the aircraft data keep their one line in ui/MapSourceStatus.jsx).
   const windOnScreen = snapshot.referencesOnScreen.kinds.some(kind => kind === 'wind' || kind === 'windStale');
-  const weatherCreditKey = windOnScreen ? creditKeyOf(weatherNow?.source) : '';
+  const windCreditKey = windOnScreen ? creditKeyOf(weatherNow?.source) : '';
+  // The radar's provider (lane M7) joins it while the radar is on screen.
+  const radarOnScreen = snapshot.referencesOnScreen.kinds.includes('radar');
+  const radarSource = radarOnScreen ? radarCredit(snapshot.referencesOnScreen.imagery?.radar?.provider) : null;
+  const weatherCreditKey = windCreditKey === '' && radarSource === null ? ''
+    : `${windCreditKey}#${radarSource?.name ?? ''}`;
   const weatherLabel = t('attribution.weather');
-  const weatherSource = useMemo(() => {
-    if (weatherCreditKey === '') return null;
-    const [name, homeUrl] = JSON.parse(weatherCreditKey);
-    return Object.freeze({ name, homeUrl, label: weatherLabel });
-  }, [weatherCreditKey, weatherLabel]);
+  const radarLabel = t('attribution.radar');
+  const weatherSources = useMemo(() => {
+    const list = [];
+    if (windCreditKey !== '') {
+      const [name, homeUrl] = JSON.parse(windCreditKey);
+      list.push(Object.freeze({ name, homeUrl, label: weatherLabel }));
+    }
+    if (radarSource !== null) list.push(Object.freeze({ ...radarSource, label: radarLabel }));
+    return list;
+  }, [windCreditKey, weatherLabel, radarSource, radarLabel]);
   useEffect(() => {
     const engine = engineRef.current;
     const applied = appliedRef.current;
     const key = weatherCreditKey === '' ? '' : `${weatherCreditKey}|${weatherLabel}`;
     if (!engine || !applied.drawsWeather || applied.credit === key) return;
     applied.credit = key;
-    engine.setAttribution(buildAttribution(weatherSource === null ? [] : [weatherSource], { aircraftDataLabel }));
-  }, [aircraftDataLabel, weatherCreditKey, weatherLabel, weatherSource]);
+    engine.setAttribution(buildAttribution(weatherSources, { aircraftDataLabel }));
+  }, [aircraftDataLabel, weatherCreditKey, weatherLabel, weatherSources]);
 
   // A screen's own overlays: one setData for each source whose features changed, keyed like the stands and flights.
   useEffect(() => {
@@ -2221,7 +2283,8 @@ const OccMapView = forwardRef(function OccMapView({
       return;
     }
     const view = store.get().activeView ?? 'ramp';
-    engine.easeTo({ ...cameraAngles(view, pitchMode), duration: PITCH_EASE_MS, essential: false });
+    engine.easeTo({ ...cameraAngles(view, pitchMode, { wide: latest.current.regional3d }), duration: PITCH_EASE_MS,
+      essential: false });
   }, [pitchMode, store]);
 
   // The 3D aircraft follow the mode (PR M7); while a flight is followed the governor never pauses them (contracts 2.3).
@@ -2410,7 +2473,7 @@ const OccMapView = forwardRef(function OccMapView({
   // What the layers menu says under a weather key that is on and shows nothing (PR M8): why, or the time of its image;
   // the same words keep the same object, so the minute does not re-render the menu.
   const layerNotesKey = drawsWeather ? JSON.stringify(weatherLayerNotes({ layers: resolvedLayers, view: layerView, imagery,
-    weather: weatherNow, nowMs: referenceMinute, language })) : '';
+    weather: weatherNow, regional: regional?.notes ?? null, nowMs: referenceMinute, language })) : '';
   const layerNotes = useMemo(() => (layerNotesKey === '' ? NO_NOTES : Object.freeze(JSON.parse(layerNotesKey))),
     [layerNotesKey]);
   const layers = useMemo(() => Object.freeze({ keys: layerKeys, values: resolvedLayers, notes: layerNotes }),

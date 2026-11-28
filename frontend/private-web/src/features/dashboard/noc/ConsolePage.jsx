@@ -49,10 +49,12 @@ import ProvenanceLine from './ProvenanceLine';
 import { flightsByTurnaroundOf } from './standTimeline';
 import { useConsoleClock } from './useConsoleClock';
 import { useConsoleInsets } from './useConsoleInsets';
+import WeatherPanel from './WeatherPanel';
 import WeatherPill from './WeatherPill';
 
 // The OCC console, Panorama (contratos 2.5, owner decision 15; CN-32): the full-bleed map under the status bar, opening
-// on Rampa, with its panels docked flush against its edges (ConsoleOverlay.jsx: the lists at the left, the figures along
+// on Región in 3D with the regional weather and «Meteorología PUJ» (lane M7; on Rampa until 2026-11-28), with its
+// panels docked flush against its edges (ConsoleOverlay.jsx: the lists at the left, the figures along
 // the top, the band along the bottom and the inspector at the right from 1536 px), the maps lane's control rail down
 // the right edge of the area they leave and, under the map, the provenance line and the weather pill. Presentational:
 // the route (ConsoleRoute.jsx) reads and passes everything; this page only holds what the person does on it (the board's
@@ -78,6 +80,15 @@ const ARRIVAL_PLACE = Object.freeze({
 // The console tells the boot screen when its first data is on screen (ConsoleRoute.jsx). The map it hosts draws from
 // the first frame, before that data, so its own report does not end the wait: the console opens with data (contratos 2.6).
 const CONSOLE_MAP_BOOT = Object.freeze({ markReady: () => {} });
+
+// Lane M7 (2026-11-28): Panorama opens in Región in 3D with the regional weather; 3 and 4 still go to Aeródromo and Rampa.
+export const CONSOLE_DEFAULT_VIEW = 'region';
+// Where «Meteorología PUJ» floats until the panels of lane M1: the bottom left of the area the panels leave in sight.
+// It is not measured into the insets (it would move with them), so it stays inside that area.
+const WEATHER_PLACE = Object.freeze({
+  bottom: 'calc(var(--occ-map-inset-bottom, 0px) + 12px)', left: 'calc(var(--occ-map-inset-left, 0px) + 12px)',
+  maxHeight: 'calc(100% - var(--occ-map-inset-top, 0px) - var(--occ-map-inset-bottom, 0px) - 24px)',
+});
 
 const matches = query => typeof window !== 'undefined' && typeof window.matchMedia === 'function'
   && window.matchMedia(query).matches;
@@ -137,11 +148,13 @@ function revealNow({ chosen = null, target = null, stands = EMPTY, flights = EMP
  * - `live`: the map situation (maps/useMapSituation.js), read once for the map, the board and the inspector.
  * - `data`: the console's own reads (useConsoleData: `planning`, `positions`, `reviewQueue`, `readiness`, `notices`).
  * - `stands`: the stands as the map draws them (useStandDisplay over the positions board and the map flights).
+ * - `regionWeather`: useRegionWeather's view (lane M7), the regional layers of the map; without it the map draws none.
  * - `weather`: useMdpcWeather's view; `selection`: the URL selection store (maps/core/useMapSelection.js).
  * - `accountId`: the signed-in account, whose closed «Llegada nueva» pills the tab remembers (arrivalMemory.js).
  * - `onShown()`: called once the console is on screen (its route tells the OCC boot screen when its data are too).
  */
-export default function ConsolePage({ station, live, data, stands = EMPTY, weather, selection, accountId = null, onShown }) {
+export default function ConsolePage({ station, live, data, stands = EMPTY, weather, regionWeather, selection,
+  accountId = null, onShown }) {
   const { t } = useTranslation(consoleMessages);
   const router = useRouter();
   const mapRef = useRef(null);
@@ -261,7 +274,7 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
   const [aimTick, setAimTick] = useState(0);
   const userMoves = useRef(0);
   const insetsKey = `${insets.top}|${insets.right}|${insets.bottom}|${insets.left}`;
-  const framedView = selection.view ?? 'ramp';
+  const framedView = selection.view ?? CONSOLE_DEFAULT_VIEW;
   const framedTerminal = selection.terminal ?? null;
   const held = chosen !== null || selection.follow;
   // The newest selection and what the map draws of it, for the moves that run after this render.
@@ -526,6 +539,13 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
   const dialogOpen = importOpen || assignTurnaroundId !== null;
   const isShortcutBlocked = useCallback(() => dialogOpen, [dialogOpen]);
   const showPanels = useCallback(() => setFocus(null), [setFocus]);
+  // «Meteorología PUJ» (lane M7) over the map, folded at first on a narrow screen.
+  const weatherPanel = useMemo(() => (layout === 'map' && !focusMap && weather ? (
+    <div data-occ-weather-place="" className="absolute z-20 flex w-[22rem] max-w-[calc(100%-24px)] flex-col overflow-hidden"
+      style={WEATHER_PLACE}>
+      <WeatherPanel weather={weather} nowMs={nowMs ?? undefined} panelLayout="float" defaultFolded={narrow} />
+    </div>
+  ) : null), [focusMap, layout, narrow, nowMs, weather]);
   // What the map hosts, kept while nothing of it changes, so the map is not handed new children on every render.
   const mapChildren = useMemo(() => (
     <>
@@ -539,6 +559,7 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
       ) : null}
       <MapSourceStatus status={live.status} picture={live.picture} sourceState={live.sourceState}
         clock={live.clock} onRetry={live.retry} />
+      {weatherPanel}
       <Follow3dPanel flights={mapFlights} stationCode={station.stationCode || 'PUJ'} operational={followOperational} />
       {layout === 'map' && pill ? (
         <div data-occ-arrival-place="" className="pointer-events-none absolute z-20" style={ARRIVAL_PLACE}>
@@ -551,12 +572,12 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
         <MapPresetSwitcher />
         <MapMotionControl compact />
         <MapLayersMenu />
-        {/* Folded at first: the console's map is the ramp beside the panels, and the legend opens over it. */}
+        {/* Folded at first: the legend opens over the map beside the panels. */}
         <MapLegend defaultOpen={false} />
       </MapDock>
     </>
   ), [focusMap, layout, live.clock, live.picture, live.retry, live.sourceState, live.status, panels, pill, showPanels,
-    t, wide, mapFlights, station.stationCode, followOperational]);
+    t, wide, mapFlights, station.stationCode, followOperational, weatherPanel]);
 
   return (
     <div data-occ-console={layout}
@@ -565,7 +586,8 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
       <div ref={rootRef} data-occ-console-map=""
         className={layout === 'grid' ? 'relative h-80 shrink-0' : 'relative min-h-0 flex-1'}>
         <OccBootContext.Provider value={CONSOLE_MAP_BOOT}>
-          <OccMap ref={mapRef} defaultView="ramp" stands={stands} flights={mapFlights} traffic={traffic}
+          <OccMap ref={mapRef} defaultView={CONSOLE_DEFAULT_VIEW} regional3d weather={weather ?? null}
+            regionWeather={regionWeather} stands={stands} flights={mapFlights} traffic={traffic}
             selection={chosen} onSelect={handleMapSelect} insets={insets} labels={mapLabels}
             overlays={routeOverlays} overlayData={routes.overlayData}
             onCameraChange={handleCamera} isShortcutBlocked={isShortcutBlocked}>
