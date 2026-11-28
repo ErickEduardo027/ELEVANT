@@ -53,8 +53,12 @@ describe('MapCreditsDialog (PR M5)', () => {
     const dialog = await openDialog();
     expect(dialog).toHaveAttribute('aria-modal', 'true');
     expect(dialog).toHaveAccessibleDescription(/modelos 3D, logotipos, datos y teselas/);
-    // Drawn on the body, outside the map's layout container.
-    expect(dialog.closest('[data-occ-dialog]').parentElement).toBe(document.body);
+    // Drawn on the body, outside the map's layout container, inside a wrapper with the OCC scope so its tokens,
+    // light theme and focus ring resolve (review of 2026-11-28).
+    const scope = dialog.closest('[data-occ-dialog]').parentElement;
+    expect(scope.parentElement).toBe(document.body);
+    expect(scope).toHaveAttribute('data-department', 'occ');
+    expect(dialog.closest("[data-department='occ']")).toBe(scope);
     expect(isOverlayOpen(document)).toBe(true);
     expect(loader).toHaveBeenCalledTimes(1);
 
