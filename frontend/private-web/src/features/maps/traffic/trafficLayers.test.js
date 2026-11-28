@@ -10,16 +10,16 @@ import { ROUTE_PARTS } from './routeFeatures';
 import { buildSituation, toFlightsModel, toPictureModel } from './situationModel';
 import { ROUTE_SOURCE, TRAFFIC_SOURCE, TRAILS_SOURCE, trafficFeatures } from './trafficFeatures';
 import {
-  ROUTE_LAYER_IDS, ROUTE_STYLE, TAG_DECLUTTER_UNTIL_ZOOM, TRAFFIC_GROUPS, TRAFFIC_LAYER_IDS, trafficOverlay,
+  OUTSIDE_FILTER_OPACITY, ROUTE_LAYER_IDS, ROUTE_STYLE, TAG_DECLUTTER_UNTIL_ZOOM, TRAFFIC_GROUPS, TRAFFIC_LAYER_IDS, trafficOverlay,
 } from './trafficLayers';
 
 const NOON = Date.parse(TRAFFIC_NOON);
 
-function evaluate(layer, kind, name, properties, zoom = 10) {
+function evaluate(layer, kind, name, properties, zoom = 10, featureState = undefined) {
   const spec = latest[`${kind}_${layer.type}`][name];
   const parsed = createPropertyExpression(layer[kind][name], `layers.${layer.id}.${kind}.${name}`, spec);
   if (parsed.result !== 'success') throw new Error(`${layer.id} ${name}: ${JSON.stringify(parsed.value)}`);
-  return parsed.value.evaluate({ zoom }, { type: 1, properties });
+  return parsed.value.evaluate({ zoom }, { type: 1, properties }, featureState);
 }
 
 const accepts = (layer, properties) => featureFilter(layer.filter, `layers.${layer.id}.filter`)
@@ -241,6 +241,13 @@ describe('traffic layers (design E1 and E3)', () => {
     const { opacity, ...older } = features.find(item => item.kind === 'aviam' && item.quality === 'live');
     expect(opacity).toBe(1);
     expect(evaluate(layerOf('occ-traffic-aviam'), 'paint', 'icon-opacity', older)).toBe(1);
+    // M8: an AVIAM aircraft the board's filter of Monitoreo leaves out is dimmed by its feature state, not its data.
+    expect(OUTSIDE_FILTER_OPACITY).toBe(0.3);
+    expect(evaluate(layerOf('occ-traffic-aviam'), 'paint', 'icon-opacity', older, 10, { outside: true }))
+      .toBeCloseTo(OUTSIDE_FILTER_OPACITY, 9);
+    expect(evaluate(layerOf('occ-traffic-tags'), 'paint', 'text-opacity', { ...stale, opacity: 0.5, forceTag: true }, 10,
+      { outside: true })).toBeCloseTo(0.25 * OUTSIDE_FILTER_OPACITY, 9);
+    expect(evaluate(layerOf('occ-traffic-aviam'), 'paint', 'icon-opacity', older, 10, { outside: false })).toBe(1);
   });
 
   it('dims a stale position, rings an estimated one and plates a demo flight, from the feature flags', () => {

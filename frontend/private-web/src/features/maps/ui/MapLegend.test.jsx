@@ -827,6 +827,30 @@ describe('MapLegend: the globe of Monitoreo (M8)', () => {
     expect([...document.querySelectorAll('[data-legend-airport]')].map(entry => entry.dataset.legendAirport)).not.toContain('rd');
   });
 
+  it('lists the routes of the AVIAM flights in Mundo and Región while they are on, and the board filter while it dims', () => {
+    const routes = { layers: { keys: ['traffic.routes'], values: { 'traffic.routes': true } } };
+    const swatch = kind => document.querySelector(`[data-swatch="${kind}"]`);
+    const { rerender } = render(<OccMapContext.Provider value={globe('world', routes)}><MapLegend /></OccMapContext.Provider>);
+    expect(swatch('flight-route').closest('li').textContent)
+      .toBe('Rutas de los vuelos de AVIAMcírculo máximo entre los aeropuertos');
+    expect(swatch('board-filter')).toBeNull();
+    rerender(<OccMapContext.Provider value={globe('region', { ...routes, boardFilter: true })}><MapLegend /></OccMapContext.Provider>);
+    expect(swatch('flight-route')).not.toBeNull();
+    expect(swatch('board-filter').closest('li').textContent).toBe('Fuera del filtro del tablerovuelos y rutas atenuados');
+    // Closer in the routes are not drawn; the filter still dims the aircraft.
+    rerender(<OccMapContext.Provider value={globe('approach', { ...routes, boardFilter: true })}><MapLegend /></OccMapContext.Provider>);
+    expect(swatch('flight-route')).toBeNull();
+    expect(swatch('board-filter')).not.toBeNull();
+    // Turned off, or a map without the layer (Panorama, Mapa de posiciones): not listed.
+    rerender(<OccMapContext.Provider value={globe('world', { layers: { keys: ['traffic.routes'], values: { 'traffic.routes': false } } })}>
+      <MapLegend /></OccMapContext.Provider>);
+    expect(swatch('flight-route')).toBeNull();
+    rerender(<OccMapContext.Provider value={globe('region', { views: ['region', 'approach', 'airfield', 'ramp'] })}>
+      <MapLegend /></OccMapContext.Provider>);
+    expect(swatch('flight-route')).toBeNull();
+    expect(swatch('board-filter')).toBeNull();
+  });
+
   it('explains Blue Marble in the light theme', () => {
     window.localStorage.setItem(THEME_STORAGE_KEY, 'light');
     try {

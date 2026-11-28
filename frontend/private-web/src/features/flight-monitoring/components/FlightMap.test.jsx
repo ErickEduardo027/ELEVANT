@@ -544,6 +544,51 @@ describe('FlightMap inside the OCC shell (live traffic, PR M5)', () => {
     expect(new URLSearchParams(window.location.search).get('stationId')).toBe('s-1');
   });
 
+  it('M8: draws the great circles of every AVIAM flight, leaves the chosen one to its route and dims what the board filters out', async () => {
+    const { map, rerender } = renderLive();
+    // One thin line in the reference slot, part of the style from the start (no setStyle).
+    expect(map.options.style.sources['occ-flight-routes']).toMatchObject({ type: 'geojson' });
+    expect(map.options.style.layers.find(layer => layer.id === 'occ-flight-routes-line'))
+      .toMatchObject({ type: 'line', source: 'occ-flight-routes', metadata: { 'occ:group': 'traffic.routes' } });
+    loadStyle(map);
+    await flush();
+    const routes = () => map.getSource('occ-flight-routes').setDataCalls.at(-1)?.features ?? [];
+    const keys = createMapFlights().flights.map(row => row.flightKey);
+    expect(routes().map(feature => feature.id).sort()).toEqual([...keys].sort());
+    expect(routes().every(feature => feature.properties.outside === false)).toBe(true);
+    const arrivalRoute = routes().find(feature => feature.id === TRAFFIC_FLIGHT_KEY.arrival);
+    expect(arrivalRoute.properties).toMatchObject({ direction: 'Arrival', code: 'MIA' });
+    // An arrival ends at the station.
+    const end = arrivalRoute.geometry.coordinates.at(-1);
+    expect(end[0]).toBeCloseTo(createMapFlights().stationAirport.longitude, 3);
+    // Written again only when what they draw changes, not on every read.
+    const writes = map.getSource('occ-flight-routes').setDataCalls.length;
+    await flush(30_000);
+    expect(map.getSource('occ-flight-routes').setDataCalls).toHaveLength(writes);
+
+    // The chosen flight keeps its own highlighted route: its great circle is left out.
+    rerender({ selectedFlightId: arrivalRow.legId });
+    await flush();
+    expect(routes().map(feature => feature.id)).not.toContain(TRAFFIC_FLIGHT_KEY.arrival);
+
+    // The board's filter keeps the departure: every other route is dimmed, and so is every other AVIAM aircraft but the
+    // chosen one.
+    rerender({ selectedFlightId: arrivalRow.legId, emphasisedFlightIds: [String(departureRow.legId)] });
+    await flush();
+    expect(routes().filter(feature => !feature.properties.outside).map(feature => feature.id))
+      .toEqual([TRAFFIC_FLIGHT_KEY.departure]);
+    expect(map.featureStateOf('occ-traffic', `f:${TRAFFIC_FLIGHT_KEY.demoArrival}`)).toEqual({ outside: true });
+    expect(map.featureStateOf('occ-traffic', `f:${TRAFFIC_FLIGHT_KEY.departure}`)?.outside).toBeUndefined();
+    expect(map.featureStateOf('occ-traffic', `f:${TRAFFIC_FLIGHT_KEY.arrival}`)?.outside).toBeUndefined();
+    expect(within(screen.getByTestId('map-legend')).getByText('Fuera del filtro del tablero')).toBeInTheDocument();
+
+    // No filter: nothing dimmed.
+    rerender({ selectedFlightId: arrivalRow.legId, emphasisedFlightIds: null });
+    await flush();
+    expect(routes().every(feature => feature.properties.outside === false)).toBe(true);
+    expect(map.featureStateOf('occ-traffic', `f:${TRAFFIC_FLIGHT_KEY.demoArrival}`)).toEqual({ outside: false });
+  });
+
   it('shows the chosen flight drawn by the traffic in cyan, by the page\'s leg id', async () => {
     const { map, rerender } = renderLive();
     loadStyle(map);
