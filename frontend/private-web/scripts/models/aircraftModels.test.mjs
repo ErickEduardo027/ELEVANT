@@ -106,4 +106,23 @@ describe('vendored aircraft models (M5)', () => {
       .toEqual(['GPL-2.0-or-later', 'GPL-2.0-or-later']);
     expect(manifest.types.B39M.licence).toBe('GPL-2.0-only');
   });
+
+  it('credits each model for the map dialog: base, authors, the pinned repository and commit, and its upstream', () => {
+    const bySource = new Map(sources.files.map(file => [file.path, file]));
+    for (const [icao, entry] of Object.entries(manifest.types)) {
+      const base = BASES[entry.base];
+      const model = bySource.get(entry.sources[0]);
+      const { credit } = entry;
+      expect(credit.baseName, icao).toBe(base.describe);
+      expect(credit.authors, icao).toBe(base.credit);
+      expect([credit.repository, credit.commit], icao).toEqual([model.repo, model.commit]);
+      expect(credit.repositoryUrl, icao).toBe(`https://github.com/${model.repo}`);
+      expect(credit.sourceUrl.startsWith(`https://github.com/${model.repo}/blob/${model.commit}/`), icao).toBe(true);
+      expect(credit.upstream, icao).toBe(base.upstream);
+    }
+    expect(manifest.types.B738.credit.upstreamUrl).toBe('https://github.com/FGMEMBERS/737-800');
+    expect(manifest.types.B39M.credit.authors).toContain('Original model by omri_ha_muglob');
+    expect(manifest.types.AT76.credit.upstreamUrl).toBeNull();
+    expect(manifest.types.B77W.credit.note).toContain('GPLv2');
+  });
 });

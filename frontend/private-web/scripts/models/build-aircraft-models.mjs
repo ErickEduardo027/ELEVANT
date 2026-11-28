@@ -399,6 +399,24 @@ function noticeText(icao, sources, base, recipe, log) {
   return lines.join('\n');
 }
 
+// What the map's «Créditos y licencias» shows for a type (ui/MapCreditsDialog.jsx): the model it derives from, its
+// authors, the repository and commit it was taken from (with links), and where the model came from before that.
+function creditOf(sources, base) {
+  const model = sources.entry(base.source);
+  const repoUrl = /^[\w.-]+\/[\w.-]+$/.test(model.repo) ? `https://github.com/${model.repo}` : null;
+  return {
+    baseName: base.describe,
+    authors: base.credit,
+    repository: model.repo,
+    repositoryUrl: repoUrl,
+    commit: model.commit,
+    sourceUrl: repoUrl === null ? model.url : `${repoUrl}/blob/${model.commit}/${inRepo(model)}`,
+    upstream: base.upstream,
+    upstreamUrl: /^[\w.-]+\/[\w.-]+$/.test(base.upstream) ? `https://github.com/${base.upstream}` : null,
+    ...(base.upstreamNote ? { note: base.upstreamNote } : {}),
+  };
+}
+
 function sourceText(icao, sources, base) {
   const files = [base.source, ...base.licenceFiles, base.readme].filter(Boolean).map(file => sources.entry(file));
   return [
@@ -512,6 +530,7 @@ async function main() {
       },
       groundClearanceM: round(groundM),
       sources: [base.source, ...base.licenceFiles],
+      credit: creditOf(sources, base),
       changes: log,
     };
     console.log(`${icao}: L2 ${l2Triangles} △, L1 ${l1Triangles} △, ${size.map(v => v.toFixed(2)).join(' × ')} m, `

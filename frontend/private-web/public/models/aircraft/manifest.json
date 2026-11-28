@@ -62,6 +62,16 @@
         "fam/a320/glTF2/A320.glb",
         "fam/a320/COPYING"
       ],
+      "credit": {
+        "baseName": "Airbus A320",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/a320/glTF2/A320.glb",
+        "upstream": "FGMEMBERS/A320-family",
+        "upstreamUrl": "https://github.com/FGMEMBERS/A320-family"
+      },
       "changes": [
         "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+X».",
         "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
@@ -127,6 +137,16 @@
         "fam/a320/glTF2/A321.glb",
         "fam/a320/COPYING"
       ],
+      "credit": {
+        "baseName": "Airbus A321",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/a320/glTF2/A321.glb",
+        "upstream": "FGMEMBERS/A320-family",
+        "upstreamUrl": "https://github.com/FGMEMBERS/A320-family"
+      },
       "changes": [
         "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+Z».",
         "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
@@ -191,6 +211,16 @@
         "fam/a320/glTF2/A319.glb",
         "fam/a320/COPYING"
       ],
+      "credit": {
+        "baseName": "Airbus A319",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/a320/glTF2/A319.glb",
+        "upstream": "FGMEMBERS/A320-family",
+        "upstreamUrl": "https://github.com/FGMEMBERS/A320-family"
+      },
       "changes": [
         "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+Z».",
         "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
@@ -253,6 +283,16 @@
         "fam/a320/glTF2/A320.glb",
         "fam/a320/COPYING"
       ],
+      "credit": {
+        "baseName": "Airbus A320",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/a320/glTF2/A320.glb",
+        "upstream": "FGMEMBERS/A320-family",
+        "upstreamUrl": "https://github.com/FGMEMBERS/A320-family"
+      },
       "changes": [
         "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+X».",
         "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
@@ -316,6 +356,16 @@
         "fam/a320/glTF2/A321.glb",
         "fam/a320/COPYING"
       ],
+      "credit": {
+        "baseName": "Airbus A321",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/a320/glTF2/A321.glb",
+        "upstream": "FGMEMBERS/A320-family",
+        "upstreamUrl": "https://github.com/FGMEMBERS/A320-family"
+      },
       "changes": [
         "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+Z».",
         "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
@@ -378,6 +428,16 @@
         "fam/a332/glTF2/A332.glb",
         "fam/a332/COPYING"
       ],
+      "credit": {
+        "baseName": "Airbus A330-200",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/a332/glTF2/A332.glb",
+        "upstream": "FGMEMBERS/A330-200",
+        "upstreamUrl": "https://github.com/FGMEMBERS/A330-200"
+      },
       "changes": [
         "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+Z».",
         "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
@@ -440,6 +500,16 @@
         "fam/a333/glTF2/A333.glb",
         "fam/a333/COPYING"
       ],
+      "credit": {
+        "baseName": "Airbus A330-300",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/a333/glTF2/A333.glb",
+        "upstream": "FGMEMBERS/A330-300",
+        "upstreamUrl": "https://github.com/FGMEMBERS/A330-300"
+      },
       "changes": [
         "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+Z».",
         "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
@@ -502,6 +572,16 @@
         "fam/a333/glTF2/A333.glb",
         "fam/a333/COPYING"
       ],
+      "credit": {
+        "baseName": "Airbus A330-300",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/a333/glTF2/A333.glb",
+        "upstream": "FGMEMBERS/A330-300",
+        "upstreamUrl": "https://github.com/FGMEMBERS/A330-300"
+      },
       "changes": [
         "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+Z».",
         "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
@@ -567,6 +647,16 @@
         "fam/atr72/glTF2/AT75.glb",
         "fam/atr72/LICENCE.txt"
       ],
+      "credit": {
+        "baseName": "ATR 72-500 (por el ATR 72-600)",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/atr72/glTF2/AT75.glb",
+        "upstream": "FlightGear ATR 72-500 (FGMEMBERS), según el README de FlightAirMap",
+        "upstreamUrl": null
+      },
       "changes": [
         "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+Z».",
         "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
@@ -629,6 +719,16 @@
         "rexo/Models/737-9.ac",
         "rexo/LICENSE"
       ],
+      "credit": {
+        "baseName": "Boeing 737 MAX 9",
+        "authors": "REXO-77/737-MAX: Israel Emmanuel (naviat-dev), SP-NTX, Captain Jake, Semir Gebran (CaptB), Marsdolphin y otros; «Original model by omri_ha_muglob»",
+        "repository": "REXO-77/737-MAX",
+        "repositoryUrl": "https://github.com/REXO-77/737-MAX",
+        "commit": "fc4316a01c1ec488789725bb54ed2f454f931ac6",
+        "sourceUrl": "https://github.com/REXO-77/737-MAX/blob/fc4316a01c1ec488789725bb54ed2f454f931ac6/Models/737-9.ac",
+        "upstream": "REXO-77/737-MAX",
+        "upstreamUrl": "https://github.com/REXO-77/737-MAX"
+      },
       "changes": [
         "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose-X».",
         "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
@@ -693,6 +793,16 @@
         "rexo/Models/737-9.ac",
         "rexo/LICENSE"
       ],
+      "credit": {
+        "baseName": "Boeing 737 MAX 9",
+        "authors": "REXO-77/737-MAX: Israel Emmanuel (naviat-dev), SP-NTX, Captain Jake, Semir Gebran (CaptB), Marsdolphin y otros; «Original model by omri_ha_muglob»",
+        "repository": "REXO-77/737-MAX",
+        "repositoryUrl": "https://github.com/REXO-77/737-MAX",
+        "commit": "fc4316a01c1ec488789725bb54ed2f454f931ac6",
+        "sourceUrl": "https://github.com/REXO-77/737-MAX/blob/fc4316a01c1ec488789725bb54ed2f454f931ac6/Models/737-9.ac",
+        "upstream": "REXO-77/737-MAX",
+        "upstreamUrl": "https://github.com/REXO-77/737-MAX"
+      },
       "changes": [
         "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose-X».",
         "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
@@ -755,6 +865,16 @@
         "mbr1376/models/gltf_v2/airplane/b738.glb",
         "mbr1376/LICENSE"
       ],
+      "credit": {
+        "baseName": "Boeing 737-800",
+        "authors": "Aleksei Kalmykov (kalmykov) / Flightradar24, repositorio fr24-3d-models; conversión a glTF 2.0 de mbr1376",
+        "repository": "mbr1376/fr24-3d-models",
+        "repositoryUrl": "https://github.com/mbr1376/fr24-3d-models",
+        "commit": "3d0a50dfddf14cff653dd4ac6c6c11e3aa58b7de",
+        "sourceUrl": "https://github.com/mbr1376/fr24-3d-models/blob/3d0a50dfddf14cff653dd4ac6c6c11e3aa58b7de/models/gltf_v2/airplane/b738.glb",
+        "upstream": "FGMEMBERS/737-800",
+        "upstreamUrl": "https://github.com/FGMEMBERS/737-800"
+      },
       "changes": [
         "Quitadas 1 primitivas de líneas o puntos.",
         "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose-Z».",
@@ -821,6 +941,16 @@
         "mbr1376/models/gltf_v2/airplane/b738.glb",
         "mbr1376/LICENSE"
       ],
+      "credit": {
+        "baseName": "Boeing 737-800",
+        "authors": "Aleksei Kalmykov (kalmykov) / Flightradar24, repositorio fr24-3d-models; conversión a glTF 2.0 de mbr1376",
+        "repository": "mbr1376/fr24-3d-models",
+        "repositoryUrl": "https://github.com/mbr1376/fr24-3d-models",
+        "commit": "3d0a50dfddf14cff653dd4ac6c6c11e3aa58b7de",
+        "sourceUrl": "https://github.com/mbr1376/fr24-3d-models/blob/3d0a50dfddf14cff653dd4ac6c6c11e3aa58b7de/models/gltf_v2/airplane/b738.glb",
+        "upstream": "FGMEMBERS/737-800",
+        "upstreamUrl": "https://github.com/FGMEMBERS/737-800"
+      },
       "changes": [
         "Quitadas 1 primitivas de líneas o puntos.",
         "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose-Z».",
@@ -885,6 +1015,16 @@
         "mbr1376/models/gltf_v2/airplane/b738.glb",
         "mbr1376/LICENSE"
       ],
+      "credit": {
+        "baseName": "Boeing 737-800",
+        "authors": "Aleksei Kalmykov (kalmykov) / Flightradar24, repositorio fr24-3d-models; conversión a glTF 2.0 de mbr1376",
+        "repository": "mbr1376/fr24-3d-models",
+        "repositoryUrl": "https://github.com/mbr1376/fr24-3d-models",
+        "commit": "3d0a50dfddf14cff653dd4ac6c6c11e3aa58b7de",
+        "sourceUrl": "https://github.com/mbr1376/fr24-3d-models/blob/3d0a50dfddf14cff653dd4ac6c6c11e3aa58b7de/models/gltf_v2/airplane/b738.glb",
+        "upstream": "FGMEMBERS/737-800",
+        "upstreamUrl": "https://github.com/FGMEMBERS/737-800"
+      },
       "changes": [
         "Quitadas 1 primitivas de líneas o puntos.",
         "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose-Z».",
@@ -951,6 +1091,16 @@
         "fam/b752/glTF2/B752.glb",
         "fam/b752/LICENSE"
       ],
+      "credit": {
+        "baseName": "Boeing 757-200",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/b752/glTF2/B752.glb",
+        "upstream": "FGMEMBERS/757-200",
+        "upstreamUrl": "https://github.com/FGMEMBERS/757-200"
+      },
       "changes": [
         "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+X».",
         "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
@@ -1013,6 +1163,17 @@
         "mbr1376/models/gltf_v2/airplane/b773.glb",
         "mbr1376/LICENSE"
       ],
+      "credit": {
+        "baseName": "Boeing 777-300",
+        "authors": "Aleksei Kalmykov (kalmykov) / Flightradar24, repositorio fr24-3d-models; conversión a glTF 2.0 de mbr1376",
+        "repository": "mbr1376/fr24-3d-models",
+        "repositoryUrl": "https://github.com/mbr1376/fr24-3d-models",
+        "commit": "3d0a50dfddf14cff653dd4ac6c6c11e3aa58b7de",
+        "sourceUrl": "https://github.com/mbr1376/fr24-3d-models/blob/3d0a50dfddf14cff653dd4ac6c6c11e3aa58b7de/models/gltf_v2/airplane/b773.glb",
+        "upstream": "FGMEMBERS/777",
+        "upstreamUrl": "https://github.com/FGMEMBERS/777",
+        "note": "FGMEMBERS/777 no trae archivo de licencia (solo AUTHORS: Syd Adams, Karla); fr24 publica el modelo como GPLv2"
+      },
       "changes": [
         "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose-Z».",
         "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
@@ -1078,6 +1239,17 @@
         "mbr1376/models/gltf_v2/airplane/b773.glb",
         "mbr1376/LICENSE"
       ],
+      "credit": {
+        "baseName": "Boeing 777-300",
+        "authors": "Aleksei Kalmykov (kalmykov) / Flightradar24, repositorio fr24-3d-models; conversión a glTF 2.0 de mbr1376",
+        "repository": "mbr1376/fr24-3d-models",
+        "repositoryUrl": "https://github.com/mbr1376/fr24-3d-models",
+        "commit": "3d0a50dfddf14cff653dd4ac6c6c11e3aa58b7de",
+        "sourceUrl": "https://github.com/mbr1376/fr24-3d-models/blob/3d0a50dfddf14cff653dd4ac6c6c11e3aa58b7de/models/gltf_v2/airplane/b773.glb",
+        "upstream": "FGMEMBERS/777",
+        "upstreamUrl": "https://github.com/FGMEMBERS/777",
+        "note": "FGMEMBERS/777 no trae archivo de licencia (solo AUTHORS: Syd Adams, Karla); fr24 publica el modelo como GPLv2"
+      },
       "changes": [
         "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose-Z».",
         "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
@@ -1144,6 +1316,16 @@
         "fam/b788/glTF2/B788.glb",
         "fam/b788/COPYING"
       ],
+      "credit": {
+        "baseName": "Boeing 787-8",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/b788/glTF2/B788.glb",
+        "upstream": "FGMEMBERS/787-8",
+        "upstreamUrl": "https://github.com/FGMEMBERS/787-8"
+      },
       "changes": [
         "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+Z».",
         "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
@@ -1207,6 +1389,16 @@
         "fam/b788/glTF2/B788.glb",
         "fam/b788/COPYING"
       ],
+      "credit": {
+        "baseName": "Boeing 787-8",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/b788/glTF2/B788.glb",
+        "upstream": "FGMEMBERS/787-8",
+        "upstreamUrl": "https://github.com/FGMEMBERS/787-8"
+      },
       "changes": [
         "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+Z».",
         "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
@@ -1273,6 +1465,16 @@
         "fam/crj9/LICENSE",
         "fam/a320/COPYING"
       ],
+      "credit": {
+        "baseName": "Bombardier CRJ900",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/crj9/glTF2/CRJ9.glb",
+        "upstream": "FGMEMBERS/CRJ700-family",
+        "upstreamUrl": "https://github.com/FGMEMBERS/CRJ700-family"
+      },
       "changes": [
         "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+Z».",
         "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
@@ -1336,6 +1538,16 @@
         "fam/e190/glTF2/E190.glb",
         "fam/e190/License.txt"
       ],
+      "credit": {
+        "baseName": "Embraer E190",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/e190/glTF2/E190.glb",
+        "upstream": "FGMEMBERS/E-jet-family",
+        "upstreamUrl": "https://github.com/FGMEMBERS/E-jet-family"
+      },
       "changes": [
         "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+Z».",
         "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
@@ -1398,6 +1610,16 @@
         "fam/e190/glTF2/E190.glb",
         "fam/e190/License.txt"
       ],
+      "credit": {
+        "baseName": "Embraer E190",
+        "authors": "Ysurac, repositorio FlightAirMap-3dmodels (modelos de FGMEMBERS vía fr24-3d-models de Aleksei Kalmykov / Flightradar24)",
+        "repository": "Ysurac/FlightAirMap-3dmodels",
+        "repositoryUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels",
+        "commit": "0906d9ba1bdd906ce45807e45ed706c09912db19",
+        "sourceUrl": "https://github.com/Ysurac/FlightAirMap-3dmodels/blob/0906d9ba1bdd906ce45807e45ed706c09912db19/e190/glTF2/E190.glb",
+        "upstream": "FGMEMBERS/E-jet-family",
+        "upstreamUrl": "https://github.com/FGMEMBERS/E-jet-family"
+      },
       "changes": [
         "Girado al marco de la app (x a la derecha, y hacia la nariz, z arriba) desde «nose+Z».",
         "Quitadas todas las texturas, coordenadas UV y materiales originales: la librea es un shader de la app.",
