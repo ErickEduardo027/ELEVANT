@@ -5,7 +5,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { destinationPoint } from '../airport/geo';
 import { THREE_PARTS } from './aircraft3dChunk';
-import { WAITING_LAYER, WARM_TYPE, createAircraft3dLayer, shaderErrorChecks } from './aircraft3dLayer';
+import { NOTHING_DRAWN, WAITING_LAYER, WARM_TYPE, createAircraft3dLayer, shaderErrorChecks } from './aircraft3dLayer';
 import { MODELS_BASE_URL, createGltfModels } from './gltfModels';
 import { planInstances } from './instancePlan';
 import { LIVERIES } from './liveries';
@@ -359,6 +359,35 @@ describe('the 3D layer compiles its shaders ahead, without blocking the page (HO
     expect(layer.stats().models).toBe(1);
     expect(made.length).toBe(withL1);
     expect(renderer().info.programs.length).toBe(programsWithL1);
+  });
+
+  it('says what it really drew: a detail and types still compiling are not drawn, so their 2D symbols stay', async () => {
+    const detail = detailOf('d', { code: 'B738', livery: LIVERIES.CMP, registration: 'HP-1' });
+    const onDrawnChange = vi.fn();
+    // Added and handed its detail in the same frame, before any warm-up ran («Seguir en 3D» from the 2D map).
+    const { layer, map, frame, renderer, answer } = setup({ detail, onDrawnChange });
+    expect(layer.drawnNow()).toBe(NOTHING_DRAWN);
+    frame();
+    expect(layer.drawnNow()).toMatchObject({ detail: null, animated: false });
+    expect(layer.drawnNow().keys.size).toBe(0);
+    expect(onDrawnChange).not.toHaveBeenCalled();
+    await compileAll(renderer());
+    frame();
+    const [key] = answer.plan.keys();
+    expect(layer.drawnNow().detail).toBe('d');
+    expect([...layer.drawnNow().keys]).toEqual([key]);
+    expect(onDrawnChange).toHaveBeenCalledOnce();
+    // Another frame that draws the same: no word.
+    frame();
+    expect(onDrawnChange).toHaveBeenCalledOnce();
+    // The context lost: nothing draws, and the map hears it.
+    const [[, lostHandler]] = map.on.mock.calls.filter(([name]) => name === 'webglcontextlost');
+    lostHandler();
+    expect(layer.drawnNow()).toBe(NOTHING_DRAWN);
+    expect(onDrawnChange).toHaveBeenCalledTimes(2);
+    // Removed: nothing drawn either.
+    layer.onRemove();
+    expect(layer.drawnNow()).toBe(NOTHING_DRAWN);
   });
 
   it('drops a compilation answered after the layer was removed or its renderer replaced', async () => {

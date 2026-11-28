@@ -156,6 +156,15 @@ export const WARM_TYPE = 'B738';
 export const WAITING_LAYER = 31;
 const DRAWN_LAYER = 0;
 const PARALLEL_COMPILE = 'KHR_parallel_shader_compile';
+/** What a layer that has drawn nothing yet answers from drawnNow() (HOTFIX-3D). */
+export const NOTHING_DRAWN = Object.freeze({ detail: null, keys: Object.freeze(new Set()), animated: false });
+
+// Whether two answers of drawnNow() say the same.
+function sameDrawn(a, b) {
+  if (a.detail !== b.detail || a.animated !== b.animated || a.keys.size !== b.keys.size) return false;
+  for (const key of a.keys) if (!b.keys.has(key)) return false;
+  return true;
+}
 
 // The value of NODE_ENV (Next inlines it in the browser's bundle), or undefined where there is none.
 function nodeEnv() {
@@ -326,7 +335,12 @@ function sameSun(a, b) {
  * - `createRenderer({ canvas, context })`, `buildGeometry(three, spec)`, `createModels(onLoad)` (aircraft/gltfModels.js:
  *   createGltfModels, or null for none) and `now()` (milliseconds, monotonic) are for tests;
  * - HOTFIX-3D: `checkShaderErrors` is three's debug.checkShaderErrors (shaderErrorChecks: only in development and the
- *   tests) and `idle(task)` runs the warm-up of the programs when the page is idle, answering its cancel.
+ *   tests) and `idle(task)` runs the warm-up of the programs when the page is idle, answering its cancel;
+ *   `drawnNow()` → `{ detail, keys, animated }` says what the last frame really drew, so that only that takes the place
+ *   of the 2D symbols: the key of the detailed aircraft drawn (or null), the keys of the plan whose meshes were drawn,
+ *   and whether the animated frame was drawn whole (its sprites, tags, meshes and detailed aircraft); NOTHING_DRAWN
+ *   before the first frame, after onRemove and while the context is lost. `onDrawnChange()` hears every change of it,
+ *   after the frame (or the loss) that made it, so the map writes its traffic again.
  *
  * `pick({ x, y })` (CSS pixels from the canvas's top-left corner) answers `{ kind: 'aircraft', id }` with the plan's id
  * of the aircraft under the pointer, or `null` when the ray meets no aircraft (a shadow is no aircraft), before the
@@ -348,7 +362,7 @@ export function createAircraft3dLayer({
   createSprites = createTrafficSprites, createLabels = createTrafficLabels,
   pixelRatio = () => globalThis.devicePixelRatio ?? 1, fonts = globalThis.document?.fonts ?? null,
   createModels = onLoad => (typeof three?.GLTFLoader === 'function' ? createGltfModels({ three, onLoad }) : null),
-  checkShaderErrors = shaderErrorChecks(), idle = scheduleIdle,
+  checkShaderErrors = shaderErrorChecks(), idle = scheduleIdle, onDrawnChange,
 } = {}) {
   if (three == null) throw new TypeError('The 3D aircraft layer needs the parts of three');
   if (typeof getInstances !== 'function') throw new TypeError('The 3D aircraft layer needs getInstances()');
@@ -432,6 +446,14 @@ export function createAircraft3dLayer({
   let warmed = null;
   let cancelWarm = null;
   let compileWarned = false;
+  // What the last frame really drew (drawnNow), and whether the map hears of a change after this frame.
+  let drawnState = NOTHING_DRAWN;
+
+  function setDrawn(next) {
+    if (sameDrawn(next, drawnState)) return;
+    drawnState = next;
+    onDrawnChange?.();
+  }
 
   function sharedMaterial(key, make) {
     let made = shared.get(key);
@@ -509,16 +531,22 @@ export function createAircraft3dLayer({
     return ready;
   }
 
-  // The objects of the main scene, each drawn once its programs are ready.
+  // The objects of the main scene, each drawn once its programs are ready. Answers the keys of the plan whose meshes
+  // are drawn and whether all of them and the animated traffic's sprites and tags are.
   function gateScene() {
-    for (const held of meshes.values()) {
-      drawWhenCompiled(held.mesh, scene, camera);
+    const keys = new Set();
+    let whole = true;
+    for (const [key, held] of meshes) {
+      if (held.mesh !== null && drawWhenCompiled(held.mesh, scene, camera)) keys.add(key);
+      // A mesh left out of the plan (waiting to be retired) draws nothing the map needs.
+      else if (held.idleSince === null) whole = false;
       if (held.shadow?.mesh) drawWhenCompiled(held.shadow.mesh, scene, camera);
     }
     drawWhenCompiled(contactMesh, scene, camera);
     drawWhenCompiled(lines, scene, camera);
-    drawWhenCompiled(sprites?.object, scene, camera);
-    drawWhenCompiled(labels?.object, scene, camera);
+    const spritesDrawn = drawWhenCompiled(sprites?.object, scene, camera);
+    const labelsDrawn = drawWhenCompiled(labels?.object, scene, camera);
+    return { keys, animated: whole && sprites !== null && spritesDrawn && labelsDrawn };
   }
 
   // A mesh of one instance with an instance colour, as the types' meshes are, to compile a material with.
@@ -1269,6 +1297,8 @@ export function createAircraft3dLayer({
   function onContextLost() {
     lost = true;
     rebuild = true;
+    // Nothing draws while the context is lost: the map shows the 2D symbols again (HOTFIX-3D).
+    setDrawn(NOTHING_DRAWN);
     reportFailed();
   }
 
@@ -1329,17 +1359,24 @@ export function createAircraft3dLayer({
       syncLighting();
       // state.reset() sets the viewport to the canvas: the drawing buffer's is set after it.
       const target = frameContext ?? context;
-      gateScene();
+      const gated = gateScene();
       renderer.resetState();
       renderer.setViewport(0, 0, target.drawingBufferWidth, target.drawingBufferHeight);
       renderer.render(scene, camera);
-      renderDetail(answer?.detail ?? null, mainMatrix, target, time);
+      const detail = answer?.detail ?? null;
+      renderDetail(detail, mainMatrix, target, time);
       drawn = true;
+      // HOTFIX-3D: only what this frame drew takes the place of its 2D symbol (an object still compiling did not).
+      const detailKey = detailDrawn?.key ?? null;
+      setDrawn({ detail: detailKey, keys: gated.keys,
+        animated: gated.animated && (detail === null || detailKey === detail.key) });
     },
 
     onRemove() {
       removed = true;
       drawn = false;
+      // Taken off the map, the layer draws nothing; the map's controller knows it (no word needed).
+      drawnState = NOTHING_DRAWN;
       stopListening();
       for (const held of meshes.values()) disposeHeld(held);
       meshes.clear();
@@ -1455,6 +1492,9 @@ export function createAircraft3dLayer({
       if (!removed) map?.triggerRepaint();
       return { ...quality };
     },
+
+    /** HOTFIX-3D: what the last frame really drew, `{ detail, keys, animated }` (see above). */
+    drawnNow: () => drawnState,
 
     stats() {
       let instances = 0;

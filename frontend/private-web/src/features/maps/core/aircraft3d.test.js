@@ -236,7 +236,8 @@ describe('the governor', () => {
 });
 
 // The controller's world: an engine that records its custom layers, a chunk that resolves when told, a stub layer.
-function world({ fail = false, webgl = true, liveries = false, animate = false } = {}) {
+// `reports`: the stub layer says what its last frame drew (drawnNow, HOTFIX-3D), at first nothing.
+function world({ fail = false, webgl = true, liveries = false, animate = false, reports = false } = {}) {
   let clock = 0;
   let frameT = 0;
   let resolveLoad;
@@ -269,7 +270,9 @@ function world({ fail = false, webgl = true, liveries = false, animate = false }
           return { ...layer.quality };
         },
         stats: () => ({ meshes: 1, instances: 2, failed: false, lost: false }),
+        drawn: { detail: null, keys: new Set(), animated: false },
       };
+      if (reports) layer.drawnNow = () => layer.drawn;
       made.push(layer);
       return layer;
     }),
@@ -544,6 +547,49 @@ describe('createAircraft3dController', () => {
     expect(controller.state().follow).toBe('off');
   });
 
+  it('HOTFIX-3D: «Seguir en 3D» keeps the 2D symbol of the followed aircraft until the layer really drew its model', async () => {
+    const { controller, made, settle, onChange } = world({ reports: true });
+    const copa = aviam('f:k-9', { callsign: 'CMP893', registration: 'zz-cmp1', typeIcao: 'B738' });
+    controller.plan({ aircraft: [copa], zoom: 9, minZoom: 15, followedId: 'f:k-9' });
+    await settle();
+    // The layer was added and handed its detail in the same frame; its programs are still compiling, so it drew
+    // nothing: the aircraft keeps its 2D symbol (it never vanishes from the map).
+    expect(made[0].options.getInstances().detail.key).toBe('B738|CMP|ZZ-CMP1');
+    expect(controller.plan({ aircraft: [copa], zoom: 9, minZoom: 15, followedId: 'f:k-9' }).size).toBe(0);
+    expect(controller.drawnIds().size).toBe(0);
+    // A frame drew another detailed aircraft: still not this one.
+    made[0].drawn = { detail: 'A320|UAL|N1', keys: new Set(), animated: false };
+    expect(controller.plan({ aircraft: [copa], zoom: 9, minZoom: 15, followedId: 'f:k-9' }).size).toBe(0);
+    // Its programs ready, the layer drew it and says so: after that frame the map writes its traffic again, and the 2D
+    // symbol gives way.
+    made[0].drawn = { detail: 'B738|CMP|ZZ-CMP1', keys: new Set(), animated: false };
+    onChange.mockClear();
+    made[0].options.onDrawnChange();
+    expect(onChange).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(onChange).toHaveBeenCalledOnce();
+    expect([...controller.plan({ aircraft: [copa], zoom: 9, minZoom: 15, followedId: 'f:k-9' })]).toEqual(['f:k-9']);
+    // The context lost, the layer draws nothing: the 2D symbol comes back.
+    made[0].drawn = { detail: null, keys: new Set(), animated: false };
+    expect(controller.plan({ aircraft: [copa], zoom: 9, minZoom: 15, followedId: 'f:k-9' }).size).toBe(0);
+  });
+
+  it('HOTFIX-3D: the 2D symbols give way only to the types whose meshes the layer drew', async () => {
+    const { controller, made, settle } = world({ reports: true });
+    controller.setEnabled(true);
+    const aircraft = [aviam('f:k-1'), aviam('f:k-2', { typeIcao: 'B738', lon: near(600)[0], lat: near(600)[1] })];
+    controller.plan({ aircraft, ...AT_RAMP });
+    await settle();
+    expect(controller.plan({ aircraft, ...AT_RAMP }).size).toBe(0);
+    const { plan } = made[0].options.getInstances();
+    const keyOf = id => [...plan].find(([, entry]) => entry.ids.includes(id))[0];
+    expect(keyOf('f:k-1')).not.toBe(keyOf('f:k-2'));
+    made[0].drawn = { detail: null, keys: new Set([keyOf('f:k-1')]), animated: false };
+    expect([...controller.plan({ aircraft, ...AT_RAMP })]).toEqual(['f:k-1']);
+    made[0].drawn = { detail: null, keys: new Set([keyOf('f:k-1'), keyOf('f:k-2')]), animated: false };
+    expect([...controller.plan({ aircraft, ...AT_RAMP })].sort()).toEqual(['f:k-1', 'f:k-2']);
+  });
+
   it('CN-30: a pause of the governor keeps the followed aircraft in 3D; without WebGL its follow says failed', async () => {
     const { controller, made, engine, settle } = world();
     controller.setEnabled(true);
@@ -633,6 +679,20 @@ describe('the animated traffic (PR M2)', () => {
     const index = sprites.ids.indexOf(id);
     return [sprites.matrices[16 * index + 12], sprites.matrices[16 * index + 13]];
   };
+
+  it('HOTFIX-3D: keeps the GeoJSON icons until the layer drew a whole animated frame', async () => {
+    const { controller, made, settle } = world({ animate: true, reports: true });
+    const aircraft = [aviam('f:k-1'), other('abc123')];
+    const { keyframes } = writeOf(aircraft);
+    controller.plan({ aircraft, zoom: 9, minZoom: 15, animation: { keyframes } });
+    await settle();
+    // Animated, but its sprites' programs are still compiling: no icon gives way.
+    expect(controller.plan({ aircraft, zoom: 9, minZoom: 15, animation: { keyframes } }).size).toBe(0);
+    expect(controller.animating()).toBe(true);
+    made[0].drawn = { detail: null, keys: new Set(), animated: true };
+    const ids = controller.plan({ aircraft, zoom: 9, minZoom: 15, animation: { keyframes } });
+    expect([...ids].sort()).toEqual(['f:k-1', 'h:abc123']);
+  });
 
   it('in 2D loads the layer for the animation and draws every aircraft as a sprite where each frame puts it', async () => {
     const { controller, load, engine, made, settle, at } = world({ animate: true });
