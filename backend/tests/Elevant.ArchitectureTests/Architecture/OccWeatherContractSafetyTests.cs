@@ -9,13 +9,28 @@ using Microsoft.AspNetCore.Mvc.Routing;
 namespace Elevant.ArchitectureTests.Architecture;
 
 /// <summary>
-/// ADR-0043 (contracts 1.4): the OCC's weather is one read under <c>occ/weather</c> for authenticated sessions with a
-/// private response; its contracts expose a public identifier only, no <c>long</c> and no enumeration (states and codes
-/// travel as text), and nothing of the reasons or the pace the weather service is read at.
+/// ADR-0043 (contracts 1.4) and plan M6: the OCC's weather is two reads under <c>occ/weather</c>, an airport's and, since
+/// M6, its region's, for authenticated sessions with a private response. Their contracts expose a public identifier only,
+/// no <c>long</c> and no enumeration (states and codes travel as text). The airport read says nothing of the reasons or
+/// the pace the weather service is read at; the region read says why it is not live and when to ask again, like the air
+/// picture, with exactly the names of its contract.
 /// </summary>
 public sealed class OccWeatherContractSafetyTests
 {
-    private static readonly string[] WeatherPrefixes = ["OccAerodrome", "OccWeather", "OccMetar", "OccTaf", "OccCloud"];
+    private static readonly string[] WeatherPrefixes =
+        ["OccAerodrome", "OccWeather", "OccMetar", "OccTaf", "OccCloud", "OccRegion"];
+
+    private static readonly Type[] AerodromeContracts =
+    [
+        typeof(OccAerodromeWeatherResponse), typeof(OccWeatherSourceResponse), typeof(OccMetarResponse),
+        typeof(OccCloudLayerResponse), typeof(OccTafResponse), typeof(OccTafPeriodResponse),
+    ];
+
+    private static readonly Type[] RegionContracts =
+    [
+        typeof(OccRegionWeatherResponse), typeof(OccRegionWeatherCreditResponse), typeof(OccRegionWeatherStationResponse),
+        typeof(OccRegionMetarResponse), typeof(OccRegionTafResponse),
+    ];
 
     private static readonly Type[] WeatherContracts = typeof(OccAerodromeWeatherResponse).Assembly.GetTypes()
         .Where(type => type.Namespace == typeof(OccAerodromeWeatherResponse).Namespace &&
@@ -25,14 +40,9 @@ public sealed class OccWeatherContractSafetyTests
     [Fact]
     public void WeatherContractsExposeNoLongNoEnumAndNoInternalId()
     {
-        Assert.Equal(new HashSet<Type>
-        {
-            typeof(OccAerodromeWeatherResponse), typeof(OccWeatherSourceResponse), typeof(OccMetarResponse),
-            typeof(OccCloudLayerResponse), typeof(OccTafResponse), typeof(OccTafPeriodResponse),
-        }, WeatherContracts.ToHashSet());
+        Assert.Equal(AerodromeContracts.Concat(RegionContracts).ToHashSet(), WeatherContracts.ToHashSet());
         Assert.All(WeatherContracts, type => Assert.True(type.IsSealed, type.Name));
-        var properties = WeatherContracts.SelectMany(type => type.GetProperties(BindingFlags.Instance | BindingFlags.Public))
-            .ToArray();
+        var properties = Properties(WeatherContracts);
 
         // No internal key, no enumeration, nothing secret.
         Assert.DoesNotContain(properties, property =>
@@ -42,21 +52,56 @@ public sealed class OccWeatherContractSafetyTests
             property.Name.Contains("Token", StringComparison.OrdinalIgnoreCase) ||
             property.Name.Contains("Email", StringComparison.OrdinalIgnoreCase) ||
             property.Name.Contains("ApiKey", StringComparison.OrdinalIgnoreCase));
-        // The only identifier a screen receives is the station's public UUID.
-        Assert.Equal(["StationId"], properties.Where(property =>
+        // The only identifier a screen receives is the station's public UUID, once in each read.
+        Assert.Equal(["StationId", "StationId"], properties.Where(property =>
             property.Name == "Id" || property.Name.EndsWith("Id", StringComparison.Ordinal)).Select(property => property.Name));
         Assert.Equal(typeof(Guid), typeof(OccAerodromeWeatherResponse).GetProperty("StationId")?.PropertyType);
-        // The state is text from a closed list, and the answer says nothing of why or when to ask again: the state alone
-        // tells the screens what they show.
+        Assert.Equal(typeof(Guid), typeof(OccRegionWeatherResponse).GetProperty("StationId")?.PropertyType);
+        // The states are text from a closed list.
         Assert.Equal(typeof(string), typeof(OccAerodromeWeatherResponse).GetProperty("Status")?.PropertyType);
-        Assert.DoesNotContain(properties, property => property.Name is "Reason" or "RefreshAfterSeconds");
+        Assert.Equal(typeof(string), typeof(OccRegionWeatherResponse).GetProperty("Status")?.PropertyType);
+    }
+
+    [Fact]
+    public void TheAirportReadSaysNothingOfWhyOrWhenToAskAgain()
+    {
+        // The state alone tells the screens what they show.
+        Assert.DoesNotContain(Properties(AerodromeContracts), property => property.Name is "Reason" or "RefreshAfterSeconds");
         // The credit is always there: name and home page.
-        Assert.Equal(["Name", "HomeUrl"], typeof(OccWeatherSourceResponse).GetProperties().Select(property => property.Name));
+        Assert.Equal(["Name", "HomeUrl"], Names(typeof(OccWeatherSourceResponse)));
         Assert.Equal(typeof(OccWeatherSourceResponse), typeof(OccAerodromeWeatherResponse).GetProperty("Source")?.PropertyType);
     }
 
     [Fact]
-    public void TheWeatherIsOneReadUnderOccWeather()
+    public void TheRegionReadCarriesExactlyTheNamesOfItsContract()
+    {
+        // The JSON names are these in camelCase, in this order.
+        Assert.Equal(["StationId", "Status", "Reason", "ServerTime", "RefreshAfterSeconds", "Credit", "Stations"],
+            Names(typeof(OccRegionWeatherResponse)));
+        Assert.Equal(["Name", "Url"], Names(typeof(OccRegionWeatherCreditResponse)));
+        Assert.Equal(["Icao", "Iata", "Name", "Latitude", "Longitude", "Metar", "Taf"],
+            Names(typeof(OccRegionWeatherStationResponse)));
+        Assert.Equal(["Raw", "ObservedAt", "WindDirectionDegrees", "WindSpeedKnots", "WindGustKnots", "VisibilityStatuteMiles",
+            "CeilingFeet", "FlightCategory", "TemperatureCelsius", "DewpointCelsius", "AltimeterHectopascals"],
+            Names(typeof(OccRegionMetarResponse)));
+        Assert.Equal(["Raw", "IssuedAt", "ValidFrom", "ValidTo"], Names(typeof(OccRegionTafResponse)));
+
+        // Why it is not live is a code (text, or null); when to ask again whole seconds; the credit always comes; every
+        // airport travels in one list.
+        var response = typeof(OccRegionWeatherResponse);
+        Assert.Equal((typeof(string), typeof(int), typeof(OccRegionWeatherCreditResponse),
+                typeof(IReadOnlyList<OccRegionWeatherStationResponse>)),
+            (response.GetProperty("Reason")?.PropertyType, response.GetProperty("RefreshAfterSeconds")?.PropertyType,
+                response.GetProperty("Credit")?.PropertyType, response.GetProperty("Stations")?.PropertyType));
+        Assert.Equal((typeof(double), typeof(double), typeof(int?), typeof(int?)),
+            (typeof(OccRegionWeatherStationResponse).GetProperty("Latitude")?.PropertyType,
+                typeof(OccRegionWeatherStationResponse).GetProperty("Longitude")?.PropertyType,
+                typeof(OccRegionMetarResponse).GetProperty("WindDirectionDegrees")?.PropertyType,
+                typeof(OccRegionMetarResponse).GetProperty("CeilingFeet")?.PropertyType));
+    }
+
+    [Fact]
+    public void TheWeatherIsTwoReadsUnderOccWeather()
     {
         var controller = typeof(OccWeatherController);
         var route = Assert.Single(controller.GetCustomAttributes<RouteAttribute>(inherit: false));
@@ -71,20 +116,36 @@ public sealed class OccWeatherContractSafetyTests
         var actions = controller.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
             .Select(method => (Method: method, Http: method.GetCustomAttribute<HttpMethodAttribute>()))
             .ToArray();
-        // One read: the operationId the snapshot publishes, its verb and no route of its own under occ/weather.
-        var (read, http) = Assert.Single(actions);
-        Assert.NotNull(http);
-        Assert.Equal(("GetOccAerodromeWeather", "GET", (string?)null),
-            (http.Name, Assert.Single(http.HttpMethods), http.Template));
-        // The station comes in the query; the account, its scope and its authority come from the session.
-        Assert.Equal(["stationId", "cancellationToken"], read.GetParameters().Select(parameter => parameter.Name));
-        Assert.DoesNotContain(read.GetParameters(), parameter =>
-            parameter.GetCustomAttribute<FromBodyAttribute>() is not null ||
-            parameter.GetCustomAttribute<FromHeaderAttribute>() is not null ||
-            parameter.Name is "accountId" or "actorId" or "organizationId");
-        Assert.NotNull(read.GetParameters()[0].GetCustomAttribute<FromQueryAttribute>());
-        // Every refusal is a Problem Details: 400, 401, 403 and 404 are declared besides the 200.
-        Assert.Equal([200, 400, 401, 403, 404], read.GetCustomAttributes<ProducesResponseTypeAttribute>()
-            .Select(attribute => attribute.StatusCode).Order());
+        // Two reads: the operationIds the snapshot publishes, their verb and their routes under occ/weather (the
+        // airport's has none of its own).
+        Assert.Equal(2, actions.Length);
+        Assert.All(actions, action => Assert.NotNull(action.Http));
+        var reads = actions
+            .Select(action => (Name: action.Http!.Name, Verb: Assert.Single(action.Http.HttpMethods),
+                Template: action.Http.Template))
+            .OrderBy(read => read.Name, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(new (string?, string, string?)[]
+        {
+            ("GetOccAerodromeWeather", "GET", null), ("GetOccRegionWeather", "GET", "region"),
+        }, reads);
+        foreach (var (read, _) in actions)
+        {
+            // The station comes in the query; the account, its scope and its authority come from the session.
+            Assert.Equal(["stationId", "cancellationToken"], read.GetParameters().Select(parameter => parameter.Name));
+            Assert.DoesNotContain(read.GetParameters(), parameter =>
+                parameter.GetCustomAttribute<FromBodyAttribute>() is not null ||
+                parameter.GetCustomAttribute<FromHeaderAttribute>() is not null ||
+                parameter.Name is "accountId" or "actorId" or "organizationId");
+            Assert.NotNull(read.GetParameters()[0].GetCustomAttribute<FromQueryAttribute>());
+            // Every refusal is a Problem Details: 400, 401, 403 and 404 are declared besides the 200.
+            Assert.Equal([200, 400, 401, 403, 404], read.GetCustomAttributes<ProducesResponseTypeAttribute>()
+                .Select(attribute => attribute.StatusCode).Order());
+        }
     }
+
+    private static PropertyInfo[] Properties(IEnumerable<Type> types) =>
+        types.SelectMany(type => type.GetProperties(BindingFlags.Instance | BindingFlags.Public)).ToArray();
+
+    private static string[] Names(Type type) => type.GetProperties().Select(property => property.Name).ToArray();
 }

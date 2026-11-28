@@ -43,3 +43,45 @@ public sealed record OccTafResponse(string Raw, DateTimeOffset IssuedAt, DateTim
 public sealed record OccTafPeriodResponse(DateTimeOffset From, DateTimeOffset To, string? Change, int? ProbabilityPercent,
     int? WindDirectionDegrees, bool WindVariable, int? WindSpeedKnots, int? WindGustKnots, double? VisibilityStatuteMiles,
     string? Weather, IReadOnlyList<OccCloudLayerResponse> Clouds);
+
+/// <summary>
+/// The weather of the region around a station's airport for the OCC (plan M6): the latest METAR and TAF of every airport
+/// of the region (Punta Cana's: the 32 airports within 300 NM that the maps draw in Región), from the Data API of
+/// aviationweather.gov, read for the whole region at once and kept by the API (the METARs five minutes, the TAFs
+/// thirty). It always comes in a 200: <paramref name="Status"/> is <c>Live</c> (at least one METAR at most 90 minutes
+/// older than <paramref name="ServerTime"/>), <c>Stale</c> (every METAR is older, or they are the ones kept after the
+/// service failed), <c>Unavailable</c> (no METAR of any airport; TAFs may still come) or <c>Disabled</c> (no weather
+/// service here: no report at all). <paramref name="Reason"/> says why it is not live: <c>not_configured</c>,
+/// <c>rate_limited</c> or <c>provider_error</c>, the air picture's codes (null when there is nothing to explain).
+/// Screens ask again after <paramref name="RefreshAfterSeconds"/> (300 to 900), never sooner. <paramref name="Credit"/>
+/// is the credit every screen shows with the weather, also while it is disabled. <paramref name="Stations"/> lists every
+/// airport of the region, nearest first, with or without its reports.
+/// </summary>
+public sealed record OccRegionWeatherResponse(Guid StationId, string Status, string? Reason, DateTimeOffset ServerTime,
+    int RefreshAfterSeconds, OccRegionWeatherCreditResponse Credit, IReadOnlyList<OccRegionWeatherStationResponse> Stations);
+
+/// <summary>What the weather service requires wherever its data is shown: its name and its home page.</summary>
+public sealed record OccRegionWeatherCreditResponse(string Name, string Url);
+
+/// <summary>
+/// One airport of the region: its ICAO code, its IATA code and its name (each null when it has none) and where it is in
+/// decimal degrees, with its latest METAR and its latest TAF (null when the service has none now).
+/// </summary>
+public sealed record OccRegionWeatherStationResponse(string Icao, string? Iata, string? Name, double Latitude,
+    double Longitude, OccRegionMetarResponse? Metar, OccRegionTafResponse? Taf);
+
+/// <summary>
+/// The latest METAR of an airport of the region: its raw text, the instant it describes and its basics in aviation units
+/// (degrees true, knots, statute miles, feet, degrees Celsius and hectopascals). <paramref name="WindDirectionDegrees"/>
+/// is null for a variable wind (or one the report does not give); <paramref name="CeilingFeet"/> is the base of the
+/// lowest broken, overcast or obscured layer (null without one, or when its base is not given);
+/// <paramref name="FlightCategory"/> is the service's own, <c>VFR</c>, <c>MVFR</c>, <c>IFR</c> or <c>LIFR</c>. A value
+/// the report does not give, or gives out of its range, is null.
+/// </summary>
+public sealed record OccRegionMetarResponse(string Raw, DateTimeOffset ObservedAt, int? WindDirectionDegrees,
+    int? WindSpeedKnots, int? WindGustKnots, double? VisibilityStatuteMiles, int? CeilingFeet, string? FlightCategory,
+    double? TemperatureCelsius, double? DewpointCelsius, double? AltimeterHectopascals);
+
+/// <summary>The latest TAF of an airport of the region: its raw text, when it was issued and the time it covers.</summary>
+public sealed record OccRegionTafResponse(string Raw, DateTimeOffset IssuedAt, DateTimeOffset ValidFrom,
+    DateTimeOffset ValidTo);

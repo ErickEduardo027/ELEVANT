@@ -270,11 +270,14 @@ public static class DependencyInjection
     }
 
     /// <summary>
-    /// ADR-0043 (contracts 1.4): the METAR and the TAF of the OCC, from aviationweather.gov. <c>AviationWeather:Enabled</c>
-    /// is off by default, and then the source is <see cref="DisabledAerodromeWeatherSource"/> and nothing is ever called.
-    /// <c>AviationWeather:BaseUrl</c> is checked on every start, also while it is off, and gets its final slash when it
-    /// lacks one. On, the source is built only when it is first resolved, and it calls the service only when someone reads
-    /// an airport's weather: never while the API starts. No environment is refused: <c>appsettings.json</c> leaves it off.
+    /// ADR-0043 (contracts 1.4): the METAR and the TAF of the OCC, from aviationweather.gov: an airport's
+    /// (<c>occ/weather</c>) and, since plan M6, those of the region's airports (<c>occ/weather/region</c>), each read with
+    /// its own client and memory. <c>AviationWeather:Enabled</c> is off by default, and then both sources are the disabled
+    /// ones (<see cref="DisabledAerodromeWeatherSource"/>, <see cref="DisabledRegionWeatherSource"/>) and nothing is ever
+    /// called. <c>AviationWeather:BaseUrl</c> is checked on every start, also while it is off, and gets its final slash
+    /// when it lacks one. On, each source is built only when it is first resolved, and it calls the service only when
+    /// someone reads the weather: never while the API starts. No environment is refused: <c>appsettings.json</c> leaves it
+    /// off.
     /// </summary>
     private static void AddAviationWeather(IServiceCollection services, IConfiguration configuration)
     {
@@ -284,9 +287,12 @@ public static class DependencyInjection
         if (!options.Enabled)
         {
             services.AddSingleton<IAerodromeWeatherSource, DisabledAerodromeWeatherSource>();
+            services.AddSingleton<IRegionWeatherSource, DisabledRegionWeatherSource>();
             return;
         }
         services.AddSingleton<IAerodromeWeatherSource>(provider => new AviationWeatherSource(
+            AviationWeatherSource.CreateHttpClient(), baseUrl, provider.GetRequiredService<TimeProvider>()));
+        services.AddSingleton<IRegionWeatherSource>(provider => new AviationWeatherRegionSource(
             AviationWeatherSource.CreateHttpClient(), baseUrl, provider.GetRequiredService<TimeProvider>()));
     }
 }

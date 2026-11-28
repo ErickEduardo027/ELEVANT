@@ -30,6 +30,12 @@ public sealed class AviationWeatherConfigurationTests
             (descriptor.ImplementationType, descriptor.Lifetime));
         Assert.Null(descriptor.ImplementationFactory);
         Assert.Null(await new DisabledAerodromeWeatherSource().ReadAsync("MDPC", TestContext.Current.CancellationToken));
+
+        // The region's weather (plan M6) follows the same switch.
+        var region = RegisteredRegion(Compose(values));
+        Assert.Equal((typeof(DisabledRegionWeatherSource), ServiceLifetime.Singleton), (region.ImplementationType, region.Lifetime));
+        Assert.Null(region.ImplementationFactory);
+        Assert.Null(await new DisabledRegionWeatherSource().ReadAsync(["MDPC"], TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -44,6 +50,13 @@ public sealed class AviationWeatherConfigurationTests
         Assert.NotNull(factory);
         using var source = Assert.IsType<AviationWeatherSource>(factory(new OnlyTime()));
         Assert.Equal("https://aviationweather.gov/api/data/", source.BaseUrl.AbsoluteUri);
+
+        // The region's weather (plan M6): its own source, client and memory, built the same way and sending nothing.
+        var region = RegisteredRegion(Compose(new() { ["AviationWeather:Enabled"] = "true" }));
+        Assert.Equal(((Type?)null, ServiceLifetime.Singleton), (region.ImplementationType, region.Lifetime));
+        Assert.NotNull(region.ImplementationFactory);
+        using var regionSource = Assert.IsType<AviationWeatherRegionSource>(region.ImplementationFactory(new OnlyTime()));
+        Assert.Equal("https://aviationweather.gov/api/data/", regionSource.BaseUrl.AbsoluteUri);
     }
 
     [Theory]
@@ -87,6 +100,19 @@ public sealed class AviationWeatherConfigurationTests
         Assert.Equal("https://aviationweather.gov/api/data/", source.BaseUrl.AbsoluteUri);
         Assert.Equal("https://aviationweather.gov/api/data/metar?ids=MDPC&format=json", source.MetarQuery("MDPC").AbsoluteUri);
         Assert.Equal("https://aviationweather.gov/api/data/taf?ids=MDPC&format=json", source.TafQuery("MDPC").AbsoluteUri);
+
+        // The same for the region's queries.
+        var regionFactory = RegisteredRegion(Compose(new()
+        {
+            ["AviationWeather:Enabled"] = "true",
+            ["AviationWeather:BaseUrl"] = baseUrl,
+        })).ImplementationFactory;
+        Assert.NotNull(regionFactory);
+        using var region = Assert.IsType<AviationWeatherRegionSource>(regionFactory(new OnlyTime()));
+        Assert.Equal("https://aviationweather.gov/api/data/metar?ids=MDPC,MDSD&format=json",
+            region.MetarQuery(["MDSD", "MDPC"]).AbsoluteUri);
+        Assert.Equal("https://aviationweather.gov/api/data/taf?ids=MDPC,MDSD&format=json",
+            region.TafQuery(["MDSD", "MDPC"]).AbsoluteUri);
     }
 
     /// <summary>
@@ -104,6 +130,15 @@ public sealed class AviationWeatherConfigurationTests
         var kept = Assert.Single(new ServiceCollection().AddSingleton<IAerodromeWeatherSource>(own).AddApplication(),
             item => item.ServiceType == typeof(IAerodromeWeatherSource));
         Assert.Same(own, kept.ImplementationInstance);
+
+        // The same for the region's weather (plan M6).
+        var regionByDefault = Assert.Single(new ServiceCollection().AddApplication(),
+            item => item.ServiceType == typeof(IRegionWeatherSource));
+        Assert.Equal(typeof(DisabledRegionWeatherSource), regionByDefault.ImplementationType);
+        var ownRegion = new DisabledRegionWeatherSource();
+        var keptRegion = Assert.Single(new ServiceCollection().AddSingleton<IRegionWeatherSource>(ownRegion).AddApplication(),
+            item => item.ServiceType == typeof(IRegionWeatherSource));
+        Assert.Same(ownRegion, keptRegion.ImplementationInstance);
     }
 
     private static IServiceCollection Compose(Dictionary<string, string?> values) =>
@@ -111,6 +146,9 @@ public sealed class AviationWeatherConfigurationTests
 
     private static ServiceDescriptor Registered(IServiceCollection services) =>
         Assert.Single(services, item => item.ServiceType == typeof(IAerodromeWeatherSource));
+
+    private static ServiceDescriptor RegisteredRegion(IServiceCollection services) =>
+        Assert.Single(services, item => item.ServiceType == typeof(IRegionWeatherSource));
 
     /// <summary>The one service the source's factory asks for.</summary>
     private sealed class OnlyTime : IServiceProvider
