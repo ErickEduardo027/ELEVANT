@@ -37,7 +37,8 @@ async function guarded(request) {
 /**
  * The window of the map flights (hours before and after now; the contract allows 0 to 24 and 1 to 36). M3
  * (27-11-2026): 6 hours back instead of the server's 2, so a long-haul departure estimated on to its destination
- * (kinematics/legPlans.js: climbLegs) stays on the map for its first six hours; 12 ahead, the server's own.
+ * (kinematics/legPlans.js: climbLegs) stays on the map for its first six hours; 12 ahead, the server's own. The board
+ * of the console keeps the server's 2 hours back (dashboard/noc/boardModel.js: boardFlightsOf).
  */
 export const MAP_FLIGHTS_WINDOW = Object.freeze({ hoursBack: 6, hoursAhead: 12 });
 

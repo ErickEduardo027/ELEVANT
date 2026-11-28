@@ -2855,7 +2855,11 @@ posiciones más nuevas que ella.
   vuelos demo hacen lo mismo.
 - **Ventana de vuelos.** El mapa pide los vuelos de 6 h atrás a 12 h adelante
   ([`occMapService.js`](../../frontend/private-web/src/services/occMapService.js)),
-  así una salida larga sigue en el mapa durante sus primeras seis horas.
+  así una salida larga sigue en el mapa durante sus primeras seis horas. El
+  «Tablero» de Panorama sigue con las 2 h atrás del servidor: lista los vuelos
+  de las últimas 2 h y las dos piernas de una visita cuyo avión sigue en tierra
+  ([`boardModel.js`](../../frontend/private-web/src/features/dashboard/noc/boardModel.js):
+  `boardFlightsOf`), nunca los vuelos que terminaron antes.
 - **Presupuesto (CN-19).** A 5 s, Monitoreo de vuelos y Mapa de posiciones leen
   la imagen aérea 12 veces por minuto y siguen en 40 peticiones por minuto o
   menos, en reposo y en el minuto demo
