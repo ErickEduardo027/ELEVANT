@@ -39,6 +39,11 @@ export const MODE_3D_STORAGE_KEY = 'elevant-occ-map-3d:v1';
  * drawing take one step down; `stableMs` of fast frames take one step back up (never out of the pause, which waits
  * for «Volver a 3D»). A gap longer than `maxGapMs` is the map idling, not a slow frame. The steps: full quality, no
  * shadows and drop lines, the pixel ratios of `pixelRatios`, then the 3D paused (never while a flight is followed).
+ *
+ * PR M2 (2026-11-28): only frames the map draws while it animates continuously are measured (the animated traffic
+ * moving, «Seguir en 3D», the camera moving), and only when the frame before was one too: then the time between two
+ * draws is what a frame costs. The few renders each write of the traffic asks for with a still camera (2 to 15 a
+ * second, CN-18) leave gaps that are the write's cadence, not slow frames, and read as the map idling.
  */
 export const GOVERNOR = Object.freeze({
   slowFrameMs: 22, windowMs: 2_000, stableMs: 30_000, maxGapMs: 250, pixelRatios: Object.freeze([1.25, 1]),
@@ -196,9 +201,11 @@ export function translatePick(picked, drawn = []) {
 }
 
 /**
- * The governor's arithmetic, without a map: `sample(dtMs, atMs)` takes the time between two frames the map drew and
- * answers the step to take (`-1` down, `+1` up, `0` none). `level` starts at 0; `setFollowing(on)` keeps it out of the
- * pause while a flight is followed; `reset()` forgets the frames.
+ * The governor's arithmetic, without a map: `sample(dtMs, atMs, { continuous })` takes the time between two frames the
+ * map drew and answers the step to take (`-1` down, `+1` up, `0` none). `continuous` false (PR M2) says the map was not
+ * drawing every frame across that time (a render a write asked for with a still camera): the time is no frame's cost
+ * and the window starts again, as after a gap. `level` starts at 0; `setFollowing(on)` keeps it out of the pause while a
+ * flight is followed; `reset()` forgets the frames.
  */
 export function createGovernor({ limits = GOVERNOR, following = false } = {}) {
   let frames = [];
@@ -222,8 +229,8 @@ export function createGovernor({ limits = GOVERNOR, following = false } = {}) {
       windowStart = null;
       fastSince = null;
     },
-    sample(dtMs, atMs) {
-      if (!finite(dtMs) || !finite(atMs) || dtMs <= 0 || dtMs > limits.maxGapMs) {
+    sample(dtMs, atMs, { continuous = true } = {}) {
+      if (continuous !== true || !finite(dtMs) || !finite(atMs) || dtMs <= 0 || dtMs > limits.maxGapMs) {
         // The map idled: what comes next is a new stretch of drawing.
         frames = [];
         windowStart = null;
@@ -303,6 +310,8 @@ export function createAircraft3dController({
   let current = { revision: 0, plan: new Map() };
   let drawnIds = NO_IDS;
   let lastFrameAt = null;
+  // Whether the map drew the last frame while it animated continuously (PR M2: what the governor measures).
+  let lastContinuous = false;
   let basePixelRatio = null;
   // CN-30: the eased attitude of every aircraft the 3D draws, the followed aircraft («Seguir en 3D»: always in 3D, its
   // detailed model, even while the 3D is off or paused for the rest) and what the last plan drew in detail.
@@ -375,15 +384,29 @@ export function createAircraft3dController({
     Promise.resolve().then(changed);
   }
 
-  // Each frame the map draws with the 3D on: the governor hears how long it took since the previous one. The animated
-  // 2D traffic (PR M2) draws no model: the governor has nothing to lighten then.
+  // Whether the map draws every frame now (PR M2): the animated traffic moves (the frame loop repaints each frame), the
+  // followed aircraft is posed every frame («Seguir en 3D»), or the camera moves.
+  function drawingContinuously() {
+    if (animating() && keyframesMoving(animation.keyframes, typeof frameTime === 'function' ? frameTime() : now())) {
+      return true;
+    }
+    if (followingCamera && followedId !== null) return true;
+    return engine?.map?.isMoving?.() === true;
+  }
+
+  // Each frame the map draws with the 3D on: the governor hears how long it took since the previous one, when both were
+  // drawn while the map animates continuously (PR M2: never the gap between two writes of the traffic). The animated 2D
+  // traffic draws no model: the governor has nothing to lighten then.
   function onRendered() {
     checkDetailZoom();
     const at = now();
     const dt = lastFrameAt === null ? null : at - lastFrameAt;
     lastFrameAt = at;
+    const continuousNow = drawingContinuously();
+    const continuous = continuousNow && lastContinuous;
+    lastContinuous = continuousNow;
     if (!governed || dt === null || (!enabled && followedId === null)) return;
-    const step = governor.sample(dt, at);
+    const step = governor.sample(dt, at, { continuous });
     if (step === 0) return;
     if (governor.level >= GOVERNOR_PAUSED) {
       pauseNow();
@@ -480,6 +503,7 @@ export function createAircraft3dController({
     governor.level = GOVERNOR_PAUSED;
     governor.reset();
     lastFrameAt = null;
+    lastContinuous = false;
     // The followed aircraft keeps its layer: only the rest of the 3D pauses.
     if (!forced()) removeLayer();
     setStatus('paused', 'paused');
@@ -632,6 +656,7 @@ export function createAircraft3dController({
       if (next === enabled) return;
       enabled = next;
       lastFrameAt = null;
+      lastContinuous = false;
       governor.reset();
       if (!enabled) {
         if (!forced()) removeLayer();
@@ -792,6 +817,7 @@ export function createAircraft3dController({
       governor.level = 0;
       governor.reset();
       lastFrameAt = null;
+      lastContinuous = false;
       if (layer !== null) showLayer();
       else setStatus('idle', null);
     },

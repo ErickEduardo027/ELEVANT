@@ -139,6 +139,49 @@ describe('the governor', () => {
     expect(governor.level).toBe(0);
     expect(run(governor, { dt: 40, count: 20, start: at }).steps).toEqual([-1]);
   });
+
+  // PR M2: a still camera draws only the few renders each write of the traffic asks for, 4 to 15 writes a second (CN-18):
+  // three renders on consecutive display frames, then nothing until the next write.
+  const bursts = (governor, { hz, seconds, continuous }) => {
+    const steps = [];
+    const period = 1_000 / hz;
+    for (let write = 0; write < seconds * hz; write += 1) {
+      [0, 1_000 / 60, 2_000 / 60].forEach((offset, index) => {
+        const at = write * period + offset;
+        const dt = index === 0 ? period - 2_000 / 60 : 1_000 / 60;
+        const step = governor.sample(dt, at, { continuous: continuous(index) });
+        if (step !== 0) steps.push(step);
+      });
+    }
+    return steps;
+  };
+
+  it('never reads the gaps between the writes of the traffic as slow frames, at 4 to 15 writes a second (PR M2)', () => {
+    for (const hz of [4, 7, 10, 15]) {
+      // As the controller hears them: no render of a burst follows a frame drawn while the map animated.
+      const governor = createGovernor();
+      expect(bursts(governor, { hz, seconds: 20, continuous: () => false })).toEqual([]);
+      expect(governor.level).toBe(0);
+      // The same draws read as continuous drawing were the misfire: the gaps averaged as slow frames.
+      const misread = createGovernor();
+      expect(bursts(misread, { hz, seconds: 20, continuous: () => true })[0]).toBe(-1);
+    }
+  });
+
+  it('still steps down for frames that are slow while the map draws every frame (PR M2)', () => {
+    const governor = createGovernor();
+    let at = 0;
+    const steps = [];
+    for (let index = 0; index < 120; index += 1) {
+      at += 40;
+      const step = governor.sample(40, at, { continuous: true });
+      if (step !== 0) steps.push(step);
+    }
+    expect(steps).toEqual([-1, -1]);
+    // A frame that was not drawn continuously starts the window again.
+    expect(governor.sample(40, at + 40, { continuous: false })).toBe(0);
+    expect(governor.level).toBe(2);
+  });
 });
 
 // The controller's world: an engine that records its custom layers, a chunk that resolves when told, a stub layer.
@@ -148,7 +191,9 @@ function world({ fail = false, webgl = true, animate = false } = {}) {
   let resolveLoad;
   let rejectLoad;
   const engine = {
-    map: { triggerRepaint: vi.fn() },
+    // `moving`: whether the camera moves (the map draws every frame then).
+    map: { triggerRepaint: vi.fn(), isMoving: () => engine.moving },
+    moving: false,
     layers: [],
     ratio: 2,
     addCustomLayer: vi.fn((layer, slot) => engine.layers.push({ layer, slot })),
@@ -296,6 +341,8 @@ describe('createAircraft3dController', () => {
     controller.setEnabled(true);
     controller.plan({ aircraft: [aviam('f:k-1')], ...AT_RAMP });
     await settle();
+    // The camera moves: the map draws every frame, and the time between two of them is what a frame costs.
+    engine.moving = true;
     const slow = seconds => {
       for (let index = 0; index < (seconds * 1000) / 40; index += 1) frame(40);
     };
@@ -324,6 +371,28 @@ describe('createAircraft3dController', () => {
     // The lab's pause, on demand.
     controller.pause();
     expect(controller.state().status).toBe('paused');
+  });
+
+  it('a still camera whose renders follow the writes of the traffic keeps full quality on a fast GPU (PR M2)', async () => {
+    const { controller, made, engine, settle, frame } = world();
+    controller.setEnabled(true);
+    controller.plan({ aircraft: [aviam('f:k-1')], ...AT_RAMP });
+    await settle();
+    // Each write draws on three consecutive display frames, then nothing until the next one: 4 to 15 writes a second.
+    for (const hz of [4, 10, 15]) {
+      for (let write = 0; write < 20 * hz; write += 1) {
+        frame(1_000 / hz - 2_000 / 60);
+        frame(1_000 / 60);
+        frame(1_000 / 60);
+      }
+    }
+    expect(controller.state()).toMatchObject({ status: 'ready', level: 0 });
+    expect(made[0].quality).toEqual({ shadows: true, dropLines: true });
+    expect(engine.ratio).toBe(2);
+    // The camera moves on the same GPU: fast frames, still full quality.
+    engine.moving = true;
+    for (let index = 0; index < 600; index += 1) frame(1_000 / 60);
+    expect(controller.state().level).toBe(0);
   });
 
   it('without the governor (the map lab) slow frames change nothing', async () => {
@@ -522,6 +591,33 @@ describe('the animated traffic (PR M2)', () => {
     const paused = made[0].options.getInstances();
     expect(paused.plan.size).toBe(0);
     expect([...paused.sprites.ids].sort()).toEqual(['f:k-1', 'h:abc123', 'h:def456']);
+  });
+
+  it('the governor measures the frames the animation draws: slow ones step down, fast ones keep full quality', async () => {
+    const slowGpu = world({ animate: true });
+    slowGpu.controller.setEnabled(true);
+    const aircraft = [aviam('f:k-1')];
+    // One pair that moves for a minute: the frame loop repaints the map every frame meanwhile.
+    const { keyframes } = writeOf(aircraft, { t1: 60_000, metres: 5_000 });
+    slowGpu.controller.plan({ aircraft, ...AT_RAMP, animation: { keyframes } });
+    await slowGpu.settle();
+    slowGpu.controller.plan({ aircraft, ...AT_RAMP, animation: { keyframes } });
+    expect(slowGpu.controller.animationMoving(0)).toBe(true);
+    for (let index = 0; index < 110; index += 1) slowGpu.frame(40);
+    expect(slowGpu.controller.state().level).toBe(2);
+    expect(slowGpu.made[0].quality).toEqual({ shadows: false, dropLines: false });
+
+    const fastGpu = world({ animate: true });
+    fastGpu.controller.setEnabled(true);
+    fastGpu.controller.plan({ aircraft, ...AT_RAMP, animation: { keyframes } });
+    await fastGpu.settle();
+    fastGpu.controller.plan({ aircraft, ...AT_RAMP, animation: { keyframes } });
+    for (let index = 0; index < 1_200; index += 1) fastGpu.frame(1_000 / 60);
+    expect(fastGpu.controller.state()).toMatchObject({ status: 'ready', level: 0 });
+    // Once the pair has ended nothing moves: the renders that follow are not measured.
+    fastGpu.at(61_000);
+    for (let index = 0; index < 400; index += 1) fastGpu.frame(60);
+    expect(fastGpu.controller.state().level).toBe(0);
   });
 
   it('keeps the GeoJSON icons without WebGL2, without keyframes and once the sprites cannot be built', async () => {
