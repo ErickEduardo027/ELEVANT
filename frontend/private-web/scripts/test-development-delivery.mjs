@@ -133,15 +133,21 @@ test('the first-load chunks of a route are its entry files, its client modules a
 });
 
 test('the 3D check fails when a first-load chunk carries WebGLRenderer or no chunk does, and passes when three sits in an async chunk; a build without OCC route manifests is an error', async () => {
-  const { THREE_NEEDLE, checkThreeFirstLoad, findThreeInFirstLoad } = await import('./verify-map-chunks.mjs');
+  const { GLTF_NEEDLE, THREE_NEEDLE, checkThreeFirstLoad, findThreeInFirstLoad } = await import('./verify-map-chunks.mjs');
   assert.equal(THREE_NEEDLE, 'WebGLRenderer');
   // The word is three's own: its renderer's messages carry it, so a minified chunk still does.
   assert.match(await readFile(path.join(projectRoot, 'node_modules/three/build/three.module.js'), 'utf8'), /'WebGLRenderer: /);
+  // PR M5: the GLTFLoader's warnings name it the same way.
+  assert.equal(GLTF_NEEDLE, 'THREE.GLTFLoader');
+  assert.match(await readFile(path.join(projectRoot, 'node_modules/three/examples/jsm/loaders/GLTFLoader.js'), 'utf8'), /'THREE\.GLTFLoader: /);
   const sources = [
     { file: 'static/chunks/0a-shell.js', source: 'self.__next_f.push([1,"shell"])' },
     { file: 'static/chunks/0d-three.js', source: 'console.warn("THREE.WebGLRenderer: Context Lost.")' },
+    { file: 'static/chunks/0e-gltf.js', source: 'console.warn("THREE.GLTFLoader: Unknown extension.")' },
   ];
   assert.deepEqual(findThreeInFirstLoad(sources, ['static/chunks/0a-shell.js']), []);
+  assert.deepEqual(findThreeInFirstLoad(sources, ['static/chunks/0e-gltf.js', 'static/chunks/0a-shell.js']), ['static/chunks/0e-gltf.js']);
+  assert.deepEqual(findThreeInFirstLoad(sources, ['static/chunks/0e-gltf.js'], THREE_NEEDLE), []);
   assert.deepEqual(findThreeInFirstLoad(sources, ['static/chunks/0d-three.js', 'static/chunks/0a-shell.js']), ['static/chunks/0d-three.js']);
   assert.deepEqual(findThreeInFirstLoad(new Map(sources.map(({ file, source }) => [file, source])), ['static/chunks/0d-three.js']),
     ['static/chunks/0d-three.js']);
@@ -155,7 +161,7 @@ test('the 3D check fails when a first-load chunk carries WebGLRenderer or no chu
     await write('build-manifest.json', JSON.stringify(BUILD_MANIFEST));
     for (const file of OCC_FIRST_LOAD) await write(file, 'self.chunk = 1;');
     // three's own chunk: on disk, named by no manifest, fetched later through import().
-    await write('static/chunks/0d-three.js', 'console.warn("THREE.WebGLRenderer: Context Lost.");');
+    await write('static/chunks/0d-three.js', 'console.warn("THREE.WebGLRenderer: Context Lost."); console.warn("THREE.GLTFLoader: Unknown extension.");');
     await write('server/app/admin-occ/dashboard/page_client-reference-manifest.js', rscManifestSource(OCC_ROUTE, OCC_ROUTE_MANIFEST));
     await write('server/app/login/page_client-reference-manifest.js',
       rscManifestSource('/login/page', { clientModules: {}, entryJSFiles: { login: ['static/chunks/0a-shell.js'] } }));
@@ -166,13 +172,22 @@ test('the 3D check fails when a first-load chunk carries WebGLRenderer or no chu
     await assert.rejects(checkThreeFirstLoad(nextDir),
       /three's WebGLRenderer reached the first load of \/admin-occ\/dashboard\/page \(static\/chunks\/0c-map\.js\)/);
     await write('static/chunks/0c-map.js', 'self.chunk = 1;');
+    // PR M5: nor may one carry three's GLTFLoader.
+    await write('static/chunks/0c-map.js', 'console.warn("THREE.GLTFLoader: Unknown extension.");');
+    await assert.rejects(checkThreeFirstLoad(nextDir),
+      /three's THREE\.GLTFLoader reached the first load of \/admin-occ\/dashboard\/page \(static\/chunks\/0c-map\.js\)/);
+    await write('static/chunks/0c-map.js', 'self.chunk = 1;');
+    // A three chunk without the loader lost the types' models.
+    await write('static/chunks/0d-three.js', 'console.warn("THREE.WebGLRenderer: Context Lost.");');
+    await assert.rejects(checkThreeFirstLoad(nextDir), /No built browser chunk carries three's GLTFLoader/);
+    await write('static/chunks/0d-three.js', 'console.warn("THREE.WebGLRenderer: Context Lost."); console.warn("THREE.GLTFLoader: Unknown extension.");');
 
     // OccMap loads the 3D chunk (PR M7): a build without any chunk that carries three's renderer lost it.
     await rm(path.join(nextDir, 'static/chunks/0d-three.js'));
     await assert.rejects(checkThreeFirstLoad(nextDir), /No built browser chunk carries three's WebGLRenderer/);
     assert.deepEqual(await checkThreeFirstLoad(nextDir, { requireThree: false }),
       { routes: 2, firstLoad: OCC_FIRST_LOAD.length, threeChunks: 0 });
-    await write('static/chunks/0d-three.js', 'console.warn("THREE.WebGLRenderer: Context Lost.");');
+    await write('static/chunks/0d-three.js', 'console.warn("THREE.WebGLRenderer: Context Lost."); console.warn("THREE.GLTFLoader: Unknown extension.");');
 
     // A manifest that names a chunk the build did not write.
     await rm(path.join(nextDir, 'static/chunks/0f-page.js'));

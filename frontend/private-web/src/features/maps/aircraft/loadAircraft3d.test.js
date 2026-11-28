@@ -93,12 +93,14 @@ describe('the 3D chunk loader (design G1)', () => {
     ]);
     // The parts of three that the models and the layer use, by name.
     // CN-30: with what the detailed aircraft adds (groups, meshes, standard and basic materials, canvas textures in
-    // sRGB, spheres for its lights with an additive glow, double-sided paint).
+    // sRGB, spheres for its lights with an additive glow, double-sided paint). PR M5: the GLTFLoader of the types' 3D
+    // models and the livery's palette (a float DataTexture read texel by texel).
     expect(Object.keys(loaded.three).sort()).toEqual([
       'AdditiveBlending', 'BoxGeometry', 'BufferGeometry', 'Camera', 'CanvasTexture', 'Color', 'CylinderGeometry',
-      'DirectionalLight', 'DoubleSide', 'DynamicDrawUsage', 'ExtrudeGeometry', 'Float32BufferAttribute', 'Group',
-      'HemisphereLight', 'InstancedBufferAttribute', 'InstancedMesh', 'LatheGeometry', 'LineBasicMaterial', 'LineSegments',
-      'Matrix4', 'Mesh', 'MeshBasicMaterial', 'MeshLambertMaterial', 'MeshStandardMaterial', 'Raycaster', 'SRGBColorSpace',
+      'DataTexture', 'DirectionalLight', 'DoubleSide', 'DynamicDrawUsage', 'ExtrudeGeometry', 'Float32BufferAttribute',
+      'FloatType', 'GLTFLoader', 'Group', 'HemisphereLight', 'InstancedBufferAttribute', 'InstancedMesh', 'LatheGeometry',
+      'LineBasicMaterial', 'LineSegments', 'Matrix4', 'Mesh', 'MeshBasicMaterial', 'MeshLambertMaterial',
+      'MeshStandardMaterial', 'NearestFilter', 'RGBAFormat', 'Raycaster', 'SRGBColorSpace',
       'Scene', 'Shape', 'SphereGeometry', 'Vector2', 'Vector3', 'WebGLRenderer', 'mergeGeometries',
     ]);
     expect(Object.isFrozen(loaded.three)).toBe(true);
