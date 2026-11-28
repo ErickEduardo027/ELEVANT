@@ -1,12 +1,12 @@
 import { createRef } from 'react';
-import { act, cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GPUInitializationError, sharedFakeMapLibre } from '../../../../tests/fakeMapLibre';
 import { LanguageScope } from '../../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../../i18n/languageStore';
 import { MDPC_LAYOUT } from '../../maps/airport/airportLayout';
-import { presetTargets } from '../../maps/core/cameraPresets';
+import { airportLockOptions, presetTargets, PUJ_ARP } from '../../maps/core/cameraPresets';
 import { attachStandGeometry } from '../../maps/stands/standModel';
 import { STAND_REFERENCE } from '../../maps/stands/standReference';
 import { createMapStands, standPoint } from '../../maps/testing/mapFixtures';
@@ -144,6 +144,11 @@ describe('PositionMap on the map engine', () => {
     expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-view', 'ramp');
     expect(within(screen.getByTestId('map-preset-switcher')).getByRole('button', { name: /Rampa/ }))
       .toHaveAttribute('aria-pressed', 'true');
+    // Planificación and the console keep the four views and a free camera (M9 is opt-in): no bounds, no «Capas».
+    expect(within(screen.getByTestId('map-preset-switcher')).getAllByRole('button')).toHaveLength(4);
+    expect(view.map.options.maxBounds).toBeUndefined();
+    expect(view.map.options.minZoom).toBe(4.5);
+    expect(screen.queryByTestId('map-layers-menu')).not.toBeInTheDocument();
     // The default view is not written in the URL.
     expect(window.location.search).toBe('?stationId=s-1');
     view.unmount();
@@ -400,5 +405,63 @@ describe('PositionMap with the live traffic (PR M6)', () => {
     expect(screen.queryByRole('button', { name: 'Seguir' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Pausar movimiento' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Leyenda' })).toBeInTheDocument();
+  });
+});
+
+describe('PositionMap fixed on PUJ (M9, Mapa de posiciones)', () => {
+  // Aeródromo centred on the ARP: the smallest box centred there that holds the airfield box.
+  const CENTRED = presetTargets({ stands: STAND_REFERENCE, layout: MDPC_LAYOUT, airfieldCentre: PUJ_ARP });
+  const CENTRED_FIT = fitWidth(CENTRED.airfield.bounds);
+
+  it('opens on «Aeródromo» in 3D centred on the ARP, with its camera held over the airport', () => {
+    const { map } = renderPositions({ fixedOnAirport: true, viewMode: '3d', onViewModeChange: () => {} });
+    expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-view', 'airfield');
+    expect(map.getZoom()).toBeCloseTo(CENTRED_FIT, 6);
+    expect(map.getCenter().lng).toBeCloseTo(PUJ_ARP[0], 9);
+    expect(map.getCenter().lat).toBeCloseTo(PUJ_ARP[1], 9);
+    expect([map.getPitch(), map.getBearing()]).toEqual([40, -17]);
+    const lock = airportLockOptions({ stands: STAND_REFERENCE, layout: MDPC_LAYOUT });
+    expect(map.options).toMatchObject({ maxBounds: lock.maxBounds, minZoom: 13 });
+    // The default view is not written in the URL.
+    expect(window.location.search).toBe('?stationId=s-1');
+  });
+
+  it('offers only Aeródromo and Rampa: 1 and 2 do nothing, and a `view=` of another view is ignored', () => {
+    window.history.replaceState({}, '', `${PAGE}&view=region`);
+    const { map } = renderPositions({ fixedOnAirport: true, viewMode: '3d', onViewModeChange: () => {} });
+    loadStyle(map);
+    expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-view', 'airfield');
+    const buttons = within(screen.getByTestId('map-preset-switcher')).getAllByRole('button');
+    expect(buttons.map(button => button.getAttribute('aria-keyshortcuts'))).toEqual(['3', '4']);
+    const calls = map.cameraCalls.length;
+    fireEvent.keyDown(map.getCanvas(), { key: '1' });
+    fireEvent.keyDown(map.getCanvas(), { key: '2' });
+    expect(map.cameraCalls).toHaveLength(calls);
+    expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-view', 'airfield');
+    fireEvent.keyDown(map.getCanvas(), { key: '4' });
+    expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-view', 'ramp');
+  });
+
+  it("D changes the page's 2D/3D, L opens «Capas» and «Centrar PUJ» flies back to the ARP", () => {
+    const onViewModeChange = vi.fn();
+    const { map, ref, rerender } = renderPositions({ fixedOnAirport: true, viewMode: '3d', onViewModeChange });
+    loadStyle(map);
+    // The screen's own 2D/3D is in its rail tools: the rail shows no second one.
+    expect(screen.queryByTestId('map-3d-toggle')).not.toBeInTheDocument();
+    fireEvent.keyDown(map.getCanvas(), { key: 'd' });
+    expect(onViewModeChange).toHaveBeenLastCalledWith('2d');
+    rerender({ viewMode: '2d' });
+    fireEvent.keyDown(map.getCanvas(), { key: 'd' });
+    expect(onViewModeChange).toHaveBeenLastCalledWith('3d');
+
+    expect(screen.getByTestId('map-layers-menu')).toBeInTheDocument();
+    fireEvent.keyDown(map.getCanvas(), { key: 'l' });
+    expect(screen.getByRole('group', { name: 'Capas del mapa' })).toBeInTheDocument();
+
+    act(() => map.jumpTo({ center: [-68.35, 18.57], zoom: 17 }));
+    act(() => ref.current.flyToPuj());
+    expect(map.getZoom()).toBeCloseTo(CENTRED_FIT, 6);
+    expect(map.getCenter().lng).toBeCloseTo(PUJ_ARP[0], 9);
+    expect(map.getCenter().lat).toBeCloseTo(PUJ_ARP[1], 9);
   });
 });

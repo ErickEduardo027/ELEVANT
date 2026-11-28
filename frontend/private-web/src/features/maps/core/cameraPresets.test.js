@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { DASHBOARD_POSITIONS } from '../../dashboard/dashboardPositions';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import {
-  APPROACH_RADIUS_NM, CAMERA_3D, FALLBACK_AIRFIELD_RADIUS_NM, PUJ_ARP, REGION_RADIUS_NM, TERMINALS, VIEW_NAMES,
-  airfieldBounds, boundsCenter, cameraAngles, defaultFlightView, destinationPoint, distanceNm, fitZooms, isInBounds,
+  AIRPORT_LOCK_MARGIN_M, AIRPORT_LOCK_MIN_ZOOM, APPROACH_RADIUS_NM, CAMERA_3D, FALLBACK_AIRFIELD_RADIUS_NM, PUJ_ARP,
+  REGION_RADIUS_NM, TERMINALS, VIEW_NAMES,
+  airfieldBounds, airportLockBounds, airportLockOptions, boundsCenter, cameraAngles, centredBounds, defaultFlightView,
+  destinationPoint, distanceNm, fitZooms, isInBounds,
   presetForZoom, presetTargets, ringBounds, sameFits, standBounds, standPolygonPresetBounds, targetFor,
   thresholdsFromFits, transitionFor, unionBounds,
 } from './cameraPresets';
@@ -328,5 +330,35 @@ describe('camera presets', () => {
     // The answer is a copy: a caller that changes it changes no preset.
     cameraAngles('ramp', '3d').pitch = 10;
     expect(cameraAngles('ramp', '3d').pitch).toBe(55);
+  });
+});
+
+describe('a map fixed on the airport (M9)', () => {
+  it('centres a box on a point by growing it to the smallest box centred there that holds it', () => {
+    const box = [[-68.4, 18.5], [-68.3, 18.6]];
+    const centred = centredBounds(box, [-68.38, 18.55]);
+    expect(centred[0]).toEqual([-68.4, 18.5]);
+    expect(centred[1][0]).toBeCloseTo(-68.36, 12);
+    expect(centred[1][1]).toBeCloseTo(18.6, 12);
+    expect(centredBounds(box, null)).toBe(box);
+    expect(centredBounds(box, [Number.NaN, 18.5])).toBe(box);
+    const airfield = presetTargets({ layout: MDPC_LAYOUT, airfieldCentre: PUJ_ARP }).airfield.bounds;
+    expect(boundsCenter(airfield)[0]).toBeCloseTo(PUJ_ARP[0], 12);
+    expect(boundsCenter(airfield)[1]).toBeCloseTo(PUJ_ARP[1], 12);
+    // Without a centre the airfield is the layout box plus 300 m, as before.
+    expect(presetTargets({ layout: MDPC_LAYOUT }).airfield.bounds).toEqual(airfieldBounds({ layout: MDPC_LAYOUT }));
+  });
+
+  it('holds the camera in the airfield box plus 3 km and never under zoom 13', () => {
+    const lock = airportLockBounds({ layout: MDPC_LAYOUT });
+    const [west, south, east, north] = MDPC_LAYOUT.meta.bbox;
+    expect(northSouthMetres(lock[0][1], south)).toBeCloseTo(AIRPORT_LOCK_MARGIN_M, 0);
+    expect(northSouthMetres(north, lock[1][1])).toBeCloseTo(AIRPORT_LOCK_MARGIN_M, 0);
+    expect(eastWestMetres(lock[0][0], west, north)).toBeGreaterThanOrEqual(AIRPORT_LOCK_MARGIN_M - 1);
+    expect(eastWestMetres(east, lock[1][0], north)).toBeGreaterThanOrEqual(AIRPORT_LOCK_MARGIN_M - 1);
+    expect(airportLockOptions({ layout: MDPC_LAYOUT })).toEqual({ maxBounds: lock, minZoom: AIRPORT_LOCK_MIN_ZOOM });
+    expect(AIRPORT_LOCK_MIN_ZOOM).toBe(13);
+    // Without a layout the 1.5 NM ring around the ARP stands in for the airfield box.
+    expect(isInBounds(PUJ_ARP, airportLockBounds())).toBe(true);
   });
 });
