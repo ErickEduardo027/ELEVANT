@@ -45,6 +45,7 @@ import {
   referenceLayersShown, referenceOverlay,
 } from '../style/referenceLayers';
 import { SELECTION_SOURCE, selectionFeatures, selectionOverlay } from '../style/selectionLayers';
+import { FLIGHT_ROUTES_GROUP } from '../style/flightRouteLayers';
 import { worldBaseOverlay } from '../style/worldBaseLayers';
 import { FLIGHT_SOURCE, flightOverlay, flightsInView, toFlightFeatures } from '../traffic/flightLayers';
 import { nightShadeFeatures } from '../traffic/nightShade';
@@ -152,8 +153,9 @@ const referencesKey = ({ kinds, runway, imagery }) => `${kinds.join('|')}#${runw
 // The weather (PR M8): no note under a key of the layers menu.
 const NO_NOTES = Object.freeze({});
 const EMPTY_COLLECTION = Object.freeze({ type: 'FeatureCollection', features: EMPTY });
-// The groups of the references (PR M8): not the traffic's.
-const NON_TRAFFIC_GROUPS = new Set(Object.values(REFERENCE_GROUPS));
+// The groups of the references (PR M8) and the great circles of every AVIAM flight (M8 lane, Monitoreo's globe, whose
+// default follows the view): not what the traffic source draws, so a change of view never rewrites it.
+const NON_TRAFFIC_GROUPS = new Set([...Object.values(REFERENCE_GROUPS), FLIGHT_ROUTES_GROUP]);
 const creditKeyOf = source => (source && typeof source.name === 'string' && source.name.trim() !== ''
   ? JSON.stringify([source.name, source.homeUrl ?? null, source.licenseName ?? null, source.licenseUrl ?? null])
   : '');
