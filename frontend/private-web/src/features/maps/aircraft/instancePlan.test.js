@@ -7,7 +7,7 @@ import { destinationPoint, METRES_PER_NM } from '../airport/geo';
 import { thresholdsFromFits } from '../core/cameraPresets';
 import {
   AIRCRAFT_3D_COLORS, AIRCRAFT_3D_RADIUS_NM, DROP_LINE_MIN_M, SHADOW, TYPE_MEMO_LIMIT, instanceKey, linearRgb,
-  mercatorFrame, planInstances, planSprites, typeMemoSizeForTests, pivotOf, poseMatrix,
+  mercatorFrame, planInstances, planLabels, planSprites, typeMemoSizeForTests, pivotOf, poseMatrix,
 } from './instancePlan';
 import { SPRITE_CELLS, cellUv } from './spriteAtlas';
 import { altitudeColour, mapColorsFor } from '../style/mapColors';
@@ -484,5 +484,61 @@ describe('planSprites (PR M2)', () => {
     expect(planInstances([far], [], OPTIONS).size).toBe(0);
     const plan = planInstances([far], [], { ...OPTIONS, radiusNm: Infinity });
     expect(plan.get('A320')).toMatchObject({ aircraftCount: 1, ids: ['h:far', null] });
+  });
+});
+
+describe('planLabels (PR M2)', () => {
+  const byId = labels => new Map(labels.tags.map(tag => [tag.id, tag]));
+  const traffic = [
+    aircraft('f:air', { bearing: 10, metres: 900, onGround: false, altM: 300, flightNumber: 'DM1' }),
+    aircraft('f:ground', { bearing: 90, metres: 300, flightNumber: 'DM2' }),
+    aircraft('f:parked', { bearing: 180, metres: 200, flightNumber: 'DM3' }),
+    aircraft('h:other', { kind: 'other', hex: 'other', callsign: 'JBU1', bearing: 270, metres: 500, onGround: false,
+      altM: 900 }),
+    aircraft('h:stale', { kind: 'other', hex: 'stale', callsign: 'JBU2', bearing: 300, metres: 500, onGround: false,
+      altM: 900, quality: 'stale', opacity: 0.8 }),
+  ];
+
+  it('below the ramp zoom: ELEVANT tags give way (the chosen first, then air, then ground), other traffic only on demand', () => {
+    const labels = planLabels(traffic, { originLngLat: ARP, zoom: 14, parkedIds: new Set(['f:parked']),
+      focusId: 'h:other', otherTagsMinZoom: 13 });
+    const tags = byId(labels);
+    expect([...tags.keys()].sort()).toEqual(['f:air', 'f:ground', 'h:other']);
+    expect(tags.get('f:air')).toMatchObject({ priority: 1, always: false });
+    expect(tags.get('f:ground')).toMatchObject({ priority: 2, always: false });
+    // The one under the pointer always shows, first.
+    expect(tags.get('h:other')).toMatchObject({ priority: 0, always: true });
+    expect(tags.get('h:other').tag).toMatchObject({ aviam: false, tag1: 'JBU1' });
+    // Placed where the frame draws it, past its silhouette as the GeoJSON tags are (radius + 0.4 em).
+    const [x, y] = mercatorFrame(ARP).toLocal([traffic[0].lon, traffic[0].lat]);
+    expect(tags.get('f:air')).toMatchObject({ x, y });
+    // A narrow-body (30 px icon, 4 px inset) at the ELEVANT scale 1.25: (30 - 8) / 2 × 1.25 = 13.75 px.
+    expect(tags.get('f:air').offsetPx).toBeCloseTo(13.8 + 0.4 * 12, 1);
+    // The parked aircraft is its stand's: no tag, no mark; nothing is chosen, so no ring.
+    expect(labels.marks.map(mark => mark.id)).not.toContain('f:parked');
+    expect(labels.marks).toHaveLength(4);
+    expect(labels.ring).toBeNull();
+  });
+
+  it('from the ramp zoom every ELEVANT tag shows; all the traffic tags only from their zoom, dimmed when stale', () => {
+    const close = byId(planLabels(traffic, { originLngLat: ARP, zoom: 15.5, labelsOn: true, otherTagsMinZoom: 16 }));
+    expect(close.get('f:air')).toMatchObject({ priority: 1, always: true });
+    expect(close.get('f:ground')).toMatchObject({ priority: 1, always: true });
+    expect(close.has('h:other')).toBe(false);
+    const all = byId(planLabels(traffic, { originLngLat: ARP, zoom: 16, labelsOn: true, otherTagsMinZoom: 16 }));
+    expect(all.get('h:other')).toMatchObject({ priority: 3, always: false });
+    expect(all.get('h:stale').opacity).toBeCloseTo(0.4, 6);
+    expect(all.get('h:stale').tag.suffix).toMatch(/^Sin actualizar/);
+  });
+
+  it('rings the chosen aircraft where the frame draws it and uses the words of the write', () => {
+    const words = new Map([['f:air', { aviam: true, dir: 'arr', tag1: 'WRITE', suffix: '', tag2: '', tagStand: '' }]]);
+    const labels = planLabels(traffic, { originLngLat: ARP, zoom: 12, selectedId: 'f:parked', words,
+      parkedIds: new Set(['f:parked']) });
+    const [x, y] = mercatorFrame(ARP).toLocal([traffic[2].lon, traffic[2].lat]);
+    expect(labels.ring).toEqual({ x, y });
+    expect(labels.marks.map(mark => mark.id)).toContain('f:parked');
+    expect(byId(labels).has('f:parked')).toBe(false);
+    expect(byId(labels).get('f:air').tag.tag1).toBe('WRITE');
   });
 });

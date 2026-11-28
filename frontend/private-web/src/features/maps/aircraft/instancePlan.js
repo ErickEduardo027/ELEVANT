@@ -4,7 +4,8 @@ import { altitudeColour, mapColorsFor } from '../style/mapColors';
 import {
   AIRCRAFT_ICON_INSET, AIRCRAFT_ICON_SIZES, DEMO_PLATE_CENTRE_PX, DEMO_PLATE_IMAGE, ESTIMATED_RING_IMAGE, aircraftImage,
 } from '../style/trafficImages';
-import { TRAFFIC_SCALES, altitudeFeet, isDrawn } from '../traffic/trafficFeatures';
+import { TRAFFIC_SCALES, altitudeFeet, drawnRadius, isDrawn, tagTextOf } from '../traffic/trafficFeatures';
+import { TAG_DECLUTTER_UNTIL_ZOOM, TAG_STYLE } from '../traffic/trafficLayers';
 import { SPRITE_CELLS, cellUv } from './spriteAtlas';
 import { resolveAircraftType } from './types';
 
@@ -459,4 +460,64 @@ export function planSprites(aircraft = [], {
   });
   return Object.freeze({ count, matrices, colors, halos, opacities, sizes, offsets, cells, plain,
     ids: Object.freeze(ids) });
+}
+
+/**
+ * Which tags of the animated traffic may show, where, and how strongly (PR M2, aircraft/trafficLabels.js lays them out),
+ * as the GeoJSON tags show them (traffic/trafficLayers.js, CN-29):
+ * - an ELEVANT flight's always, except on the stand that draws it (`parkedIds`); below TAG_DECLUTTER_UNTIL_ZOOM it gives
+ *   way where it would cover another tag (the chosen one's first, then those in the air, then those on the ground);
+ *   from that zoom on it shows over what is there;
+ * - other traffic's while it is chosen or under the pointer (`focusId`), and with «Etiquetas de todo el tráfico»
+ *   (`labelsOn`) from `otherTagsMinZoom` up, giving way to every other tag (low zoom: ELEVANT, chosen and hovered only).
+ * `aircraft` are the aircraft of the frame; `words` their tags' words by id (traffic/trafficFeatures.js: tagTextOf,
+ * made at the write; one missing is made here). Answers `{ tags, marks, ring }` in the frame's metres: `tags`
+ * `{ id, x, y, tag, priority, always, offsetPx, opacity }` (the gap past the silhouette as the GeoJSON tags keep it,
+ * the opacity of a stale or fading aircraft), `marks` `{ id, x, y, radius }` the silhouettes a tag keeps off, and
+ * `ring` `{ x, y }` the chosen aircraft's ring, or null.
+ */
+export function planLabels(aircraft = [], {
+  originLngLat, selectedId = null, focusId = null, labelsOn = false, zoom = null, words = null, parkedIds = null,
+  language = 'es', otherTagsMinZoom = null,
+} = {}) {
+  const frame = mercatorFrame(originLngLat);
+  const parked = parkedIds instanceof Set ? parkedIds : new Set();
+  const close = finite(zoom) && zoom >= TAG_DECLUTTER_UNTIL_ZOOM;
+  const othersShown = labelsOn === true && (!finite(otherTagsMinZoom) || (finite(zoom) && zoom >= otherTagsMinZoom));
+  const tags = [];
+  const marks = [];
+  let ring = null;
+  for (const item of list(aircraft)) {
+    if (item?.id == null || !isDrawn(item)) continue;
+    const aviam = item.kind === 'aviam';
+    const ground = item.onGround === true;
+    const selected = item.id === selectedId;
+    const focused = item.id === focusId;
+    const onStand = aviam && parked.has(item.id);
+    let scale = TRAFFIC_SCALES.other;
+    if (selected) scale = TRAFFIC_SCALES.selected;
+    else if (aviam) scale = TRAFFIC_SCALES.aviam;
+    else if (ground) scale = TRAFFIC_SCALES.otherGround;
+    const radius = drawnRadius(resolvedTypeOf(item).iconCategory, scale);
+    const [x, y] = frame.toLocal([item.lon, item.lat]);
+    if (selected) ring = { x, y };
+    if (!onStand || selected) marks.push({ id: item.id, x, y, radius });
+    let priority = null;
+    let always = false;
+    if (aviam && !onStand) {
+      always = close || selected || focused;
+      if (selected) priority = 0;
+      else priority = close || !ground ? 1 : 2;
+    } else if (!aviam && (selected || focused)) {
+      priority = 0;
+      always = true;
+    } else if (!aviam && othersShown) priority = 3;
+    if (priority === null) continue;
+    const tag = words?.get?.(item.id) ?? tagTextOf(item, { language });
+    const size = aviam ? TAG_STYLE.aviam.size : TAG_STYLE.other.size;
+    const own = finite(item.opacity) ? clamp01(item.opacity) : 1;
+    tags.push({ id: item.id, x, y, tag, priority, always,
+      offsetPx: radius + TAG_STYLE.radialOffsetEm * size, opacity: own * (item.quality === 'stale' ? 0.5 : 1) });
+  }
+  return { tags, marks, ring };
 }

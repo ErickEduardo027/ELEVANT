@@ -8,7 +8,7 @@ import {
   AIRCRAFT_3D_LAYER_ID, MAX_MODEL_SCALE, SUN_STEP_DEG, UNUSED_MESH_MS, createAircraft3dLayer, sceneLighting,
 } from './aircraft3dLayer';
 import { triangleCount } from './aircraftGeometry';
-import { linearRgb, mercatorFrame, planInstances, planSprites } from './instancePlan';
+import { linearRgb, mercatorFrame, planInstances, planLabels, planSprites } from './instancePlan';
 import { createTrafficSprites } from './trafficSprites';
 import { AIRCRAFT_TYPES } from './types';
 
@@ -798,6 +798,41 @@ describe('the sprites of the animated traffic (PR M2)', () => {
     expect(group.children[0].material).toMatchObject({ transparent: true, depthTest: false, depthWrite: false });
     layer.onRemove();
     expect(layer.stats().sprites ?? 0).toBe(0);
+  });
+
+  it('draws the tags and the chosen ring over the sprites, and picks a tag where this frame drew it', () => {
+    const { layer, answer, createRenderer } = spriteWorld();
+    const view = viewOf();
+    const items = [aircraft('f:p:a', { bearing: 10, metres: 300, flightNumber: 'DM101' }),
+      aircraft('h:p:b', { kind: 'other', bearing: 40, metres: 900, onGround: false, altM: 600 })];
+    const labelsOf = list => planLabels(list, { originLngLat: ARP, zoom: 15, selectedId: 'f:p:a' });
+    answer({ revision: 1, plan: new Map(), sprites: planSprites(items, { originLngLat: ARP }), labels: labelsOf(items) });
+    layer.render(fakeContext('gl'), view.input);
+    expect(layer.stats()).toMatchObject({ sprites: 2, labels: 1, drawCalls: 2 });
+    const { scene } = createRenderer.mock.results[0].value;
+    const group = scene.children.find(child => child.name === 'traffic-labels');
+    const mesh = group.children[0];
+    // The ring and the chosen aircraft's tag, over the sprites; its canvas pixels are the drawing buffer's (ratio 2).
+    expect(mesh).toMatchObject({ isInstancedMesh: true, count: 2, renderOrder: 20 });
+    expect(mesh.material.uniforms.viewport.value.toArray()).toEqual([WIDTH, HEIGHT]);
+    expect(mesh.material.uniforms.pixelRatio.value).toBe(2);
+    // The centre of the tag (the last quad): its aircraft where the frame drew it, plus its offset.
+    const centre = () => {
+      const anchor = mesh.geometry.getAttribute('instanceAnchor').array;
+      const offset = mesh.geometry.getAttribute('instanceOffset').array;
+      const at = view.toPixel([anchor[3], anchor[4], 0]);
+      return { x: at.x + offset[2], y: at.y + offset[3] };
+    };
+    expect(layer.pick(centre())).toEqual({ kind: 'aircraft', id: 'f:p:a' });
+    // The next frame moves the tag with its aircraft; it is picked there.
+    const moved = items.map(item => ({ ...item, lat: item.lat + 0.001 }));
+    answer({ revision: 2, plan: new Map(), sprites: planSprites(moved, { originLngLat: ARP }), labels: labelsOf(moved) });
+    const before = centre();
+    layer.render(fakeContext('gl'), view.input);
+    expect(Math.hypot(centre().x - before.x, centre().y - before.y)).toBeGreaterThan(5);
+    expect(layer.pick(centre())).toEqual({ kind: 'aircraft', id: 'f:p:a' });
+    layer.onRemove();
+    expect(layer.stats().labels).toBeUndefined();
   });
 
   it('without a 2D canvas for the atlas it says so once and keeps drawing its models', () => {

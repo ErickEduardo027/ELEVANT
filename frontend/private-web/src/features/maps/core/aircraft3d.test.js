@@ -548,4 +548,46 @@ describe('the animated traffic (PR M2)', () => {
     expect(controller.animating()).toBe(false);
     expect(controller.plan({ aircraft, zoom: 9, minZoom: 15, animation: { keyframes } }).size).toBe(0);
   });
+
+  it('hands the layer the tags and the chosen ring of each frame, and leaves out what the layers menu hides', async () => {
+    const { controller, engine, made, settle, at } = world({ animate: true });
+    let zoom = 14;
+    engine.getCamera = () => ({ zoom, bearing: 0 });
+    const ground = other('def456', { onGround: true, altM: 0, callsign: 'GND1' });
+    const aircraft = [aviam('f:k-1', { flightNumber: 'DM101', onGround: false, altM: 600 }), other('abc123'), ground];
+    const { keyframes, ahead } = writeOf(aircraft);
+    const plan = extra => controller.plan({ aircraft, zoom: 14, minZoom: 15, animation: { keyframes }, language: 'es',
+      otherGroundMinZoom: 14.5, otherTagsMinZoom: 14.5, ...extra });
+    plan();
+    await settle();
+    plan({ selectedId: 'f:k-1', focusId: 'h:abc123' });
+    const { getInstances } = made[0].options;
+    at(500);
+    const { labels, sprites } = getInstances();
+    // Other traffic on the ground waits for its threshold, as its GeoJSON layer does.
+    expect([...sprites.ids].sort()).toEqual(['f:k-1', 'h:abc123']);
+    const tags = new Map(labels.tags.map(tag => [tag.id, tag]));
+    expect([...tags.keys()].sort()).toEqual(['f:k-1', 'h:abc123']);
+    expect(tags.get('f:k-1')).toMatchObject({ priority: 0, always: true });
+    expect(tags.get('f:k-1').tag).toMatchObject({ aviam: true, tag1: 'DM101' });
+    // The tag and the ring stand where the frame draws the aircraft.
+    const [x, y] = frame.toLocal([ahead[0].lon, ahead[0].lat]);
+    expect(tags.get('f:k-1').x).toBeCloseTo(x, 0);
+    expect(labels.ring.x).toBeCloseTo(x, 0);
+    expect(labels.ring.y).toBeCloseTo(y, 0);
+    // From the threshold up the ground traffic is drawn too; with all the tags on, its tag may show.
+    zoom = 15;
+    plan({ labelsOn: true });
+    const closer = getInstances();
+    expect([...closer.sprites.ids].sort()).toEqual(['f:k-1', 'h:abc123', 'h:def456']);
+    expect(closer.labels.tags.find(tag => tag.id === 'h:def456')).toMatchObject({ priority: 3, always: false });
+    expect(closer.labels.ring).toBeNull();
+    // A group the layers menu hides is not drawn, its tags neither; the chosen aircraft still is.
+    plan({ shown: { aviam: true, other: false }, selectedId: 'h:abc123' });
+    const hidden = getInstances();
+    expect([...hidden.sprites.ids].sort()).toEqual(['f:k-1', 'h:abc123']);
+    plan({ shown: { aviam: false, other: true } });
+    expect([...getInstances().sprites.ids].sort()).toEqual(['h:abc123', 'h:def456']);
+    expect(getInstances().labels.tags.map(tag => tag.id)).toEqual([]);
+  });
 });

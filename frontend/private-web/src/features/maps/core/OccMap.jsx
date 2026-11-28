@@ -959,8 +959,15 @@ const OccMapView = forwardRef(function OccMapView({
     // «Seguir en 3D» (CN-30): the followed aircraft gets its detailed model at any zoom, even with the 3D off or paused.
     const followedId = applied.follow3d?.on ? selectedId : null;
     const animation = animated && applied.keyframes ? { keyframes: applied.keyframes } : null;
+    // PR M2: what the animated tags need, as the GeoJSON layers read it: the aircraft under the pointer, the groups the
+    // layers menu shows, and other traffic (its ground aircraft, all its tags) only from the airfield threshold up.
+    const { groups: shown, language: words } = latest.current;
+    const airfield = store.get().thresholds?.airfield;
     return controller.plan({ aircraft: drawn, parked, zoom, minZoom, selectedId, followedId, animation,
-      parkedIds: applied.parkedIds ?? NO_IDS });
+      parkedIds: applied.parkedIds ?? NO_IDS, focusId: trafficFocusRef.current,
+      labelsOn: shown?.['traffic.labels'] === true, language: words,
+      shown: { aviam: shown?.['traffic.aviam'] !== false, other: shown?.['traffic.other'] !== false },
+      otherGroundMinZoom: airfield, otherTagsMinZoom: airfield });
   }, [store]);
 
   // The aircraft of a write where they are drawn at `t` (CN-18): those in or around the area in sight

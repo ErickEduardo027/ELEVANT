@@ -113,6 +113,35 @@ function standTag(item, aviam, departure) {
   return departure ? '' : (filled(item.standCode) ?? '');
 }
 
+const translators = new Map();
+const translatorFor = language => {
+  let t = translators.get(language);
+  if (t === undefined) {
+    t = createTranslator(mapMessages, language);
+    translators.set(language, t);
+  }
+  return t;
+};
+
+/**
+ * The words of an aircraft's tag, as the GeoJSON tags write them (PR M2: the animated layer draws them in its own
+ * atlas, aircraft/labelAtlas.js): `{ aviam, dir, tag1, suffix, tag2, tagStand }`, `dir` `arr` or `dep` for an ELEVANT
+ * flight and '' for other traffic; see trafficFeatures for the rest.
+ */
+export function tagTextOf(item, { language = 'es' } = {}) {
+  const aviam = item?.kind === 'aviam';
+  const departure = aviam && item.direction === 'Departure';
+  const type = resolveAircraftType({ typeIcao: item.typeIcao, model: item.model, sizeCategory: item.sizeCategory,
+    emitterCategory: item.emitterCategory });
+  const { tag1, suffix, tag2 } = tagLines(item, type, { t: translatorFor(language), language });
+  return { aviam, dir: aviam ? (departure ? 'dep' : 'arr') : '', tag1, suffix, tag2,
+    tagStand: standTag(item, aviam, departure) };
+}
+
+/** Half an aircraft's silhouette as drawn, in pixels, at its drawn `scale`: its ring, plate and tag keep clear of it. */
+export const drawnRadius = (iconCategory, scale) => Math.round(
+  ((AIRCRAFT_ICON_SIZES[iconCategory] - 2 * AIRCRAFT_ICON_INSET) / 2) * scale * 10) / 10;
+
 // The opacity of an aircraft in hundredths, so a fade writes a hundred steps at most; 1 when it says none.
 const opacityOf = item => (finite(item.opacity) ? Math.round(Math.min(1, Math.max(0, item.opacity)) * 100) / 100 : 1);
 
@@ -146,7 +175,7 @@ function featureOf(item, { selectedId, focusId, labelsOn, language, t, parked, m
       icon: aircraftImage(type.iconCategory, { hollow: departure }),
       scale,
       // Half the silhouette as drawn, in pixels: the ring, the plate and the tag keep clear of it.
-      radius: Math.round(((AIRCRAFT_ICON_SIZES[type.iconCategory] - 2 * AIRCRAFT_ICON_INSET) / 2) * scale * 10) / 10,
+      radius: drawnRadius(type.iconCategory, scale),
       // An aircraft without a known heading points north: no direction is made up for it.
       trk: finite(item.trackDeg) ? Math.round(item.trackDeg * 10) / 10 : 0,
       quality: item.quality,

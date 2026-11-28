@@ -88,7 +88,7 @@ describe('traffic layers (design E1 and E3)', () => {
       expect(order('occ-trails-live')).toBeLessThan(order('occ-traffic-other-ground'));
       for (const id of ['occ-traffic-other', 'occ-traffic-other-ground']) {
         const { layout } = style.layers.find(layer => layer.id === id);
-        // PR M2: a model or an animated sprite draws the aircraft; its forced tag stays in the symbol.
+        // PR M7: a model draws the aircraft; its forced tag stays in the symbol (PR M2: an animated one is the layer's).
         expect(layout, id).toMatchObject({ 'icon-image': ['case', ['==', ['get', 'model3d'], true], '', ['get', 'icon']],
           'icon-allow-overlap': true, 'text-allow-overlap': true });
         expect(layout['text-field'], id).toBeDefined();
@@ -339,21 +339,27 @@ describe('traffic layers (design E1 and E3)', () => {
     }
   });
 
-  it('PR M2: an aircraft the layer animates leaves it its icon, ring and plate; its tags and the chosen ring stay', () => {
+  it('PR M2: an aircraft the layer animates leaves it every symbol: icon, rings, plate and tags (the GeoJSON is the fallback)', () => {
     const animated = { kind: 'aviam', dir: 'arr', estimated: true, demo: true, selected: true, model3d: true, animated: true };
-    for (const id of ['occ-traffic-aviam', 'occ-traffic-selected', 'occ-traffic-estimated-ring', 'occ-traffic-demo-plate']) {
+    for (const id of ['occ-traffic-aviam', 'occ-traffic-selected', 'occ-traffic-estimated-ring', 'occ-traffic-demo-plate',
+      'occ-traffic-tags', 'occ-traffic-selected-ring']) {
       expect(accepts(layerOf(id), animated), id).toBe(false);
     }
-    for (const id of ['occ-traffic-tags', 'occ-traffic-selected-ring']) expect(accepts(layerOf(id), animated), id).toBe(true);
-    // A model drawn without the animation (PR M7) keeps its ring and plate here.
-    expect(accepts(layerOf('occ-traffic-estimated-ring'), { ...animated, animated: false })).toBe(true);
-    expect(accepts(layerOf('occ-traffic-demo-plate'), { ...animated, animated: false })).toBe(true);
-    // Other traffic keeps its symbol for the tag it shows while chosen or under the pointer, without its icon.
-    const other = { kind: 'other', ground: false, forceTag: true, model3d: true, animated: true, icon: 'ac-narrow-solid' };
+    // Without the animation (a model of PR M7, or the layer not drawing) they all stay.
+    for (const id of ['occ-traffic-estimated-ring', 'occ-traffic-demo-plate', 'occ-traffic-tags', 'occ-traffic-selected-ring']) {
+      expect(accepts(layerOf(id), { ...animated, animated: false }), id).toBe(true);
+    }
+    // Other traffic: a model keeps its symbol for the tag it shows while chosen or under the pointer, without its icon;
+    // an animated one leaves the whole symbol and its optional tag to the layer, so the GeoJSON is never picked for it.
+    const other = { kind: 'other', ground: false, forceTag: true, model3d: true, animated: false, icon: 'ac-narrow-solid' };
     expect(accepts(layerOf('occ-traffic-other'), other)).toBe(true);
     const image = properties => evaluate(layerOf('occ-traffic-other'), 'layout', 'icon-image', properties)?.name ?? null;
     expect(image(other) ?? '').toBe('');
     expect(image({ ...other, model3d: false })).toBe('ac-narrow-solid');
+    expect(accepts(layerOf('occ-traffic-other'), { ...other, animated: true })).toBe(false);
+    expect(accepts(layerOf('occ-traffic-other-ground'), { ...other, ground: true, animated: true })).toBe(false);
+    expect(accepts(layerOf('occ-traffic-tags-other'), { ...other, forceTag: false, animated: true })).toBe(false);
+    expect(accepts(layerOf('occ-traffic-tags-other'), { ...other, forceTag: false })).toBe(true);
   });
 
   it('every aircraft is coloured by its altitude: the stops of mapColors, grey on the ground and without altitude', () => {
