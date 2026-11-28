@@ -76,6 +76,20 @@ describe('parkedFromStands', () => {
     expect(parkedFromStands(stands, [{ ...parkedAircraft, gsMs: 6 }], new Set()).map(item => item.id)).toEqual(['s:A5']);
     expect(parkedFromStands(null, null)).toEqual([]);
   });
+
+  it('carries the airline of the parked aircraft for its livery (PR M5), and none for an aircraft only the stand knows', () => {
+    const stands = [stand('A5'), stand('A6', { turnaroundId: 't-busy' })];
+    const parkedAircraft = aviam('f:parked', { turnaroundId: 't-busy', gsMs: 0, airlineIcao: 'CMP', airlineIata: 'CM',
+      callsign: 'CMP123', flightNumber: 'CM 123' });
+    const [byStand, owned] = parkedFromStands(stands, [parkedAircraft], new Set(['f:parked']));
+    expect(owned).toMatchObject({ id: 'f:parked', airlineIcao: 'CMP', airlineIata: 'CM', callsign: 'CMP123',
+      flightNumber: 'CM 123' });
+    expect(byStand.id).toBe('s:A5');
+    expect(Object.keys(byStand)).not.toContain('airlineIcao');
+    // Missing fields are null, never undefined.
+    const [, bare] = parkedFromStands(stands, [aviam('f:parked', { turnaroundId: 't-busy', gsMs: 0 })], new Set(['f:parked']));
+    expect(bare).toMatchObject({ airlineIcao: null, airlineIata: null, callsign: null, flightNumber: null });
+  });
 });
 
 describe('translatePick', () => {

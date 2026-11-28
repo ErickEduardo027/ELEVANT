@@ -346,6 +346,44 @@ describe('the 3D instance plan (design G3)', () => {
   });
 });
 
+describe('liveries and gear (PR M5)', () => {
+  it("only an AVIAM aircraft wears its airline's livery: the chosen one, other traffic and every shadow none", () => {
+    const list = [
+      aircraft('f:a', { airlineIcao: 'CMP' }),
+      aircraft('f:b', { bearing: 90, metres: 300, airlineIcao: 'JBU' }),
+      aircraft('h:c', { kind: 'other', bearing: 180, metres: 900, onGround: false, altM: 1_200, airlineIcao: 'UAL' }),
+      aircraft('f:d', { bearing: 270, metres: 300 }),
+    ];
+    const entry = planInstances(list, [], { ...OPTIONS, selectedId: 'f:b' }).get('A320');
+    expect(entry.ids).toEqual(['f:a', 'f:b', 'f:d', 'h:c', null, null, null, null]);
+    // AVIAM's own aircraft in their airline's livery, an unknown airline in the default one.
+    expect(entry.liveries).toEqual(['CMP', null, 'DEFAULT', null, null, null, null, null]);
+    expect(Object.isFrozen(entry.liveries)).toBe(true);
+    // The other traffic and the chosen aircraft keep their role colours.
+    expect(colourOf(entry, 1)).toEqual(Array.from(Float32Array.from(AIRCRAFT_3D_COLORS.selected)));
+    expect(colourOf(entry, 3)).toEqual(Array.from(Float32Array.from(AIRCRAFT_3D_COLORS.other)));
+    // A parked aircraft wears its airline's livery too.
+    const parked = planInstances([], [{ id: 's:A5', lon: list[0].lon, lat: list[0].lat, headingDeg: 0, typeIcao: 'A320',
+      model: 'A320', kind: 'aviam', airlineIcao: 'DAL' }], OPTIONS).get('A320');
+    expect(parked.liveries).toEqual(['DAL', null]);
+  });
+
+  it("puts the gear down on a stand and on the ground, up in a climb, and gives each shadow its aircraft's gear", () => {
+    const list = [
+      aircraft('f:a'),
+      aircraft('f:b', { bearing: 90, metres: 2_000, onGround: false, altM: FIELD_M + 900, vrateMs: 8, phase: 'climb' }),
+    ];
+    const entry = planInstances(list, [{ id: 's:A5', lon: list[0].lon, lat: list[0].lat, headingDeg: 0, typeIcao: 'A320',
+      model: 'A320', kind: 'aviam' }], { ...OPTIONS, fieldElevationM: FIELD_M }).get('A320');
+    expect(entry.ids.slice(0, 3)).toEqual(['f:a', 'f:b', 's:A5']);
+    expect([...entry.gear]).toEqual([1, 0, 1, 1, 0, 1]);
+    // An attitude that eased the gear decides it.
+    const eased = planInstances(list, [], { ...OPTIONS, fieldElevationM: FIELD_M,
+      attitudes: new Map([['f:b', { heightM: 900, pitchDeg: 5, bankDeg: 0, gearDown: true }]]) }).get('A320');
+    expect([...eased.gear]).toEqual([1, 1, 1, 1]);
+  });
+});
+
 describe('poseMatrix and attitudes (CN-30)', () => {
   const apply = (matrix, [x, y, z]) => new Vector3(x, y, z).applyMatrix4(new Matrix4().fromArray(matrix));
 
