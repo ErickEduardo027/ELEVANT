@@ -85,17 +85,21 @@ describe('visual suite fixtures of Monitoreo de vuelos', () => {
     expect(data.station).toEqual({ code: 'PUJ', localAbbr: 'AST', ianaTimeZone: 'America/Santo_Domingo' });
 
     const board = buildFlightBoard(data.flights, { nowMs: NOW, t, stationCode: 'PUJ' });
-    expect(board.counts).toEqual({ arrivals: 13, departures: 13, all: 26 });
+    // M8: «En vuelo» and «En tierra» count the strips by the place their visit decides; this day has nothing in the air
+    // and eight visits whose aircraft is on the ground (both legs of each).
+    expect(board.counts).toEqual({ arrivals: 13, departures: 13, inFlight: 0, onGround: 16, all: 26 });
     const byNumber = Object.fromEntries(board.all.map(strip => [strip.flightNumber, strip]));
+    expect(board.onGround.filter(strip => strip.direction === 'Arrival').length).toBe(8);
     // The demo flight, tagged, on its stand and in operation since it landed.
     expect(byNumber.ZZ9001).toMatchObject({ id: arrivalLegOf(9001), demo: true, standCode: 'A3', estimated: false,
-      status: { key: 'inOperation' } });
+      status: { key: 'inOperation' }, place: 'ground' });
     // The visit only this fixture adds: due in 25 minutes without a stand, amber.
     expect(byNumber[UNASSIGNED_VISIT.arrival]).toMatchObject({ id: arrivalLegOf(UNASSIGNED_VISIT.index), standCode: null,
       counterpartIata: 'SDQ', status: { key: 'noStand', signal: 'attention' } });
     // ZZ111 landed three minutes ago with no operation under way yet; ZZ106 comes later, on its estimate; its departure
     // only has its schedule.
-    expect(byNumber.ZZ111).toMatchObject({ standCode: 'B24', time: { kind: 'actual' }, status: { key: 'landed' } });
+    expect(byNumber.ZZ111).toMatchObject({ standCode: 'B24', time: { kind: 'actual' }, status: { key: 'landed' },
+      place: 'ground' });
     expect(byNumber.ZZ106).toMatchObject({ standCode: 'A4', time: { kind: 'estimated' }, status: { key: 'scheduled' } });
     expect(byNumber.ZZ206).toMatchObject({ standCode: 'A4', time: { kind: 'scheduled' }, status: { key: 'scheduled' } });
     // The inspector has what to say of a staffed visit: its aircraft, its agent and its services.
