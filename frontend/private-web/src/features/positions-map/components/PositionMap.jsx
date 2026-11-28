@@ -1,7 +1,7 @@
 import { forwardRef, useImperativeHandle, useMemo, useRef } from 'react';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { MDPC_LAYOUT } from '../../maps/airport/airportLayout';
-import { airportLockOptions, PUJ_ARP } from '../../maps/core/cameraPresets';
+import { airportFollowLimits, airportLockOptions, PUJ_ARP } from '../../maps/core/cameraPresets';
 import OccMap from '../../maps/core/OccMap';
 import { mapMessages } from '../../maps/mapMessages';
 import { STAND_REFERENCE } from '../../maps/stands/standReference';
@@ -19,6 +19,8 @@ const EMPTY = Object.freeze([]);
 const AIRPORT_VIEWS = Object.freeze(['airfield', 'ramp']);
 // Its camera stays over PUJ: the MDPC box plus 3 km, never under zoom 13 (cameraPresets.js: airportLockOptions).
 const AIRPORT_LOCK_OPTIONS = Object.freeze(airportLockOptions({ stands: STAND_REFERENCE, layout: MDPC_LAYOUT }));
+// While it follows an aircraft («Seguir», «Seguir en 3D») the lock lets go and the zoom reaches 22; it comes back after.
+const AIRPORT_FOLLOW_LIMITS = Object.freeze(airportFollowLimits());
 // Mapa de posiciones' 3D aircraft (M9): in their airlines' liveries, with the ground traffic near the field.
 const AIRPORT_AIRCRAFT_3D = Object.freeze({ liveries: true });
 
@@ -43,7 +45,8 @@ const AIRPORT_AIRCRAFT_3D = Object.freeze({ liveries: true });
 // `railTools` (CN-32) are the screen's own map tools, such as Mapa de posiciones' 2D/3D, «Centrar PUJ» and full screen:
 // they go in the map's control rail, after «Seguir» and before the pause.
 // `fixedOnAirport` (M9, only Mapa de posiciones; Planificación and the console stay as they are): the camera is held over
-// PUJ (the airfield box plus 3 km, zoom 13 at least), the map opens on «Aeródromo» centred on the ARP, offers only
+// PUJ (the airfield box plus 3 km, zoom 13 at least) except while it follows an aircraft (no bounds, zoom up to 22, the
+// hold back when following ends: a departure climbing out stays on screen), the map opens on «Aeródromo» centred on the ARP, offers only
 // Aeródromo and Rampa (keys 1 and 2 do nothing) and its rail adds «Capas» (L); its 2D/3D is the screen's own, in
 // `railTools`, so the rail shows no second one. `onViewModeChange(next)` lets the D key change the page's `viewMode`.
 // It also draws the airport in 3D (OccMap `structures`): taxiway pavement, raised terminals and jet bridges, all est.
@@ -104,6 +107,7 @@ const PositionMap = forwardRef(function PositionMap({
       views={fixedOnAirport ? AIRPORT_VIEWS : undefined}
       airfieldCentre={fixedOnAirport ? PUJ_ARP : null}
       mapOptions={fixedOnAirport ? AIRPORT_LOCK_OPTIONS : undefined}
+      followLimits={fixedOnAirport ? AIRPORT_FOLLOW_LIMITS : null}
       structures={fixedOnAirport}
       aircraft3d={fixedOnAirport ? AIRPORT_AIRCRAFT_3D : undefined}
       presetStands={STAND_REFERENCE}

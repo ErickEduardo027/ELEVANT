@@ -28,6 +28,8 @@ export const RAMP_FALLBACK_RADIUS_NM = 0.6;
 // zooms out past 13, so the screen keeps PUJ in sight.
 export const AIRPORT_LOCK_MARGIN_M = 3000;
 export const AIRPORT_LOCK_MIN_ZOOM = 13;
+// While it follows an aircraft (M9), a map fixed on the airport may zoom in this far (the engine stops at 19.5).
+export const AIRPORT_FOLLOW_MAX_ZOOM = 22;
 
 /**
  * The tilt of the 3D mode by view (contracts 2.3): the ramp keeps today's values of the positions map, the airfield
@@ -203,6 +205,15 @@ export function airportLockBounds({ stands = [], layout = null } = {}) {
 /** The MapLibre options of a map fixed on the airport (M9): `maxBounds` (airportLockBounds) and `minZoom` 13. */
 export function airportLockOptions({ stands = [], layout = null } = {}) {
   return { maxBounds: airportLockBounds({ stands, layout }), minZoom: AIRPORT_LOCK_MIN_ZOOM };
+}
+
+/**
+ * The camera limits of a map fixed on the airport while it follows an aircraft (M9, OccMap `followLimits`): no bounds
+ * and the engine's own minimum zoom, so a departure climbing out or an arrival further out than the airfield box plus
+ * 3 km stays framed, and zoom 22 at most; the lock of airportLockOptions comes back when following ends.
+ */
+export function airportFollowLimits() {
+  return { maxBounds: null, minZoom: null, maxZoom: AIRPORT_FOLLOW_MAX_ZOOM };
 }
 
 const northUp = bounds => ({ bounds, pitch: 0, bearing: 0 });

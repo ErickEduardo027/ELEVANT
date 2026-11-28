@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { DASHBOARD_POSITIONS } from '../../dashboard/dashboardPositions';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import {
-  AIRPORT_LOCK_MARGIN_M, AIRPORT_LOCK_MIN_ZOOM, APPROACH_RADIUS_NM, CAMERA_3D, FALLBACK_AIRFIELD_RADIUS_NM, PUJ_ARP,
+  AIRPORT_FOLLOW_MAX_ZOOM, AIRPORT_LOCK_MARGIN_M, AIRPORT_LOCK_MIN_ZOOM, APPROACH_RADIUS_NM, CAMERA_3D, FALLBACK_AIRFIELD_RADIUS_NM, PUJ_ARP,
   REGION_RADIUS_NM, TERMINALS, VIEW_NAMES,
-  airfieldBounds, airportLockBounds, airportLockOptions, boundsCenter, cameraAngles, centredBounds, defaultFlightView,
+  airfieldBounds, airportFollowLimits, airportLockBounds, airportLockOptions, boundsCenter, cameraAngles, centredBounds, defaultFlightView,
   destinationPoint, distanceNm, fitZooms, isInBounds,
   presetForZoom, presetTargets, ringBounds, sameFits, standBounds, standPolygonPresetBounds, targetFor,
   thresholdsFromFits, transitionFor, unionBounds,
@@ -360,6 +360,9 @@ describe('a map fixed on the airport (M9)', () => {
     expect(eastWestMetres(east, lock[1][0], north)).toBeGreaterThanOrEqual(AIRPORT_LOCK_MARGIN_M - 1);
     expect(airportLockOptions({ layout: MDPC_LAYOUT })).toEqual({ maxBounds: lock, minZoom: AIRPORT_LOCK_MIN_ZOOM });
     expect(AIRPORT_LOCK_MIN_ZOOM).toBe(13);
+    // While it follows an aircraft the lock lets go, and the zoom reaches 22 (review of 2026-11-28).
+    expect(airportFollowLimits()).toEqual({ maxBounds: null, minZoom: null, maxZoom: AIRPORT_FOLLOW_MAX_ZOOM });
+    expect(AIRPORT_FOLLOW_MAX_ZOOM).toBe(22);
     // Without a layout the 1.5 NM ring around the ARP stands in for the airfield box.
     expect(isInBounds(PUJ_ARP, airportLockBounds())).toBe(true);
   });

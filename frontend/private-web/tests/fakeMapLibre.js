@@ -423,6 +423,45 @@ function createModule(state) {
       return this;
     }
 
+    // The camera limits (M9): kept in `options`, as the constructor's; a minimum zoom above the camera's zooms it in, as
+    // MapLibre does. The bounds are not enforced. `isMoving()` answers `moving`, which a test sets to stand in for a move
+    // on its way (the fake's own moves end at once).
+    getMaxBounds() {
+      return this.options.maxBounds ?? null;
+    }
+
+    setMaxBounds(maxBounds) {
+      this._record('setMaxBounds', [maxBounds]);
+      this.options = { ...this.options, maxBounds: maxBounds ?? null };
+      return this;
+    }
+
+    getMinZoom() {
+      return this.options.minZoom ?? 0;
+    }
+
+    setMinZoom(minZoom) {
+      this._record('setMinZoom', [minZoom]);
+      this.options = { ...this.options, minZoom };
+      if (this.camera.zoom < minZoom) this.camera.zoom = minZoom;
+      return this;
+    }
+
+    getMaxZoom() {
+      return this.options.maxZoom ?? 22;
+    }
+
+    setMaxZoom(maxZoom) {
+      this._record('setMaxZoom', [maxZoom]);
+      this.options = { ...this.options, maxZoom };
+      if (this.camera.zoom > maxZoom) this.camera.zoom = maxZoom;
+      return this;
+    }
+
+    isMoving() {
+      return this.moving === true;
+    }
+
     getCenterClampedToGround() {
       return this.centerClampedToGround;
     }

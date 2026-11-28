@@ -6,7 +6,8 @@ import { GPUInitializationError, sharedFakeMapLibre } from '../../../../tests/fa
 import { LanguageScope } from '../../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../../i18n/languageStore';
 import { MDPC_LAYOUT } from '../../maps/airport/airportLayout';
-import { airportLockOptions, presetTargets, PUJ_ARP } from '../../maps/core/cameraPresets';
+import { AIRPORT_FOLLOW_MAX_ZOOM, airportLockOptions, presetTargets, PUJ_ARP } from '../../maps/core/cameraPresets';
+import { ENGINE_MAX_ZOOM, ENGINE_MIN_ZOOM } from '../../maps/core/mapEngine';
 import { attachStandGeometry } from '../../maps/stands/standModel';
 import { STAND_REFERENCE } from '../../maps/stands/standReference';
 import { createMapStands, standPoint } from '../../maps/testing/mapFixtures';
@@ -483,5 +484,42 @@ describe('PositionMap fixed on PUJ (M9, Mapa de posiciones)', () => {
     expect(map.getZoom()).toBeCloseTo(CENTRED_FIT, 6);
     expect(map.getCenter().lng).toBeCloseTo(PUJ_ARP[0], 9);
     expect(map.getCenter().lat).toBeCloseTo(PUJ_ARP[1], 9);
+  });
+
+  // Review of 2026-11-28: the held camera clamped every frame of follow mode, so a departure climbing out left the screen
+  // while the map still said it followed it. Following lets the lock go (no bounds, the engine's minimum zoom, zoom 22);
+  // the lock comes back when following ends, after the move on its way.
+  it('lets the held camera go while it follows an aircraft, with zoom 22, and holds it again when following ends', () => {
+    const frames = [];
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => frames.push(callback));
+    vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => {});
+    const runFrames = () => act(() => frames.splice(0).forEach(callback => callback(0)));
+    const lock = airportLockOptions({ stands: STAND_REFERENCE, layout: MDPC_LAYOUT });
+    const { map } = renderPositions({
+      fixedOnAirport: true, viewMode: '3d', onViewModeChange: () => {}, traffic: liveTraffic(),
+      trafficSelection: { kind: 'flight', id: TRAFFIC_FLIGHT_KEY.arrival }, onSelectTraffic: () => {},
+    });
+    loadStyle(map);
+    runFrames();
+    expect(map.options).toMatchObject({ maxBounds: lock.maxBounds, minZoom: 13 });
+
+    fireEvent.keyDown(map.getCanvas(), { key: 's' });
+    expect(new URLSearchParams(window.location.search).get('follow')).toBe('1');
+    runFrames();
+    expect(map.options).toMatchObject({ maxBounds: null, minZoom: ENGINE_MIN_ZOOM, maxZoom: AIRPORT_FOLLOW_MAX_ZOOM });
+    // Every frame of follow mode keeps it released: once is enough.
+    const released = map.calls.filter(call => call.method === 'setMaxBounds').length;
+    expect(released).toBe(1);
+    runFrames();
+    expect(map.calls.filter(call => call.method === 'setMaxBounds')).toHaveLength(released);
+
+    // A move on its way when following ends: the lock waits for its end, then comes back.
+    map.moving = true;
+    fireEvent.keyDown(map.getCanvas(), { key: 's' });
+    expect(new URLSearchParams(window.location.search).get('follow')).toBeNull();
+    expect(map.options.maxBounds).toBeNull();
+    map.moving = false;
+    act(() => fake.state.emit(map, 'moveend'));
+    expect(map.options).toMatchObject({ maxBounds: lock.maxBounds, minZoom: 13, maxZoom: ENGINE_MAX_ZOOM });
   });
 });

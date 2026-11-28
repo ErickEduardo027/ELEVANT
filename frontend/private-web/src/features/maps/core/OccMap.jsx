@@ -530,6 +530,10 @@ const standPointOf = stand => stand?.geometry?.center ?? lngLatOf(stand);
  *   `mapOptions` then carries its bounds and minimum zoom (cameraPresets.js: airportLockOptions); and `structures`
  *   (read at start): the airfield also draws the airport in 3D, its taxiway pavement, raised terminals and jet bridges
  *   at their estimated sizes (airport/structures.js, style/airfieldLayers.js), listed in the legend.
+ *   `followLimits` (`{ maxBounds, minZoom, maxZoom }`, cameraPresets.js: airportFollowLimits) are the camera's limits
+ *   while it follows an aircraft («Seguir» and «Seguir en 3D»): the held camera lets go so a departure or an arrival
+ *   further out stays on screen, and the limits of `mapOptions` come back when following ends (after the camera's
+ *   flight back, if there is one). Without it follow mode keeps the limits the map has.
  * - `aircraft3d` (read at start): `{ governor }` false switches the 3D governor off (the map lab), and `{ liveries }`
  *   (M9, Mapa de posiciones) dresses the 3D aircraft in their airlines' liveries and draws the other traffic on the
  *   ground near the airfield in 3D too (core/aircraft3d.js: createAircraft3dController).
@@ -629,6 +633,7 @@ const OccMapView = forwardRef(function OccMapView({
   interactive = true,
   basemap = true,
   mapOptions,
+  followLimits = null,
   testId = 'occ-map-host',
   labels,
   fallbackItems,
@@ -781,6 +786,7 @@ const OccMapView = forwardRef(function OccMapView({
       stands, attached, standFeatures, presetStands: presetStands ?? EMPTY, flights, selection, onSelect, onPick,
       onMapClick, placing: placingNow, placingStand, onCancelPlacing, onCameraChange, isShortcutBlocked, pitchMode,
       padding, targets, urlView, urlTerminal, defaultView, initialCamera, basemap, overlays, interactive, mapOptions, views,
+      followLimits,
       layout, t, language, theme, resumeCameraRef,
       locale: engineLocale(t, labels?.map),
       aircraftDataLabel: t('attribution.aircraftData'),
@@ -832,6 +838,23 @@ const OccMapView = forwardRef(function OccMapView({
     setFollow3dUi(null);
   }, [followSubject]);
 
+  // A map fixed on the airport (M9, `followLimits`): following lets the held camera go, and the end of it holds the
+  // camera again with the limits of `mapOptions`, once the move on the way (the flight back, a drag) is over.
+  const releaseCamera = useCallback(() => {
+    const applied = appliedRef.current;
+    const limits = latest.current?.followLimits;
+    if (!limits || applied.limitsReleased) return;
+    applied.limitsReleased = true;
+    engineRef.current?.setCameraLimits(limits);
+  }, []);
+  const holdCamera = useCallback(() => {
+    const applied = appliedRef.current;
+    if (!applied.limitsReleased) return;
+    applied.limitsReleased = false;
+    const { maxBounds = null, minZoom = null, maxZoom = null } = latest.current?.mapOptions ?? {};
+    engineRef.current?.setCameraLimits({ maxBounds, minZoom, maxZoom }, { afterMove: true });
+  }, []);
+
   const stopFollowing = useCallback(({ notice = false, restore = false } = {}) => {
     const applied = appliedRef.current;
     const state = applied.follow;
@@ -839,8 +862,9 @@ const OccMapView = forwardRef(function OccMapView({
     endFollow3d({ restore });
     if (state) Object.assign(state, { on: false, engage: false, transition: false });
     if (notice && wasOn) setFollowNotice({ name: followedName(applied.chosen) });
+    holdCamera();
     if (latest.current?.urlFollow) latest.current.setFollow(false);
-  }, [endFollow3d]);
+  }, [endFollow3d, holdCamera]);
 
   // The camera that frames `bounds` in the area the insets leave free, plus `extra` pixels on every side.
   const cameraFor = useCallback((bounds, extra = 0) => {
@@ -1570,6 +1594,7 @@ const OccMapView = forwardRef(function OccMapView({
     const state = applied.follow;
     const item = applied.chosen;
     if (!engine?.map || !state?.on || !item || engine.isInteracting()) return;
+    releaseCamera();
     const current = engine.getCamera();
     if (!current) return;
     // «Seguir en 3D» (CN-30): the orbit round the aircraft instead of the framing.
@@ -1621,7 +1646,7 @@ const OccMapView = forwardRef(function OccMapView({
     const next = dtMs > 0 ? stepCamera(current, target, dtMs / 1_000) : target;
     jump(next);
     state.converged = settledAt(next, target);
-  }, [follow3dFrame]);
+  }, [follow3dFrame, releaseCamera]);
 
   // Whether follow mode still has the camera to move: while it engages or has not reached the aircraft's framing.
   const followAnimating = useCallback(() => {
@@ -1698,7 +1723,7 @@ const OccMapView = forwardRef(function OccMapView({
       fullSampleAt: null });
     // The chosen aircraft as the last write drew it, its route as the frames last wrote it, and follow mode (PR M6).
     Object.assign(appliedRef.current, { chosen: null, routeFrame: null, follow: { ...FOLLOW_OFF }, followMoving: false,
-      followFrameAt: null, followOnScreenAt: null, follow3d: { ...FOLLOW_3D_OFF } });
+      followFrameAt: null, followOnScreenAt: null, follow3d: { ...FOLLOW_3D_OFF }, limitsReleased: false });
     const motionState = () => ({ available: true, paused: motionClock.isPaused?.() === true,
       pausedAt: motionClock.pausedAt?.() ?? null, dataAt: latest.current?.traffic?.motion?.dataAt?.() ?? null });
     store.set({ motion: loop ? motionState() : MOTION_OFF });
@@ -2026,13 +2051,14 @@ const OccMapView = forwardRef(function OccMapView({
     if (!followingNow) {
       Object.assign(state, { on: false, engage: false, transition: false });
       endFollow3d({ restore: false });
+      holdCamera();
       return;
     }
     if (state.on && state.key === selectionKey) return;
     Object.assign(state, { ...FOLLOW_OFF, on: true, key: selectionKey, engage: true, converged: false });
     setFollowNotice(null);
     applied.loop?.wake();
-  }, [followingNow, selectionKey, endFollow3d]);
+  }, [followingNow, selectionKey, endFollow3d, holdCamera]);
 
   // A selection that no longer names an aircraft (cleared, or a stand chosen) leaves nothing to follow.
   const lastSelectionRef = useRef(undefined);
