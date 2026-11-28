@@ -280,8 +280,14 @@ describe('OCC map style', () => {
       expect(layer.metadata, layer.id).toEqual({ 'occ:group': 'airfield', 'occ:maxThreshold': 'airfield', 'occ:slot': 'airfield' });
       expect(layer, layer.id).not.toHaveProperty('maxzoom');
     }
+    // The 3D buildings of the tiles end there too (M9, 2026-11-27): from the airfield on, the airport's own raised
+    // terminals and jet bridges (style/airfieldLayers.js) take over, and the tile buildings would rise through them.
+    const tileBuildings = style.layers.find(layer => layer.id === 'building-3d');
+    expect(tileBuildings.metadata).toEqual({ 'occ:group': 'buildings-3d', 'occ:maxThreshold': 'airfield', 'occ:slot': 'extrusions' });
+    expect(tileBuildings.minzoom).toBe(13);
     // Nothing else of the base map names a threshold: the land, the roads and the labels keep every zoom.
-    const others = style.layers.filter(layer => layer['source-layer'] !== 'aeroway' && !layer.id.startsWith('slot-'));
+    const others = style.layers.filter(layer => layer['source-layer'] !== 'aeroway' && layer.id !== 'building-3d'
+      && !layer.id.startsWith('slot-'));
     expect(others.filter(layer => layer.metadata['occ:minThreshold'] || layer.metadata['occ:maxThreshold'])).toEqual([]);
     // An overlay may start at that threshold too.
     const overlay = {

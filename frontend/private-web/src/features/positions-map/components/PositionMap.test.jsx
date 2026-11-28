@@ -148,6 +148,10 @@ describe('PositionMap on the map engine', () => {
     expect(within(screen.getByTestId('map-preset-switcher')).getAllByRole('button')).toHaveLength(4);
     expect(view.map.options.maxBounds).toBeUndefined();
     expect(view.map.options.minZoom).toBe(4.5);
+    // Nor the airport in 3D.
+    loadStyle(view.map);
+    expect(view.map.getLayer('occ-airfield-building-3d')).toBeFalsy();
+    expect(view.map.getSource('occ-airfield-structures')).toBeFalsy();
     expect(screen.queryByTestId('map-layers-menu')).not.toBeInTheDocument();
     // The default view is not written in the URL.
     expect(window.location.search).toBe('?stationId=s-1');
@@ -424,6 +428,12 @@ describe('PositionMap fixed on PUJ (M9, Mapa de posiciones)', () => {
     expect(map.options).toMatchObject({ maxBounds: lock.maxBounds, minZoom: 13 });
     // The default view is not written in the URL.
     expect(window.location.search).toBe('?stationId=s-1');
+    // The airport in 3D: the raised terminals, the jet bridges and the taxiway pavement, from the MDPC dataset.
+    loadStyle(map);
+    for (const id of ['occ-airfield-taxiway-pavement', 'occ-airfield-building-3d', 'occ-airfield-jet-bridge']) {
+      expect(map.getLayer(id), id).toBeTruthy();
+    }
+    expect(map.getSource('occ-airfield-structures').data.features.length).toBeGreaterThan(0);
   });
 
   it('offers only Aeródromo and Rampa: 1 and 2 do nothing, and a `view=` of another view is ignored', () => {
