@@ -223,14 +223,20 @@ import {
   isOccAircraftTrack,
   isOccAirPicture,
   isOccMapFlights,
+  isOccRadarFrames,
+  isOccRegionWeather,
+  isOccSigmets,
+  isOccWindGrid,
   normalizedOccAerodromeWeatherQuery,
   normalizedOccAircraftTrackQuery,
   normalizedOccAirPictureQuery,
   normalizedOccMapFlightsQuery,
+  normalizedOccRegionWeatherQuery,
   type OccAerodromeWeatherQuery,
   type OccAircraftTrackQuery,
   type OccAirPictureQuery,
   type OccMapFlightsQuery,
+  type OccRegionWeatherQuery,
 } from "./occMap";
 import {
   isOccFlightFeedView,
@@ -453,6 +459,10 @@ import {
   getGetOccAircraftTrackUrl,
   getGetOccMapFlightsUrl,
   getGetOccAerodromeWeatherUrl,
+  getGetOccRegionWeatherUrl,
+  getGetOccRegionSigmetsUrl,
+  getGetOccRegionWindUrl,
+  getGetOccRegionRadarUrl,
   getGetOccAircraftReferenceUrl,
   getGetOccAirportRoutesUrl,
   getGetOccAirportDelaysUrl,
@@ -659,6 +669,10 @@ import {
   type OccAircraftTrackResponse,
   type OccMapFlightsResponse,
   type OccAerodromeWeatherResponse,
+  type OccRegionWeatherResponse,
+  type OccSigmetsResponse,
+  type OccWindGridResponse,
+  type OccRadarFramesResponse,
   type OccAircraftReferenceResponse,
   type OccAirportRoutesResponse,
   type OccAirportDelaysResponse,
@@ -1349,6 +1363,29 @@ export interface ElevantApiClient {
    */
   getOccAerodromeWeather(query: OccAerodromeWeatherQuery, options?: GetOccMapOptions):
     Promise<OccAerodromeWeatherResponse>;
+  /**
+   * The latest METAR and TAF of every airport of the station's region, nearest first, from aviationweather.gov through
+   * the API (plan M6), for the same readers as the map. The query is checked before it is sent. The state comes in the
+   * 200 (`Live`, `Stale`, `Unavailable`, `Disabled`) with its reason, the pace to ask again at (`refreshAfterSeconds`, 5
+   * to 15 minutes) and the credit; a station whose airport has no region answers `not_found`.
+   */
+  getOccRegionWeather(query: OccRegionWeatherQuery, options?: GetOccMapOptions): Promise<OccRegionWeatherResponse>;
+  /**
+   * The international SIGMETs over the station's region still valid at the server's time, one per area, each with its
+   * closed `[longitude, latitude]` ring (plan M6, aviationweather.gov). State, reason, pace and credit as the region's
+   * weather.
+   */
+  getOccSigmets(query: OccRegionWeatherQuery, options?: GetOccMapOptions): Promise<OccSigmetsResponse>;
+  /**
+   * The wind 10 m above the ground on a coarse grid over the station's region, in knots (plan M6, Open-Meteo, whose free
+   * tier is non-commercial). State, reason, pace (5 to 60 minutes) and credit as the region's weather.
+   */
+  getOccWindGrid(query: OccRegionWeatherQuery, options?: GetOccMapOptions): Promise<OccWindGridResponse>;
+  /**
+   * The latest radar scans over the station's region, oldest first, as https tile addresses (plan M6, San Juan's NEXRAD
+   * through the Iowa Environmental Mesonet). State, reason, pace and credit as the region's weather.
+   */
+  getOccRadarFrames(query: OccRegionWeatherQuery, options?: GetOccMapOptions): Promise<OccRadarFramesResponse>;
   /**
    * An aircraft by its registration from AeroDataBox through the API (ADR-0028, note of 15 November 2026), for the readers
    * of the OCC map. The API keeps it a day and caps what it spends; the state comes in the 200 (`Available`,
@@ -6997,6 +7034,32 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       const params = normalizedOccAerodromeWeatherQuery(query);
       const result = await execute(getGetOccAerodromeWeatherUrl(params), { ...options, method: "GET" }, true);
       if (result.status !== 200 || !isOccAerodromeWeather(result.data, params.stationId))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getOccRegionWeather(query: OccRegionWeatherQuery, options?: GetOccMapOptions) {
+      const params = normalizedOccRegionWeatherQuery(query);
+      const result = await execute(getGetOccRegionWeatherUrl(params), { ...options, method: "GET" }, true);
+      if (result.status !== 200 || !isOccRegionWeather(result.data, params.stationId))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getOccSigmets(query: OccRegionWeatherQuery, options?: GetOccMapOptions) {
+      const params = normalizedOccRegionWeatherQuery(query);
+      const result = await execute(getGetOccRegionSigmetsUrl(params), { ...options, method: "GET" }, true);
+      if (result.status !== 200 || !isOccSigmets(result.data, params.stationId)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getOccWindGrid(query: OccRegionWeatherQuery, options?: GetOccMapOptions) {
+      const params = normalizedOccRegionWeatherQuery(query);
+      const result = await execute(getGetOccRegionWindUrl(params), { ...options, method: "GET" }, true);
+      if (result.status !== 200 || !isOccWindGrid(result.data, params.stationId)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getOccRadarFrames(query: OccRegionWeatherQuery, options?: GetOccMapOptions) {
+      const params = normalizedOccRegionWeatherQuery(query);
+      const result = await execute(getGetOccRegionRadarUrl(params), { ...options, method: "GET" }, true);
+      if (result.status !== 200 || !isOccRadarFrames(result.data, params.stationId))
         throw malformedResponse(result.status);
       return result.data;
     },

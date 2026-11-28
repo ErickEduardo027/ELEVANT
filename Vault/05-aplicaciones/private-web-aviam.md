@@ -2680,7 +2680,12 @@ claro.
 
 Lo que no cambia: la API, el OpenAPI, el cliente compartido y la CSP, que
 sigue permitiendo NASA GIBS e Iowa Mesonet; el origen de Iowa Mesonet sale en
-un cambio aparte cuando nada lo lea.
+un cambio aparte cuando nada lo lea. *Posterior a esta nota (carril M6 del plan
+de mapas, nota del 27 de noviembre de 2026 en
+[ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)):* ese pendiente ya no
+aplica, porque las teselas del radar de la región que leerá Private Web salen
+de ese origen, que se queda en la CSP
+([Integraciones externas](../04-arquitectura/integraciones-externas.md#clima-de-la-región-awc-open-meteo-e-iowa-environmental-mesonet)).
 
 Límites: la plataforma de la consola actual no recibe el clima, y su panel de
 meteorología todavía dice que su METAR viene de IEM, aunque ya llega de la API.

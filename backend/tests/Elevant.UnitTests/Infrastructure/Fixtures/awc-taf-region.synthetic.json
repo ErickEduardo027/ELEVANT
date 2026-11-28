@@ -1,0 +1,131 @@
+[
+  {
+    "tafId": 900000401,
+    "icaoId": "MDPC",
+    "issueTime": "2026-11-13T11:00:00.000Z",
+    "validTimeFrom": 1794571200,
+    "validTimeTo": 1794657600,
+    "rawTAF": "TAF MDPC 131100Z 1312/1412 09012KT 9999 FEW020 SCT040 TEMPO 1316/1320 10015G25KT 4000 SHRA BKN015",
+    "mostRecent": 1,
+    "name": "Punta Cana Intl, DR",
+    "fcsts": [
+      {
+        "timeFrom": 1794571200,
+        "timeTo": 1794657600,
+        "fcstChange": null,
+        "wdir": 90,
+        "wspd": 12,
+        "visib": "6+",
+        "clouds": [
+          { "cover": "FEW", "base": 2000 },
+          { "cover": "SCT", "base": 4000 }
+        ]
+      },
+      {
+        "timeFrom": 1794585600,
+        "timeTo": 1794600000,
+        "fcstChange": "TEMPO",
+        "wdir": 100,
+        "wspd": 15,
+        "wgst": 25,
+        "visib": 2.49,
+        "wxString": "SHRA",
+        "clouds": [
+          { "cover": "BKN", "base": 1500 }
+        ]
+      }
+    ]
+  },
+  {
+    "tafId": 900000402,
+    "icaoId": "MDSD",
+    "issueTime": 1794567600,
+    "validTimeFrom": 1794571200,
+    "validTimeTo": 1794657600,
+    "rawTAF": "TAF MDSD 131100Z 1312/1412 VRB03KT 4000 -RA BR BKN010 BECMG 1316/1318 09010KT 9999 SCT020",
+    "mostRecent": 1,
+    "name": "Santo Domingo/Las Americas Intl, DR",
+    "fcsts": [
+      {
+        "timeFrom": 1794571200,
+        "timeTo": 1794585600,
+        "fcstChange": null,
+        "wdir": "VRB",
+        "wspd": 3,
+        "visib": 2.49,
+        "wxString": "-RA BR",
+        "clouds": [
+          { "cover": "BKN", "base": 1000 }
+        ]
+      },
+      {
+        "timeFrom": 1794585600,
+        "timeTo": 1794657600,
+        "fcstChange": "BECMG",
+        "wdir": 90,
+        "wspd": 10,
+        "visib": "6+",
+        "clouds": [
+          { "cover": "SCT", "base": 2000 }
+        ]
+      }
+    ]
+  },
+  {
+    "tafId": 900000403,
+    "icaoId": "TJSJ",
+    "issueTime": 1794556800,
+    "validTimeFrom": 1794560400,
+    "validTimeTo": 1794646800,
+    "rawTAF": "TAF TJSJ 130800Z 1309/1409 07012KT P6SM SCT025",
+    "mostRecent": 0,
+    "name": "San Juan/Luis Munoz Marin Intl, PR",
+    "fcsts": []
+  },
+  {
+    "tafId": 900000404,
+    "icaoId": "TJSJ",
+    "issueTime": "2026-11-13T14:30:00Z",
+    "validTimeFrom": 1794582000,
+    "validTimeTo": 1794668400,
+    "rawTAF": "TAF AMD TJSJ 131430Z 1315/1415 07015G25KT P6SM BKN025",
+    "mostRecent": 1,
+    "name": "San Juan/Luis Munoz Marin Intl, PR",
+    "fcsts": [
+      {
+        "timeFrom": 1794582000,
+        "timeTo": 1794668400,
+        "fcstChange": null,
+        "wdir": 70,
+        "wspd": 15,
+        "wgst": 25,
+        "visib": "6+",
+        "clouds": [
+          { "cover": "BKN", "base": 2500 }
+        ]
+      }
+    ]
+  },
+  {
+    "tafId": 900000405,
+    "icaoId": "MDCY",
+    "issueTime": 1794546000,
+    "validTimeFrom": 1794549600,
+    "validTimeTo": 1794585600,
+    "rawTAF": "TAF MDCY 130500Z 1306/1316 08010KT 9999 SCT020",
+    "mostRecent": 1,
+    "name": "Samana/El Catey Intl, DR",
+    "fcsts": []
+  },
+  {
+    "tafId": 900000406,
+    "icaoId": "KMIA",
+    "issueTime": 1794567600,
+    "validTimeFrom": 1794571200,
+    "validTimeTo": 1794679200,
+    "rawTAF": "TAF KMIA 131120Z 1312/1418 12010KT P6SM FEW025",
+    "mostRecent": 1,
+    "name": "Miami Intl, FL, US",
+    "fcsts": []
+  }
+]

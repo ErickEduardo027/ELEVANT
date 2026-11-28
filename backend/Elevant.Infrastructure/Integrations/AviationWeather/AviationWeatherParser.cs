@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Text.Json;
 using Elevant.Application.Abstractions.Operations;
@@ -92,6 +93,46 @@ public static class AviationWeatherParser
     /// </summary>
     public static (AviationWeatherReadKind Kind, AerodromeTaf? Report) ParseTaf(JsonElement root, string icao) =>
         Latest(root, icao, Taf, taf => taf.IssuedAt);
+
+    /// <summary>
+    /// The latest METAR of each airport of <paramref name="icaoCodes"/> in one answer of <c>metar?ids=A,B,…&amp;format=json</c>
+    /// (plan M6), by ICAO code in upper case, read as <see cref="ParseMetar"/> reads one airport's. An airport without a
+    /// readable report is left out and the others are kept; the answer cannot be read only when it is not a list, or when
+    /// it has reports of those airports and none of them can be read. Reports of other airports are ignored.
+    /// </summary>
+    public static (AviationWeatherReadKind Kind, IReadOnlyDictionary<string, AerodromeMetar>? Reports) ParseMetars(
+        JsonElement root, IReadOnlyCollection<string> icaoCodes) =>
+        LatestOfEach(root, icaoCodes, Metar, metar => metar.ObservedAt);
+
+    /// <summary>
+    /// The latest TAF of each airport of <paramref name="icaoCodes"/> in one answer of <c>taf?ids=A,B,…&amp;format=json</c>
+    /// (plan M6), by ICAO code in upper case, read as <see cref="ParseTaf"/> reads one airport's and with the rules of
+    /// <see cref="ParseMetars"/> for the airports without one.
+    /// </summary>
+    public static (AviationWeatherReadKind Kind, IReadOnlyDictionary<string, AerodromeTaf>? Reports) ParseTafs(
+        JsonElement root, IReadOnlyCollection<string> icaoCodes) =>
+        LatestOfEach(root, icaoCodes, Taf, taf => taf.IssuedAt);
+
+    private static (AviationWeatherReadKind Kind, IReadOnlyDictionary<string, T>? Reports) LatestOfEach<T>(JsonElement root,
+        IReadOnlyCollection<string> icaoCodes, Func<JsonElement, T?> read, Func<T, DateTimeOffset> timeOf) where T : class
+    {
+        ArgumentNullException.ThrowIfNull(icaoCodes);
+        if (root.ValueKind != JsonValueKind.Array) return (AviationWeatherReadKind.Unreadable, null);
+        var wanted = icaoCodes.Select(code => code.Trim().ToUpperInvariant()).ToHashSet(StringComparer.Ordinal);
+        var found = false;
+        var latest = new Dictionary<string, T>(StringComparer.Ordinal);
+        foreach (var item in root.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object || Text(item, "icaoId")?.ToUpperInvariant() is not { } icao ||
+                !wanted.Contains(icao))
+                continue;
+            found = true;
+            if (read(item) is { } report && (!latest.TryGetValue(icao, out var kept) || timeOf(report) > timeOf(kept)))
+                latest[icao] = report;
+        }
+        if (latest.Count > 0) return (AviationWeatherReadKind.Report, new ReadOnlyDictionary<string, T>(latest));
+        return (found ? AviationWeatherReadKind.Unreadable : AviationWeatherReadKind.NoReport, null);
+    }
 
     private static (AviationWeatherReadKind Kind, T? Report) Latest<T>(JsonElement root, string icao,
         Func<JsonElement, T?> read, Func<T, DateTimeOffset> timeOf) where T : class
@@ -245,7 +286,7 @@ public static class AviationWeatherParser
         Text(item, property) is { } text && text.Length <= maxLength ? text : null;
 
     /// <summary>An instant given as Unix seconds or as an ISO 8601 text, in UTC; null when it is neither.</summary>
-    private static DateTimeOffset? Instant(JsonElement item, string property)
+    internal static DateTimeOffset? Instant(JsonElement item, string property)
     {
         if (!item.TryGetProperty(property, out var value)) return null;
         if (Number(value) is { } seconds)
@@ -260,23 +301,23 @@ public static class AviationWeatherParser
     }
 
     /// <summary>The text of a property, trimmed; null when it is missing, not a text or blank.</summary>
-    private static string? Text(JsonElement item, string property) =>
+    internal static string? Text(JsonElement item, string property) =>
         item.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String &&
         value.GetString()?.Trim() is { Length: > 0 } text
             ? text
             : null;
 
-    private static double? Number(JsonElement item, string property) =>
+    internal static double? Number(JsonElement item, string property) =>
         item.TryGetProperty(property, out var value) ? Number(value) : null;
 
     /// <summary>A finite number; null for anything else.</summary>
-    private static double? Number(JsonElement value) =>
+    internal static double? Number(JsonElement value) =>
         value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number) && double.IsFinite(number)
             ? number
             : null;
 
     /// <summary>The value rounded to a whole number when it is from <paramref name="minimum"/> to <paramref name="maximum"/>.</summary>
-    private static int? Whole(double? value, int minimum, int maximum) =>
+    internal static int? Whole(double? value, int minimum, int maximum) =>
         value is { } number && number >= minimum && number <= maximum
             ? (int)Math.Round(number, MidpointRounding.AwayFromZero)
             : null;
