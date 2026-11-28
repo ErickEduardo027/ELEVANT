@@ -15,7 +15,7 @@ import { trafficOverlay } from './trafficLayers';
 import {
   AWC_ATTRIBUTION, LOOP_BANDS, LOOP_FRAME_COUNT, RADAR_FRAME_COUNT, RADAR_PLACEHOLDER_TILE, SIGMET_LAYER_IDS,
   SIGMET_SOURCE, STATION_LAYER_IDS, STATIONS_SOURCE, WEATHER_GROUPS, WEATHER_LEGEND_KINDS, flightCategoryOf,
-  frameOpacities, loopBandAt, loopFrameIndex, loopFrameTimes, loopFrames, loopLayerId, loopPaint, loopSourceId,
+  frameOpacities, loopBandAt, loopFrameIndex, loopFrameTimes, loopFrameTimesFrom, loopFrames, loopLayerId, loopPaint, loopSourceId,
   loopSpanWords, loopTileAt, radarFrames, radarLayerId, radarSourceId, sigmetFeatures, sigmetHazardOf, stationFeatures,
   wantedRegional, weatherLayerNotes, weatherOnScreen, weatherOverlay,
 } from './weatherLayers';
@@ -134,6 +134,29 @@ describe('regional weather: the loops', () => {
     expect(frames.at(-1).tiles).toEqual([loopTileAt('geocolor', LATEST_GOES)]);
     expect(loopFrames({ band: 'radar', latestTime: LATEST_GOES })).toEqual([]);
     expect(loopFrames({ band: 'ir' })).toEqual([]);
+  });
+
+  // Hotfix of 2026-11-28: GeoColor's domain read from GIBS at 17:20 UTC had no 16:00 and nothing after 16:20, while the
+  // infrared's latest image was 16:50; the frames are the latest six GeoColor has.
+  it('pins the latest six images GIBS has of the band, oldest first, skipping the holes of its domain', () => {
+    const geocolor = ['2026-11-28T16:20:00Z', '2026-11-28T15:10:00Z', '2026-11-28T15:20:00Z', '2026-11-28T15:30:00Z',
+      '2026-11-28T15:40:00Z', '2026-11-28T15:50:00Z', '2026-11-28T16:10:00Z', '2026-11-28T16:10:00Z'];
+    const expected = ['2026-11-28T15:20:00Z', '2026-11-28T15:30:00Z', '2026-11-28T15:40:00Z', '2026-11-28T15:50:00Z',
+      '2026-11-28T16:10:00Z', '2026-11-28T16:20:00Z'];
+    expect(loopFrameTimesFrom(geocolor)).toEqual(expected);
+    const frames = loopFrames({ band: 'geocolor', times: geocolor });
+    expect(frames.map(frame => frame.time)).toEqual(expected);
+    expect(frames.map(frame => frame.tiles[0])).toEqual(expected.map(time => loopTileAt('geocolor', time)));
+    // `times` wins over a `latestTime`: GeoColor never borrows the infrared's time.
+    expect(loopFrames({ band: 'geocolor', times: geocolor, latestTime: '2026-11-28T16:50:00Z' })
+      .map(frame => frame.time)).toEqual(expected);
+    // Fewer images than frames repeat the oldest, so every source is pinned to an image GIBS has.
+    expect(loopFrameTimesFrom(['2026-11-28T16:20:00Z', '2026-11-28T16:10:00Z'])).toEqual([
+      ...Array(5).fill('2026-11-28T16:10:00Z'), '2026-11-28T16:20:00Z']);
+    expect(loopFrameTimesFrom(['2026-11-28', 'mañana', null, '2026-11-28T16:20'])).toEqual([]);
+    expect(loopFrameTimesFrom([])).toEqual([]);
+    expect(loopFrameTimesFrom(null)).toEqual([]);
+    expect(loopFrames({ band: 'geocolor', times: [] })).toEqual([]);
   });
 
   it('runs GeoColor while the sun is up at Punta Cana and the infrared at night', () => {

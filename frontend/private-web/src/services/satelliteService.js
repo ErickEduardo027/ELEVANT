@@ -55,15 +55,15 @@ export async function loadImergImageTime({ signal } = {}) {
 // DescribeDomains names them for a window of time, as periods `start/end/PTnM` and single instants separated by commas.
 // GeoColor lags the infrared by about half an hour and has holes, so the loop asks each band for its own list.
 const GIBS_WMTS = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best';
-const GIBS_LAYER_NAME = /^[A-Za-z0-9_]+$/;
+const GIBS_LAYER_NAME = /^[A-Za-z0-9_-]+$/;
 const GIBS_MATRIX = /^GoogleMapsCompatible_Level\d{1,2}$/;
 const GIBS_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 const GIBS_PERIOD = /^PT(?=\d)(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/;
 const DOMAIN_ELEMENT = /<(?:[A-Za-z][\w.-]*:)?Domain>([^<]*)<\/(?:[A-Za-z][\w.-]*:)?Domain>/;
 /** The most instants a domain may name; past it only the latest are kept. */
 export const MAX_DOMAIN_INSTANTS = 200;
-// The most instants one period may expand into before the answer is taken as malformed.
-const MAX_PERIOD_STEPS = 10_000;
+// The most steps of one period that are walked (its latest ones).
+const MAX_PERIOD_STEPS = 1_000;
 const MIN_PERIOD_MS = 60_000;
 
 const instantOf = ms => `${new Date(ms).toISOString().slice(0, 19)}Z`;
@@ -107,10 +107,10 @@ export function parseGibsDomain(xml, { fromMs = Number.NEGATIVE_INFINITY, toMs =
     const end = parseInstant(parts[1]);
     const step = periodMs(parts[2]);
     if (!Number.isFinite(start) || !Number.isFinite(end) || !Number.isFinite(step) || end < start) return null;
-    // Only the steps inside the window are walked: a period that began long before it costs nothing.
-    const first = Math.max(0, Math.ceil((fromMs - start) / step));
+    // Only the steps inside the window are walked, and of a longer period only its latest ones: a period that began
+    // long before the window costs nothing.
     const last = Math.floor((Math.min(end, toMs) - start) / step);
-    if (last - first > MAX_PERIOD_STEPS) return null;
+    const first = Math.max(0, Math.ceil((fromMs - start) / step), last - MAX_PERIOD_STEPS);
     for (let index = first; index <= last; index += 1) keep(start + index * step);
   }
   const sorted = [...instants].sort((a, b) => a - b);
