@@ -13,6 +13,14 @@ const KIND_LABELS = Object.freeze({
   otherGround: 'legend.traffic.otherGround',
 });
 
+// PR M5: in 3D, up close, an AVIAM aircraft wears its airline's livery and other traffic keeps its plain colour
+// (aircraft/instancePlan.js: liveries); other traffic on the ground stays 2D.
+const KIND_3D_HINTS = Object.freeze({
+  aviamArrival: 'legend.traffic.aviam3dHint',
+  aviamDeparture: 'legend.traffic.aviam3dHint',
+  other: 'legend.traffic.other3dHint',
+});
+
 const TRAIL_ENTRIES = Object.freeze({
   live: { key: 'trail', label: 'legend.traffic.trail' },
   estimated: { key: 'trailEstimated', label: 'legend.traffic.trailEstimated' },
@@ -45,14 +53,17 @@ function tagEntry(tag, t, language) {
  * «Recorrido observado», «Trayecto estimado», «Ruta prevista» and its marked points with a short hint. The swatch names
  * what ui/TrafficSwatch.jsx draws: the solid and hollow ELEVANT silhouettes, the small muted other traffic, the plate,
  * the ring, the dimmed aircraft, the two trails and the route's solid, faint and dashed lines and its ring.
+ * With `models3d` (the map in 3D), a kind its 3D aircraft draw says in a short hint whether they wear a livery.
  * Nothing on screen, no entry.
  */
-export function trafficLegendEntries({ kinds = [], tags = [], trails = [], route = [] } = {}, { language = 'es' } = {}) {
+export function trafficLegendEntries({ kinds = [], tags = [], trails = [], route = [] } = {},
+  { language = 'es', models3d = false } = {}) {
   const t = createTranslator(mapMessages, language);
   const shownTrails = trails.filter(kind => Object.hasOwn(TRAIL_ENTRIES, kind));
   return [
     ...kinds.filter(kind => Object.hasOwn(KIND_LABELS, kind))
-      .map(kind => ({ key: kind, swatch: kind, label: t(KIND_LABELS[kind]), hint: null, span: 2 })),
+      .map(kind => ({ key: kind, swatch: kind, label: t(KIND_LABELS[kind]),
+        hint: models3d && Object.hasOwn(KIND_3D_HINTS, kind) ? t(KIND_3D_HINTS[kind]) : null, span: 2 })),
     ...tags.map(tag => {
       const entry = tagEntry(tag, t, language);
       return entry === null ? null : { key: tag, swatch: tag, ...entry, span: 2 };

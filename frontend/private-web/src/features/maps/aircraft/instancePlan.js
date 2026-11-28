@@ -253,7 +253,8 @@ const byId = (a, b) => {
  * - colours (`colors` option, AIRCRAFT_3D_COLORS by default): the chosen aircraft (`selectedId`) in `selected`, AVIAM
  *   aircraft in `aviam`, other traffic in `other`, shadows in `shadow`;
  * - PR M5: `liveries` holds per instance the id of the livery a type's model wears up close (aircraft/liveries.js:
- *   resolveLivery), null for the chosen aircraft (it keeps the selection's accent) and for a shadow; `gear` 1 where the
+ *   resolveLivery) for an AVIAM aircraft, null for the chosen aircraft (it keeps the selection's accent), for other
+ *   traffic (it keeps its plain colour, so the livery itself marks AVIAM's aircraft) and for a shadow; `gear` 1 where the
  *   landing gear is down (on a stand, on the ground, or as aircraft/attitude.js eased it) and 0 where it is up, a
  *   shadow as its aircraft;
  * - `spec` and `approximate` come from resolveAircraftType: a type the table lacks takes its category's generic
@@ -301,12 +302,14 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
     const attitude = entry.onStand === true ? null : attitudeOf(entry.item.id);
     const z = finite(attitude?.heightM) ? attitude.heightM : entry.z;
     const selected = entry.item.id === selectedId;
-    // PR M5: the livery its type's model wears up close (the chosen one keeps the selection's accent), and its gear.
+    // PR M5: the livery its type's model wears up close, and its gear. Only an AVIAM aircraft wears its airline's
+    // livery: the chosen one keeps the selection's accent and other traffic its plain colour, so the 3D picture still
+    // tells AVIAM's aircraft from the rest (contracts 2.4; ADR-0043, note of 2026-11-28).
     const down = entry.onStand === true || (typeof attitude?.gearDown === 'boolean' ? attitude.gearDown
       : gearDown({ heightM: z, onGround: entry.item.onGround === true, phase: entry.item.phase ?? null,
         vrateMs: finite(entry.item.vrateMs) ? entry.item.vrateMs : null }));
     group.members.push({ id: entry.item.id, x, y, z, headingDeg: heading, onStand: entry.onStand === true,
-      livery: selected ? null : resolveLivery(entry.item).id, gearDown: down,
+      livery: selected || !entry.aviam ? null : resolveLivery(entry.item).id, gearDown: down,
       pitchDeg: finite(attitude?.pitchDeg) ? attitude.pitchDeg : 0, bankDeg: finite(attitude?.bankDeg) ? attitude.bankDeg : 0,
       pivot: pivotOf(resolved.spec),
       colour: selected ? colors.selected : colors[entry.aviam ? 'aviam' : 'other'] });

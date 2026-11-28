@@ -2571,7 +2571,10 @@ usan modelos de terceros» para los modelos 3D.
   marca de su titular, en un solo color, como uso demostrativo y sin
   afiliación
   ([`logos/README.md`](../../frontend/private-web/public/models/liveries/logos/README.md));
-  las demás, su código IATA. El tren es el procedural de la app.
+  las demás, su código IATA. El tren es el procedural de la app. Solo los
+  aviones de AVIAM llevan librea; el resto del tráfico conserva su color tenue
+  y el elegido su acento, y la leyenda lo dice en 3D (nota del 28 de noviembre
+  en ADR-0043). En L1 las sombras siguen con el modelo procedural.
 - **«Créditos y licencias».** Al final de la atribución de cada mapa OCC hay
   un enlace que abre un diálogo
   ([`MapCreditsDialog.jsx`](../../frontend/private-web/src/features/maps/ui/MapCreditsDialog.jsx),

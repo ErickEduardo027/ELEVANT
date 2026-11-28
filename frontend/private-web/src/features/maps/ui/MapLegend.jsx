@@ -353,7 +353,7 @@ function WideEntry({ swatch, name, hint }) {
 export default function MapLegend({ stands, bounds = null, defaultOpen = true, foldKey = null, className = '' }) {
   const {
     standsOnScreen, chipsOnScreen, standMarksOnScreen, flightsOnScreen, airfieldOnScreen, trafficOnScreen, layers,
-    activeView, referencesOnScreen, layersMenuOpen = false, setLayersMenuOpen, follow,
+    activeView, referencesOnScreen, layersMenuOpen = false, setLayersMenuOpen, follow, view3d,
   } = useOccMap();
   const { t, language } = useTranslation(mapMessages);
   const [open, setOpen] = useState(defaultOpen);
@@ -386,7 +386,10 @@ export default function MapLegend({ stands, bounds = null, defaultOpen = true, f
     })
     : legendEntries({ stands, bounds })), [stands, bounds, standsOnScreen, chipsOnScreen, standMarksOnScreen, flightsOnScreen, airfieldOnScreen]);
   // The traffic on screen (PR M5): the aircraft kinds, their tags and their trails.
-  const traffic = useMemo(() => trafficLegendEntries(trafficOnScreen, { language }), [trafficOnScreen, language]);
+  // In 3D (PR M5) its kinds say whether their 3D aircraft wear a livery.
+  const models3d = view3d?.on === true;
+  const traffic = useMemo(() => trafficLegendEntries(trafficOnScreen, { language, models3d }),
+    [trafficOnScreen, language, models3d]);
   // The references on screen (PR M8).
   const references = useMemo(() => referenceLegendEntries(referencesOnScreen ?? {}, { language }),
     [referencesOnScreen, language]);

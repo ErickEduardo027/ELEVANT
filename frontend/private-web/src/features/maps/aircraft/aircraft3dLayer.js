@@ -22,9 +22,10 @@ import { detailLevel, instancedLevel, metresPerPixel, wantsL1 } from './modelLev
 //   light from high up, so the models still read; the civil twilight blends the two.
 // - Models (PR M5, aircraft/modelLevels.js): a type whose aircraft are drawn large enough on screen and that has a 3D
 //   model (aircraft/gltfModels.js, read on demand from public/models/aircraft/) draws its L1 model instead of its
-//   procedural one, still one InstancedMesh, in each airline's livery (aircraft/liveryMaterial.js) with the app's gear
-//   folded per instance; the detailed aircraft draws its type's L2 model with the app's gear and lights. Until a model
-//   loads, and for a type without one, the procedural model stays.
+//   procedural one, still one InstancedMesh, in each AVIAM aircraft's airline livery (aircraft/liveryMaterial.js; other
+//   traffic keeps its plain colour) with the app's gear folded per instance; its shadows stay in its procedural model,
+//   in a second mesh, so a shadow never costs a model's triangles. The detailed aircraft draws its type's L2 model with
+//   the app's gear and lights. Until a model loads, and for a type without one, the procedural model stays.
 // - Picking: a ray from the inverse projection through the meshes; a hit names the aircraft, a shadow names nothing.
 // - Context loss: MapLibre 6.16 removes its custom layers when it loses the context (its style's destroy() calls
 //   onRemove, then the map fires `webglcontextlost`), and the engine adds the layer again once the style is back, so
@@ -288,6 +289,8 @@ export function createAircraft3dLayer({
   function sharedLiveryTextures() {
     if (liveryTextures === null) {
       liveryTextures = createLiveryTextures(three, { createCanvas, font: liveryFont() });
+      // A layer added again keeps the logos it already read: its new atlas is painted with them at once.
+      if ([...logos.values()].some(Boolean)) liveryTextures.refresh(logos);
       for (const livery of LIVERY_ROWS) requestLogo(livery);
     }
     return liveryTextures;
@@ -303,7 +306,8 @@ export function createAircraft3dLayer({
       const image = tintLogo(loaded, livery.tailText, createCanvas);
       logos.set(url, image);
       const atlas = liveryTextures?.refresh(logos) === true;
-      const fin = detailHeld?.model.refreshLogo(image) === true;
+      // Only the detailed aircraft whose livery has this logo repaints its fin: every livery's logo loads here.
+      const fin = detailHeld?.logoTexture === url && detailHeld.model.refreshLogo(image) === true;
       if ((atlas || fin) && !removed) map?.triggerRepaint();
     }, () => {});
   }
@@ -391,11 +395,19 @@ export function createAircraft3dLayer({
     return mesh;
   }
 
-  // Shadows come after the aircraft in each mesh, so drawing only the first `aircraftCount` instances drops them.
+  // Shadows come after the aircraft in a procedural mesh, so drawing only the first `aircraftCount` instances drops
+  // them. A type at L1 draws its aircraft from its model and their shadows from its procedural model, in a mesh of
+  // their own (`held.shadow`): a flat dark veil needs no model of 15 000 triangles.
   function applyCount(held) {
-    held.mesh.count = quality.shadows ? held.instances : held.aircraftCount;
+    const l1 = held.level === 'l1';
+    held.mesh.count = l1 || !quality.shadows ? held.aircraftCount : held.instances;
     held.mesh.boundingSphere = null;
     held.mesh.boundingBox = null;
+    if (held.shadow?.mesh) {
+      held.shadow.mesh.count = quality.shadows ? held.aircraftCount : 0;
+      held.shadow.mesh.boundingSphere = null;
+      held.shadow.mesh.boundingBox = null;
+    }
   }
 
   function disposeHeld(held) {
@@ -403,6 +415,40 @@ export function createAircraft3dLayer({
     held.mesh.dispose();
     held.geometry.dispose();
     held.material?.dispose();
+    if (held.shadow != null) {
+      if (held.shadow.mesh !== null) {
+        scene?.remove(held.shadow.mesh);
+        held.shadow.mesh.dispose();
+      }
+      held.shadow.geometry.dispose();
+    }
+  }
+
+  // The instances `from` to `to` of a plan's array (a typed array's own view, else a copy).
+  const slice = (array, from, to) => (ArrayBuffer.isView(array) ? array.subarray(from, to) : array.slice(from, to));
+
+  // The shadows of a type at L1: the plan's second half, in the procedural model and the plain material.
+  function writeShadows(key, held, entry) {
+    const n = entry.aircraftCount;
+    if (held.shadow === null) {
+      const geometry = buildGeometry(three, held.spec);
+      held.shadow = { geometry, triangles: triangleCount(geometry), mesh: null, capacity: 0 };
+    }
+    const shadow = held.shadow;
+    if (shadow.mesh === null || shadow.capacity < n) {
+      if (shadow.mesh !== null) {
+        scene.remove(shadow.mesh);
+        shadow.mesh.dispose();
+      }
+      shadow.capacity = nextPowerOfTwo(n);
+      shadow.mesh = instancedMesh(key, shadow.geometry, shadow.capacity);
+      shadow.mesh.name = `${key}:shadow`;
+      shadow.mesh.userData.shadow = true;
+    }
+    shadow.mesh.instanceMatrix.array.set(slice(entry.matrices, 16 * n, 32 * n));
+    shadow.mesh.instanceColor.array.set(slice(entry.colors, 3 * n, 6 * n));
+    shadow.mesh.instanceMatrix.needsUpdate = true;
+    shadow.mesh.instanceColor.needsUpdate = true;
   }
 
   function writeLines(segments) {
@@ -440,26 +486,30 @@ export function createAircraft3dLayer({
       }
       if (held === undefined) {
         held = { ...heldOf(key, entry.spec), spec: entry.spec, mesh: null, capacity: 0, aircraftCount: 0, instances: 0,
-          ids: NO_IDS, idleSince: null };
+          ids: NO_IDS, idleSince: null, shadow: null };
         meshes.set(key, held);
       }
-      if (held.mesh === null || held.capacity < entry.count) {
+      const l1 = held.level === 'l1';
+      // At L1 the model's mesh holds the aircraft only; their shadows go to the procedural one (writeShadows).
+      const need = l1 ? entry.aircraftCount : entry.count;
+      if (held.mesh === null || held.capacity < need) {
         if (held.mesh !== null) {
           scene.remove(held.mesh);
           held.mesh.dispose();
         }
-        held.capacity = nextPowerOfTwo(entry.count);
+        held.capacity = nextPowerOfTwo(need);
         held.mesh = instancedMesh(key, held.geometry, held.capacity, held.material);
       }
       held.base = entry.matrices;
       held.floors = entry.floorLengths ?? null;
-      held.mesh.instanceMatrix.array.set(entry.matrices);
-      held.mesh.instanceColor.array.set(entry.colors);
+      held.mesh.instanceMatrix.array.set(l1 ? slice(entry.matrices, 0, 16 * need) : entry.matrices);
+      held.mesh.instanceColor.array.set(l1 ? slice(entry.colors, 0, 3 * need) : entry.colors);
       held.mesh.instanceMatrix.needsUpdate = true;
       held.mesh.instanceColor.needsUpdate = true;
-      if (held.level === 'l1') {
-        writeLiveryInstances(three, held.geometry, { capacity: held.capacity, count: entry.count,
+      if (l1) {
+        writeLiveryInstances(three, held.geometry, { capacity: held.capacity, count: need,
           liveries: entry.liveries ?? null, gear: entry.gear ?? null });
+        writeShadows(key, held, entry);
       }
       held.aircraftCount = entry.aircraftCount;
       held.instances = entry.count;
@@ -483,22 +533,33 @@ export function createAircraft3dLayer({
 
   // The matrices of a mesh with the traffic's models no shorter than `floor` metres (MAX_MODEL_SCALE at most): the 3 × 3
   // part of each one with a floor length is scaled about its own origin; the rest stay as planned.
+  // At L1 the aircraft and their shadows are in two meshes (writeShadows).
   function scaleHeld(held, floor) {
-    const { base, floors } = held;
+    if (held.level !== 'l1') {
+      scaleMesh(held, held.mesh, 0, held.instances, floor);
+      return;
+    }
+    scaleMesh(held, held.mesh, 0, held.aircraftCount, floor);
+    if (held.shadow?.mesh) scaleMesh(held, held.shadow.mesh, held.aircraftCount, held.aircraftCount, floor);
+  }
+
+  // The plan's instances `start` to `start + count` of a type, written into `mesh` from its first instance.
+  function scaleMesh({ base, floors }, mesh, start, count, floor) {
     if (!base || !floors) return;
-    const target = held.mesh.instanceMatrix.array;
-    for (let index = 0; index < held.instances; index += 1) {
-      const length = floors[index];
-      const offset = 16 * index;
+    const target = mesh.instanceMatrix.array;
+    for (let index = 0; index < count; index += 1) {
+      const source = start + index;
+      const length = floors[source];
       const factor = length > 0 ? Math.min(MAX_MODEL_SCALE, Math.max(1, floor / length)) : 1;
       for (let element = 0; element < 16; element += 1) {
         const scaled = element < 12 && element % 4 !== 3;
-        target[offset + element] = scaled ? base[offset + element] * factor : base[offset + element];
+        const value = base[16 * source + element];
+        target[16 * index + element] = scaled ? value * factor : value;
       }
     }
-    held.mesh.instanceMatrix.needsUpdate = true;
-    held.mesh.boundingSphere = null;
-    held.mesh.boundingBox = null;
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.boundingSphere = null;
+    mesh.boundingBox = null;
   }
 
   // The floor of the zoom on screen: every mesh again when it moved more than FLOOR_STEP.
@@ -552,7 +613,8 @@ export function createAircraft3dLayer({
     shadow.matrixAutoUpdate = false;
     shadow.frustumCulled = false;
     detailScene.add(model.object, shadow);
-    detailHeld = { key: detail.key, level, model, shadow, idleSince: null, builtAt: time };
+    detailHeld = { key: detail.key, level, model, shadow, idleSince: null, builtAt: time,
+      logoTexture: detail.livery.logoTexture ?? null };
     requestLogo(detail.livery);
     return detailHeld;
   }
@@ -826,6 +888,13 @@ export function createAircraft3dLayer({
         instances += held.mesh.count;
         triangles += held.mesh.count * held.triangles;
         if (held.mesh.count > 0) drawCalls += 1;
+        // A type at L1: its shadows, in its procedural model.
+        const shadows = held.shadow?.mesh?.count ?? 0;
+        if (shadows > 0) {
+          instances += shadows;
+          triangles += shadows * held.shadow.triangles;
+          drawCalls += 1;
+        }
       }
       if (lines !== null && lines.visible && lines.geometry.drawRange.count > 0) drawCalls += 1;
       // The detailed aircraft (CN-30): what of it is on screen.

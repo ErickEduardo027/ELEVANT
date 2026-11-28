@@ -39,6 +39,9 @@ export const mapMessages = {
         aviamDeparture: 'Vuelo de AVIAM que sale',
         other: 'Otro tráfico',
         otherGround: 'Otro tráfico en tierra',
+        // PR M5: what the 3D aircraft wear up close (aircraft/instancePlan.js: liveries).
+        aviam3dHint: 'En 3D, de cerca, con la librea de su aerolínea',
+        other3dHint: 'En 3D, sin librea',
         demoHint: 'Vuelo simulado',
         estimatedHint: 'Calculada con el horario',
         staleHint: 'Atenuado, con la hora de su última posición',
@@ -593,6 +596,8 @@ export const mapMessages = {
         aviamDeparture: 'AVIAM departure',
         other: 'Other traffic',
         otherGround: 'Other traffic on the ground',
+        aviam3dHint: 'In 3D, up close, in its airline livery',
+        other3dHint: 'In 3D, without a livery',
         demoHint: 'Simulated flight',
         estimatedHint: 'Calculated from the schedule',
         staleHint: 'Dimmed, with the time of its last position',
