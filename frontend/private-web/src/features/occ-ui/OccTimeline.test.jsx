@@ -351,4 +351,12 @@ describe('OccTimeline', () => {
     fireEvent.keyDown(barOf('demo-1'), { key: 'd' });
     expect(prevented.at(-1)).toEqual(['d', false]);
   });
+
+  it('names and writes the bars of another band of time with barName, barText and plateKind (M7)', () => {
+    const rows = [{ id: 'TEMPO', label: 'TEMPO', bars: [visit({ id: 'p1', startAt: '2026-11-14T17:00:00Z',
+      endAt: '2026-11-14T19:00:00Z', state: 'onStand' })] }];
+    render(band({ rows, plateKind: 'code', barName: (bar, row) => `${row.label} ${bar.id}`, barText: () => 'SHRA' }));
+    expect(screen.getByRole('button', { name: 'TEMPO p1' })).toHaveTextContent('SHRA');
+    expect(rowOf('TEMPO').querySelector('[data-occ-plate]')).toHaveAttribute('data-occ-plate', 'code');
+  });
 });

@@ -4,6 +4,7 @@ import { mapMessages } from '../../maps/mapMessages';
 import { occUiMessages } from '../../occ-ui/occUiMessages';
 import { durationText, relativeTimeText } from '../../occ-ui/occTime';
 import { FLIGHT_STATUS_KEYS } from './boardModel';
+import { STALE_AFTER_MINUTES } from '../../weather/useMdpcWeather';
 import { consoleMessages } from './consoleMessages';
 import { PENDING_ACTIONS } from './pendingModel';
 
@@ -15,7 +16,9 @@ function leafPaths(node, prefix = '') {
 }
 
 // The honesty texts of the old dashboard (src/features/dashboard/dashboardMessages.js, gone with PR U3), word for word:
-// the console keeps them.
+// the console keeps them. Lane M7 (2026-11-27) changed four of them on purpose: the METAR comes from NOAA AWC through
+// the API, not from IEM (source, sourceCompact, no derivedNote), it is stale past 90 minutes or when the API keeps it
+// after a failure (staleBody), and the pill's satellite map is gone with its imagery words.
 const OLD_DASHBOARD_TEXTS = Object.freeze({
   es: {
     states: {
@@ -31,31 +34,18 @@ const OLD_DASHBOARD_TEXTS = Object.freeze({
     weather: {
       title: 'Meteorología MDPC',
       unofficial: 'No oficial',
-      source: 'METAR MDPC vía Iowa Environmental Mesonet (réplica no oficial, sin garantía).',
-      sourceCompact: 'METAR MDPC · IEM · réplica no oficial',
+      source: 'METAR MDPC de NOAA Aviation Weather Center (no oficial, sin garantía).',
+      sourceCompact: 'METAR MDPC · NOAA AWC · no oficial',
       observed: 'Observado {time} UTC',
       received: 'Recibido {time} UTC',
       age: 'hace {minutes} min',
       stale: 'Desactualizado',
-      staleBody: 'La última observación tiene más de 75 minutos: falta al menos un reporte horario.',
+      staleBody: 'La última observación tiene más de {minutes} minutos o es la que el servicio meteorológico guardó tras un fallo.',
       refreshFailed: 'La última consulta falló; se muestra la observación anterior.',
       loading: 'Consultando la observación de MDPC…',
       error: 'La observación meteorológica no está disponible.',
-      derivedNote: 'calculada por IEM',
       dialogTitle: 'Meteorología · Punta Cana (MDPC)',
-      expand: 'Ver meteorología',
-      imageSource: 'Infrarrojo GOES-East · NASA GIBS; contexto regional, no radar',
-      imageUnavailable: 'La imagen satelital no está disponible.',
-      sourceLayer: {
-        goes: 'Infrarrojo GOES-East · NASA GIBS',
-        imerg: 'Precipitación estimada IMERG · NASA GIBS; imagen retrasada, no radar'
-      },
-      hint: {
-        goes: 'Imagen infrarroja regional; no es observación del aeródromo.',
-        imerg: 'Estimación satelital de precipitación de 30 minutos; puede llegar con varias horas de retraso.'
-      },
-      imageAge: 'antigüedad {minutes} min',
-      imageDay: 'Producto del día {date} UTC; hora exacta no publicada'
+      expand: 'Ver meteorología'
     },
     boardEmpty: 'No hay escalas registradas para esta estación y fecha local.',
     plannedNote: 'Asignación planificada; no confirma ocupación física.',
@@ -76,31 +66,18 @@ const OLD_DASHBOARD_TEXTS = Object.freeze({
     weather: {
       title: 'MDPC weather',
       unofficial: 'Unofficial',
-      source: 'MDPC METAR via Iowa Environmental Mesonet (unofficial mirror, no warranty).',
-      sourceCompact: 'MDPC METAR · IEM · unofficial mirror',
+      source: 'MDPC METAR from NOAA Aviation Weather Center (unofficial, no warranty).',
+      sourceCompact: 'MDPC METAR · NOAA AWC · unofficial',
       observed: 'Observed {time} UTC',
       received: 'Received {time} UTC',
       age: '{minutes} min ago',
       stale: 'Outdated',
-      staleBody: 'The latest observation is older than 75 minutes: at least one hourly report is missing.',
+      staleBody: 'The latest observation is older than {minutes} minutes or is the one the weather service kept after a failure.',
       refreshFailed: 'The last request failed; showing the previous observation.',
       loading: 'Retrieving the MDPC observation…',
       error: 'The weather observation is unavailable.',
-      derivedNote: 'computed by IEM',
       dialogTitle: 'Weather · Punta Cana (MDPC)',
-      expand: 'View weather',
-      imageSource: 'GOES-East infrared · NASA GIBS; regional context, not radar',
-      imageUnavailable: 'Satellite imagery is unavailable.',
-      sourceLayer: {
-        goes: 'GOES-East infrared · NASA GIBS',
-        imerg: 'IMERG estimated precipitation · NASA GIBS; delayed image, not radar'
-      },
-      hint: {
-        goes: 'Regional infrared imagery; not an airfield observation.',
-        imerg: 'Half-hour satellite precipitation estimate; imagery may arrive several hours late.'
-      },
-      imageAge: '{minutes} min old',
-      imageDay: 'Product dated {date} UTC; exact time not published'
+      expand: 'View weather'
     },
     boardEmpty: 'No turnarounds are recorded for this station and local date.',
     plannedNote: 'Planned assignment; does not confirm physical occupancy.',
@@ -160,6 +137,15 @@ describe('consoleMessages', () => {
     expect(es.states.forbidden).toContain('estación OCC autorizada');
     expect(es.states.retry).toBe('Reintentar');
     expect(es.weather.unofficial).toBe('No oficial');
+    // M7: no word of the weather names IEM any more, the stale limit is the API's 90 minutes, and the panel says its
+    // name and its credit.
+    for (const language of ['es', 'en']) {
+      expect(JSON.stringify(consoleMessages[language].weather), language).not.toMatch(/IEM|Iowa|Mesonet|75/u);
+    }
+    expect(createTranslator(consoleMessages, 'es')('weather.staleBody', { minutes: STALE_AFTER_MINUTES }))
+      .toContain('más de 90 minutos');
+    expect(es.weather.panel.title).toBe('Meteorología PUJ');
+    expect(es.weather.panel.credit).toBe('Datos: NOAA Aviation Weather Center');
     expect(es.provenance.planned).toBe('Asignación planificada; no confirma ocupación física.');
     expect(es.board.empty).toBe('No hay escalas registradas para esta estación y fecha local.');
     // The words the presentation guide waits for on the console.

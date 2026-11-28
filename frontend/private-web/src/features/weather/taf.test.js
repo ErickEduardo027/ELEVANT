@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createTaf, WEATHER_NOON, WEATHER_TAF_RAW } from '../maps/testing/weatherFixtures';
-import { describeTafPeriod, splitTafGroups, tafReadout, toTafModel } from './taf';
+import { describeTafPeriod, splitTafGroups, tafPeriodConditions, tafReadout, toTafModel } from './taf';
 
 const NOON = Date.parse(WEATHER_NOON);
 const at = minutes => NOON + minutes * 60_000;
@@ -126,5 +126,14 @@ describe('the TAF model (contracts 1.4)', () => {
     // A PROB without its percent still says what it is; an empty period says nothing.
     expect(describeTafPeriod({ ...prob, probabilityPercent: null })).toBe('Probabilidad 00:00–04:00 · 3 km · TSRA · BKN012');
     expect(describeTafPeriod(null)).toBe('');
+  });
+
+  it('tafPeriodConditions says what a period forecasts without its kind or span (M7)', () => {
+    const [base, tempo, , prob] = toTafModel(createTaf()).periods;
+    expect(tafPeriodConditions(tempo)).toBe('100° 15 kt G25 · 4 km · SHRA · BKN015');
+    expect(tafPeriodConditions(base, { language: 'en' })).toBe('090° 12 kt · 10 km · FEW020 SCT040');
+    expect(tafPeriodConditions(prob)).toBe('3 km · TSRA · BKN012');
+    expect(tafPeriodConditions({ ...base, wind: null, visibilityStatuteMiles: null, weather: null, clouds: [] })).toBe('');
+    expect(tafPeriodConditions(null)).toBe('');
   });
 });

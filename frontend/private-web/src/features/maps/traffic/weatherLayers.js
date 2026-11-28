@@ -19,7 +19,7 @@ import { staleWords, stationTime } from './stationTime';
 
 // The weather on the one canvas of the OCC maps (design E6, PR M8; contracts 2.3: weather is a layer, not a view), the
 // one owner of its sources, layers and features:
-// - the GOES-East infrared clouds and the IMERG rain of NASA GIBS, which GoesCloudMap.jsx drew on a map of its own: two
+// - the GOES-East infrared clouds and the IMERG rain of NASA GIBS, which the retired GoesCloudMap drew apart: two
 //   raster sources in the `weather` slot, under the references, drawn in Región and Aproximación only, off until a
 //   person turns them on, and born hidden: OccMap shows one only once it has pinned its tiles to the time GIBS reports
 //   (services/satelliteService.js: satelliteTileAt), so the map never asks for an image that is not the one it names.

@@ -90,8 +90,8 @@ export function buildAttribution(activeSources = [], { aircraftDataLabel = 'Dato
 
 /**
  * Closes the compact attribution inside `container`: MapLibre 6.16 adds it open, and opens it again when its text
- * first arrives. Returns whether there was one. The map engine keeps it closed until the person opens it; the frozen
- * maps keep their own helper (maps/collapseCompactAttribution.js) until PR U3 retires them.
+ * first arrives. Returns whether there was one. The map engine keeps it closed until the person opens it. (The last
+ * frozen map, GoesCloudMap, left with its own helper in lane M7 on 2026-11-27.)
  */
 export function collapseCompactAttribution(container) {
   const details = container?.querySelector?.(ATTRIBUTION_SELECTOR);
