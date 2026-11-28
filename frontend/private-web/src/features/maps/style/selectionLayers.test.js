@@ -29,7 +29,8 @@ describe('selection layers', () => {
     const ring = style.layers.at(-1);
     expect(ring.filter).toEqual(['!=', ['get', 'kind'], 'stand']);
     expect(ring.paint).toMatchObject({ 'circle-opacity': 0, 'circle-stroke-width': 2, 'circle-stroke-color': occColor('accent') });
-    expect(ring.metadata).toMatchObject({ 'occ:group': 'selection', 'occ:slot': 'selection' });
+    // Close up (M4, «Seguir en 3D») the ring goes: it sat on the followed model's tail.
+    expect(ring.metadata).toMatchObject({ 'occ:group': 'selection', 'occ:slot': 'selection', 'occ:closeUp': 'hide' });
     // The stand layers read this source for the selected stand's label.
     const stands = buildOccStyle({ overlays: [selectionOverlay(), standOverlay()] });
     expect(validateStyleMin(stands)).toEqual([]);

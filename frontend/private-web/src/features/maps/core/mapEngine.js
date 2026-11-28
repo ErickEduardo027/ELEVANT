@@ -521,9 +521,10 @@ export function createMapEngine({
 
     /**
      * Close up (M4: «Seguir en 3D» past zoom 19.5): `true` hides the labels that would crowd the followed aircraft (the
-     * layers marked `'occ:closeUp': 'hide'`: the other traffic's tags, the stand designators, the references' words)
-     * and narrows those with an `'occ:closeUpFilter'` (the ELEVANT tags: the chosen aircraft's only); `false` gives back
-     * what their groups show. One call per change; nothing without a map.
+     * layers marked `'occ:closeUp': 'hide'`: every tag, the selection rings, the stand designators, the references'
+     * words) and narrows those with an `'occ:closeUpFilter'` (the trails, the estimated rings and the «Demo» plates:
+     * all but the followed aircraft's, which sat on its model's tail); `false` gives back what their groups show. One
+     * call per change; nothing without a map.
      */
     setCloseUp(on) {
       const next = on === true;

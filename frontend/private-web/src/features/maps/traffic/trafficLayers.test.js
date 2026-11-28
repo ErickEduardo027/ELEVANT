@@ -109,11 +109,16 @@ describe('traffic layers (design E1 and E3)', () => {
     expect(layerOf('occ-traffic-other').metadata).toMatchObject({ 'occ:pick': 'aircraft', 'occ:pickId': 'hex' });
     // Other traffic on the ground from the airfield threshold up (contracts 2.3: derived, not fixed).
     expect(layerOf('occ-traffic-other-ground').metadata['occ:minThreshold']).toBe('airfield');
-    // M4: close up (core/mapEngine.js: setCloseUp) the other traffic's tags go and the ELEVANT tags keep the chosen one.
+    // M4: close up (core/mapEngine.js: setCloseUp) every tag and the chosen aircraft's ring go; its trail, estimated ring
+    // and «Demo» plate too, the other aircraft keeping theirs: nothing of its own sits on the followed model's tail.
     expect(overlay.layers.filter(layer => layer.metadata['occ:closeUp']).map(layer => [layer.id, layer.metadata['occ:closeUp']]))
-      .toEqual([['occ-traffic-tags-other', 'hide']]);
+      .toEqual([['occ-traffic-tags-other', 'hide'], ['occ-traffic-tags', 'hide'], ['occ-traffic-selected-ring', 'hide']]);
+    const notSelected = ['!=', ['get', 'selected'], true];
     expect(overlay.layers.filter(layer => layer.metadata['occ:closeUpFilter'])
-      .map(layer => [layer.id, layer.metadata['occ:closeUpFilter']])).toEqual([['occ-traffic-tags', ['==', ['get', 'selected'], true]]]);
+      .map(layer => [layer.id, layer.metadata['occ:closeUpFilter']])).toEqual([['occ-trails-live', notSelected],
+      ['occ-traffic-estimated-ring', notSelected], ['occ-traffic-demo-plate', notSelected]]);
+    // The chosen aircraft's own 2D symbol stays: without the 3D model it is all there is of it.
+    expect(layerOf('occ-traffic-selected').metadata['occ:closeUp']).toBeUndefined();
     // The trail fades toward its tail on the line's own metrics; the estimated one is dashed.
     expect(layerOf('occ-trails-live').paint['line-gradient'][2]).toEqual(['line-progress']);
     expect(layerOf('occ-trails-estimated').paint['line-dasharray']).toEqual([2, 2]);

@@ -345,10 +345,14 @@ describe('OccMap «Muy cerca» and the ultra zoom (M4)', () => {
     const { map, seconds, root } = renderFollow3d();
     const hidden = marked(map, 'occ:closeUp');
     const narrowed = marked(map, 'occ:closeUpFilter');
-    // The other traffic's tags, the stand designators and the references' words; the ELEVANT tags keep the chosen one.
-    expect(hidden).toEqual(expect.arrayContaining(['occ-traffic-tags-other', 'occ-reference-arp']));
-    expect(narrowed).toHaveLength(1);
-    const own = map.getFilter(narrowed[0]);
+    // Every tag, the selection rings, the stand designators and the references' words; the trails, estimated rings and
+    // «Demo» plates keep all but the followed aircraft's (nothing of its own sits on its model's tail).
+    expect(hidden).toEqual(expect.arrayContaining(['occ-traffic-tags-other', 'occ-traffic-tags', 'occ-traffic-selected-ring',
+      'occ-selection-ring', 'occ-reference-arp']));
+    expect(narrowed).toEqual(expect.arrayContaining(['occ-trails-live', 'occ-traffic-estimated-ring', 'occ-traffic-demo-plate']));
+    const own = Object.fromEntries(narrowed.map(id => [id, map.getFilter(id)]));
+    const notSelected = ['!=', ['get', 'selected'], true];
+    const narrowedOf = id => (own[id] == null ? notSelected : ['all', own[id], notSelected]);
     const before = Object.fromEntries(hidden.map(id => [id, shown(map, id)]));
     fake.state.setRenderedFeatures(map, (_geometry, options) => [demoUnder]
       .filter(feature => options.layers.includes(feature.layer.id)));
@@ -360,7 +364,7 @@ describe('OccMap «Muy cerca» and the ultra zoom (M4)', () => {
     expect(map.getZoom()).toBeGreaterThan(CLOSE_UP_ZOOM);
     expect(map.getPitch()).toBeCloseTo(ORBIT_VIEWS.close.pitch, 0);
     for (const id of hidden) expect(shown(map, id), id).toBe('none');
-    expect(map.getFilter(narrowed[0])).toEqual(['all', own, ['==', ['get', 'selected'], true]]);
+    for (const id of narrowed) expect(map.getFilter(id), id).toEqual(narrowedOf(id));
     // «Persecución» goes back under 19.5: the labels come back while it still follows.
     act(() => { screen.getByRole('radio', { name: 'Persecución' }).click(); });
     seconds(3);
@@ -368,7 +372,7 @@ describe('OccMap «Muy cerca» and the ultra zoom (M4)', () => {
     const grouped = hidden.filter(id => asGroup(map, id) !== null);
     expect(grouped).toEqual(expect.arrayContaining(['occ-night-label', 'occ-reference-centreline-label']));
     for (const id of grouped) expect(shown(map, id), id).toBe(asGroup(map, id));
-    expect(map.getFilter(narrowed[0])).toEqual(own);
+    for (const id of narrowed) expect(map.getFilter(id) ?? null, id).toEqual(own[id] ?? null);
     // Close again, then Esc: the labels and the map's own zoom limit come back.
     act(() => { screen.getByRole('radio', { name: 'Muy cerca' }).click(); });
     seconds(3);
@@ -376,7 +380,7 @@ describe('OccMap «Muy cerca» and the ultra zoom (M4)', () => {
     fireEvent(root, createEvent.keyDown(root, { key: 'Escape' }));
     expect(threeProbe().on).toBe(false);
     for (const id of hidden) expect(shown(map, id), id).toBe(before[id]);
-    expect(map.getFilter(narrowed[0])).toEqual(own);
+    for (const id of narrowed) expect(map.getFilter(id) ?? null, id).toEqual(own[id] ?? null);
     expect(map.getMaxZoom()).toBe(19.5);
   });
 

@@ -39,6 +39,8 @@ const get = key => ['get', key];
 // A flag of the features (trafficFeatures.js): true, or anything else as false.
 const is = key => ['==', get(key), true];
 const isNot = key => ['!=', get(key), true];
+// Close up (M4): every aircraft but the followed (chosen) one.
+const NOT_SELECTED = isNot('selected');
 const AVIAM = ['==', get('kind'), 'aviam'];
 const OTHER = ['==', get('kind'), 'other'];
 // An ELEVANT aircraft parked in the stand that shows it is the stand's (PR M6, design F4: one owner per aircraft): its
@@ -269,7 +271,9 @@ export function trafficOverlay({ theme = 'dark' } = {}) {
             withAlpha('--occ-text', 0.45), 1, withAlpha('--occ-text', 0.9)],
           'line-opacity': ['case', ['==', get('quality'), 'stale'], 0.5, 1],
         },
-        metadata: { 'occ:group': TRAFFIC_GROUPS.aviam },
+        // Close up (M4 with the integration fix) the followed aircraft's own trail goes: its bright head sat on the
+        // model's tail.
+        metadata: { 'occ:group': TRAFFIC_GROUPS.aviam, 'occ:closeUpFilter': NOT_SELECTED },
       },
       {
         slot: 'traffic',
@@ -341,7 +345,8 @@ export function trafficOverlay({ theme = 'dark' } = {}) {
         paint: {
           'icon-color': occColor('muted'), 'icon-halo-color': occColor('nav'), 'icon-halo-width': 1, 'icon-opacity': FADED,
         },
-        metadata: { 'occ:group': TRAFFIC_GROUPS.aviam },
+        // Close up, not round the followed aircraft (its model is there to see).
+        metadata: { 'occ:group': TRAFFIC_GROUPS.aviam, 'occ:closeUpFilter': NOT_SELECTED },
       },
       {
         slot: 'traffic',
@@ -360,8 +365,9 @@ export function trafficOverlay({ theme = 'dark' } = {}) {
             TAG_DECLUTTER_UNTIL_ZOOM, ['case', is('selected'), 1, 0]],
         }),
         paint: tagPaint(occColor('text')),
-        // M4: close up only the chosen (followed) aircraft keeps its tag (core/mapEngine.js: setCloseUp).
-        metadata: { 'occ:group': TRAFFIC_GROUPS.aviam, 'occ:closeUpFilter': is('selected') },
+        // M4: close up the ELEVANT tags go (core/mapEngine.js: setCloseUp), the followed aircraft's too: it sat on the
+        // model's tail, and «Seguir en 3D»'s panel names the aircraft.
+        metadata: { 'occ:group': TRAFFIC_GROUPS.aviam, 'occ:closeUp': 'hide' },
       },
       {
         slot: 'traffic',
@@ -389,7 +395,7 @@ export function trafficOverlay({ theme = 'dark' } = {}) {
           'icon-opacity': DIMMED,
           'text-opacity': DIMMED,
         },
-        metadata: { 'occ:group': TRAFFIC_GROUPS.aviam },
+        metadata: { 'occ:group': TRAFFIC_GROUPS.aviam, 'occ:closeUpFilter': NOT_SELECTED },
       },
       {
         slot: 'selection',
@@ -404,7 +410,8 @@ export function trafficOverlay({ theme = 'dark' } = {}) {
           'circle-stroke-width': SELECTED_RING_WIDTH_PX,
           'circle-stroke-color': ACCENT,
         },
-        metadata: { 'occ:group': 'selection' },
+        // Close up the ring of the followed aircraft goes: drawn at its point on the ground, it sat on the model.
+        metadata: { 'occ:group': 'selection', 'occ:closeUp': 'hide' },
       },
       {
         slot: 'selection',
