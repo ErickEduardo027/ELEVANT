@@ -60,4 +60,36 @@ describe('reference legend entries', () => {
     // An image without its time is still listed, without a hint.
     expect(referenceLegendEntries({ kinds: ['goes'] })[0].hint).toBeNull();
   });
+
+  it('lists the regional weather (lane M7): the loops with their span, the SIGMET hazards, the flight categories and the barbs', () => {
+    const span = { from: '2026-11-13T14:00:00Z', time: '2026-11-13T14:50:00Z', precision: 'loop' };
+    const imagery = {
+      loopGeocolor: { ...span, demo: false }, radar: { ...span, demo: true, provider: 'iem-tjua' },
+      sigmet: { demo: false, hazards: ['TS', 'TURB'] }, categoryVFR: { demo: false }, categoryLIFR: { demo: false },
+      categoryNone: { demo: false }, barb: { demo: false },
+    };
+    const kinds = ['barb', 'categoryLIFR', 'categoryNone', 'categoryVFR', 'sigmet', 'radar', 'loopGeocolor', 'wind'];
+    const entries = referenceLegendEntries({ kinds, imagery });
+    expect(entries.map(entry => [entry.key, entry.swatch, entry.tag, entry.hint])).toEqual([
+      ['wind', 'wind', TAGS.unofficial.es, null],
+      ['loopGeocolor', 'loopGeocolor', null, 'De las 10:00 a las 10:50'],
+      ['radar', 'radar', TAGS.demo.es, 'De las 10:00 a las 10:50'],
+      ['sigmet', 'sigmet', TAGS.unofficial.es, 'Tormentas, Turbulencia'],
+      ['categoryVFR', 'categoryVFR', TAGS.unofficial.es, null],
+      ['categoryLIFR', 'categoryLIFR', TAGS.unofficial.es, null],
+      ['categoryNone', 'categoryNone', TAGS.unofficial.es, null],
+      ['barb', 'barb', TAGS.unofficial.es, 'Media barba 5 kt, barba 10 kt, banderín 50 kt'],
+    ]);
+    expect(entries.map(entry => entry.label)).toEqual([
+      'Viento en pista', 'Bucle de satélite (GOES-East, visible GeoColor)', 'Radar de lluvia (de débil a intensa)',
+      'Área SIGMET', 'VFR: techo de más de 3000 ft y más de 5 SM', 'LIFR: techo de menos de 500 ft o menos de 1 SM',
+      'Estación sin categoría de vuelo', 'Viento en la estación',
+    ]);
+    // Simulated stations say «Demo», in English too.
+    expect(referenceLegendEntries({ kinds: ['categoryIFR', 'loopIr'], imagery: { categoryIFR: { demo: true },
+      loopIr: span } }, { language: 'en' }).map(entry => [entry.label, entry.tag, entry.hint])).toEqual([
+      ['Satellite loop (GOES-East, infrared)', null, 'From 10:00 to 10:50'],
+      ['IFR: ceiling 500 to 999 ft or 1 to 3 SM', 'Demo', null],
+    ]);
+  });
 });

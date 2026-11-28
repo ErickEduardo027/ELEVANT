@@ -59,6 +59,19 @@ export const OCC_REQUEST_PLAN = Object.freeze({
     Object.freeze({ key: 'readiness', read: 'getOccAssignmentReadiness', resources: Object.freeze([]),
       pollMs: OCC_SAFETY_POLL_MS, coalesceMs: OCC_COALESCE_MS, owner: 'src/features/dashboard/noc/useConsoleData.js' }),
   ]),
+  // The regional weather of Panorama (lane M7, features/weather/useRegionWeather.js: REGION_WEATHER_READS): the stations,
+  // the SIGMETs and the wind grid every ten minutes and the radar index every five, each on its own poll from its last
+  // answer, paused while the tab is hidden and never on an announcement. A minute at rest holds none of them.
+  weather: Object.freeze([
+    Object.freeze({ key: 'regionWeather', read: 'getOccRegionWeather', resources: Object.freeze([]), pollMs: 600_000,
+      coalesceMs: OCC_COALESCE_MS, owner: 'src/features/weather/useRegionWeather.js' }),
+    Object.freeze({ key: 'sigmets', read: 'getOccSigmets', resources: Object.freeze([]), pollMs: 600_000,
+      coalesceMs: OCC_COALESCE_MS, owner: 'src/features/weather/useRegionWeather.js' }),
+    Object.freeze({ key: 'windGrid', read: 'getOccWindGrid', resources: Object.freeze([]), pollMs: 600_000,
+      coalesceMs: OCC_COALESCE_MS, owner: 'src/features/weather/useRegionWeather.js' }),
+    Object.freeze({ key: 'radarFrames', read: 'getOccRadarFrames', resources: Object.freeze([]), pollMs: 300_000,
+      coalesceMs: OCC_COALESCE_MS, owner: 'src/features/weather/useRegionWeather.js' }),
+  ]),
   // The console's AeroDataBox reference reads (ADR-0028, note of 15 November 2026), on their own visible-tab timers: the
   // delays pill every 15 minutes and the routes every hour. The aircraft and an origin's delays are read only when a
   // flight or a stand is chosen, so they have no pace. The API keeps every answer, so they spend units at most hourly.

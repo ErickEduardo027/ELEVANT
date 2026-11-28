@@ -3,6 +3,7 @@ import { AIRCRAFT_SILHOUETTE_PATH, AIRCRAFT_SILHOUETTE_VIEWBOX } from '../aircra
 import { maskToSdf } from './sdf';
 import { REFERENCE_IMAGE_SHAPES } from './referenceImages';
 import { TRAFFIC_IMAGE_SHAPES } from './trafficImages';
+import { WEATHER_IMAGE_SHAPES } from './weatherImages';
 
 // The images of the OCC map style. There is no sprite: each image is drawn on demand from the path data below and
 // handed to MapLibre. An icon becomes an SDF, which MapLibre paints in the colour of its layer (icon-color) with an
@@ -33,6 +34,8 @@ export const MAP_IMAGE_IDS = Object.freeze([
   'wind-arrow',
   'wind-calm',
   // The traffic (PR M5, style/trafficImages.js): silhouettes per icon category, the estimated ring, tag glyphs, «Demo».
+  // The wind barbs of the METAR stations (lane M7, style/weatherImages.js), one per 5 kt from 5 to 100 kt.
+  ...Object.keys(WEATHER_IMAGE_SHAPES),
   ...Object.keys(TRAFFIC_IMAGE_SHAPES),
 ]);
 
@@ -167,6 +170,7 @@ export const MAP_IMAGE_SHAPES = deepFreeze({
       { fill: 'M13.5 12 A1.5 1.5 0 1 1 10.5 12 A1.5 1.5 0 1 1 13.5 12 Z' },
     ],
   },
+  ...WEATHER_IMAGE_SHAPES,
   ...TRAFFIC_IMAGE_SHAPES,
 });
 

@@ -74,6 +74,20 @@ export const mapMessages = {
         imerg: 'Lluvia estimada (IMERG)',
         imageAt: 'Imagen de las {time}',
         imageDay: 'Imagen del {date}',
+        // The regional weather (lane M7, traffic/weatherLayers.js): the loops, the radar's scale, the SIGMETs and the
+        // flight categories of the METAR stations (their limits as AWC draws them), and the barbs.
+        loopIr: 'Bucle de satélite (GOES-East, infrarrojo)',
+        loopGeocolor: 'Bucle de satélite (GOES-East, visible GeoColor)',
+        radar: 'Radar de lluvia (de débil a intensa)',
+        span: 'De las {from} a las {to}',
+        sigmet: 'Área SIGMET',
+        categoryVFR: 'VFR: techo de más de 3000 ft y más de 5 SM',
+        categoryMVFR: 'MVFR: techo de 1000 a 3000 ft o de 3 a 5 SM',
+        categoryIFR: 'IFR: techo de 500 a 999 ft o de 1 a 3 SM',
+        categoryLIFR: 'LIFR: techo de menos de 500 ft o menos de 1 SM',
+        categoryNone: 'Estación sin categoría de vuelo',
+        barb: 'Viento en la estación',
+        barbHint: 'Media barba 5 kt, barba 10 kt, banderín 50 kt',
       },
     },
     // What a stand is and the visits on it (ui/StandDetailFacts.jsx, ui/StandTurnaround.jsx; owner request of
@@ -270,7 +284,7 @@ export const mapMessages = {
       stands: 'Posiciones del mapa',
       flights: 'Vuelos del mapa',
     },
-    attribution: { aircraftData: 'Datos de aeronaves', weather: 'Clima' },
+    attribution: { aircraftData: 'Datos de aeronaves', weather: 'Clima', radar: 'Radar' },
     controls: {
       zoomIn: 'Acercar',
       zoomOut: 'Alejar',
@@ -481,13 +495,25 @@ export const mapMessages = {
         navaids: 'Radioayudas',
         daynight: 'Día y noche',
         // The weather of PR M8 (design E7).
-        weather: { goes: 'Nubes por satélite', imerg: 'Lluvia estimada', wind: 'Viento en pista' },
+        weather: {
+          goes: 'Nubes por satélite',
+          imerg: 'Lluvia estimada',
+          wind: 'Viento en pista',
+          // The regional weather (lane M7).
+          loop: 'Bucle de satélite',
+          radar: 'Radar de lluvia',
+          stations: 'Estaciones METAR',
+          sigmet: 'SIGMET',
+        },
       },
       // What a weather key that is on says when the map shows nothing of it (traffic/weatherLayers.js).
       note: {
         views: 'Se ve en {first} y {second}',
         loadingImage: 'Buscando la imagen…',
         noImage: 'No hay imagen en este momento.',
+        noRadar: 'No hay radar en este momento.',
+        noStations: 'Ninguna estación de la región informa en este momento.',
+        noSigmet: 'No hay SIGMET vigentes en la región.',
       },
     },
     // The words the map draws by its references (traffic/referenceFeatures.js): the runway in use and where it comes
@@ -525,6 +551,30 @@ export const mapMessages = {
         change: { FM: 'Cambio', BECMG: 'Cambio gradual', TEMPO: 'Temporal', PROB: 'Probabilidad {percent}' },
       },
       wind: { calm: 'Calma', variable: 'VRB', gust: 'G{speed}' },
+      // The regional weather (lane M7: GET occ/weather/region, sigmet and radar), when a layer has nothing to draw.
+      regional: {
+        loading: 'Cargando el clima de la región…',
+        unavailable: 'No hay clima de la región en este momento.',
+        disabled: 'El clima de la región no está activado en este entorno.',
+        error: 'No se pudo cargar el clima de la región.',
+        forbidden: 'Tu acceso no incluye el clima de la región.',
+      },
+      // The words of a SIGMET on the map (traffic/weatherLayers.js: sigmetFeatures). Map labels keep to Latin-1.
+      sigmet: {
+        name: 'SIGMET {hazard}',
+        top: 'Hasta {level}',
+        base: 'Desde {level}',
+        hazard: {
+          TS: 'Tormentas',
+          TC: 'Ciclón tropical',
+          TURB: 'Turbulencia',
+          ICE: 'Engelamiento',
+          MTW: 'Onda de montaña',
+          VA: 'Ceniza volcánica',
+          DS: 'Polvo o arena',
+          OTHER: 'Otro fenómeno',
+        },
+      },
     },
     // The tooltip of the wind at the airfield (traffic/weatherLayers.js: windTooltip): its words, the time of the METAR
     // and the head (or tail) and cross wind of each runway end. «No oficial» is TAGS.unofficial.
@@ -602,6 +652,18 @@ export const mapMessages = {
         imerg: 'Estimated rain (IMERG)',
         imageAt: 'Image of {time}',
         imageDay: 'Image of {date}',
+        loopIr: 'Satellite loop (GOES-East, infrared)',
+        loopGeocolor: 'Satellite loop (GOES-East, visible GeoColor)',
+        radar: 'Rain radar (light to heavy)',
+        span: 'From {from} to {to}',
+        sigmet: 'SIGMET area',
+        categoryVFR: 'VFR: ceiling above 3000 ft and over 5 SM',
+        categoryMVFR: 'MVFR: ceiling 1000 to 3000 ft or 3 to 5 SM',
+        categoryIFR: 'IFR: ceiling 500 to 999 ft or 1 to 3 SM',
+        categoryLIFR: 'LIFR: ceiling below 500 ft or under 1 SM',
+        categoryNone: 'Station without a flight category',
+        barb: 'Wind at the station',
+        barbHint: 'Half barb 5 kt, barb 10 kt, pennant 50 kt',
       },
     },
     standInfo: {
@@ -772,7 +834,7 @@ export const mapMessages = {
       stands: 'Stands on the map',
       flights: 'Flights on the map',
     },
-    attribution: { aircraftData: 'Aircraft data', weather: 'Weather' },
+    attribution: { aircraftData: 'Aircraft data', weather: 'Weather', radar: 'Radar' },
     controls: {
       zoomIn: 'Zoom in',
       zoomOut: 'Zoom out',
@@ -957,12 +1019,23 @@ export const mapMessages = {
         centrelines: 'Runway centrelines',
         navaids: 'Navaids',
         daynight: 'Day and night',
-        weather: { goes: 'Satellite clouds', imerg: 'Estimated rain', wind: 'Runway wind' },
+        weather: {
+          goes: 'Satellite clouds',
+          imerg: 'Estimated rain',
+          wind: 'Runway wind',
+          loop: 'Satellite loop',
+          radar: 'Rain radar',
+          stations: 'METAR stations',
+          sigmet: 'SIGMET',
+        },
       },
       note: {
         views: 'Shown in {first} and {second}',
         loadingImage: 'Looking for the image…',
         noImage: 'No image right now.',
+        noRadar: 'No radar right now.',
+        noStations: 'No station in the region is reporting right now.',
+        noSigmet: 'No SIGMET in force in the region.',
       },
     },
     reference: {
@@ -993,6 +1066,28 @@ export const mapMessages = {
         change: { FM: 'Change', BECMG: 'Gradual change', TEMPO: 'Temporary', PROB: 'Probability {percent}' },
       },
       wind: { calm: 'Calm', variable: 'VRB', gust: 'G{speed}' },
+      regional: {
+        loading: 'Loading the regional weather…',
+        unavailable: 'No regional weather right now.',
+        disabled: 'Regional weather is not turned on in this environment.',
+        error: 'The regional weather could not be loaded.',
+        forbidden: 'Your access does not include the regional weather.',
+      },
+      sigmet: {
+        name: 'SIGMET {hazard}',
+        top: 'Up to {level}',
+        base: 'From {level}',
+        hazard: {
+          TS: 'Thunderstorms',
+          TC: 'Tropical cyclone',
+          TURB: 'Turbulence',
+          ICE: 'Icing',
+          MTW: 'Mountain wave',
+          VA: 'Volcanic ash',
+          DS: 'Dust or sand',
+          OTHER: 'Other hazard',
+        },
+      },
     },
     wind: {
       title: 'Wind {wind}',

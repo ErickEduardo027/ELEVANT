@@ -1315,3 +1315,18 @@ En la rama de integración de los mapas, M4 («Seguir en 3D» ultra cerca) se un
   - `trafficLayers.test.js`, `selectionLayers.test.js`, `standLayers.test.js` y `OccMap.follow3d.test.jsx`: lo que se oculta de cerca.
 
   La suite visual no se volvió a correr en esta integración.
+
+## Actualización (28 de noviembre de 2026). Línea M7: clima regional en el motor y Panorama en Región
+
+Decisiones del dueño del 26 y 27 de noviembre de 2026 (excepción de color para las capas de clima y las categorías de vuelo), aplicadas en la rama `feat/occ-panorama-clima`:
+
+**1. Capas nuevas, solo en un mapa que las pide** (`traffic/weatherLayers.js`: `weatherOverlay({ regional: true })`, `core/regionalWeather.js`). OccMap las añade cuando recibe al arrancar `weather` y `regionWeather` (lo que responde `features/weather/useRegionWeather.js`). Se dibujan en Región y Aproximación, encendidas por defecto en el menú Capas («Meteorología») y con su entrada en la leyenda:
+- bucle de GOES-East de NASA GIBS: seis fotogramas fijados una vez a su hora, terminando en la última que GIBS informa; GeoColor de día en PUJ y la banda 13 infrarroja (en grises) de noche. El bucle cambia la opacidad de las capas, nunca las teselas por fotograma; con movimiento reducido o reloj congelado queda en el último;
+- radar: los últimos seis fotogramas del índice de la API, en la escala NWS, con el crédito de su proveedor en la atribución mientras se ve;
+- estaciones METAR: punto en el color de la categoría (VFR verde, MVFR azul, IFR rojo, LIFR magenta), barba de viento y el código con la categoría escrita, para no depender del color;
+- SIGMET en vigor: relleno ligero y contorno en el color del peligro; su texto, en el color de texto del tema sobre el halo, para que se lea también en el tema claro (nota del 2026-11-28: los tonos pastel de algunos peligros no se leían sobre el halo claro).
+El bucle y el radar quedan ocultos hasta tener fotogramas fijados; lo simulado se rotula «Demo» y lo informado «No oficial».
+
+**2. Lecturas.** Cuatro lecturas en `OCC_REQUEST_PLAN.weather`: estaciones, SIGMET y malla de viento cada 10 min, índice del radar cada 5 min; nunca con un anuncio, en pausa con la pestaña oculta y con retroceso al fallar (hasta 30 min). Un minuto en reposo no tiene ninguna: el presupuesto de CN-19 (40 por minuto) no cambia y `occRequestBudget.test.js` y `useConsoleData.budget.test.jsx` lo comprueban. El adaptador se inyecta (`services/regionWeatherService.js`). Mientras el cliente compartido no tenga `getOccRegionWeather`, `getOccSigmets`, `getOccWindGrid` y `getOccRadarFrames` (línea M6), Panorama usa el adaptador desactivado, que responde Disabled sin petición: el menú dice que el clima regional no está activado y no se inventa nada. La malla de viento todavía no se dibuja, y Panorama no la lee (`wanted: { wind: false }`, nota del 2026-11-28). Desde el 2026-11-28 cada lectura respeta además el `refreshAfterSeconds` de su última respuesta: nunca vuelve a preguntar antes de lo que pidió la API (la malla de viento responde 3600 s; una respuesta Unavailable, de 300 a 900 s), y su propio ritmo con el retroceso es solo el mínimo.
+
+**3. Inclinación de Región y Aproximación.** `cameraPresets.js: CAMERA_3D_WIDE` (Región 35°, norte arriba; Aproximación 45°, −17°) solo para la pantalla que lo pide con `regional3d`. Hoy solo lo pide Panorama; las demás siguen planas en esas vistas, como decía el M7 §5 original.

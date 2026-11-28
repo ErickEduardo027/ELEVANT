@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { CONSOLE_READS } from '../../dashboard/noc/consoleReads';
 import { AIRFIELD_PICTURE_POLL_MS, airPictureDelayMs, MAP_SITUATION_READS } from '../../maps/useMapSituation';
 import { occMountedFiles, readSource } from '../../../styles/occSourceScan';
+import { REGION_WEATHER_READS, regionWeatherDelayMs, regionWeatherPollMs } from '../../weather/useRegionWeather';
 import { ADMIN_OCC_NAVIGATION } from '../navigation';
 import { OCC_COALESCE_MS, OCC_HINT_COALESCE_MS, OCC_OBSERVER_POLL_MS } from './occCadence';
 import {
@@ -227,7 +228,9 @@ function screenToday(screen, script, { airPicturePollMs = null } = {}) {
   const paced = read => (airPicturePollMs !== null && read.key === 'airPicture' ? { ...read, pollMs: airPicturePollMs } : read);
   const maps = refreshed.flatMap(([, site]) => site.map.map(key => MAP_READS[key]));
   return simulate({
-    shellReads: [...OCC_REQUEST_PLAN.frame, ...(screen === CONSOLE_SCREEN ? OCC_REQUEST_PLAN.console : maps)].map(paced),
+    // Panorama also reads the regional weather (lane M7).
+    shellReads: [...OCC_REQUEST_PLAN.frame,
+      ...(screen === CONSOLE_SCREEN ? [...OCC_REQUEST_PLAN.console, ...OCC_REQUEST_PLAN.weather] : maps)].map(paced),
     ownSites: own.map(([file, site]) => [fileLabel(file), site]),
     ridingSites: riding.map(([file, site]) => [fileLabel(file), site]),
     refreshed: refreshed.map(([file, site]) => [fileLabel(file), site]),
@@ -457,6 +460,54 @@ describe('OCC request budget', () => {
       expect(digits(readSource(read.owner)), `${read.owner}: ${read.pollMs} ms`).toMatch(new RegExp(`\\b${read.pollMs}\\b`));
       expect(readSource('src/services/aviationReferenceService.js')).toContain(`api.${read.read}(`);
     }
+  });
+
+  it('the regional weather (lane M7) fits the budget: none in a minute at rest, four when Panorama opens', () => {
+    const withWeather = script => simulate({
+      shellReads: [...OCC_REQUEST_PLAN.frame, ...OCC_REQUEST_PLAN.console, ...OCC_REQUEST_PLAN.weather], script });
+    // Their paces are five and ten minutes: the counted minute holds none of them, at rest or in the demo minute.
+    expect(withWeather([]).byKey).toEqual(plannedConsole([]).byKey);
+    expect(withWeather(OCC_DEMO_MINUTE).total).toBe(plannedConsole(OCC_DEMO_MINUTE).total);
+    // The minute Panorama opens: every read once, the four weather reads and the two references included.
+    const sim = createSimulation();
+    const hub = createHub();
+    addShellObserver(sim, hub);
+    [...OCC_REQUEST_PLAN.frame, ...OCC_REQUEST_PLAN.console, ...OCC_REQUEST_PLAN.weather, ...OCC_REQUEST_PLAN.references]
+      .forEach(entry => addShellRead(sim, hub, entry));
+    sim.runUntil(MINUTE_MS);
+    const opening = sim.requests.filter(request => request.at < MINUTE_MS);
+    const weatherKeys = OCC_REQUEST_PLAN.weather.map(entry => entry.key);
+    expect(opening.filter(request => weatherKeys.includes(request.key))).toHaveLength(4);
+    expect(opening.length).toBeLessThanOrEqual(OCC_REQUEST_BUDGET.rest);
+    // An hour at rest: six of each ten-minute read and twelve of the radar index, under one a minute together.
+    const hour = createSimulation();
+    OCC_REQUEST_PLAN.weather.forEach(entry => addShellRead(hour, createHub(), entry));
+    hour.runUntil(3_600_000);
+    expect(hour.requests.length).toBeLessThanOrEqual(6 * 3 + 12 + 4);
+  });
+
+  it('the regional weather of the plan is what useRegionWeather reads, on its own poll and never on an announcement', () => {
+    const reads = Object.values(REGION_WEATHER_READS);
+    expect(OCC_REQUEST_PLAN.weather.map(entry => entry.read)).toEqual(reads.map(entry => entry.read));
+    for (const [index, entry] of OCC_REQUEST_PLAN.weather.entries()) {
+      const own = reads[index];
+      expect(entry.pollMs, entry.key).toBe(own.pollMs);
+      expect(entry.pollMs, entry.key).toBeGreaterThanOrEqual(300_000);
+      expect(entry.pollMs, entry.key).toBeLessThanOrEqual(600_000);
+      expect(entry.resources, entry.key).toEqual([]);
+      expect(own.resources, entry.key).toEqual([]);
+      expect(entry.coalesceMs, entry.key).toBe(own.coalesceMs);
+      expect(existsSync(entry.owner), entry.owner).toBe(true);
+      expect(readSource(entry.owner)).toContain(`'${entry.read}'`);
+      // A failing read waits longer, never shorter, up to half an hour.
+      expect(regionWeatherDelayMs(own, 0)).toBe(own.pollMs);
+      expect(regionWeatherDelayMs(own, 1)).toBe(own.pollMs * 2);
+      expect(regionWeatherDelayMs(own, 10)).toBe(1_800_000);
+      // The answer's refreshAfterSeconds only ever slows it down (2026-11-28).
+      expect(regionWeatherPollMs(own, 0, { refreshAfterSeconds: 60 })).toBe(own.pollMs);
+      expect(regionWeatherPollMs(own, 0, { refreshAfterSeconds: 3600 })).toBe(3_600_000);
+    }
+    expect(OCC_REQUEST_PLAN.weather.find(entry => entry.key === 'radarFrames').pollMs).toBe(300_000);
   });
 
   it('the planned console is what useConsoleData and useMapSituation read', () => {

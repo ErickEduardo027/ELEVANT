@@ -49,6 +49,9 @@ import { VIEW_NAMES } from './cameraPresets';
 //   `parkedAt(code)` is the selection of the traffic aircraft parked on that stand, or null.
 // - board filter (M8, OccMap's `flightEmphasis`): `boardFilter`, whether the filter of Monitoreo's board dims AVIAM
 //   aircraft on the map, for the legend.
+// - runway in use (2026-11-28): `runwayInUse`, the runway the map draws in use (`{ arrival, departure, source }`, from
+//   traffic/referenceFeatures.js: mapRunwayInUse with the recent live arrivals it saw and the weather it was given),
+//   whether or not its centreline is on screen, so a panel over the map names the same runway; null outside an OccMap.
 // Outside an OccMap the value is a map that does nothing and shows nothing.
 
 const doNothing = () => {};
@@ -73,6 +76,7 @@ export const OCC_MAP_IDLE = Object.freeze({
     route: Object.freeze([]) }),
   trafficSource: null,
   referencesOnScreen: Object.freeze({ kinds: Object.freeze([]), runway: null }),
+  runwayInUse: null,
   layers: Object.freeze({ keys: Object.freeze([]), values: Object.freeze({}), notes: Object.freeze({}) }),
   setLayer: doNothing,
   layersMenuOpen: false,

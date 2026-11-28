@@ -4,13 +4,17 @@ import { mapColorsFor } from '../style/mapColors';
 import { basemapColorsFor } from '../style/mapTheme';
 import { useOptionalTheme } from '../../shell/useTheme';
 import { SATELLITE_OPACITY } from '../../../services/satelliteService';
+import { FLIGHT_CATEGORIES, FLIGHT_CATEGORY_COLORS, RADAR_SCALE_NWS, SIGMET_HAZARD_COLORS } from '../style/weatherColors';
+import { BARB_IMAGE_SIZE, WEATHER_IMAGE_SHAPES, barbImageId } from '../style/weatherImages';
 
 // A swatch of the map legend for the references (PR M8, ui/referenceLegend.js), drawn as style/referenceLayers.js draws
 // them, on a patch of the map's sea: two range rings in --occ-line-strong (they read on the light sea too); an extended centreline with its ticks, thin in
 // --occ-line-strong, or wider in --occ-text for the runway in use; an airport of the region as a hollow ring and one of
 // today's flights as a filled dot; the chart symbols of the navaids (style/referenceImages.js) in --occ-muted; and the
 // night, a darker half of the land past its edge. The weather as traffic/weatherLayers.js draws it: the wind's arrow,
-// dimmed when stale, and a mark for each satellite image.
+// dimmed when stale, and a mark for each satellite image. The regional weather (lane M7) in the aviation colours the
+// owner approved on 2026-11-26 (style/weatherColors.js): the loops, the radar's scale as flat steps, a SIGMET area, the
+// dot of each flight category and a wind barb.
 
 const tokenColour = token => `var(${token})`;
 const LINE = tokenColour('--occ-line');
@@ -42,6 +46,36 @@ function WindArrow({ stale = false }) {
     </g>
   );
 }
+
+// A wind barb of 15 kt (style/weatherImages.js), from its station's dot, turned as a wind from 300°, in the text colour.
+const BARB_SCALE = 20 / BARB_IMAGE_SIZE;
+function WindBarb() {
+  const colour = tokenColour('--occ-text');
+  return (
+    <g data-glyph="barb" transform={`rotate(300 10 10) scale(${BARB_SCALE})`}>
+      {WEATHER_IMAGE_SHAPES[barbImageId(15)].ops.map(op => (
+        <path key={op.stroke ?? op.fill} d={op.stroke ?? op.fill}
+          style={op.stroke === undefined ? { fill: colour } : { fill: 'none', stroke: colour, strokeWidth: op.lineWidth / BARB_SCALE / 2 }} />
+      ))}
+      <circle cx={BARB_IMAGE_SIZE / 2} cy={BARB_IMAGE_SIZE / 2} r={5} style={{ fill: 'none', stroke: colour, strokeWidth: 1.5 / BARB_SCALE / 2 }} />
+    </g>
+  );
+}
+
+// The cloud of the satellite marks, and a loop's circling arrow over it.
+const CLOUD = 'M4 14 C2 14 2 10 5 10 C5 6 10 5 12 8 C14 6 18 8 17 11 C19 11 19 14 17 14 Z';
+const LoopArrow = () => (
+  <g style={{ fill: 'none', stroke: TEXT, strokeWidth: 1.2 }}>
+    <path d="M13 3.5 A3 3 0 1 1 9.6 5" />
+    <path d="M9 3 L9.6 5.2 L11.8 4.6" />
+  </g>
+);
+// The radar's scale as five flat steps, from light rain to hail.
+const RADAR_STEPS = [1, 4, 6, 9, 12].map(index => RADAR_SCALE_NWS[index][1]);
+// The dot of a station in the colour of its flight category, edged dark as the map edges it; a hollow ring without one.
+const categoryDot = category => (category === null
+  ? <circle cx="10" cy="10" r="4.5" style={{ fill: 'none', stroke: tokenColour('--occ-muted'), strokeWidth: 1.5 }} />
+  : <circle cx="10" cy="10" r="5" style={{ fill: FLIGHT_CATEGORY_COLORS[category], stroke: tokenColour('--occ-nav'), strokeWidth: 1 }} />);
 
 // A centreline from the threshold on the right, out to the left, with a tick at each mile and a longer one at the fifth.
 function Centreline({ colour, width }) {
@@ -91,6 +125,32 @@ const DRAWINGS = Object.freeze({
       <path d="M6 13 L4.5 17 M10 13 L8.5 17 M14 13 L12.5 17" style={{ fill: 'none', stroke: TEXT, strokeWidth: 1.2, strokeLinecap: 'round' }} />
     </g>
   ),
+  // The regional weather (lane M7).
+  loopIr: (
+    <>
+      <path d={CLOUD} style={{ fill: TEXT, fillOpacity: SATELLITE_OPACITY.goes, stroke: 'none' }} />
+      <LoopArrow />
+    </>
+  ),
+  loopGeocolor: (
+    <>
+      <path d="M0 13 H20 V18 A2 2 0 0 1 18 20 H2 A2 2 0 0 1 0 18 Z" style={{ fill: 'var(--occ-swatch-land)' }} />
+      <path d={CLOUD} style={{ fill: TEXT, fillOpacity: 0.85, stroke: 'none' }} />
+      <LoopArrow />
+    </>
+  ),
+  radar: (
+    <g data-glyph="radar-scale">
+      {RADAR_STEPS.map((colour, index) => <rect key={colour} x={1 + index * 3.6} y="5" width="3.6" height="10" style={{ fill: colour }} />)}
+    </g>
+  ),
+  sigmet: (
+    <path d="M3 5 L15 3 L17 14 L5 17 Z"
+      style={{ fill: SIGMET_HAZARD_COLORS.TS, fillOpacity: 0.12, stroke: SIGMET_HAZARD_COLORS.TS, strokeWidth: 1.5, strokeLinejoin: 'round' }} />
+  ),
+  ...Object.fromEntries(FLIGHT_CATEGORIES.map(category => [`category${category}`, categoryDot(category)])),
+  categoryNone: categoryDot(null),
+  barb: <WindBarb />,
 });
 
 /** The swatch of a reference legend entry (ui/referenceLegend.js: `swatch`), hidden from assistive technology. */

@@ -45,16 +45,24 @@ export function runwayLabel(ident) {
 const blowsFrom = wind => Boolean(wind) && wind.variable !== true && isNumber(wind.directionDeg)
   && isNumber(wind.speedKt) && wind.speedKt > 0;
 
+/** A gust worth its own components: a finite speed above the mean wind's. */
+const gustOf = wind => (isNumber(wind.gustKt) && wind.gustKt > wind.speedKt ? wind.gustKt : null);
+
 /**
  * The wind on every runway end of the layout, in layout order (08, 26, 09 and 27 at Punta Cana): `[{ ident, label,
- * headwindKt, crosswindKt, side }]`, frozen. `wind` is the METAR's (`{ directionDeg, speedKt, variable }`, as
- * features/weather/metar.js reads it); calm, variable or no wind gives an empty list.
+ * headwindKt, crosswindKt, side }]`, frozen. `wind` is the METAR's (`{ directionDeg, speedKt, gustKt, variable }`, as
+ * features/weather/metar.js reads it); calm, variable or no wind gives an empty list. A gust above the mean speed (M7,
+ * 2026-11-27) adds `gust`: the same `{ headwindKt, crosswindKt, side }` at the gust's speed and the same direction, so
+ * the weather panel shows the strongest cross and tail wind a crew can meet; without a gust the key is absent.
  */
 export function runwayWinds(layout, wind) {
   if (!blowsFrom(wind)) return Object.freeze([]);
+  const gustKt = gustOf(wind);
   return Object.freeze(runwayEnds(layout).flatMap(end => {
     const components = windComponents(wind.directionDeg, wind.speedKt, end.headingTrue);
-    return components ? [Object.freeze({ ident: end.ident, label: runwayLabel(end.ident), ...components })] : [];
+    if (!components) return [];
+    const gust = gustKt === null ? null : windComponents(wind.directionDeg, gustKt, end.headingTrue);
+    return [Object.freeze({ ident: end.ident, label: runwayLabel(end.ident), ...components, ...(gust ? { gust } : {}) })];
   }));
 }
 

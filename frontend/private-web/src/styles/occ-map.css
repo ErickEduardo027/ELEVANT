@@ -20,6 +20,9 @@
   /* The height of MapLibre's zoom group (zoom in, zoom out and the compass, with their joints and border), under which
      the rail starts. */
   --occ-map-zoom-height: calc(3 * var(--occ-map-control) + 4px);
+  /* The height the map's key takes at the bottom left (the credit of the aircraft data and, over it, the altitude scale
+     unfolded, with one gap above): a panel the page floats in that corner starts over it, never on it (2026-11-28). */
+  --occ-map-key-band: 7rem;
   isolation: isolate;
   /* The map is the container of its narrow-map rule below (its root fills its parent, so its size does not depend on
      what it holds). */

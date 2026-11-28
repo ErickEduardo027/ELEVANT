@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createTranslator } from '../../../i18n/languageStore';
 import { parseMetar } from '../../weather/metar';
 import { consoleMessages } from './consoleMessages';
-import { describeClouds, describeVisibility, describeWeather, describeWind } from './weatherWords';
+import { describeClouds, describeVisibility, describeWeather, describeWind, weatherStateKey } from './weatherWords';
 
 // Synthetic METAR reports of MDPC, in the format the station publishes.
 const words = (metar, t) => ({
@@ -56,5 +56,18 @@ describe('weatherWords', () => {
     }
     expect(describeWind(createTranslator(consoleMessages, 'en'), parseMetar('MDPC 111900Z 10013G25KT 9999 Q1015').wind))
       .toBe('100° · 13 kt · gusts 25 kt');
+  });
+
+  it('weatherStateKey says every state without an observation, never «Consultando…» for ever (M7)', () => {
+    expect(weatherStateKey(undefined)).toBe('weather.loading');
+    expect(weatherStateKey({ status: 'loading', data: null })).toBe('weather.loading');
+    expect(weatherStateKey({ status: 'error', data: null })).toBe('weather.error');
+    expect(weatherStateKey({ status: 'unauthorized', data: null })).toBe('weather.forbidden');
+    expect(weatherStateKey({ status: 'empty', apiStatus: 'Unavailable', data: null })).toBe('weather.unavailable');
+    expect(weatherStateKey({ status: 'empty', apiStatus: 'Disabled', data: null })).toBe('weather.disabled');
+    expect(weatherStateKey({ status: 'success', apiStatus: 'Live', data: { metar: {} } })).toBeNull();
+    const t = createTranslator(consoleMessages, 'es');
+    expect(t('weather.disabled')).toBe('El clima de MDPC no está activado en este entorno.');
+    expect(t('weather.forbidden')).toBe('Tu acceso no incluye el clima de MDPC.');
   });
 });

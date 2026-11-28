@@ -93,3 +93,59 @@ export function dayPhase(elevationDeg) {
   if (elevationDeg >= 0) return 'day';
   return elevationDeg >= CIVIL_TWILIGHT_DEG ? 'twilight' : 'night';
 }
+
+/**
+ * The sun's elevation at sunrise and sunset as almanacs publish them: the upper limb on the horizon with the standard
+ * refraction (34′ plus the 16′ semi-diameter), not the geometric 0° of dayPhase.
+ */
+export const SUNRISE_DEG = -0.833;
+
+// The step of the search for the crossings, and how close the bisection gets to each one.
+const SEARCH_STEP_MS = 10 * 60_000;
+const SEARCH_PRECISION_MS = 15_000;
+
+// The instant within (from, to] where the elevation crosses `threshold`, by bisection.
+function crossing(from, to, observer, threshold) {
+  let low = from;
+  let high = to;
+  const above = at => sunPosition(at, observer).elevationDeg >= threshold;
+  const lowAbove = above(low);
+  while (high - low > SEARCH_PRECISION_MS) {
+    const middle = (low + high) / 2;
+    if (above(middle) === lowAbove) low = middle;
+    else high = middle;
+  }
+  return Math.round((low + high) / 2);
+}
+
+/**
+ * The sun's day at an observer (`[lng, lat]`) around `ms` (epoch milliseconds of the server's clock), for the weather
+ * panel (M7, 2026-11-27): `{ dawn, sunrise, sunset, dusk }`, frozen, each in epoch milliseconds, within the observer's
+ * mean solar day that holds `ms` (from its local mean midnight, 4 h 33 min UTC at Punta Cana). `dawn` and `dusk` are
+ * the start and the end of the civil twilight (CIVIL_TWILIGHT_DEG), `sunrise` and `sunset` the crossings of
+ * SUNRISE_DEG, to within about a minute. An event the day does not have (a polar day or night) is null.
+ */
+export function sunTimes(ms, observer) {
+  assertInstant(ms);
+  const [lng, lat] = Array.isArray(observer) ? observer : [];
+  if (!Number.isFinite(lng) || !Number.isFinite(lat)) throw new RangeError('An observer needs a finite [lng, lat]');
+  const offsetMs = (lng / 360) * DAY_MS;
+  const start = Math.floor((ms + offsetMs) / DAY_MS) * DAY_MS - offsetMs;
+  const events = { dawn: null, sunrise: null, sunset: null, dusk: null };
+  const thresholds = [[CIVIL_TWILIGHT_DEG, 'dawn', 'dusk'], [SUNRISE_DEG, 'sunrise', 'sunset']];
+  let previous = start;
+  let previousElevation = sunPosition(previous, [lng, lat]).elevationDeg;
+  for (let at = start + SEARCH_STEP_MS; at <= start + DAY_MS; at += SEARCH_STEP_MS) {
+    const elevation = sunPosition(at, [lng, lat]).elevationDeg;
+    for (const [threshold, rising, setting] of thresholds) {
+      const wasAbove = previousElevation >= threshold;
+      const isAbove = elevation >= threshold;
+      if (wasAbove === isAbove) continue;
+      const key = isAbove ? rising : setting;
+      if (events[key] === null) events[key] = crossing(previous, at, [lng, lat], threshold);
+    }
+    previous = at;
+    previousElevation = elevation;
+  }
+  return Object.freeze(events);
+}

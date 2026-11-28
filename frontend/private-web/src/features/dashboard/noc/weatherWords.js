@@ -40,3 +40,18 @@ export function describeWind(t, wind) {
   ].filter(Boolean);
   return `${direction} · ${wind.speedKt} kt${extras.length ? ` · ${extras.join(' · ')}` : ''}`;
 }
+
+/**
+ * The key of what a weather surface says while it has no observation (useMdpcWeather's view: `status`, `apiStatus`,
+ * `data`), or null once it has one (M7, 2026-11-27: before, the pill said «Consultando…» for ever when the weather
+ * was empty or refused). `weather.forbidden` for a refused reader, `weather.error` for a failed first read,
+ * `weather.disabled` or `weather.unavailable` for an answer without a METAR (Disabled, else Unavailable), and
+ * `weather.loading` until the first answer.
+ */
+export function weatherStateKey(weather) {
+  if (weather?.data) return null;
+  if (weather?.status === 'unauthorized') return 'weather.forbidden';
+  if (weather?.status === 'error') return 'weather.error';
+  if (weather?.status === 'empty') return weather.apiStatus === 'Disabled' ? 'weather.disabled' : 'weather.unavailable';
+  return 'weather.loading';
+}

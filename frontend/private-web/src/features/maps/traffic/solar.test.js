@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
-import { CIVIL_TWILIGHT_DEG, dayPhase, solarCoordinates, subsolarPoint, sunPosition } from './solar';
+import { CIVIL_TWILIGHT_DEG, dayPhase, solarCoordinates, subsolarPoint, sunPosition, sunTimes, SUNRISE_DEG } from './solar';
 
 // Decision J-1: the sun from the Astronomical Almanac's low-precision formulas, checked against published instants
 // within 0.05°. Instants are epoch milliseconds, as the server's clock gives them.
@@ -140,5 +140,33 @@ describe('the sun (design J, Decision J-1)', () => {
     expect(dusk.at(-1)).toBe('night');
     expect(() => dayPhase(Number.NaN)).toThrow(RangeError);
     expect(() => dayPhase(null)).toThrow(RangeError);
+  });
+
+  it('sunTimes gives the civil dawn, sunrise, sunset and dusk of Punta Cana within its solar day (M7)', () => {
+    const day = sunTimes(at('2026-11-27T15:00:00Z'), MDPC);
+    expect(Object.isFrozen(day)).toBe(true);
+    // Late November at Punta Cana: sunrise about 06:38 and sunset about 17:50 local time (UTC−4).
+    expect(day.sunrise).toBeGreaterThan(at('2026-11-27T10:30:00Z'));
+    expect(day.sunrise).toBeLessThan(at('2026-11-27T10:48:00Z'));
+    expect(day.sunset).toBeGreaterThan(at('2026-11-27T21:40:00Z'));
+    expect(day.sunset).toBeLessThan(at('2026-11-27T21:58:00Z'));
+    // The civil twilight lasts some 20 to 25 minutes in the tropics.
+    for (const minutes of [(day.sunrise - day.dawn) / 60_000, (day.dusk - day.sunset) / 60_000]) {
+      expect(minutes).toBeGreaterThan(18);
+      expect(minutes).toBeLessThan(28);
+    }
+    // Each crossing really is where the sun is at its elevation.
+    expect(Math.abs(sunPosition(day.sunrise, MDPC).elevationDeg - SUNRISE_DEG)).toBeLessThan(0.1);
+    expect(Math.abs(sunPosition(day.dusk, MDPC).elevationDeg - CIVIL_TWILIGHT_DEG)).toBeLessThan(0.1);
+    // The same day from early morning and late evening at the station.
+    expect(sunTimes(at('2026-11-27T05:00:00Z'), MDPC)).toEqual(day);
+    expect(sunTimes(at('2026-11-28T03:30:00Z'), MDPC)).toEqual(day);
+  });
+
+  it('sunTimes leaves out what a polar day or night does not have, and throws without an instant or observer', () => {
+    expect(sunTimes(at('2026-12-21T12:00:00Z'), [15, 80])).toEqual({ dawn: null, sunrise: null, sunset: null, dusk: null });
+    expect(sunTimes(at('2026-06-21T12:00:00Z'), [15, 80])).toEqual({ dawn: null, sunrise: null, sunset: null, dusk: null });
+    expect(() => sunTimes(Number.NaN, MDPC)).toThrow(RangeError);
+    expect(() => sunTimes(at('2026-11-27T15:00:00Z'), null)).toThrow(RangeError);
   });
 });

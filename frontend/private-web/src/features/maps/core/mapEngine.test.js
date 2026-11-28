@@ -487,6 +487,21 @@ describe('map engine', () => {
     expect(map.calls.filter(call => call.method === 'setTiles')).toHaveLength(2);
   });
 
+  it('setPaint sets a paint property of a layer once the style has loaded, and leaves a missing layer alone', () => {
+    // Lane M7: the frames of a weather loop switch their raster-opacity.
+    const { engine, map, state } = setup();
+    const paintCalls = () => map.calls.filter(call => call.method === 'setPaintProperty');
+    engine.setPaint('occ-stand-codes', 'text-opacity', 0.5);
+    expect(paintCalls()).toEqual([]);
+    state.emit(map, 'style.load');
+    expect(map.getLayer('occ-stand-codes').paint['text-opacity']).toBe(0.5);
+    expect(() => engine.setPaint('occ-nowhere', 'raster-opacity', 0)).not.toThrow();
+    expect(paintCalls().map(call => call.args)).toEqual([['occ-stand-codes', 'text-opacity', 0.5]]);
+    engine.destroy();
+    expect(() => engine.setPaint('occ-stand-codes', 'text-opacity', 1)).not.toThrow();
+    expect(paintCalls()).toHaveLength(1);
+  });
+
   it('setFilter gives a layer its filter once the style has loaded, and MapLibre keeps it through a context loss', () => {
     const { engine, map, state } = setup();
     const filter = ['!=', ['get', 'code'], 'A11'];

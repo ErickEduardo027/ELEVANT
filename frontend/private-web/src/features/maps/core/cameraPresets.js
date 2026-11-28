@@ -51,11 +51,22 @@ export const AIRPORT_FOLLOW_MAX_ZOOM = 22;
 
 /**
  * The tilt of the 3D mode by view (contracts 2.3): the ramp keeps today's values of the positions map, the airfield
- * tilts less so the whole field stays in sight. Region and approach stay 2D.
+ * tilts less so the whole field stays in sight. Region and approach stay 2D, except on a screen that opts in
+ * (CAMERA_3D_WIDE).
  */
 export const CAMERA_3D = Object.freeze({
   airfield: Object.freeze({ pitch: 40, bearing: -17 }),
   ramp: Object.freeze({ pitch: 55, bearing: -17 }),
+});
+
+/**
+ * The tilt of Región and Aproximación in 3D on a screen that opts in (lane M7, 2026-11-28: Panorama opens in Región in
+ * 3D with the weather): gentle enough that the 250 NM ring and the 40 NM approach stay in sight, north up over the
+ * region and turned as the airport views over the approach. Every other screen keeps them flat.
+ */
+export const CAMERA_3D_WIDE = Object.freeze({
+  region: Object.freeze({ pitch: 35, bearing: 0 }),
+  approach: Object.freeze({ pitch: 45, bearing: -17 }),
 });
 
 // How the derived stand thresholds sit against the fitted zooms (contracts 2.3).
@@ -362,9 +373,14 @@ export function transitionFor(fromZoom, toZoom) {
     : { method: 'easeTo', duration, essential: false };
 }
 
-/** Pitch and bearing of a view: the 3D tilt of airfield and ramp when the mode is 3D, flat and north-up otherwise. */
-export function cameraAngles(view, pitchMode) {
-  const tilt = pitchMode === '3d' && Object.hasOwn(CAMERA_3D, view) ? CAMERA_3D[view] : null;
+/**
+ * Pitch and bearing of a view: the 3D tilt of airfield and ramp when the mode is 3D, and of region and approach as well
+ * with `wide` (CAMERA_3D_WIDE, a screen that opts in); flat and north-up otherwise.
+ */
+export function cameraAngles(view, pitchMode, { wide = false } = {}) {
+  if (pitchMode !== '3d') return { pitch: 0, bearing: 0 };
+  let tilt = Object.hasOwn(CAMERA_3D, view) ? CAMERA_3D[view] : null;
+  if (tilt === null && wide === true && Object.hasOwn(CAMERA_3D_WIDE, view)) tilt = CAMERA_3D_WIDE[view];
   return tilt ? { ...tilt } : { pitch: 0, bearing: 0 };
 }
 
