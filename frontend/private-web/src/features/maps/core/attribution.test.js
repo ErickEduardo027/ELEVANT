@@ -3,8 +3,8 @@ import { AIRFIELD_SOURCE, airfieldOverlay } from '../style/airfieldLayers';
 import { BASEMAP_SOURCE_ID, buildOccStyle } from '../style/occStyle';
 import { OURAIRPORTS_SOURCE, referenceOverlay } from '../style/referenceLayers';
 import {
-  AIRFIELD_ATTRIBUTION, FIXED_ATTRIBUTION, GIBS_ATTRIBUTION, GIBS_URL, OURAIRPORTS_ATTRIBUTION, buildAttribution,
-  collapseCompactAttribution, escapeHtml, httpsUrl,
+  AIRFIELD_ATTRIBUTION, CREDITS_LINK_CLASS, CREDITS_LINK_HREF, FIXED_ATTRIBUTION, GIBS_ATTRIBUTION, GIBS_URL,
+  OURAIRPORTS_ATTRIBUTION, buildAttribution, collapseCompactAttribution, creditsLink, creditsLinkOf, escapeHtml, httpsUrl,
 } from './attribution';
 
 // The attribution as the browser would build it, to read its links and text instead of matching strings.
@@ -128,6 +128,36 @@ describe('map attribution', () => {
     for (const value of ['http://adsb.fi', 'javascript:alert(1)', 'data:,x', '//adsb.fi', 'adsb.fi', '', null, 42]) {
       expect(httpsUrl(value), String(value)).toBeNull();
     }
+  });
+
+  it('ends with the link that opens «Créditos y licencias», in markup MapLibre keeps (PR M5)', () => {
+    const html = buildAttribution([], { creditsLabel: 'Créditos y licencias' });
+    expect(html.startsWith(`${FIXED_ATTRIBUTION} · `)).toBe(true);
+    expect(parse(html).textContent)
+      .toBe('© OpenStreetMap contributors · OpenFreeMap · © OpenMapTiles · Créditos y licencias');
+    const anchor = parse(html).querySelector(`a.${CREDITS_LINK_CLASS}`);
+    expect([anchor.getAttribute('href'), anchor.getAttribute('role'), anchor.textContent])
+      .toEqual([CREDITS_LINK_HREF, 'button', 'Créditos y licencias']);
+    // MapLibre 6.16 sanitizes the attribution: only these attributes survive, and an href only with http(s) or mailto
+    // once resolved against a base (a hash keeps the base's https). No data- attribute, no button element.
+    const allowed = ['alt', 'class', 'datetime', 'dir', 'height', 'href', 'hreflang', 'lang', 'referrerpolicy', 'rel',
+      'role', 'src', 'target', 'title', 'translate', 'type', 'width'];
+    for (const name of anchor.getAttributeNames()) expect(allowed, name).toContain(name);
+    expect(new URL(CREDITS_LINK_HREF, 'https://maplibre.invalid/').protocol).toBe('https:');
+    // After the sources, the link stays last; its words are escaped; without words there is no link.
+    const withWeather = buildAttribution([{ name: 'NOAA', homeUrl: 'https://aviationweather.gov', label: 'Clima' }],
+      { creditsLabel: 'Credits and licences' });
+    expect(parse(withWeather).textContent.endsWith('Clima: NOAA · Credits and licences')).toBe(true);
+    expect(creditsLink('<b>x</b>')).toContain('&lt;b&gt;x&lt;/b&gt;');
+    expect(buildAttribution([], { creditsLabel: '  ' })).toBe(FIXED_ATTRIBUTION);
+
+    // The event of a click inside the link names it; any other target does not.
+    const host = document.createElement('div');
+    host.innerHTML = html;
+    const link = host.querySelector(`a.${CREDITS_LINK_CLASS}`);
+    expect(creditsLinkOf({ target: link })).toBe(link);
+    expect(creditsLinkOf({ target: host.querySelector('a:not(.occ-map-credits-link)') })).toBeNull();
+    expect(creditsLinkOf({ target: null })).toBeNull();
   });
 
   it('closes a compact attribution that MapLibre added open', () => {

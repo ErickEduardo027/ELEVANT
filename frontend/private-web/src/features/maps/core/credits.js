@@ -22,8 +22,16 @@ const SAFE_CODE = /^[A-Z0-9]{2,4}$/;
 const text = value => (typeof value === 'string' ? value.trim() : '');
 const list = value => (Array.isArray(value) ? value.map(text).filter(Boolean) : []);
 
-// The airline of an IATA code, as the liveries name it.
-const AIRLINE_BY_IATA = new Map(Object.values(LIVERIES).filter(entry => entry.iata).map(entry => [entry.iata, entry.name]));
+/** The full name of each airline with a text logo (public/models/liveries/logos/README.md), by IATA code. */
+export const LOGO_AIRLINES = Object.freeze({
+  AA: 'American Airlines', AC: 'Air Canada', AV: 'Avianca', B6: 'JetBlue', DL: 'Delta Air Lines',
+  F9: 'Frontier Airlines', NK: 'Spirit Airlines', P5: 'Wingo', UA: 'United Airlines', UX: 'Air Europa',
+  WG: 'Sunwing Airlines', WS: 'WestJet',
+});
+
+// The airline of an IATA code: its full name, else as the liveries letter it.
+const LIVERY_NAMES = new Map(Object.values(LIVERIES).filter(entry => entry.iata).map(entry => [entry.iata, entry.name]));
+const airlineOf = iata => (Object.hasOwn(LOGO_AIRLINES, iata) ? LOGO_AIRLINES[iata] : LIVERY_NAMES.get(iata) ?? iata);
 
 /**
  * The models of the manifest, by ICAO code: `{ icao, name, baseName, proxy, licence, authors, repository,
@@ -70,7 +78,7 @@ export function logoCredits(logos) {
     const logo = entries[iata] ?? {};
     return Object.freeze({
       iata,
-      airline: AIRLINE_BY_IATA.get(iata) ?? iata,
+      airline: airlineOf(iata),
       page: httpsUrl(logo.page),
       tag: text(logo.tag),
       trademarked: logo.trademarked === true,

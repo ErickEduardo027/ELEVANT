@@ -59,10 +59,11 @@ import {
 } from '../traffic/weatherLayers';
 import { aircraftCard, flightRowOf } from '../ui/aircraftCard';
 import AltitudeLegend from '../ui/AltitudeLegend';
+import MapCreditsDialog from '../ui/MapCreditsDialog';
 import MapTooltip from '../ui/MapTooltip';
 import { remoteSatelliteImagery, useSatelliteImagery } from '../useSatelliteImagery';
 import { createAircraft3dController, parkedFromStands, readMode3d, translatePick, writeMode3d } from './aircraft3d';
-import { buildAttribution } from './attribution';
+import { buildAttribution, creditsLinkOf } from './attribution';
 import {
   PUJ_ARP, VIEW_NAMES, boundsCenter, cameraAngles, fitZooms, isInBounds, isRetired, lngLatOf, presetForZoom,
   presetTargets, sameFits, standCodeOf, standsInView, targetFor, thresholdsFromFits, transitionFor, unionBounds,
@@ -757,6 +758,7 @@ const OccMapView = forwardRef(function OccMapView({
       layout, t, language, theme, resumeCameraRef,
       locale: engineLocale(t, labels?.map),
       aircraftDataLabel: t('attribution.aircraftData'),
+      creditsLabel: t('attribution.credits'),
       drawsStands: standsProp !== undefined, drawsFlights: flightsProp !== undefined, standLabels,
     };
     // The traffic (PR M5): what it draws, the groups the map shows (the page's and the layers menu's), the words of its
@@ -1742,7 +1744,7 @@ const OccMapView = forwardRef(function OccMapView({
       style: buildOccStyle({ basemap: props.basemap, overlays, theme: props.theme }),
       camera: start,
       interactive: props.interactive,
-      attribution: buildAttribution([], { aircraftDataLabel: props.aircraftDataLabel }),
+      attribution: buildAttribution([], { aircraftDataLabel: props.aircraftDataLabel, creditsLabel: props.creditsLabel }),
       imageResolver: createImageResolver({ theme: props.theme }),
       mapOptions: { ...props.mapOptions, locale: props.locale },
       onStatus: handleStatus,
@@ -2138,6 +2140,7 @@ const OccMapView = forwardRef(function OccMapView({
   const windOnScreen = snapshot.referencesOnScreen.kinds.some(kind => kind === 'wind' || kind === 'windStale');
   const weatherCreditKey = windOnScreen ? creditKeyOf(weatherNow?.source) : '';
   const weatherLabel = t('attribution.weather');
+  const creditsLabel = t('attribution.credits');
   const weatherSource = useMemo(() => {
     if (weatherCreditKey === '') return null;
     const [name, homeUrl] = JSON.parse(weatherCreditKey);
@@ -2146,11 +2149,35 @@ const OccMapView = forwardRef(function OccMapView({
   useEffect(() => {
     const engine = engineRef.current;
     const applied = appliedRef.current;
-    const key = weatherCreditKey === '' ? '' : `${weatherCreditKey}|${weatherLabel}`;
+    const key = weatherCreditKey === '' ? '' : `${weatherCreditKey}|${weatherLabel}|${creditsLabel}`;
     if (!engine || !applied.drawsWeather || applied.credit === key) return;
     applied.credit = key;
-    engine.setAttribution(buildAttribution(weatherSource === null ? [] : [weatherSource], { aircraftDataLabel }));
-  }, [aircraftDataLabel, weatherCreditKey, weatherLabel, weatherSource]);
+    engine.setAttribution(buildAttribution(weatherSource === null ? [] : [weatherSource],
+      { aircraftDataLabel, creditsLabel }));
+  }, [aircraftDataLabel, creditsLabel, weatherCreditKey, weatherLabel, weatherSource]);
+
+  // «Créditos y licencias» (PR M5): the link at the end of the attribution (core/attribution.js: creditsLink) opens the
+  // dialog of the map's credits (ui/MapCreditsDialog.jsx) on a click, or on Enter or Space while it has the focus (it
+  // has the role of a button); the page never follows its hash. MapLibre writes the attribution again whenever its text
+  // changes, so the map listens on its root instead of on the link.
+  const [creditsOpen, setCreditsOpen] = useState(false);
+  const closeCredits = useCallback(() => setCreditsOpen(false), []);
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return undefined;
+    const listener = event => {
+      if (creditsLinkOf(event) === null) return;
+      if (event.type === 'keydown' && event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      setCreditsOpen(true);
+    };
+    root.addEventListener('click', listener);
+    root.addEventListener('keydown', listener);
+    return () => {
+      root.removeEventListener('click', listener);
+      root.removeEventListener('keydown', listener);
+    };
+  }, []);
 
   // A screen's own overlays: one setData for each source whose features changed, keyed like the stands and flights.
   useEffect(() => {
@@ -2499,6 +2526,7 @@ const OccMapView = forwardRef(function OccMapView({
         {!unavailable && traffic !== undefined && <AltitudeLegend theme={theme} />}
         {children}
         {!unavailable && <MapTooltip tooltip={snapshot.tooltip} />}
+        <MapCreditsDialog open={creditsOpen} onClose={closeCredits} aircraftSource={trafficSource} />
       </div>
     </OccMapContext.Provider>
   );

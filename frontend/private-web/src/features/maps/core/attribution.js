@@ -77,15 +77,39 @@ function sourceCredit(source, label) {
 }
 
 /**
+ * The class of the link that opens the map's «Créditos y licencias» dialog (PR M5, ui/MapCreditsDialog.jsx). MapLibre
+ * sanitizes the attribution (no button, no data- attributes, only http(s) and mailto links), so the link is an anchor
+ * to the page itself with this class and the role of a button; OccMap opens the dialog on its click, or on Enter or
+ * Space while it has the focus, and never lets the page follow it.
+ */
+export const CREDITS_LINK_CLASS = 'occ-map-credits-link';
+
+/** The anchor the link points to: nothing on the page has it, so following it would only add a hash. */
+export const CREDITS_LINK_HREF = '#creditos-del-mapa';
+
+/** The link that opens the credits dialog, with the words of the screen's language. */
+export function creditsLink(label) {
+  return `<a href="${CREDITS_LINK_HREF}" class="${CREDITS_LINK_CLASS}" role="button">${escapeHtml(label)}</a>`;
+}
+
+/** The credits link an event comes from (a click on it or a key while it has the focus), else null. */
+export function creditsLinkOf(event) {
+  const target = event?.target;
+  return typeof target?.closest === 'function' ? target.closest(`a.${CREDITS_LINK_CLASS}`) : null;
+}
+
+/**
  * The attribution HTML of a map: the fixed part, then one credit per active source (`{ name, homeUrl, licenseName,
  * licenseUrl }`, as the air picture sends it), each once. `aircraftDataLabel` is the word of the screen's language. A
  * source may bring its own `label` (PR M8: «Clima» for the aerodrome weather of NOAA); without one it is aircraft data.
+ * With `creditsLabel` (PR M5), the line ends with the link that opens the «Créditos y licencias» dialog.
  */
-export function buildAttribution(activeSources = [], { aircraftDataLabel = 'Datos de aeronaves' } = {}) {
+export function buildAttribution(activeSources = [], { aircraftDataLabel = 'Datos de aeronaves', creditsLabel = '' } = {}) {
   const credits = (Array.isArray(activeSources) ? activeSources : [])
     .map(source => sourceCredit(source, plain(source?.label) || aircraftDataLabel))
     .filter(Boolean);
-  return [FIXED_ATTRIBUTION, ...new Set(credits)].join(' · ');
+  const link = plain(creditsLabel) === '' ? [] : [creditsLink(plain(creditsLabel))];
+  return [FIXED_ATTRIBUTION, ...new Set(credits), ...link].join(' · ');
 }
 
 /**
