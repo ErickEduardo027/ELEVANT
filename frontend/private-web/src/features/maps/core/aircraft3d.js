@@ -157,6 +157,9 @@ export function parkedFromStands(stands = [], aircraft = [], parkedIds = NO_IDS)
       typeIcao: type,
       model: type,
       kind: 'aviam',
+      // PR M5: the airline of the aircraft parked there, for the livery its model wears (aircraft/liveries.js).
+      ...(owner ? { airlineIcao: owner.airlineIcao ?? null, airlineIata: owner.airlineIata ?? null,
+        callsign: owner.callsign ?? null, flightNumber: owner.flightNumber ?? null } : {}),
     });
   }
   return parked;

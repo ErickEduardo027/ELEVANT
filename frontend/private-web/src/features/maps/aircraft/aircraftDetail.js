@@ -524,6 +524,22 @@ function gearParts(three, spec, air, wing, code) {
   };
 }
 
+/**
+ * The landing gear of a type on its own (PR M5), for a 3D model that has none (public/models/aircraft/manifest.json:
+ * `hasGear: false`): `{ metal, tyres, mainWheelM, pivotY }`, the legs and the tyres as two geometries in the models'
+ * frame, the wheels on the ground at z = 0, sized and placed from the type's dimensions as the detailed model's own
+ * gear; null for a family without a tube (helicopters, light singles, the dart).
+ */
+export function buildGearGeometry(three, spec, code = null) {
+  if (!(spec?.lengthM > 0) || !(spec?.spanM > 0) || !(spec?.fuselageDiaM > 0)) return null;
+  if (!Object.hasOwn(TUBE_FRAMES, spec.family) || spec.family === 'pistonSingle') return null;
+  const air = airframeOf(spec);
+  const wing = wingParts(three, spec, air, code);
+  const gear = gearParts(three, spec, air, wing, code);
+  wing.geometry.dispose();
+  return gear;
+}
+
 // --------------------------------------------------------------------------------------------------------- textures
 
 const FONT = '"Segoe UI", "Helvetica Neue", Arial, sans-serif';
@@ -757,10 +773,12 @@ export function nextBlinkInMs(timeMs, { beacon = false, strobes = false } = {}) 
  *   where the model pitches (over its main wheels) and banks (its fuselage axis).
  * - `setState({ gearDown, lights: { beacon, strobes }, timeMs, propellerRpm })` shows or hides the gear, blinks the
  *   lights at `timeMs` and turns the propellers.
+ * - PR M5: `airframe` `{ meshes, dispose, refreshLogo }` (aircraft/modelAircraft.js) is the type's 3D model in its
+ *   livery, drawn instead of the procedural airframe; the gear (the model has none) and the lights stay the app's own.
  * A family without a tube (helicopters, light singles, the dart) is its instanced model in the livery's colour.
  */
 export function buildDetailedAircraft(three, spec, {
-  code = null, livery, registration = null, createCanvas = null, logo = null, night = false,
+  code = null, livery, registration = null, createCanvas = null, logo = null, night = false, airframe = null,
 } = {}) {
   if (!(spec?.lengthM > 0) || !(spec?.spanM > 0) || !(spec?.fuselageDiaM > 0)) {
     throw new RangeError('A detailed aircraft needs the dimensions of its type');
@@ -799,6 +817,18 @@ export function buildDetailedAircraft(three, spec, {
   const wing = wingParts(three, spec, air, code);
   const tail = tailParts(three, spec, air);
   const gearGeometry = gearParts(three, spec, air, wing, code);
+
+  if (airframe !== null) {
+    // PR M5: the type's 3D model (aircraft/modelAircraft.js) instead of the procedural airframe; the gear and the
+    // lights stay the app's own, placed from the type's dimensions as the model is.
+    for (const part of [wing.geometry, tail.fin, tail.tailplane]) part.dispose();
+    for (const mesh of airframe.meshes) {
+      mesh.frustumCulled = false;
+      object.add(mesh);
+    }
+    addGearAndLights();
+    return finish({ air, gearGeometry, engineCount: (nacelles(spec) ?? []).length * 2, refresh: null });
+  }
 
   // The fuselage and the fin wear their painted textures; without a canvas, the livery's colours.
   const wingRootAlong = (wingPlanform(spec)[0][1] - air.bottom) / air.L;
@@ -891,45 +921,48 @@ export function buildDetailedAircraft(three, spec, {
     metalness: 0.7 }), 'exhaust');
   if (pylons.length) add(object, three.mergeGeometries(pylons, false), wingMaterial, 'pylon');
 
-  // The gear.
-  add(gear, gearGeometry.metal, material({ color: '#8a9099', roughness: 0.45, metalness: 0.6 }), 'gear');
-  add(gear, gearGeometry.tyres, material({ color: '#141414', roughness: 0.9, metalness: 0 }), 'tyres');
-  object.add(gear);
+  addGearAndLights();
+  return finish({ air, gearGeometry, engineCount, refresh: { fin, tail, livery } });
 
-  // The lights: steady red and green at the wingtips and white at the tail, red beacons on the crown and the belly,
-  // white strobes at the wingtips and the tail; each with a faint halo while it shines.
-  const lightRadius = Math.max(0.12, 0.04 * air.D);
-  const sphere = new three.SphereGeometry(lightRadius, 10, 8);
-  const halo = new three.SphereGeometry(lightRadius * 5, 12, 10);
-  geometries.push(sphere, halo);
-  const lamp = (colour, [x, y, z], kind, phase = 0) => {
-    const mesh = new three.Mesh(sphere, material({ color: colour }, { basic: true }));
-    mesh.name = 'light';
-    mesh.position.set(x, y, z);
-    mesh.frustumCulled = false;
-    const glow = new three.Mesh(halo, material({ color: colour, transparent: true, opacity: night ? 0.5 : 0.28,
-      blending: three.AdditiveBlending, depthWrite: false }, { basic: true }));
-    glow.name = 'halo';
-    glow.position.set(x, y, z);
-    glow.frustumCulled = false;
-    object.add(mesh, glow);
-    lights.halos.push(glow);
-    lights[kind].push({ mesh, glow, phase });
-    return mesh;
-  };
-  const tipPoint = side => [side * (wing.tip.x + 0.05), wing.tip.y, wing.tip.z + 0.05];
-  lamp(LIGHT_COLOURS.green, tipPoint(1), 'nav');
-  lamp(LIGHT_COLOURS.red, tipPoint(-1), 'nav');
-  lamp(LIGHT_COLOURS.white, [0, tail.tailTip.y - 0.1, tail.tailTip.z], 'nav');
-  lamp(LIGHT_COLOURS.beacon, [0, -0.08 * air.L, air.roofAt(-0.08 * air.L) + lightRadius], 'beacons', 0);
-  lamp(LIGHT_COLOURS.beacon, [0, 0.04 * air.L, air.floorAt(0.04 * air.L) - lightRadius], 'beacons', 0.5);
-  for (const side of [1, -1]) {
-    const [x, y, z] = tipPoint(side);
-    lamp(LIGHT_COLOURS.white, [x, y - 0.5, z], 'strobes');
+  function addGearAndLights() {
+    // The gear.
+    add(gear, gearGeometry.metal, material({ color: '#8a9099', roughness: 0.45, metalness: 0.6 }), 'gear');
+    add(gear, gearGeometry.tyres, material({ color: '#141414', roughness: 0.9, metalness: 0 }), 'tyres');
+    object.add(gear);
+
+    // The lights: steady red and green at the wingtips and white at the tail, red beacons on the crown and the belly,
+    // white strobes at the wingtips and the tail; each with a faint halo while it shines.
+    const lightRadius = Math.max(0.12, 0.04 * air.D);
+    const sphere = new three.SphereGeometry(lightRadius, 10, 8);
+    const halo = new three.SphereGeometry(lightRadius * 5, 12, 10);
+    geometries.push(sphere, halo);
+    const lamp = (colour, [x, y, z], kind, phase = 0) => {
+      const mesh = new three.Mesh(sphere, material({ color: colour }, { basic: true }));
+      mesh.name = 'light';
+      mesh.position.set(x, y, z);
+      mesh.frustumCulled = false;
+      const glow = new three.Mesh(halo, material({ color: colour, transparent: true, opacity: night ? 0.5 : 0.28,
+        blending: three.AdditiveBlending, depthWrite: false }, { basic: true }));
+      glow.name = 'halo';
+      glow.position.set(x, y, z);
+      glow.frustumCulled = false;
+      object.add(mesh, glow);
+      lights.halos.push(glow);
+      lights[kind].push({ mesh, glow, phase });
+      return mesh;
+    };
+    const tipPoint = side => [side * (wing.tip.x + 0.05), wing.tip.y, wing.tip.z + 0.05];
+    lamp(LIGHT_COLOURS.green, tipPoint(1), 'nav');
+    lamp(LIGHT_COLOURS.red, tipPoint(-1), 'nav');
+    lamp(LIGHT_COLOURS.white, [0, tail.tailTip.y - 0.1, tail.tailTip.z], 'nav');
+    lamp(LIGHT_COLOURS.beacon, [0, -0.08 * air.L, air.roofAt(-0.08 * air.L) + lightRadius], 'beacons', 0);
+    lamp(LIGHT_COLOURS.beacon, [0, 0.04 * air.L, air.floorAt(0.04 * air.L) - lightRadius], 'beacons', 0.5);
+    for (const side of [1, -1]) {
+      const [x, y, z] = tipPoint(side);
+      lamp(LIGHT_COLOURS.white, [x, y - 0.5, z], 'strobes');
   }
   lamp(LIGHT_COLOURS.white, [0, tail.tailTip.y - 0.25, tail.tailTip.z + 0.1], 'strobes');
-
-  return finish({ air, gearGeometry, engineCount, refresh: { fin, tail, livery } });
+  }
 
   function finish({ air: frame = null, gearGeometry: gearInfo = null, engineCount: engines = 0, refresh = null } = {}) {
     let triangles = 0;
@@ -954,6 +987,7 @@ export function buildDetailedAircraft(three, spec, {
       triangles,
       drawCalls,
       textured: textures.length > 0,
+      modelled: airframe !== null,
       setState({ gearDown: down = true, lights: on = {}, timeMs = 0, propellerRpm = 0, night: dark = night } = {}) {
         gear.visible = down !== false;
         for (const { mesh, glow } of lights.nav) {
@@ -979,6 +1013,7 @@ export function buildDetailedAircraft(three, spec, {
       },
       /** Paints the fin again with a logo that loaded after the model was built. */
       refreshLogo(image) {
+        if (airframe !== null) return airframe.refreshLogo?.(image) === true;
         if (!refresh?.fin || !image) return false;
         paintTail(refresh.fin.context, { ...TAIL_TEXTURE, livery: refresh.livery, shape: refresh.tail.shape, logo: image });
         refresh.fin.texture.needsUpdate = true;
@@ -986,6 +1021,7 @@ export function buildDetailedAircraft(three, spec, {
       },
       dispose() {
         object.removeFromParent();
+        airframe?.dispose?.();
         for (const geometry of new Set(geometries)) geometry.dispose();
         for (const item of materials) item.dispose();
         for (const texture of textures) texture.dispose();

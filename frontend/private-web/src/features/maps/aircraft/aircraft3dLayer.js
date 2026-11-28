@@ -2,7 +2,11 @@ import { OCC_PALETTE } from '../../occ-ui/occPalette';
 import { CIVIL_TWILIGHT_DEG, dayPhase } from '../traffic/solar';
 import { buildDetailedAircraft, nextBlinkInMs } from './aircraftDetail';
 import { buildAircraftGeometry, triangleCount } from './aircraftGeometry';
+import { createGltfModels } from './gltfModels';
 import { SHADOW, linearRgb, mercatorFrame, poseMatrix } from './instancePlan';
+import { LIVERY_ROWS, createLiveryMaterial, createLiveryTextures, liveryFont } from './liveryMaterial';
+import { buildModelAirframe, instancedModelGeometry, modelFrame, writeLiveryInstances } from './modelAircraft';
+import { detailLevel, instancedLevel, metresPerPixel, wantsL1 } from './modelLevels';
 
 // The 3D aircraft as one MapLibre custom layer (design G1, G3 and G4): three draws the instance plan
 // (aircraft/instancePlan.js) on the map's own canvas and WebGL context, in the depth buffer the terminals' extrusions
@@ -16,6 +20,11 @@ import { SHADOW, linearRgb, mercatorFrame, poseMatrix } from './instancePlan';
 //   five minutes, in case it comes back, and then gives it and its model up.
 // - Light: a hemisphere light and a directional light from the sun by day; by night a dim cool ambient and a fixed
 //   light from high up, so the models still read; the civil twilight blends the two.
+// - Models (PR M5, aircraft/modelLevels.js): a type whose aircraft are drawn large enough on screen and that has a 3D
+//   model (aircraft/gltfModels.js, read on demand from public/models/aircraft/) draws its L1 model instead of its
+//   procedural one, still one InstancedMesh, in each airline's livery (aircraft/liveryMaterial.js) with the app's gear
+//   folded per instance; the detailed aircraft draws its type's L2 model with the app's gear and lights. Until a model
+//   loads, and for a type without one, the procedural model stays.
 // - Picking: a ray from the inverse projection through the meshes; a hit names the aircraft, a shadow names nothing.
 // - Context loss: MapLibre 6.16 removes its custom layers when it loses the context (its style's destroy() calls
 //   onRemove, then the map fires `webglcontextlost`), and the engine adds the layer again once the style is back, so
@@ -201,8 +210,8 @@ function sameSun(a, b) {
  * - `minModelPx` (PR M7): the size floor of the traffic's models in CSS pixels (MAX_MODEL_SCALE), 0 for none;
  * - `onFailedChange(failed)` hears every change of `stats().failed`, after the lifecycle call that made it, so that a
  *   map that hides its 2D aircraft under the 3D ones shows them again while the layer has failed;
- * - `createRenderer({ canvas, context })`, `buildGeometry(three, spec)` and `now()` (milliseconds, monotonic) are
- *   for tests.
+ * - `createRenderer({ canvas, context })`, `buildGeometry(three, spec)`, `createModels(onLoad)` (aircraft/gltfModels.js:
+ *   createGltfModels, or null for none) and `now()` (milliseconds, monotonic) are for tests.
  *
  * `pick({ x, y })` (CSS pixels from the canvas's top-left corner) answers `{ kind: 'aircraft', id }` with the plan's id
  * of the aircraft under the pointer, or `null` when the ray meets no aircraft (a shadow is no aircraft), before the
@@ -218,6 +227,7 @@ export function createAircraft3dLayer({
   createRenderer = ({ canvas, context }) => new three.WebGLRenderer({ canvas, context, antialias: true }),
   buildGeometry = buildAircraftGeometry, now = () => performance.now(), buildDetail = buildDetailedAircraft,
   createCanvas = documentCanvas, loadImage = loadSameOriginImage,
+  createModels = onLoad => (typeof three?.GLTFLoader === 'function' ? createGltfModels({ three, onLoad }) : null),
 } = {}) {
   if (three == null) throw new TypeError('The 3D aircraft layer needs the parts of three');
   if (typeof getInstances !== 'function') throw new TypeError('The 3D aircraft layer needs getInstances()');
@@ -268,6 +278,68 @@ export function createAircraft3dLayer({
   let blinkTimer = null;
   let night = true;
   const logos = new Map();
+  // PR M5: the types' 3D models, read on demand, and the textures every livery material shares (made on first use).
+  const models = createModels(() => {
+    copied = false;
+    if (!removed) map?.triggerRepaint();
+  });
+  let liveryTextures = null;
+
+  function sharedLiveryTextures() {
+    if (liveryTextures === null) {
+      liveryTextures = createLiveryTextures(three, { createCanvas, font: liveryFont() });
+      for (const livery of LIVERY_ROWS) requestLogo(livery.logoTexture);
+    }
+    return liveryTextures;
+  }
+
+  // A livery's logo (its logoTexture, a path of the application), read once; the atlas and the detailed model's fin
+  // are painted again when it loads.
+  function requestLogo(url) {
+    if (typeof url !== 'string' || url === '' || logos.has(url)) return;
+    logos.set(url, null);
+    loadImage(url).then(image => {
+      logos.set(url, image);
+      const atlas = liveryTextures?.refresh(logos) === true;
+      const fin = detailHeld?.model.refreshLogo(image) === true;
+      if ((atlas || fin) && !removed) map?.triggerRepaint();
+    }, () => {});
+  }
+
+  const mapScale = () => metresPerPixel(map?.getZoom?.(), originLngLat[1]);
+
+  // The L1 model a type's instances draw now (aircraft/modelLevels.js), or null for its procedural model: asked for
+  // only once its aircraft are drawn large enough, and used once it has loaded.
+  function instancedModel(key, spec, current) {
+    if (models === null || typeof key !== 'string' || key.startsWith('@')) return null;
+    const scale = mapScale();
+    if (!wantsL1({ lengthM: spec.lengthM, metresPerPixel: scale, current })) return null;
+    const model = models.get(key, 'l1');
+    const level = instancedLevel({ lengthM: spec.lengthM, metresPerPixel: scale, hasModel: model !== null, current });
+    return level === 'l1' ? model : null;
+  }
+
+  const levelOf = (key, spec, current) => (instancedModel(key, spec, current) === null ? 'procedural' : 'l1');
+
+  // Whether a type on the map should change its level (the zoom crossed the threshold, or its model loaded).
+  function levelsChanged() {
+    for (const [key, held] of meshes) {
+      if (held.instances > 0 && levelOf(key, held.spec, held.level) !== held.level) return true;
+    }
+    return false;
+  }
+
+  // What a type's mesh draws: its geometry and, for a model, its own livery material.
+  function heldOf(key, spec) {
+    const model = instancedModel(key, spec, 'procedural');
+    if (model !== null) {
+      const geometry = instancedModelGeometry(three, model, spec, key);
+      return { geometry, triangles: triangleCount(geometry), level: 'l1',
+        material: createLiveryMaterial(three, { frame: modelFrame(model, spec), textures: sharedLiveryTextures() }) };
+    }
+    const geometry = buildGeometry(three, spec);
+    return { geometry, triangles: triangleCount(geometry), level: 'procedural', material: null };
+  }
 
   function buildScene() {
     scene = new three.Scene();
@@ -302,8 +374,8 @@ export function createAircraft3dLayer({
     return geometry;
   }
 
-  function instancedMesh(key, geometry, capacity) {
-    const mesh = new three.InstancedMesh(geometry, material, capacity);
+  function instancedMesh(key, geometry, capacity, own = null) {
+    const mesh = new three.InstancedMesh(geometry, own ?? material, capacity);
     mesh.instanceMatrix.setUsage(three.DynamicDrawUsage);
     mesh.instanceColor = new three.InstancedBufferAttribute(new Float32Array(3 * capacity), 3);
     mesh.instanceColor.setUsage(three.DynamicDrawUsage);
@@ -328,6 +400,7 @@ export function createAircraft3dLayer({
     scene?.remove(held.mesh);
     held.mesh.dispose();
     held.geometry.dispose();
+    held.material?.dispose();
   }
 
   function writeLines(segments) {
@@ -357,9 +430,14 @@ export function createAircraft3dLayer({
     const segments = [];
     for (const [key, entry] of plan) {
       let held = meshes.get(key);
+      // PR M5: a type whose level changed draws from a new mesh.
+      if (held !== undefined && levelOf(key, entry.spec, held.level) !== held.level) {
+        disposeHeld(held);
+        meshes.delete(key);
+        held = undefined;
+      }
       if (held === undefined) {
-        const geometry = buildGeometry(three, entry.spec);
-        held = { geometry, triangles: triangleCount(geometry), mesh: null, capacity: 0, aircraftCount: 0, instances: 0,
+        held = { ...heldOf(key, entry.spec), spec: entry.spec, mesh: null, capacity: 0, aircraftCount: 0, instances: 0,
           ids: NO_IDS, idleSince: null };
         meshes.set(key, held);
       }
@@ -369,7 +447,7 @@ export function createAircraft3dLayer({
           held.mesh.dispose();
         }
         held.capacity = nextPowerOfTwo(entry.count);
-        held.mesh = instancedMesh(key, held.geometry, held.capacity);
+        held.mesh = instancedMesh(key, held.geometry, held.capacity, held.material);
       }
       held.base = entry.matrices;
       held.floors = entry.floorLengths ?? null;
@@ -377,6 +455,10 @@ export function createAircraft3dLayer({
       held.mesh.instanceColor.array.set(entry.colors);
       held.mesh.instanceMatrix.needsUpdate = true;
       held.mesh.instanceColor.needsUpdate = true;
+      if (held.level === 'l1') {
+        writeLiveryInstances(three, held.geometry, { capacity: held.capacity, count: entry.count,
+          liveries: entry.liveries ?? null, gear: entry.gear ?? null });
+      }
       held.aircraftCount = entry.aircraftCount;
       held.instances = entry.count;
       held.ids = entry.ids;
@@ -450,11 +532,16 @@ export function createAircraft3dLayer({
   // The detailed aircraft's model for `detail` (built once per type, livery and registration), with its logo once it
   // loads.
   function detailModel(detail, time) {
-    if (detailHeld !== null && detailHeld.key === detail.key) return detailHeld;
+    // PR M5: its type's L2 model once it has loaded, else the procedural one.
+    const loaded = models !== null && typeof detail.code === 'string' ? models.get(detail.code, 'l2') : null;
+    const level = detailLevel({ hasModel: loaded !== null });
+    if (detailHeld !== null && detailHeld.key === detail.key && detailHeld.level === level) return detailHeld;
     disposeDetail();
+    const airframe = loaded === null ? null : buildModelAirframe(three, loaded, { spec: detail.spec,
+      livery: detail.livery, textures: sharedLiveryTextures() });
     const model = buildDetail(three, detail.spec, {
       code: detail.code, livery: detail.livery, registration: detail.registration, createCanvas, night,
-      logo: logos.get(detail.livery.logoTexture) ?? null,
+      logo: logos.get(detail.livery.logoTexture) ?? null, airframe,
     });
     model.object.matrixAutoUpdate = false;
     const shadow = new three.Mesh(buildGeometry(three, detail.spec), new three.MeshBasicMaterial({
@@ -463,15 +550,8 @@ export function createAircraft3dLayer({
     shadow.matrixAutoUpdate = false;
     shadow.frustumCulled = false;
     detailScene.add(model.object, shadow);
-    detailHeld = { key: detail.key, model, shadow, idleSince: null, builtAt: time };
-    const url = detail.livery.logoTexture;
-    if (typeof url === 'string' && url !== '' && !logos.has(url)) {
-      logos.set(url, null);
-      loadImage(url).then(image => {
-        logos.set(url, image);
-        if (detailHeld?.model.refreshLogo(image)) map?.triggerRepaint();
-      }, () => {});
-    }
+    detailHeld = { key: detail.key, level, model, shadow, idleSince: null, builtAt: time };
+    requestLogo(detail.livery.logoTexture);
     return detailHeld;
   }
 
@@ -630,6 +710,7 @@ export function createAircraft3dLayer({
       camera.projectionMatrixInverse.copy(projection).invert();
       const time = now();
       const answer = getInstances();
+      if (levelsChanged()) copied = false;
       syncInstances(time, answer);
       syncFloor();
       retireIdle(time);
@@ -660,6 +741,8 @@ export function createAircraft3dLayer({
       detailCamera = null;
       detailHemisphere = null;
       detailSun = null;
+      liveryTextures?.dispose();
+      liveryTextures = null;
       if (scene !== null) {
         lines.geometry.dispose();
         lineMaterial.dispose();
@@ -735,7 +818,9 @@ export function createAircraft3dLayer({
       let instances = 0;
       let triangles = 0;
       let drawCalls = 0;
+      let modelled = 0;
       for (const held of meshes.values()) {
+        if (held.level === 'l1' && held.mesh.count > 0) modelled += 1;
         instances += held.mesh.count;
         triangles += held.mesh.count * held.triangles;
         if (held.mesh.count > 0) drawCalls += 1;
@@ -756,9 +841,11 @@ export function createAircraft3dLayer({
         triangles += detailTriangles;
         drawCalls += detailCalls;
         detail = { key: detailDrawn.key, triangles: detailTriangles, drawCalls: detailCalls,
-          textured: detailDrawn.model.textured };
+          textured: detailDrawn.model.textured, ...(detailDrawn.level === 'l2' ? { level: 'l2' } : {}) };
       }
-      return { meshes: meshes.size, instances, triangles, drawCalls, lost, failed, ...(detail === null ? {} : { detail }) };
+      // `models`: how many types draw their L1 model (PR M5), when any does.
+      return { meshes: meshes.size, instances, triangles, drawCalls, lost, failed,
+        ...(modelled > 0 ? { models: modelled } : {}), ...(detail === null ? {} : { detail }) };
     },
   };
 }

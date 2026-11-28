@@ -1,6 +1,8 @@
 import { occColor } from '../../occ-ui/occPalette';
 import { EARTH_RADIUS_M, METRES_PER_NM, haversineM } from '../airport/geo';
 import { isDrawn } from '../traffic/trafficFeatures';
+import { gearDown } from './attitude';
+import { resolveLivery } from './liveries';
 import { resolveAircraftType } from './types';
 
 // What the 3D layer draws (design G1 and G3, contracts 2.3 and 2.4): one entry per aircraft type present, with the
@@ -235,7 +237,8 @@ const byId = (a, b) => {
  * (traffic/situationModel.js: RenderAircraft); `parkedAircraft` the aircraft standing on their stands,
  * `{ id, lon, lat, headingDeg, typeIcao, model, sizeCategory, kind? }`, each owning the aircraft of the map with its id.
  *
- * Answers `Map<key, { spec, approximate, aircraftCount, count, matrices, colors, floorLengths, ids, dropLines }>`, the keys
+ * Answers `Map<key, { spec, approximate, aircraftCount, count, matrices, colors, floorLengths, ids, liveries, gear,
+ * dropLines }>`, the keys
  * (instanceKey) sorted, empty below `minZoom` (the caller's 3D threshold: the airfield fit − 0.3, contracts 2.3):
  * - only aircraft within AIRCRAFT_3D_RADIUS_NM of `originLngLat` (the ARP) that the 2D layers draw (isDrawn); other
  *   traffic on the ground stays 2D, and so does an aircraft in the air without an altitude;
@@ -249,6 +252,10 @@ const byId = (a, b) => {
  *   shadow, which the layer may draw larger at a far zoom (aircraft3dLayer.js: minModelPx), and 0 for one on its stand;
  * - colours (`colors` option, AIRCRAFT_3D_COLORS by default): the chosen aircraft (`selectedId`) in `selected`, AVIAM
  *   aircraft in `aviam`, other traffic in `other`, shadows in `shadow`;
+ * - PR M5: `liveries` holds per instance the id of the livery a type's model wears up close (aircraft/liveries.js:
+ *   resolveLivery), null for the chosen aircraft (it keeps the selection's accent) and for a shadow; `gear` 1 where the
+ *   landing gear is down (on a stand, on the ground, or as aircraft/attitude.js eased it) and 0 where it is up, a
+ *   shadow as its aircraft;
  * - `spec` and `approximate` come from resolveAircraftType: a type the table lacks takes its category's generic
  *   airframe under the category's own key, approximate.
  * - CN-30: `attitudes` (`Map<id, { heightM, pitchDeg, bankDeg }>`, aircraft/attitude.js) pitch and bank an aircraft of
@@ -293,10 +300,16 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
     // The attitude the controller eased for it (CN-30): its pitch, its bank and its height over the field.
     const attitude = entry.onStand === true ? null : attitudeOf(entry.item.id);
     const z = finite(attitude?.heightM) ? attitude.heightM : entry.z;
+    const selected = entry.item.id === selectedId;
+    // PR M5: the livery its type's model wears up close (the chosen one keeps the selection's accent), and its gear.
+    const down = entry.onStand === true || (typeof attitude?.gearDown === 'boolean' ? attitude.gearDown
+      : gearDown({ heightM: z, onGround: entry.item.onGround === true, phase: entry.item.phase ?? null,
+        vrateMs: finite(entry.item.vrateMs) ? entry.item.vrateMs : null }));
     group.members.push({ id: entry.item.id, x, y, z, headingDeg: heading, onStand: entry.onStand === true,
+      livery: selected ? null : resolveLivery(entry.item).id, gearDown: down,
       pitchDeg: finite(attitude?.pitchDeg) ? attitude.pitchDeg : 0, bankDeg: finite(attitude?.bankDeg) ? attitude.bankDeg : 0,
       pivot: pivotOf(resolved.spec),
-      colour: entry.item.id === selectedId ? colors.selected : colors[entry.aviam ? 'aviam' : 'other'] });
+      colour: selected ? colors.selected : colors[entry.aviam ? 'aviam' : 'other'] });
     groups.set(key, group);
   }
 
@@ -310,6 +323,8 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
     // is never drawn smaller than a few pixels; one on its stand keeps the stand's scale, as its footprint does.
     const floorLengths = new Float32Array(2 * aircraftCount);
     const ids = [];
+    const liveries = [];
+    const gear = new Float32Array(2 * aircraftCount);
     const drops = [];
     members.forEach((member, index) => {
       writeMatrix(matrices, 16 * index, { ...member, flatten: 1 });
@@ -319,6 +334,10 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
       instanceColors.set(colors.shadow, 3 * (aircraftCount + index));
       ids[index] = member.id;
       ids[aircraftCount + index] = null;
+      liveries[index] = member.livery;
+      liveries[aircraftCount + index] = null;
+      gear[index] = member.gearDown ? 1 : 0;
+      gear[aircraftCount + index] = gear[index];
       const floor = member.onStand ? 0 : resolved.spec.lengthM;
       floorLengths[index] = floor;
       floorLengths[aircraftCount + index] = floor;
@@ -333,6 +352,8 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
       colors: instanceColors,
       floorLengths,
       ids: Object.freeze(ids),
+      liveries: Object.freeze(liveries),
+      gear,
       dropLines: Float32Array.from(drops),
     }));
   }
