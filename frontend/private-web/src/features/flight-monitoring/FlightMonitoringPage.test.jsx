@@ -3,16 +3,20 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
-import FlightMonitoringPage, { FLIGHT_MONITORING_LAYOUT, boardStateOf } from './FlightMonitoringPage';
+import { resetPanelFoldsForTests } from '../occ-ui/occPanelMemory';
+import FlightMonitoringPage, {
+  FLIGHT_MONITORING_LAYOUT, FLIGHT_MONITORING_PANEL_EDGES, boardStateOf,
+} from './FlightMonitoringPage';
 import { flightMonitoringMessages } from './flightMonitoringMessages';
 
 // The map is the maps lane's (components/FlightMap.jsx and its own tests): this stub keeps the props the page gives it,
-// so each test can read them and answer as the map does (`onSelectFlight`).
+// so each test can read them and answer as the map does (`onSelectFlight`), and draws the page's floating panels inside
+// it, as the map does (M1).
 const map = vi.hoisted(() => ({ props: null }));
 vi.mock('./components/FlightMap', () => ({
   default: function FlightMapStub(props) {
     map.props = props;
-    return <div data-testid="flight-map-stub" data-selected={String(props.selectedFlightId)} />;
+    return <div data-testid="flight-map-stub" data-selected={String(props.selectedFlightId)}>{props.panels}</div>;
   },
 }));
 
@@ -62,6 +66,9 @@ function mockMatchMedia(matchingQueries) {
 const originalMatchMedia = window.matchMedia;
 beforeEach(() => {
   map.props = null;
+  resetPanelFoldsForTests();
+  // A wide screen (1536 px or more) unless a test says otherwise: the board stays open beside the inspector.
+  mockMatchMedia(['(min-width: 1536px)']);
   window.history.replaceState({}, '', `${PAGE}?stationId=${STATION_ID}`);
 });
 afterEach(() => {
@@ -164,6 +171,34 @@ describe('FlightMonitoringPage', () => {
     expect(within(inspector).queryByRole('list', { name: 'Hitos de la escala' })).not.toBeInTheDocument();
   });
 
+  it('M8: the board filter reaches the map, and En vuelo reads the phases of the map flights the map hands over', async () => {
+    const user = userEvent.setup();
+    window.history.replaceState({}, '', `${PAGE}?stationId=${STATION_ID}`);
+    render(page());
+    // Todos with no search keeps every flight: nothing is dimmed on the map.
+    expect(map.props.emphasisedFlightIds).toBeNull();
+    const group = within(board()).getByRole('group', { name: 'Filtro del tablero' });
+    await user.click(within(group).getByRole('button', { name: 'Salidas 1' }));
+    expect(map.props.emphasisedFlightIds).toEqual(['leg-904']);
+    const kept = map.props.emphasisedFlightIds;
+    // The page's clock re-renders hand the map the same list.
+    act(() => map.props.onSelectionFlights({ flight: null, flights: [] }));
+    expect(map.props.emphasisedFlightIds).toBe(kept);
+    // A filter that keeps nothing dims every AVIAM flight.
+    await user.click(within(group).getByRole('button', { name: 'En vuelo 0' }));
+    expect(map.props.emphasisedFlightIds).toEqual([]);
+    // The map flights the map has read (contratos 2.7: no read of the page's own) say the arrival flies.
+    const mapFlight = { flightKey: 'l:leg-161', legId: 'leg-161', direction: 'Arrival', phase: 'enroute' };
+    act(() => map.props.onSelectionFlights({ flight: null, flights: [mapFlight] }));
+    expect(within(group).getByRole('button', { name: 'En vuelo 1' })).toHaveAttribute('aria-pressed', 'true');
+    expect(map.props.emphasisedFlightIds).toEqual(['leg-161']);
+    await user.click(within(group).getByRole('button', { name: 'Todos 2' }));
+    expect(map.props.emphasisedFlightIds).toBeNull();
+    // The search alone is a filter too.
+    await user.type(within(board()).getByLabelText('Buscar vuelo'), 'aa9');
+    expect(map.props.emphasisedFlightIds).toEqual(['leg-904']);
+  });
+
   it('a flightId link selects that flight', () => {
     for (const [link, number] of [['leg-161', 'DM161'], ['l:leg-904', 'AA904'], ['tat-161', 'DM161']]) {
       window.history.replaceState({}, '', `${PAGE}?stationId=${STATION_ID}&flightId=${link}`);
@@ -258,30 +293,103 @@ describe('FlightMonitoringPage', () => {
 });
 
 describe('FlightMonitoringPage layout', () => {
-  it('from 1024 px the board sits beside the map; the inspector takes its column until 1536 px, then docks at the right', async () => {
+  const rect = (left, top, width, height) => ({ left, top, width, height, right: left + width, bottom: top + height,
+    x: left, y: top, toJSON() { return this; } });
+  const inspectorOf = number => screen.getByRole('complementary', { name: `Detalle del vuelo ${number}` });
+
+  it('fills the screen with the map, with the board floating at its left and the inspector at its right (M1)', async () => {
     const user = userEvent.setup();
-    mockMatchMedia([]);
+    mockMatchMedia(['(min-width: 1536px)']);
     render(page());
-    const grid = screen.getByTestId('flight-map-stub').parentElement.parentElement;
-    expect(grid.className).toBe(FLIGHT_MONITORING_LAYOUT.grid);
-    expect(FLIGHT_MONITORING_LAYOUT.grid).toContain('lg:grid-cols-[24rem_minmax(0,1fr)]');
-    const boardColumn = board().parentElement;
-    expect(boardColumn.className).toBe(FLIGHT_MONITORING_LAYOUT.board);
+    // The map fills the stage, the whole work area: nothing sits beside it any more (CN-32's docked template B is gone).
+    const stage = screen.getByTestId('flight-map-stub').parentElement;
+    expect(stage.className).toBe(FLIGHT_MONITORING_LAYOUT.stage);
+    expect(FLIGHT_MONITORING_LAYOUT.stage).toContain('h-full');
+    expect(stage.closest('[data-occ-flight-monitoring]')).toHaveAttribute('data-occ-flight-monitoring', 'map');
+    // The board floats inside the map at its left, on the floating slab, and folds to a pill at the top left.
+    expect(screen.getByTestId('flight-map-stub')).toContainElement(board());
+    expect(board()).toHaveAttribute('data-occ-floating-panel', 'fm-board');
+    expect(board()).toHaveAttribute('data-layout', 'float');
+    expect(board()).toHaveAttribute('data-folded', 'false');
+    expect(board().className).toContain(FLIGHT_MONITORING_LAYOUT.board);
+    expect(FLIGHT_MONITORING_LAYOUT.board).toMatch(/absolute bottom-3 left-3 top-3 z-10 w-\[24rem\]/);
+    expect(FLIGHT_MONITORING_LAYOUT.board).toContain('data-[folded=true]:bottom-auto');
+
+    // The inspector floats at the right, left of the map's control column (its reserve), and never under it.
     await user.click(stripOf('DM161'));
-    // The inspector never covers the map and never narrows it on a laptop (CN-32): below 1536 px it takes the board's
-    // column, which folds away while it is open, and from 1536 px it docks in a column of its own at the right.
-    expect(grid.className).toBe(FLIGHT_MONITORING_LAYOUT.gridWithInspector);
-    expect(FLIGHT_MONITORING_LAYOUT.gridWithInspector).toContain('lg:grid-cols-[24rem_minmax(0,1fr)] ');
-    expect(FLIGHT_MONITORING_LAYOUT.gridWithInspector).toContain('2xl:grid-cols-[24rem_minmax(0,1fr)_22.5rem]');
-    expect(boardColumn.className).toBe(FLIGHT_MONITORING_LAYOUT.boardWithInspector);
-    expect(FLIGHT_MONITORING_LAYOUT.boardWithInspector).toContain('lg:max-2xl:hidden');
-    const inspector = screen.getByRole('complementary', { name: 'Detalle del vuelo DM161' }).parentElement;
-    expect(inspector.className).toBe(FLIGHT_MONITORING_LAYOUT.inspector);
-    expect(FLIGHT_MONITORING_LAYOUT.inspector).toMatch(/lg:col-start-1 lg:row-start-1 .*2xl:col-start-3/);
-    // The map renders the flight's live data block inside the inspector (its slot), so nothing floats over the map.
+    const inspector = inspectorOf('DM161');
+    expect(screen.getByTestId('flight-map-stub')).toContainElement(inspector);
+    expect(inspector).toHaveAttribute('data-map-side-panel', 'floating');
+    expect(inspector.className).toContain(FLIGHT_MONITORING_LAYOUT.inspector);
+    expect(FLIGHT_MONITORING_LAYOUT.inspector).toContain('right-[var(--occ-map-rail-reserve)]');
+    expect(FLIGHT_MONITORING_LAYOUT.inspector).toContain('w-[22.5rem]');
+    // From 1536 px the board stays open beside it.
+    expect(board()).toHaveAttribute('data-folded', 'false');
+    // The map renders the flight's live data block inside the inspector (its slot): the flight has one card.
     const slot = inspector.querySelector('[data-occ-live-slot]');
     expect(slot).not.toBeNull();
     expect(map.props.dataBlockSlot).toBe(slot);
+  });
+
+  it('measures the board and the inspector into the map\'s insets, each from its own edge (M1)', async () => {
+    const user = userEvent.setup();
+    mockMatchMedia(['(min-width: 1536px)']);
+    expect(FLIGHT_MONITORING_PANEL_EDGES).toEqual({ 'fm-board': 'left', 'fm-inspector': 'right', 'fm-view-flights': 'top' });
+    const view = render(page());
+    expect(map.props.insets).toEqual({ top: 0, right: 0, bottom: 0, left: 0 });
+    // A map of 1400 × 800 with the board 12 px in from its left edge (24rem).
+    const stage = screen.getByTestId('flight-map-stub').parentElement;
+    stage.getBoundingClientRect = () => rect(0, 0, 1400, 800);
+    board().getBoundingClientRect = () => rect(12, 12, 384, 776);
+    view.rerender(page());
+    expect(map.props.insets).toEqual({ top: 0, right: 0, bottom: 0, left: 404 });
+    // The inspector (22.5rem) 112 px from the right edge, the control column's reserve: its width, the reserve and the
+    // gap.
+    await user.click(stripOf('AA904'));
+    inspectorOf('AA904').getBoundingClientRect = () => rect(928, 12, 360, 776);
+    view.rerender(page());
+    expect(map.props.insets).toEqual({ top: 0, right: 480, bottom: 0, left: 404 });
+    // Folded, the board is a pill at the top: the left edge is the map's again.
+    await user.click(within(board()).getByRole('button', { name: 'Tablero de vuelos' }));
+    board().getBoundingClientRect = () => rect(12, 12, 180, 40);
+    view.rerender(page());
+    expect(map.props.insets).toEqual({ top: 60, right: 480, bottom: 0, left: 0 });
+  });
+
+  it('below 1536 px the open inspector folds the board to its pill until the person unfolds it (M1)', async () => {
+    const user = userEvent.setup();
+    mockMatchMedia([]);
+    render(page());
+    expect(board()).toHaveAttribute('data-folded', 'false');
+    await user.click(stripOf('DM161'));
+    // On a 1366 px laptop what matters stays open: the inspector, with the board as a pill.
+    expect(inspectorOf('DM161')).toBeInTheDocument();
+    expect(board()).toHaveAttribute('data-folded', 'true');
+    // The person may open it beside the flight.
+    await user.click(within(board()).getByRole('button', { name: 'Tablero de vuelos' }));
+    expect(board()).toHaveAttribute('data-folded', 'false');
+    await user.click(stripOf('AA904'));
+    expect(board()).toHaveAttribute('data-folded', 'true');
+    // «Cerrar detalle» brings the board back, with the focus on the flight's strip.
+    await user.click(within(inspectorOf('AA904')).getByRole('button', { name: 'Cerrar detalle' }));
+    expect(board()).toHaveAttribute('data-folded', 'false');
+    expect(stripOf('AA904')).toHaveFocus();
+  });
+
+  it('without a map (another station) the board, the card and the inspector scroll in a plain grid', async () => {
+    const user = userEvent.setup();
+    mockMatchMedia(['(min-width: 1536px)']);
+    render(page({ stationCode: 'SDQ', data: { station: { code: 'SDQ' }, flights: [ARRIVAL] } }));
+    const card = screen.getByText(/La posición en vivo no está disponible/);
+    expect(card.className).toBe(FLIGHT_MONITORING_LAYOUT.gridCard);
+    expect(card.parentElement.className).toBe(FLIGHT_MONITORING_LAYOUT.grid);
+    expect(card.parentElement.parentElement.className).toBe(FLIGHT_MONITORING_LAYOUT.scroll);
+    expect(FLIGHT_MONITORING_LAYOUT.scroll).toContain('overflow-y-auto');
+    // A plain panel, nothing floating.
+    expect(board()).not.toHaveAttribute('data-occ-floating-panel');
+    await user.click(stripOf('DM161'));
+    expect(card.parentElement.className).toBe(FLIGHT_MONITORING_LAYOUT.gridWithInspector);
+    expect(inspectorOf('DM161')).toHaveAttribute('data-map-side-panel', 'framed');
   });
 
   it('below 1024 px Ver vuelos opens the board in a drawer that its veil closes', async () => {
@@ -290,6 +398,10 @@ describe('FlightMonitoringPage layout', () => {
     render(page());
     expect(screen.queryByRole('region', { name: 'Tablero de vuelos' })).not.toBeInTheDocument();
     const toggle = screen.getByRole('button', { name: 'Ver vuelos (2)' });
+    // «Ver vuelos» floats at the top left of the map, measured as its top edge.
+    const place = toggle.closest('[data-occ-view-flights]');
+    expect(screen.getByTestId('flight-map-stub')).toContainElement(place);
+    expect(place.className).toBe(FLIGHT_MONITORING_LAYOUT.viewFlights);
     await user.click(toggle);
     const drawer = screen.getByRole('dialog', { name: 'Lista de vuelos' });
     expect(within(drawer).getByRole('region', { name: 'Tablero de vuelos' })).toBeInTheDocument();
@@ -313,7 +425,7 @@ describe('FlightMonitoringPage in English', () => {
     render(<LanguageScope>{page()}</LanguageScope>);
     expect(screen.getByRole('heading', { level: 1, name: 'Flight monitoring' })).toBeInTheDocument();
     const flights = screen.getByRole('region', { name: 'Flight board' });
-    expect(within(flights).getByRole('group', { name: 'Direction' })).toBeInTheDocument();
+    expect(within(flights).getByRole('group', { name: 'Board filter' })).toBeInTheDocument();
     expect(within(flights).getByRole('button', { name: 'Departures 1' })).toBeInTheDocument();
     expect(screen.getByLabelText('Search flight')).toHaveAttribute('placeholder', 'Number, airline, registration or supervisor');
     expect(within(flights).getAllByText('Scheduled')).toHaveLength(2);

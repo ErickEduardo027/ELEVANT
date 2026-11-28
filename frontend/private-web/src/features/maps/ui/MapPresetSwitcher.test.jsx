@@ -152,4 +152,116 @@ describe('MapPresetSwitcher', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Rampa' }));
     expect(query().has('view')).toBe(false);
   });
+
+  it('M8: a map on the globe offers «0 Mundo» first; a map in Mercator neither shows it nor obeys 0 or view=world', () => {
+    render(
+      <OccMap stands={STANDS} projection="globe" mapOptions={{ minZoom: 1 }}>
+        <MapPresetSwitcher />
+      </OccMap>,
+    );
+    const globe = fake.state.liveMaps().at(-1);
+    act(() => fake.state.emit(globe, 'style.load'));
+    expect(globe.options.style.projection).toEqual({ type: 'globe' });
+    const buttons = within(group()).getAllByRole('button');
+    expect(buttons.map(wideText)).toEqual(['0Mundo', '1Región', '2Aproximación', '3Aeródromo', '4Rampa']);
+    fireEvent.click(buttons[0]);
+    expect(globe.getZoom()).toBeCloseTo(1.7, 6);
+    expect(pressed()).toEqual(['0Mundo']);
+    expect(query().get('view')).toBe('world');
+    // From the world, 1 flies back to the region.
+    fireEvent.keyDown(screen.getByTestId('occ-map'), { key: '1' });
+    expect(pressed()).toEqual(['1Región']);
+    fireEvent.keyDown(screen.getByTestId('occ-map'), { key: '0' });
+    expect(pressed()).toEqual(['0Mundo']);
+    cleanup();
+
+    // Mercator (Panorama, Mapa de posiciones): four views, and the key 0 and a link with view=world do nothing.
+    window.history.replaceState({}, '', `${PAGE}&view=world`);
+    const map = renderSwitcher();
+    expect(map.options.style).not.toHaveProperty('projection');
+    expect(within(group()).getAllByRole('button').map(wideText)).toEqual(['1Región', '2Aproximación', '3Aeródromo', '4Rampa']);
+    expect(pressed()).toEqual(['4Rampa']);
+    const zoom = map.getZoom();
+    fireEvent.keyDown(screen.getByTestId('occ-map'), { key: '0' });
+    expect(map.getZoom()).toBe(zoom);
+    expect(pressed()).toEqual(['4Rampa']);
+  });
+});
+
+describe('MapPresetSwitcher on a map fixed on the airport (M9)', () => {
+  it('shows only the views its map offers, and the keys of the others do nothing', () => {
+    render(
+      <OccMap stands={STANDS} defaultView="airfield" views={['airfield', 'ramp']}>
+        <div className="occ-map-dock"><MapPresetSwitcher /></div>
+      </OccMap>,
+    );
+    const map = fake.state.liveMaps().at(-1);
+    act(() => fake.state.emit(map, 'style.load'));
+    expect(within(group()).getAllByRole('button').map(wideText)).toEqual(['3Aeródromo', '4Rampa']);
+    expect(pressed()).toEqual(['3Aeródromo']);
+    const airfield = map.getZoom();
+    const calls = map.cameraCalls.length;
+    // 1 and 2 belong to views this map does not offer: no flight and no `view=`.
+    fireEvent.keyDown(map.getCanvas(), { key: '1' });
+    fireEvent.keyDown(map.getCanvas(), { key: '2' });
+    expect(map.cameraCalls).toHaveLength(calls);
+    expect(map.getZoom()).toBe(airfield);
+    expect(query().has('view')).toBe(false);
+    // 4 still flies to the ramp.
+    fireEvent.keyDown(map.getCanvas(), { key: '4' });
+    expect(query().get('view')).toBe('ramp');
+    expect(map.getZoom()).toBeGreaterThan(airfield);
+  });
+
+  it('a `views` prop narrows the buttons, and toggle3d={false} leaves the 2D/3D control to the screen', () => {
+    render(
+      <OccMap stands={STANDS}>
+        <div className="occ-map-dock"><MapPresetSwitcher views={['ramp']} toggle3d={false} /></div>
+      </OccMap>,
+    );
+    act(() => fake.state.emit(fake.state.liveMaps().at(-1), 'style.load'));
+    expect(within(group()).getAllByRole('button').map(wideText)).toEqual(['4Rampa']);
+    expect(screen.queryByTestId('map-3d-toggle')).not.toBeInTheDocument();
+    cleanup();
+
+    // By default every rail with the views offers the 2D/3D control.
+    renderSwitcher();
+    expect(within(group()).getAllByRole('button')).toHaveLength(4);
+    expect(screen.getByTestId('map-3d-toggle')).toBeInTheDocument();
+  });
+});
+
+describe('MapPresetSwitcher with one views API for the globe and the airport lock (M8 and M9)', () => {
+  it('OccMap `views` narrows the views a globe offers, and a Mercator map never offers the world', () => {
+    window.history.replaceState({}, '', `${PAGE}&view=airfield`);
+    render(
+      <OccMap stands={STANDS} projection="globe" mapOptions={{ minZoom: 1 }} defaultView="region"
+        views={['world', 'region']}>
+        <MapPresetSwitcher />
+      </OccMap>,
+    );
+    const globe = fake.state.liveMaps().at(-1);
+    act(() => fake.state.emit(globe, 'style.load'));
+    expect(within(group()).getAllByRole('button').map(wideText)).toEqual(['0Mundo', '1Región']);
+    // A `view=` of a view the map does not offer is ignored: the map opens on its default view.
+    expect(pressed()).toEqual(['1Región']);
+    fireEvent.keyDown(screen.getByTestId('occ-map'), { key: '0' });
+    expect(pressed()).toEqual(['0Mundo']);
+    expect(query().get('view')).toBe('world');
+    const world = globe.getZoom();
+    fireEvent.keyDown(screen.getByTestId('occ-map'), { key: '3' });
+    expect(globe.getZoom()).toBe(world);
+    expect(query().get('view')).toBe('world');
+    cleanup();
+
+    // Asked of a map in Mercator, the world is left out: the map keeps the views of `views` it can show.
+    window.history.replaceState({}, '', PAGE);
+    render(
+      <OccMap stands={STANDS} defaultView="ramp" views={['world', 'airfield', 'ramp']}>
+        <MapPresetSwitcher />
+      </OccMap>,
+    );
+    act(() => fake.state.emit(fake.state.liveMaps().at(-1), 'style.load'));
+    expect(within(group()).getAllByRole('button').map(wideText)).toEqual(['3Aeródromo', '4Rampa']);
+  });
 });

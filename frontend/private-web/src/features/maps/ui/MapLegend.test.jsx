@@ -425,6 +425,58 @@ describe('MapLegend', () => {
     expect(legendItems()).not.toContain('Pista');
   });
 
+  it('on a map with the airport in 3D (M9) lists the pavement, the raised terminals and the jet bridges, as estimates', () => {
+    const drawn = (layer, kind) => ({ layer: { id: layer }, properties: { kind, id: `${kind}-1` } });
+    const STRUCTURES = [
+      drawn('occ-airfield-terminal', 'terminal'), drawn('occ-airfield-taxiway', 'taxiway'),
+      drawn('occ-airfield-taxiway-pavement', 'taxiwayPavement'), drawn('occ-airfield-building-3d', 'building'),
+      drawn('occ-airfield-jet-bridge', 'jetBridgeTunnel'), drawn('occ-airfield-jet-bridge', 'jetBridgeRotunda'),
+    ];
+    render(<OccMap stands={STANDS} structures><MapLegend /></OccMap>);
+    const map = fake.state.liveMaps().at(-1);
+    fake.state.setRenderedFeatures(map, (_geometry, options) => STRUCTURES.filter(feature => options.layers.includes(feature.layer.id)));
+    act(() => fake.state.emit(map, 'style.load'));
+    // The map has the structures and their source is filled from the dataset of MDPC.
+    for (const id of ['occ-airfield-taxiway-pavement', 'occ-airfield-building-3d', 'occ-airfield-jet-bridge']) {
+      expect(map.getLayer(id), id).toBeTruthy();
+    }
+    const structures = map.getSource('occ-airfield-structures').data;
+    expect(structures.features.some(feature => feature.properties.kind === 'jetBridgeTunnel')).toBe(true);
+    act(() => fake.state.emit(map, 'idle'));
+    // The raised terminal stands in for its flat footprint; each structure says it is an estimate.
+    expect(legendItems().slice(-4)).toEqual([
+      'Calle de rodaje', 'Calle de rodaje (pavimento, ancho est.)', 'Terminal (altura est.)', 'Finger (pasarela, est.)',
+    ]);
+    expect(legendItems()).not.toContain('Terminal');
+    const legend = screen.getByTestId('map-legend');
+    expect([...legend.querySelectorAll('li svg[data-swatch]')].map(svg => svg.dataset.swatch).filter(kind => kind !== 'state'))
+      .toEqual(['taxiway', 'taxiwayPavement', 'building', 'jetBridge']);
+    // The bridge's swatch is the slate the map raises it in.
+    expect(legend.querySelector('svg[data-swatch="jetBridge"] circle').style.fill).toBe('var(--occ-line-strong)');
+    cleanup();
+
+    // In English.
+    window.history.replaceState({}, '', PAGE);
+    resetLanguageForTests('en');
+    render(<LanguageScope><OccMap stands={STANDS} structures><MapLegend /></OccMap></LanguageScope>);
+    const english = fake.state.liveMaps().at(-1);
+    fake.state.setRenderedFeatures(english, (_geometry, options) => STRUCTURES.filter(feature => options.layers.includes(feature.layer.id)));
+    act(() => fake.state.emit(english, 'style.load'));
+    act(() => fake.state.emit(english, 'idle'));
+    expect(legendItems().slice(-3)).toEqual(['Taxiway (pavement, est. width)', 'Terminal (est. height)', 'Jet bridge (est.)']);
+    cleanup();
+
+    // A map without them (Planificación, the console) has no such layers.
+    resetLanguageForTests('es');
+    render(<OccMap stands={STANDS}><MapLegend /></OccMap>);
+    const plain = fake.state.liveMaps().at(-1);
+    act(() => fake.state.emit(plain, 'style.load'));
+    expect(plain.getLayer('occ-airfield-taxiway')).toBeTruthy();
+    expect(plain.getLayer('occ-airfield-building-3d')).toBeFalsy();
+    expect(plain.getSource('occ-airfield-structures')).toBeFalsy();
+
+  });
+
   it('explains the ring of the stands the selected one\'s agent covers and the boxes of a stand being placed', () => {
     const stands = scenarioStands();
     const view = render(
@@ -793,6 +845,70 @@ describe('MapLegend: the airports of the region (owner request of 2026-11-15)', 
       expect(fills.length).toBeGreaterThan(0);
       const light = new Set(Object.values(MAP_COLORS.light.stands).map(fill => rgbOf(fill.color)));
       for (const fill of fills) expect(light.has(fill), fill).toBe(true);
+    } finally {
+      window.localStorage.removeItem(THEME_STORAGE_KEY);
+    }
+  });
+});
+
+describe('MapLegend: the globe of Monitoreo (M8)', () => {
+  const globe = (view, extra = {}) => ({ ...OCC_MAP_IDLE, activeView: view, views: ['world', 'region', 'approach', 'airfield', 'ramp'],
+    layers: { keys: ['reference.airports'], values: { 'reference.airports': true } }, ...extra });
+  const worldBase = () => document.querySelector('[data-swatch="world-base"]');
+
+  it('adds the Dominican airports to the kinds and explains the world base in the Mundo and Región views', () => {
+    const { rerender } = render(<OccMapContext.Provider value={globe('world')}><MapLegend /></OccMapContext.Provider>);
+    const entries = [...document.querySelectorAll('[data-legend-airport]')];
+    expect(entries.map(entry => entry.dataset.legendAirport)).toEqual(['home', 'international', 'regional', 'other', 'rd']);
+    expect(entries.at(-1).textContent).toBe('Aeropuerto de República Dominicana');
+    const radius = kind => Number(document.querySelector(`[data-airport="${kind}"] circle`).getAttribute('r'));
+    expect(radius('rd')).toBeGreaterThan(radius('international'));
+    // The dark theme by default: the night lights of Black Marble.
+    expect(worldBase()).toHaveAttribute('data-world-base', 'dark');
+    expect(worldBase().closest('li').textContent).toBe('Luces de las ciudadesNASA Black Marble (2016), desde lejos');
+    rerender(<OccMapContext.Provider value={globe('region')}><MapLegend /></OccMapContext.Provider>);
+    expect(worldBase()).not.toBeNull();
+    // Closer in it is not drawn, so not listed.
+    rerender(<OccMapContext.Provider value={globe('approach')}><MapLegend /></OccMapContext.Provider>);
+    expect(worldBase()).toBeNull();
+    expect([...document.querySelectorAll('[data-legend-airport]')].map(entry => entry.dataset.legendAirport)).toContain('rd');
+    // A Mercator map (the four views) lists neither.
+    rerender(<OccMapContext.Provider value={globe('region', { views: ['region', 'approach', 'airfield', 'ramp'] })}>
+      <MapLegend /></OccMapContext.Provider>);
+    expect(worldBase()).toBeNull();
+    expect([...document.querySelectorAll('[data-legend-airport]')].map(entry => entry.dataset.legendAirport)).not.toContain('rd');
+  });
+
+  it('lists the routes of the AVIAM flights in Mundo and Región while they are on, and the board filter while it dims', () => {
+    const routes = { layers: { keys: ['traffic.routes'], values: { 'traffic.routes': true } } };
+    const swatch = kind => document.querySelector(`[data-swatch="${kind}"]`);
+    const { rerender } = render(<OccMapContext.Provider value={globe('world', routes)}><MapLegend /></OccMapContext.Provider>);
+    expect(swatch('flight-route').closest('li').textContent)
+      .toBe('Rutas de los vuelos de AVIAMcírculo máximo entre los aeropuertos');
+    expect(swatch('board-filter')).toBeNull();
+    rerender(<OccMapContext.Provider value={globe('region', { ...routes, boardFilter: true })}><MapLegend /></OccMapContext.Provider>);
+    expect(swatch('flight-route')).not.toBeNull();
+    expect(swatch('board-filter').closest('li').textContent).toBe('Fuera del filtro del tablerovuelos y rutas atenuados');
+    // Closer in the routes are not drawn; the filter still dims the aircraft.
+    rerender(<OccMapContext.Provider value={globe('approach', { ...routes, boardFilter: true })}><MapLegend /></OccMapContext.Provider>);
+    expect(swatch('flight-route')).toBeNull();
+    expect(swatch('board-filter')).not.toBeNull();
+    // Turned off, or a map without the layer (Panorama, Mapa de posiciones): not listed.
+    rerender(<OccMapContext.Provider value={globe('world', { layers: { keys: ['traffic.routes'], values: { 'traffic.routes': false } } })}>
+      <MapLegend /></OccMapContext.Provider>);
+    expect(swatch('flight-route')).toBeNull();
+    rerender(<OccMapContext.Provider value={globe('region', { views: ['region', 'approach', 'airfield', 'ramp'] })}>
+      <MapLegend /></OccMapContext.Provider>);
+    expect(swatch('flight-route')).toBeNull();
+    expect(swatch('board-filter')).toBeNull();
+  });
+
+  it('explains Blue Marble in the light theme', () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'light');
+    try {
+      render(<ThemeProvider><OccMapContext.Provider value={globe('world')}><MapLegend /></OccMapContext.Provider></ThemeProvider>);
+      expect(worldBase()).toHaveAttribute('data-world-base', 'light');
+      expect(worldBase().closest('li').textContent).toBe('Relieve y fondo marinoNASA Blue Marble, desde lejos');
     } finally {
       window.localStorage.removeItem(THEME_STORAGE_KEY);
     }

@@ -33,12 +33,19 @@ export const mapMessages = {
       hold: 'Punto de espera',
       apron: 'Plataforma',
       terminal: 'Terminal',
+      // The structures in 3D of Mapa de posiciones (M9): every size is an estimate.
+      taxiwayPavement: 'Calle de rodaje (pavimento, ancho est.)',
+      building: 'Terminal (altura est.)',
+      jetBridge: 'Finger (pasarela, est.)',
       // The traffic on screen (ui/trafficLegend.js); its tags take their words from occ-ui/statusVocabulary.js.
       traffic: {
         aviamArrival: 'Vuelo de AVIAM que llega',
         aviamDeparture: 'Vuelo de AVIAM que sale',
         other: 'Otro tráfico',
         otherGround: 'Otro tráfico en tierra',
+        // PR M5: what the 3D aircraft wear up close (aircraft/instancePlan.js: liveries).
+        aviam3dHint: 'En 3D, de cerca, con la librea de su aerolínea',
+        other3dHint: 'En 3D, sin librea',
         demoHint: 'Vuelo simulado',
         estimatedHint: 'Calculada con el horario',
         staleHint: 'Atenuado, con la hora de su última posición',
@@ -70,6 +77,20 @@ export const mapMessages = {
         imerg: 'Lluvia estimada (IMERG)',
         imageAt: 'Imagen de las {time}',
         imageDay: 'Imagen del {date}',
+        // The regional weather (lane M7, traffic/weatherLayers.js): the loops, the radar's scale, the SIGMETs and the
+        // flight categories of the METAR stations (their limits as AWC draws them), and the barbs.
+        loopIr: 'Bucle de satélite (GOES-East, infrarrojo)',
+        loopGeocolor: 'Bucle de satélite (GOES-East, visible GeoColor)',
+        radar: 'Radar de lluvia (de débil a intensa)',
+        span: 'De las {from} a las {to}',
+        sigmet: 'Área SIGMET',
+        categoryVFR: 'VFR: techo de más de 3000 ft y más de 5 SM',
+        categoryMVFR: 'MVFR: techo de 1000 a 3000 ft o de 3 a 5 SM',
+        categoryIFR: 'IFR: techo de 500 a 999 ft o de 1 a 3 SM',
+        categoryLIFR: 'LIFR: techo de menos de 500 ft o menos de 1 SM',
+        categoryNone: 'Estación sin categoría de vuelo',
+        barb: 'Viento en la estación',
+        barbHint: 'Media barba 5 kt, barba 10 kt, banderín 50 kt',
       },
     },
     // What a stand is and the visits on it (ui/StandDetailFacts.jsx, ui/StandTurnaround.jsx; owner request of
@@ -192,11 +213,21 @@ export const mapMessages = {
     // The region's airports (style/referenceLayers.js), in the legend.
     // The routes from Punta Cana (style/routeLayers.js), in the legend.
     routes: { name: 'Rutas desde Punta Cana', hint: 'grosor según vuelos diarios (AeroDataBox)' },
+    // The great circles of every AVIAM flight (M8, style/flightRouteLayers.js) and the board's filter on the map.
+    flightRoutes: { name: 'Rutas de los vuelos de AVIAM', hint: 'círculo máximo entre los aeropuertos' },
+    boardFilter: { name: 'Fuera del filtro del tablero', hint: 'vuelos y rutas atenuados' },
     airports: {
       home: 'Punta Cana (MDPC)',
       international: 'Aeropuerto internacional',
       regional: 'Aeropuerto regional',
       other: 'Otro aeródromo',
+      // The globe of Monitoreo (M8): the Dominican airports, larger and always labelled.
+      rd: 'Aeropuerto de República Dominicana',
+    },
+    // The world seen from afar on the globe of Monitoreo (M8, style/worldBaseLayers.js), by theme.
+    worldBase: {
+      light: { name: 'Relieve y fondo marino', hint: 'NASA Blue Marble, desde lejos' },
+      dark: { name: 'Luces de las ciudades', hint: 'NASA Black Marble (2016), desde lejos' },
     },
     // The map tooltip of a runway or a taxiway: what the airport layout says of it.
     airfield: {
@@ -256,7 +287,51 @@ export const mapMessages = {
       stands: 'Posiciones del mapa',
       flights: 'Vuelos del mapa',
     },
-    attribution: { aircraftData: 'Datos de aeronaves', weather: 'Clima' },
+    attribution: {
+      aircraftData: 'Datos de aeronaves', weather: 'Clima', radar: 'Radar', credits: 'Créditos y licencias',
+    },
+    // The «Créditos y licencias» dialog, opened from the attribution (PR M5, ui/MapCreditsDialog.jsx).
+    credits: {
+      title: 'Créditos y licencias',
+      intro: 'Lo que el mapa usa de terceros: modelos 3D, logotipos, datos y teselas, con su autoría y su licencia.',
+      loading: 'Cargando créditos…',
+      error: 'No se pudieron cargar los créditos de los modelos y los logotipos.',
+      retry: 'Reintentar',
+      models: {
+        title: 'Modelos 3D de aviones',
+        intro: 'Modelos con licencia GPL, adaptados por ELEVANT y servidos como archivos aparte, cada uno con su licencia, su aviso y su fuente. Las libreas son de ELEVANT: colores, nombre y logotipo se pintan encima. Un tipo sin modelo (como el B763) usa el modelo propio de la app.',
+        base: 'Modelo base',
+        proxy: 'Ajustado a partir del {base}',
+        authors: 'Autoría',
+        source: 'Fuente',
+        commit: 'commit {commit}',
+        upstream: 'Procedencia',
+        licence: 'Licencia',
+        modified: 'Modificado: {date}, ELEVANT / AVIAM',
+        changes: 'Cambios del {icao}',
+        notices: 'Archivos del {icao}',
+        empty: 'No hay modelos 3D en esta instalación.',
+      },
+      logos: {
+        title: 'Logotipos de aerolíneas',
+        intro: 'Logotipos de texto tomados de Wikimedia Commons, de dominio público por no alcanzar el umbral de originalidad. Son marcas de sus titulares: se usan solo para identificar a la aerolínea en esta herramienta interna, como uso demostrativo y sin afiliación, patrocinio ni aval. Se pintan en un color, sin sus colores de marca.',
+        noLogo: 'Las aerolíneas sin logotipo aquí llevan su código IATA en la deriva.',
+        commons: 'Archivo en Commons',
+        empty: 'No hay logotipos en esta instalación.',
+        trademarked: 'marca registrada',
+      },
+      data: {
+        title: 'Datos y mapas base',
+        basemap: 'Mapa base',
+        airfield: 'Plano del aeropuerto',
+        references: 'Aeropuertos, prolongaciones de pista y radioayudas',
+        satellite: 'Imágenes de satélite',
+        weather: 'Clima de aeródromo',
+        font: 'Letra de las libreas',
+        aircraft: 'Datos de aeronaves',
+        aircraftNone: 'La fuente de los datos de aeronaves se acredita en el mapa mientras hay tráfico en pantalla.',
+      },
+    },
     controls: {
       zoomIn: 'Acercar',
       zoomOut: 'Alejar',
@@ -363,6 +438,10 @@ export const mapMessages = {
       label: 'Seguir',
       stopped: 'Dejaste de seguir a {id}. Pulsa Seguir para volver.',
       label3d: 'Seguir en 3D',
+      // M4: the rail's «Seguir en 3D» (ui/MapFollow3dButton.jsx), whose title says the double click does the same.
+      title3d: 'Seguir en 3D el avión elegido. También con doble clic sobre un avión.',
+      stop3d: 'Dejar de seguir en 3D y volver a la vista anterior.',
+      choose3d: 'Elige un avión del mapa para seguirlo en 3D, o haz doble clic sobre él.',
     },
     // «Seguir en 3D» (CN-30, ui/Follow3dPanel.jsx): the panel of the followed aircraft, its camera and its operation.
     follow3d: {
@@ -373,6 +452,7 @@ export const mapMessages = {
       camera: 'Cámara',
       views: {
         chase: 'Persecución',
+        close: 'Muy cerca',
         side: 'Lateral',
         top: 'Desde arriba',
         tower: 'Desde la torre',
@@ -438,6 +518,15 @@ export const mapMessages = {
       resume: 'Volver a 3D',
       failed: 'No pudimos mostrar los aviones en 3D; los mostramos en 2D.',
     },
+    // The hidden frame meter (PR M2, ui/FrameMeter.jsx): Ctrl+Alt+F shows and hides it.
+    frameMeter: {
+      title: 'Medidor de cuadros',
+      fps: 'Cuadros por segundo',
+      p95: 'Cuadro p95',
+      aircraft: 'Aviones dibujados',
+      gpu: 'GPU',
+      unknown: 'desconocida',
+    },
     // The layers menu (ui/MapLayersMenu.jsx, core/layersMenu.js); its button takes «Capas» from the key table.
     layers: {
       menu: 'Capas del mapa',
@@ -452,6 +541,8 @@ export const mapMessages = {
           other: 'Otro tráfico',
           labels: 'Etiquetas de todo el tráfico',
           trails: 'Estelas de todo el tráfico',
+          // M8: the great circles of every AVIAM flight (style/flightRouteLayers.js), on Monitoreo's globe.
+          routes: 'Rutas de los vuelos de AVIAM',
         },
         route: 'Ruta del vuelo elegido',
         // The references of PR M8 (design E7).
@@ -460,13 +551,25 @@ export const mapMessages = {
         navaids: 'Radioayudas',
         daynight: 'Día y noche',
         // The weather of PR M8 (design E7).
-        weather: { goes: 'Nubes por satélite', imerg: 'Lluvia estimada', wind: 'Viento en pista' },
+        weather: {
+          goes: 'Nubes por satélite',
+          imerg: 'Lluvia estimada',
+          wind: 'Viento en pista',
+          // The regional weather (lane M7).
+          loop: 'Bucle de satélite',
+          radar: 'Radar de lluvia',
+          stations: 'Estaciones METAR',
+          sigmet: 'SIGMET',
+        },
       },
       // What a weather key that is on says when the map shows nothing of it (traffic/weatherLayers.js).
       note: {
         views: 'Se ve en {first} y {second}',
         loadingImage: 'Buscando la imagen…',
         noImage: 'No hay imagen en este momento.',
+        noRadar: 'No hay radar en este momento.',
+        noStations: 'Ninguna estación de la región informa en este momento.',
+        noSigmet: 'No hay SIGMET vigentes en la región.',
       },
     },
     // The words the map draws by its references (traffic/referenceFeatures.js): the runway in use and where it comes
@@ -504,6 +607,30 @@ export const mapMessages = {
         change: { FM: 'Cambio', BECMG: 'Cambio gradual', TEMPO: 'Temporal', PROB: 'Probabilidad {percent}' },
       },
       wind: { calm: 'Calma', variable: 'VRB', gust: 'G{speed}' },
+      // The regional weather (lane M7: GET occ/weather/region, sigmet and radar), when a layer has nothing to draw.
+      regional: {
+        loading: 'Cargando el clima de la región…',
+        unavailable: 'No hay clima de la región en este momento.',
+        disabled: 'El clima de la región no está activado en este entorno.',
+        error: 'No se pudo cargar el clima de la región.',
+        forbidden: 'Tu acceso no incluye el clima de la región.',
+      },
+      // The words of a SIGMET on the map (traffic/weatherLayers.js: sigmetFeatures). Map labels keep to Latin-1.
+      sigmet: {
+        name: 'SIGMET {hazard}',
+        top: 'Hasta {level}',
+        base: 'Desde {level}',
+        hazard: {
+          TS: 'Tormentas',
+          TC: 'Ciclón tropical',
+          TURB: 'Turbulencia',
+          ICE: 'Engelamiento',
+          MTW: 'Onda de montaña',
+          VA: 'Ceniza volcánica',
+          DS: 'Polvo o arena',
+          OTHER: 'Otro fenómeno',
+        },
+      },
     },
     // The tooltip of the wind at the airfield (traffic/weatherLayers.js: windTooltip): its words, the time of the METAR
     // and the head (or tail) and cross wind of each runway end. «No oficial» is TAGS.unofficial.
@@ -547,11 +674,16 @@ export const mapMessages = {
       hold: 'Holding point',
       apron: 'Apron',
       terminal: 'Terminal',
+      taxiwayPavement: 'Taxiway (pavement, est. width)',
+      building: 'Terminal (est. height)',
+      jetBridge: 'Jet bridge (est.)',
       traffic: {
         aviamArrival: 'AVIAM arrival',
         aviamDeparture: 'AVIAM departure',
         other: 'Other traffic',
         otherGround: 'Other traffic on the ground',
+        aviam3dHint: 'In 3D, up close, in its airline livery',
+        other3dHint: 'In 3D, without a livery',
         demoHint: 'Simulated flight',
         estimatedHint: 'Calculated from the schedule',
         staleHint: 'Dimmed, with the time of its last position',
@@ -578,6 +710,18 @@ export const mapMessages = {
         imerg: 'Estimated rain (IMERG)',
         imageAt: 'Image of {time}',
         imageDay: 'Image of {date}',
+        loopIr: 'Satellite loop (GOES-East, infrared)',
+        loopGeocolor: 'Satellite loop (GOES-East, visible GeoColor)',
+        radar: 'Rain radar (light to heavy)',
+        span: 'From {from} to {to}',
+        sigmet: 'SIGMET area',
+        categoryVFR: 'VFR: ceiling above 3000 ft and over 5 SM',
+        categoryMVFR: 'MVFR: ceiling 1000 to 3000 ft or 3 to 5 SM',
+        categoryIFR: 'IFR: ceiling 500 to 999 ft or 1 to 3 SM',
+        categoryLIFR: 'LIFR: ceiling below 500 ft or under 1 SM',
+        categoryNone: 'Station without a flight category',
+        barb: 'Wind at the station',
+        barbHint: 'Half barb 5 kt, barb 10 kt, pennant 50 kt',
       },
     },
     standInfo: {
@@ -687,11 +831,18 @@ export const mapMessages = {
       sources: { adsb: 'ADS-B', estimated: 'Estimated', reported: 'On-blocks recorded (AVIAM)' },
     },
     routes: { name: 'Routes from Punta Cana', hint: 'width by daily flights (AeroDataBox)' },
+    flightRoutes: { name: 'AVIAM flight routes', hint: 'great circle between the airports' },
+    boardFilter: { name: 'Outside the board filter', hint: 'flights and routes dimmed' },
     airports: {
       home: 'Punta Cana (MDPC)',
       international: 'International airport',
       regional: 'Regional airport',
       other: 'Other aerodrome',
+      rd: 'Dominican Republic airport',
+    },
+    worldBase: {
+      light: { name: 'Relief and sea floor', hint: 'NASA Blue Marble, from afar' },
+      dark: { name: 'City lights', hint: 'NASA Black Marble (2016), from afar' },
     },
     airfield: {
       runway: 'Runway {id}',
@@ -741,7 +892,50 @@ export const mapMessages = {
       stands: 'Stands on the map',
       flights: 'Flights on the map',
     },
-    attribution: { aircraftData: 'Aircraft data', weather: 'Weather' },
+    attribution: {
+      aircraftData: 'Aircraft data', weather: 'Weather', radar: 'Radar', credits: 'Credits and licences',
+    },
+    credits: {
+      title: 'Credits and licences',
+      intro: 'What the map uses from third parties: 3D models, logos, data and tiles, with their authors and licences.',
+      loading: 'Loading credits…',
+      error: 'The credits of the models and logos could not be loaded.',
+      retry: 'Retry',
+      models: {
+        title: 'Aircraft 3D models',
+        intro: "GPL-licensed models, adapted by ELEVANT and served as separate files, each with its licence, notice and source. The liveries are ELEVANT's own: colours, name and logo are painted on top. A type without a model (such as the B763) uses the app's own model.",
+        base: 'Base model',
+        proxy: 'Adjusted from the {base}',
+        authors: 'Authors',
+        source: 'Source',
+        commit: 'commit {commit}',
+        upstream: 'Origin',
+        licence: 'Licence',
+        modified: 'Modified: {date}, ELEVANT / AVIAM',
+        changes: 'Changes to the {icao}',
+        notices: 'Files of the {icao}',
+        empty: 'There are no 3D models in this installation.',
+      },
+      logos: {
+        title: 'Airline logos',
+        intro: 'Text logos from Wikimedia Commons, in the public domain because they do not reach the threshold of originality. They are trademarks of their owners: they are used only to identify the airline in this internal tool, for demonstration, without affiliation, sponsorship or endorsement. They are painted in one colour, without their brand colours.',
+        noLogo: 'Airlines without a logo here carry their IATA code on the fin.',
+        commons: 'File on Commons',
+        empty: 'There are no logos in this installation.',
+        trademarked: 'trademark',
+      },
+      data: {
+        title: 'Data and base maps',
+        basemap: 'Base map',
+        airfield: 'Airport layout',
+        references: 'Airports, extended centrelines and navaids',
+        satellite: 'Satellite images',
+        weather: 'Aerodrome weather',
+        font: 'Livery lettering',
+        aircraft: 'Aircraft data',
+        aircraftNone: 'The source of the aircraft data is credited on the map while traffic is on screen.',
+      },
+    },
     controls: {
       zoomIn: 'Zoom in',
       zoomOut: 'Zoom out',
@@ -834,6 +1028,9 @@ export const mapMessages = {
       label: 'Follow',
       stopped: 'You stopped following {id}. Press Follow to resume.',
       label3d: 'Follow in 3D',
+      title3d: 'Follow the chosen aircraft in 3D. A double click on an aircraft does the same.',
+      stop3d: 'Stop following in 3D and go back to the previous view.',
+      choose3d: 'Choose an aircraft on the map to follow it in 3D, or double-click it.',
     },
     follow3d: {
       panel: '3D follow of {id}',
@@ -841,7 +1038,9 @@ export const mapMessages = {
       expand: 'Expand the panel',
       stop: 'Stop following',
       camera: 'Camera',
-      views: { chase: 'Chase', side: 'Side', top: 'From above', tower: 'From the tower', orbit: 'Free orbit' },
+      views: {
+        chase: 'Chase', close: 'Very close', side: 'Side', top: 'From above', tower: 'From the tower', orbit: 'Free orbit',
+      },
       rotateLeft: 'Turn left',
       rotateRight: 'Turn right',
       tiltUp: 'Tilt towards the horizon',
@@ -901,6 +1100,14 @@ export const mapMessages = {
       resume: 'Back to 3D',
       failed: 'We could not show the aircraft in 3D; they are shown in 2D.',
     },
+    frameMeter: {
+      title: 'Frame meter',
+      fps: 'Frames per second',
+      p95: 'Frame p95',
+      aircraft: 'Aircraft drawn',
+      gpu: 'GPU',
+      unknown: 'unknown',
+    },
     layers: {
       menu: 'Map layers',
       show: 'Show the layers',
@@ -914,18 +1121,30 @@ export const mapMessages = {
           other: 'Other traffic',
           labels: 'Labels for all traffic',
           trails: 'Trails for all traffic',
+          routes: 'AVIAM flight routes',
         },
         route: 'Route of the selected flight',
         rings: 'Range rings',
         centrelines: 'Runway centrelines',
         navaids: 'Navaids',
         daynight: 'Day and night',
-        weather: { goes: 'Satellite clouds', imerg: 'Estimated rain', wind: 'Runway wind' },
+        weather: {
+          goes: 'Satellite clouds',
+          imerg: 'Estimated rain',
+          wind: 'Runway wind',
+          loop: 'Satellite loop',
+          radar: 'Rain radar',
+          stations: 'METAR stations',
+          sigmet: 'SIGMET',
+        },
       },
       note: {
         views: 'Shown in {first} and {second}',
         loadingImage: 'Looking for the image…',
         noImage: 'No image right now.',
+        noRadar: 'No radar right now.',
+        noStations: 'No station in the region is reporting right now.',
+        noSigmet: 'No SIGMET in force in the region.',
       },
     },
     reference: {
@@ -956,6 +1175,28 @@ export const mapMessages = {
         change: { FM: 'Change', BECMG: 'Gradual change', TEMPO: 'Temporary', PROB: 'Probability {percent}' },
       },
       wind: { calm: 'Calm', variable: 'VRB', gust: 'G{speed}' },
+      regional: {
+        loading: 'Loading the regional weather…',
+        unavailable: 'No regional weather right now.',
+        disabled: 'Regional weather is not turned on in this environment.',
+        error: 'The regional weather could not be loaded.',
+        forbidden: 'Your access does not include the regional weather.',
+      },
+      sigmet: {
+        name: 'SIGMET {hazard}',
+        top: 'Up to {level}',
+        base: 'From {level}',
+        hazard: {
+          TS: 'Thunderstorms',
+          TC: 'Tropical cyclone',
+          TURB: 'Turbulence',
+          ICE: 'Icing',
+          MTW: 'Mountain wave',
+          VA: 'Volcanic ash',
+          DS: 'Dust or sand',
+          OTHER: 'Other hazard',
+        },
+      },
     },
     wind: {
       title: 'Wind {wind}',

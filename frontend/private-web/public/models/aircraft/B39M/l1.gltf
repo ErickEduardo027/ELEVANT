@@ -1,0 +1,127 @@
+{
+  "asset": {
+    "generator": "ELEVANT scripts/models/build-aircraft-models.mjs (glTF-Transform 4.5.1, meshoptimizer 1.2.0)",
+    "version": "2.0",
+    "copyright": "GPL-2.0-only; véanse LICENSE y NOTICE.md en esta carpeta"
+  },
+  "accessors": [
+    {
+      "type": "SCALAR",
+      "componentType": 5123,
+      "count": 42855,
+      "bufferView": 0,
+      "byteOffset": 0
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5122,
+      "count": 18484,
+      "max": [
+        28175,
+        32767,
+        9353
+      ],
+      "min": [
+        -28175,
+        -32767,
+        -9353
+      ],
+      "normalized": true,
+      "bufferView": 1,
+      "byteOffset": 0
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5120,
+      "count": 18484,
+      "normalized": true,
+      "bufferView": 1,
+      "byteOffset": 8
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 85712,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 85712,
+      "byteLength": 221808,
+      "byteStride": 12,
+      "target": 34962
+    }
+  ],
+  "buffers": [
+    {
+      "name": "buffer",
+      "uri": "l1.bin",
+      "byteLength": 307520
+    }
+  ],
+  "materials": [
+    {
+      "name": "body",
+      "doubleSided": true,
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.9,
+          0.91,
+          0.92,
+          1
+        ],
+        "roughnessFactor": 0.7,
+        "metallicFactor": 0
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "name": "B39M",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 1,
+            "NORMAL": 2
+          },
+          "mode": 4,
+          "material": 0,
+          "indices": 0
+        }
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "B39M",
+      "translation": [
+        0.00009059906005859375,
+        0,
+        6.316604048013687
+      ],
+      "scale": [
+        21.079999923706055,
+        21.079999923706055,
+        21.079999923706055
+      ],
+      "mesh": 0
+    }
+  ],
+  "scenes": [
+    {
+      "name": "B39M",
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "scene": 0,
+  "extensionsUsed": [
+    "KHR_mesh_quantization"
+  ],
+  "extensionsRequired": [
+    "KHR_mesh_quantization"
+  ]
+}

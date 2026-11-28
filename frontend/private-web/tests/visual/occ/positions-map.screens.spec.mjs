@@ -1,11 +1,12 @@
 import { createOccApi } from './fixtures/occApi.mjs';
-import { SCREEN_VIEWPORTS, openOccScreen } from './occScreen.mjs';
+import { SCREEN_VIEWPORTS, expectFloatingLayout, openOccScreen } from './occScreen.mjs';
 import { mapReady, shoot } from '../support/map.mjs';
 import { expect, test } from '../support/test.mjs';
 
-// Mapa de posiciones as a work map (PR U5, design E.2 template B): the toolbar, «Lista de posiciones» as a dense table at
-// the left, the map with the stand band under it and the inspector of the chosen stand docked at the right, with the
-// synthetic OCC session and the stubbed API of the maps (fixtures/occApi.mjs). Photographed for review at 1920 × 1080
+// Mapa de posiciones as a full-screen map with floating panels (PR U5, design E.2; M1, which replaces CN-32's docked
+// template B): the map fills the screen with its control column at its true right edge; the bar floats at its top left,
+// «Lista de posiciones» as a dense table at its left under the bar, the inspector of the chosen stand at its right, left
+// of the column, and the stand band along its bottom, with the synthetic OCC session and the stubbed API of the maps (fixtures/occApi.mjs). Photographed for review at 1920 × 1080
 // and 1440 × 900 (owner decision 11): a stand chosen through the URL, the band open, and the table open with a stand;
 // and (N29) A11 chosen beside A10, in 2D and in 3D.
 
@@ -26,6 +27,16 @@ const settled = map => expect(map).toHaveAttribute('data-occ-settled', 'true', {
 async function expectDockFits(map) {
   const dock = await map.locator('.occ-map-dock').evaluate(node => ({ needs: node.scrollWidth, has: node.clientWidth }));
   expect(dock.needs, 'the dock fits its row').toBeLessThanOrEqual(dock.has + 1);
+}
+
+// The inspector floats over the map, left of its control column, and apart from the bar and the band.
+// M1: the map fills the screen, every panel floats 12 px from its edges and clear of its control column.
+async function expectInspectorFloats(page, map) {
+  const { boxes } = await expectFloatingLayout(page, map, { inspector: inspector(page),
+    bar: page.locator('[data-occ-positions-toolbar]'), band: page.locator('[data-occ-positions-band-slot]') });
+  expect(apart(boxes.inspector, boxes.bar), 'the inspector under the bar').toBe(true);
+  expect(apart(boxes.inspector, boxes.band), 'the inspector over the band').toBe(true);
+  return boxes;
 }
 
 // Two boxes on screen share no pixel.
@@ -53,8 +64,7 @@ test.describe('Mapa de posiciones as a work map', () => {
       await expect(inspector(page)).toBeVisible();
       await expect(inspector(page).getByText('A3').first()).toBeVisible();
       await expect(inspector(page).getByRole('button', { name: 'Cerrar detalle' })).toBeVisible();
-      const [mapBox, inspectorBox] = await Promise.all([map.boundingBox(), inspector(page).boundingBox()]);
-      expect(apart(mapBox, inspectorBox), 'the inspector beside the map, never over it').toBe(true);
+      await expectInspectorFloats(page, map);
       await settled(map);
       await expectDockFits(map);
       // The link's stand is brought to the centre of the map once it is ready (the screenshot shows it).
@@ -69,17 +79,19 @@ test.describe('Mapa de posiciones as a work map', () => {
     test(`A11 chosen beside A10, in 2D and 3D, at ${size}`, async ({ page, isolation }, testInfo) => {
       const { map } = await openPositions(page, isolation, { viewport, query: '?stand=A11' });
       await expect(inspector(page).getByText('A11').first()).toBeVisible();
-      await settled(map);
-      await shoot(page, testInfo, `n29-posiciones-a11-2d-${viewport.width}`);
-      await expectOneToolBlock(page);
-
-      await page.getByRole('button', { name: 'Cambiar a vista 3D' }).click();
+      // The screen opens in 3D (M9, 27 de noviembre de 2026): 3D first, then 2D.
       await expect(page.getByRole('button', { name: 'Cambiar a vista 2D' })).toHaveAttribute('aria-pressed', 'true');
       // The compass of the map's own controls leans with the camera (visualizePitch): the tilt of 3D has been applied.
       await expect(map.locator('.maplibregl-ctrl-compass .maplibregl-ctrl-icon'))
         .toHaveAttribute('style', /rotateX\([3-9]\d(?:\.\d+)?deg\)/);
       await settled(map);
       await shoot(page, testInfo, `n29-posiciones-a11-3d-${viewport.width}`);
+      await expectOneToolBlock(page);
+
+      await page.getByRole('button', { name: 'Cambiar a vista 2D' }).click();
+      await expect(page.getByRole('button', { name: 'Cambiar a vista 3D' })).toHaveAttribute('aria-pressed', 'false');
+      await settled(map);
+      await shoot(page, testInfo, `n29-posiciones-a11-2d-${viewport.width}`);
       await expectOneToolBlock(page);
     });
 
@@ -92,6 +104,8 @@ test.describe('Mapa de posiciones as a work map', () => {
       await expect(band).toBeVisible();
       await page.getByRole('group', { name: 'Posiciones de la banda' }).getByRole('button', { name: 'Todas' }).click();
       await settled(map);
+      await expectFloatingLayout(page, map, { bar: page.locator('[data-occ-positions-toolbar]'),
+        band: page.locator('[data-occ-positions-band-slot]') });
       await shoot(page, testInfo, `u5-posiciones-banda-${viewport.width}`);
     });
 
@@ -106,10 +120,19 @@ test.describe('Mapa de posiciones as a work map', () => {
       await expect(item).toHaveAttribute('aria-selected', 'true');
       await settled(map);
       await expectDockFits(map);
-      // Below 1536 px the list folds away while the inspector is open, so the map keeps its room.
+      await expectInspectorFloats(page, map);
+      // Below 1536 px the list folds away while the inspector is open, so the map keeps its room; from there it floats
+      // at the left, apart from the inspector.
       const column = page.locator('[data-occ-positions-list]');
       if (viewport.width < 1536) await expect(column).toBeHidden();
-      else await expect(column).toBeVisible();
+      else {
+        await expect(column).toBeVisible();
+        const { boxes } = await expectFloatingLayout(page, map, { list: column, inspector: inspector(page),
+          bar: page.locator('[data-occ-positions-toolbar]'), band: page.locator('[data-occ-positions-band-slot]') });
+        expect(apart(boxes.list, boxes.inspector), 'the list and the inspector apart').toBe(true);
+        expect(apart(boxes.list, boxes.bar), 'the list under the bar').toBe(true);
+        expect(apart(boxes.list, boxes.band), 'the list over the band').toBe(true);
+      }
       await shoot(page, testInfo, `u5-posiciones-tabla-${viewport.width}`);
     });
   }

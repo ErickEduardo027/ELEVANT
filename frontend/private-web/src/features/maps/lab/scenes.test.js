@@ -44,6 +44,7 @@ describe('map lab scenes', () => {
       'approach-demo-route', 'airfield-departure-route', 'approach-follow-final', 'airfield-follow-taxi', 'perf-approach-feed',
       'perf-airfield-feed', 'approach-live-offplan', 'airfield-3d-replay', 'ramp-3d-parked',
       'ramp-3d-selected', 'airfield-3d-final', 'ramp-3d-night', 'airfield-3d-showcase',
+      'airfield-3d-models',
     ]);
     expect(new Set(ids).size).toBe(ids.length);
     for (const scene of SCENES) {

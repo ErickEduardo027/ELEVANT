@@ -33,6 +33,27 @@ describe('traffic legend entries', () => {
       span: 2 }]);
   });
 
+  it("says in 3D which kinds wear their airline's livery up close and which keep a plain colour (PR M5)", () => {
+    const hints = options => trafficLegendEntries({ kinds: TRAFFIC_KINDS }, options).map(entry => [entry.key, entry.hint]);
+    expect(hints({ models3d: true })).toEqual([
+      ['aviamArrival', 'En 3D, de cerca, con la librea de su aerolínea'],
+      ['aviamDeparture', 'En 3D, de cerca, con la librea de su aerolínea'],
+      ['other', 'En 3D, sin librea'],
+      // Other traffic on the ground stays 2D.
+      ['otherGround', null],
+    ]);
+    expect(hints({ models3d: true, language: 'en' }).map(([, hint]) => hint)).toEqual([
+      'In 3D, up close, in its airline livery', 'In 3D, up close, in its airline livery', 'In 3D, without a livery', null,
+    ]);
+    // In 2D no kind has a hint.
+    expect(hints({}).map(([, hint]) => hint)).toEqual([null, null, null, null]);
+    // Integration of M5 with M9: with the map's liveries (Mapa de posiciones) every kind wears its airline's, the other
+    // traffic on the ground near the field included; in 2D still no hint.
+    expect(hints({ models3d: true, liveries3d: true }).map(([, hint]) => hint))
+      .toEqual(Array(4).fill('En 3D, de cerca, con la librea de su aerolínea'));
+    expect(hints({ liveries3d: true }).map(([, hint]) => hint)).toEqual([null, null, null, null]);
+  });
+
   it('lists only what is on screen, in English too', () => {
     expect(trafficLegendEntries()).toEqual([]);
     expect(trafficLegendEntries({ kinds: ['other'], tags: [], trails: [] }).map(entry => entry.key)).toEqual(['other']);

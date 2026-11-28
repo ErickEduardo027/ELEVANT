@@ -1,6 +1,7 @@
 import { BASEMAP_SOURCE_ID, SLOT_GROUP, nextSlot, slotMarkerId } from '../style/occStyle';
 import { collapseCompactAttribution } from './attribution';
 import { ensureWorkerUrl } from './workerUrl';
+import { ORBIT } from '../kinematics/orbitCamera.js';
 
 // The only module of the OCC maps that constructs a MapLibre Map (design A2). Everything a screen draws is declared in
 // the style document (style/occStyle.js); the engine is the thin imperative shell around it:
@@ -19,6 +20,9 @@ import { ensureWorkerUrl } from './workerUrl';
 
 /** How long the vector base map may go without a first tile before the engine reports it degraded. */
 export const BASEMAP_TIMEOUT_MS = 8000;
+/** The zoom range every OCC map starts with; `setCameraLimits` goes back to it for a limit given as `null`. */
+export const ENGINE_MIN_ZOOM = 4.5;
+export const ENGINE_MAX_ZOOM = 19.5;
 
 const PICK_TOLERANCE_PX = 4;
 const CLUSTER_EASE_MS = 500;
@@ -77,8 +81,12 @@ const stateKey = (source, id) => `${source}\u0000${typeof id}:${String(id)}`;
  * @param {(camera: object, details: { byUser: boolean }) => void} [options.onCamera] after every move.
  * @param {() => void} [options.onIdle] after every frame MapLibre draws with nothing left to load, place or move (its
  *   `idle` event): what renderedFeatures answers is then final, as the tiles of a new zoom have loaded.
+ * @param {() => void} [options.onRender] after every frame MapLibre draws (its `render` event; PR M2: the frame meter).
  * @param {() => void} [options.onResize] after MapLibre has resized the map to its container (the fitted zooms change).
  * @param {(event: object) => void} [options.onClick] `{ point, lngLat, hit }`, `hit` as pickAt answers.
+ * @param {(event: object) => void} [options.onDoubleClick] the same for a double click (M4, «Seguir en 3D»), with
+ *   `preventDefault()`: called, MapLibre's own double-click zoom does nothing (MapLibre 6.16 skips its handler for a
+ *   `dblclick` whose default was prevented); not called, the map zooms in as always.
  * @param {(event: object|null) => void} [options.onPointerMove] the same while the pointer moves, `null` when it
  *   leaves; its `hit` is picked when first read, so a caller that reads it once per frame picks once per frame.
  * @param {(gesture: { kind: 'pan'|'zoom'|'rotate'|'pitch' }) => void} [options.onUserGesture] when a person starts to
@@ -87,7 +95,7 @@ const stateKey = (source, id) => `${source}\u0000${typeof id}:${String(id)}`;
  */
 export function createMapEngine({
   maplibre, host, style, camera, interactive = true, attribution, imageResolver, mapOptions,
-  onStatus, onCamera, onIdle, onResize, onClick, onPointerMove, onUserGesture,
+  onStatus, onCamera, onIdle, onRender, onResize, onClick, onDoubleClick, onPointerMove, onUserGesture,
 } = {}) {
   if (!maplibre) throw new TypeError('createMapEngine needs the maplibre-gl module');
   if (!host?.ownerDocument) throw new TypeError('createMapEngine needs a host element');
@@ -170,6 +178,7 @@ export function createMapEngine({
   // Settles every call that waits for the style and every wait for an idle frame as never happening, then removes the
   // map. The engine's listeners go first, so nothing the map fires while it goes reaches the engine.
   function releaseMap() {
+    dropLimitsWaiter();
     const dropped = pending;
     pending = [];
     for (const { drop } of dropped) drop?.();
@@ -232,6 +241,7 @@ export function createMapEngine({
     for (const id of customLayers.keys()) runWhileLoading(() => addCustomLayerNow(id));
     for (const { source, id, state } of featureStates.values()) runWhileLoading(() => applyFeatureState(source, id, state));
     for (const [sourceId, tiles] of rasterTiles) runWhileLoading(() => applyRasterTiles(sourceId, tiles));
+    if (sky !== null) runWhileLoading(applySky);
   }
 
   function markStyleReady({ restore }) {
@@ -315,6 +325,50 @@ export function createMapEngine({
 
   // The gestures and limits «Seguir en 3D» took from MapLibre (setOrbitMode), to give back.
   let orbitSaved = null;
+  // The camera limits setCameraLimits waits to apply until the move on the way ends (M9), and the listener that does it.
+  let limitsWaiter = null;
+
+  function dropLimitsWaiter() {
+    if (limitsWaiter === null) return;
+    map?.off?.('moveend', limitsWaiter);
+    limitsWaiter = null;
+  }
+
+  // Integration of M4 and M9: while «Seguir en 3D» holds the orbit (setOrbitMode), the maximum zoom given here is the one
+  // the orbit gives back when it ends (the latest the screen set, whichever came first), and the map keeps at least the
+  // orbit's zoom 22 until then.
+  function applyLimits({ maxBounds = null, minZoom = null, maxZoom = null }) {
+    const limit = Number.isFinite(maxZoom) ? maxZoom : ENGINE_MAX_ZOOM;
+    map.setMaxBounds?.(maxBounds ?? null);
+    map.setMinZoom?.(Number.isFinite(minZoom) ? minZoom : ENGINE_MIN_ZOOM);
+    if (orbitSaved !== null) {
+      orbitSaved.maxZoom = limit;
+      map.setMaxZoom?.(Math.max(limit, ORBIT.maxZoom));
+      return;
+    }
+    map.setMaxZoom?.(limit);
+  }
+
+  // The sky (M4, setSky): the SkySpecification the map shows, or null for none; put back after a context loss.
+  let sky = null;
+  let skyKey = 'null';
+  function applySky() {
+    if (typeof map.setSky === 'function') map.setSky(sky ?? undefined);
+  }
+
+  // Close up (M4, setCloseUp): the layers whose metadata says `'occ:closeUp': 'hide'` are hidden whatever their group,
+  // and those with an `'occ:closeUpFilter'` draw only what it lets through, on top of their own filter. The visibility
+  // each group was last given (setGroupVisibility) is what a hidden layer gets back.
+  let closeUp = false;
+  const groupVisible = new Map();
+  const closeUpHidden = [...styleLayers.values()].filter(layer => layer.metadata?.['occ:closeUp'] === 'hide');
+  const closeUpFiltered = [...styleLayers.values()].filter(layer => Array.isArray(layer.metadata?.['occ:closeUpFilter']));
+  function layerVisibility(layer) {
+    if (closeUp && layer.metadata?.['occ:closeUp'] === 'hide') return 'none';
+    const group = layer.metadata?.['occ:group'];
+    if (groupVisible.has(group)) return groupVisible.get(group) ? 'visible' : 'none';
+    return layer.layout?.visibility ?? 'visible';
+  }
 
   function listen(type, handler) {
     map.on(type, handler);
@@ -327,14 +381,16 @@ export function createMapEngine({
       attributionControl: false,
       pixelRatio: Math.min(globalThis.devicePixelRatio || 1, 2),
       maxPitch: 65,
-      minZoom: 4.5,
-      maxZoom: 19.5,
+      minZoom: ENGINE_MIN_ZOOM,
+      maxZoom: ENGINE_MAX_ZOOM,
       renderWorldCopies: false,
       canvasContextAttributes: { antialias: true },
       validateStyle: process.env.NODE_ENV !== 'production',
-      // No symbol fade (CN-18): the traffic is written several times a second, and every fade after a placement kept
-      // MapLibre repainting without a pause.
-      fadeDuration: 0,
+      // PR M2 (2026-11-28): a 150 ms symbol fade. With 0 (CN-18), every frame MapLibre draws starts and finishes a full
+      // placement of every label; with a fade the placement runs again at most once per fade, in slices of a few
+      // milliseconds, so the frames the animated traffic draws continuously cost no placement. The traffic itself is
+      // never written every frame (CN-18), and while the 3D layer animates it, twice a second (core/OccMap.jsx).
+      fadeDuration: 150,
       interactive,
       ...cameraOptions(camera),
       ...mapOptions,
@@ -402,8 +458,12 @@ export function createMapEngine({
       onCamera?.(readCamera(), { byUser: Boolean(event?.originalEvent) });
     });
     if (onIdle) listen('idle', () => onIdle());
+    if (onRender) listen('render', () => onRender());
     if (onResize) listen('resize', () => onResize());
     if (onClick) listen('click', event => onClick(pointerEvent(event)));
+    if (onDoubleClick) {
+      listen('dblclick', event => onDoubleClick({ ...pointerEvent(event), preventDefault: () => event.preventDefault?.() }));
+    }
     if (onPointerMove) {
       listen('mousemove', event => onPointerMove(pointerMoveEvent(event)));
       listen('mouseout', () => onPointerMove(null));
@@ -454,12 +514,62 @@ export function createMapEngine({
     /** Shows or hides every layer of a layers-menu group (the slot markers are never shown). */
     setGroupVisibility(group, visible) {
       if (group === SLOT_GROUP) return;
-      const ids = [...styleLayers.values()].filter(layer => layer.metadata?.['occ:group'] === group).map(layer => layer.id);
+      groupVisible.set(group, Boolean(visible));
+      const layers = [...styleLayers.values()].filter(layer => layer.metadata?.['occ:group'] === group);
       whenStyleReady(() => {
-        for (const id of ids) {
-          if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
+        for (const layer of layers) {
+          if (map.getLayer(layer.id)) map.setLayoutProperty(layer.id, 'visibility', layerVisibility(layer));
         }
       });
+    },
+
+    /**
+     * Close up (M4: «Seguir en 3D» past zoom 19.5): `true` hides the labels that would crowd the followed aircraft (the
+     * layers marked `'occ:closeUp': 'hide'`: every tag, the selection rings, the stand designators, the references'
+     * words) and narrows those with an `'occ:closeUpFilter'` (the trails, the estimated rings and the «Demo» plates:
+     * all but the followed aircraft's, which sat on its model's tail); `false` gives back what their groups show. One
+     * call per change; nothing without a map.
+     */
+    setCloseUp(on) {
+      const next = on === true;
+      if (!live() || next === closeUp) return;
+      closeUp = next;
+      whenStyleReady(() => {
+        for (const layer of closeUpHidden) {
+          if (map.getLayer(layer.id)) map.setLayoutProperty(layer.id, 'visibility', layerVisibility(layer));
+        }
+        for (const layer of closeUpFiltered) {
+          if (!map.getLayer(layer.id)) continue;
+          const own = layer.filter ?? null;
+          const narrowed = own === null ? layer.metadata['occ:closeUpFilter'] : ['all', own, layer.metadata['occ:closeUpFilter']];
+          map.setFilter(layer.id, closeUp ? narrowed : own);
+        }
+      });
+    },
+
+    /** Whether the map is close up (setCloseUp). */
+    isCloseUp() {
+      return closeUp;
+    },
+
+    /**
+     * The sky (M4: core/mapSky.js, on in the 3D views and while following in 3D): a MapLibre SkySpecification, or
+     * null to take it away. MapLibre's setSky changes a property of the style, never the style (no setStyle). The same
+     * sky again changes nothing; a map without one is never told to have none. Nothing without a map.
+     */
+    setSky(next) {
+      if (!live()) return;
+      const value = next == null ? null : structuredClone(next);
+      const key = JSON.stringify(value);
+      if (key === skyKey) return;
+      sky = value;
+      skyKey = key;
+      whenStyleReady(applySky);
+    },
+
+    /** The sky set (setSky), a copy, or null. */
+    getSky() {
+      return sky === null ? null : structuredClone(sky);
     },
 
     setData(sourceId, data) {
@@ -537,6 +647,17 @@ export function createMapEngine({
       });
     },
 
+    /**
+     * Sets one paint property of a layer of the style (lane M7: the raster-opacity of a frame of a weather loop, the
+     * saturation of the loop's band). MapLibre takes the same value again as no change. Not remembered: the loop's
+     * clock sets it again on its next frame, also after a context loss. A layer the style lacks is left alone.
+     */
+    setPaint(layerId, property, value) {
+      whenStyleReady(() => {
+        if (map.getLayer(layerId)) map.setPaintProperty(layerId, property, value);
+      });
+    },
+
     /** Sets the zoom range of the layers whose metadata names a threshold: `{ polygons, codes, threeLine }`. */
     applyThresholds(thresholds) {
       const ranges = [];
@@ -589,7 +710,8 @@ export function createMapEngine({
     /**
      * «Seguir en 3D» (CN-30): `true` hands the gestures to the orbit of follow mode (OccMap): MapLibre's own drag, rotate,
      * zoom, double click and keys stop, the tilt may reach 85° and the centre may stand above the ground (the followed
-     * aircraft in the air); `false` gives them back as they were. Nothing without a map.
+     * aircraft in the air) and the zoom 22 (M4, «Muy cerca»); `false` gives them back as they were. Nothing without a
+     * map.
      */
     setOrbitMode(on) {
       if (!live()) return;
@@ -600,20 +722,48 @@ export function createMapEngine({
         orbitSaved = {
           handlers: handlers.filter(name => map[name]?.isEnabled?.() === true),
           maxPitch: map.getMaxPitch?.() ?? null,
+          maxZoom: map.getMaxZoom?.() ?? null,
           clamped: map.getCenterClampedToGround?.() ?? null,
         };
         for (const name of orbitSaved.handlers) map[name].disable();
         map.setMaxPitch?.(85);
+        // M4 (2026-11-27): «Muy cerca» and the ultra zoom reach 22 (kinematics/orbitCamera.js: ORBIT.maxZoom).
+        map.setMaxZoom?.(ORBIT.maxZoom);
         map.setCenterClampedToGround?.(false);
         return;
       }
       if (orbitSaved === null) return;
       const saved = orbitSaved;
       orbitSaved = null;
+      // The zoom limit first: the jump below ends a move, and limits that waited for it (setCameraLimits with afterMove)
+      // then apply on top of it rather than under it. setMaxZoom eases a camera beyond the old limit back within it.
+      if (Number.isFinite(saved.maxZoom)) map.setMaxZoom?.(saved.maxZoom);
       map.jumpTo?.({ elevation: 0 });
       map.setCenterClampedToGround?.(saved.clamped ?? true);
       if (Number.isFinite(saved.maxPitch)) map.setMaxPitch?.(saved.maxPitch);
       for (const name of saved.handlers) map[name]?.enable?.();
+    },
+
+    /**
+     * The camera's limits (M9: a map fixed on the airport lets its camera go while it follows an aircraft):
+     * `{ maxBounds, minZoom, maxZoom }`, each `null` for none (bounds) or the engine's own (zoom). With `afterMove`, a
+     * move on the way (the flight back of «Seguir en 3D», a drag) ends first, so the new bounds do not cut it short; a
+     * later call replaces a wait not yet applied. Nothing without a map.
+     */
+    setCameraLimits(limits = {}, { afterMove = false } = {}) {
+      if (!live()) return;
+      dropLimitsWaiter();
+      if (afterMove && map.isMoving?.() === true) {
+        limitsWaiter = () => {
+          limitsWaiter = null;
+          map.off('moveend', handler);
+          if (live()) applyLimits(limits);
+        };
+        const handler = limitsWaiter;
+        map.on('moveend', handler);
+        return;
+      }
+      applyLimits(limits);
     },
 
     /** Whether a person is moving the map now (see `onUserGesture`): a move then must not take the camera from them. */
@@ -704,6 +854,36 @@ export function createMapEngine({
       whenStyleReady(() => {
         if (map.getLayer(id)) map.removeLayer(id);
       });
+    },
+
+    /**
+     * The GPU the map draws with (PR M2: the frame meter and the visual suite's GPU runs), `{ renderer, vendor }` as
+     * WebGL reports them (unmasked where the browser allows it), or null without a map or a context.
+     */
+    rendererInfo() {
+      if (!live()) return null;
+      const gl = map.painter?.context?.gl ?? null;
+      if (!gl || typeof gl.getParameter !== 'function') return null;
+      const debug = typeof gl.getExtension === 'function' ? gl.getExtension('WEBGL_debug_renderer_info') : null;
+      const renderer = gl.getParameter(debug ? debug.UNMASKED_RENDERER_WEBGL : gl.RENDERER);
+      const vendor = gl.getParameter(debug ? debug.UNMASKED_VENDOR_WEBGL : gl.VENDOR);
+      return { renderer: typeof renderer === 'string' ? renderer : null, vendor: typeof vendor === 'string' ? vendor : null };
+    },
+
+    /**
+     * What MapLibre has to go through each frame (PR M2, 2026-11-28: the map lab's CPU profile of «Seguir en 3D»), or
+     * null without a style: `{ zoom, pitch, layers, sources: [{ id, tiles }] }`, the layers it draws at this zoom and,
+     * for each source one of them reads, the tiles it holds for the frame. Read from MapLibre's internals, for the lab.
+     */
+    renderStats() {
+      const style = live() ? map.style : null;
+      if (!style?._layers) return null;
+      const zoom = map.getZoom();
+      const layers = Object.values(style._layers).filter(layer => layer.type !== 'custom' && !layer.isHidden?.(zoom));
+      const used = new Set(layers.map(layer => layer.source).filter(Boolean));
+      const managers = style.tileManagers ?? style.sourceCaches ?? {};
+      const sources = [...used].map(id => ({ id, tiles: managers[id]?.getRenderableIds?.().length ?? null }));
+      return { zoom, pitch: map.getPitch(), layers: layers.length, sources };
     },
 
     /** The pixel ratio the map draws at, or null without a map (PR M7: the 3D governor lowers it). */

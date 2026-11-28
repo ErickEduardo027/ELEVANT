@@ -4,6 +4,8 @@ import { useId } from 'react';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import AircraftRegistryFacts from '../../aviation-reference/AircraftRegistryFacts';
 import { AirportDelaysLine } from '../../aviation-reference/AirportDelays';
+import { useOccMap } from '../../maps/core/OccMapContext';
+import { mapMessages } from '../../maps/mapMessages';
 import FlightDataBlock from '../../maps/ui/FlightDataBlock';
 import StandDetailFacts from '../../maps/ui/StandDetailFacts';
 import StandTurnaround from '../../maps/ui/StandTurnaround';
@@ -20,6 +22,8 @@ import { inspectorMilestones } from './milestoneModel';
 // strip of its operation, with «Importar» while the flight waits in the feed and «Asignar agente» while its imported
 // operation has nobody; a stand shows what it says of itself on the map (maps/ui/StandDetailFacts.jsx) and its current
 // or next flight with that flight's milestones. The container is the console's; the content is the map's.
+// M4: inside the map (the floating panels) the data block offers «Seguir» and «Seguir en 3D» as on the other screens,
+// and a stand whose parked aircraft the traffic draws offers «Seguir en 3D» on that aircraft (the map chooses it).
 
 // The data block is a card docked over a map; here it sits in the inspector's flow, across its width.
 const DOCKED_IN_FLOW = '!static !w-full !max-w-none';
@@ -39,6 +43,10 @@ export default function InspectorPanel({
   layout = 'float', className = '', aircraftFacts = null,
 }) {
   const { t, language, locale } = useTranslation(consoleMessages);
+  const { t: tMap } = useTranslation(mapMessages);
+  const { follow } = useOccMap();
+  const three = follow?.available ? follow.three ?? null : null;
+  const parked = selection?.kind === 'stand' && three ? three.parkedAt(String(selection.id)) : null;
   const standFlightTitleId = useId();
   const flight = selection?.kind === 'stand' ? standFlight : target?.flight ?? null;
   const milestones = flight ? inspectorMilestones(flight, mapFlights, language) : null;
@@ -71,6 +79,12 @@ export default function InspectorPanel({
           {clear}
         </div>
         <StandDetailFacts position={stand} aircraftFacts={aircraftFacts ?? standAircraftFacts} />
+        {parked !== null ? (
+          <button type="button" data-occ-follow3d="" title={tMap('follow.title3d')} onClick={() => three.startOn(parked)}
+            className={CONSOLE_ACTION}>
+            {tMap('follow.label3d')}
+          </button>
+        ) : null}
         {/* The inspector draws the milestones of the stand's flight below, once. */}
         <StandTurnaround position={stand} milestones={false} />
         <section aria-labelledby={standFlightTitleId} className="space-y-2">
@@ -84,7 +98,8 @@ export default function InspectorPanel({
     body = (
       <>
         <FlightDataBlock target={target} telemetry={telemetry} station={stationAirport} stationId={stationId}
-          onClose={onClear} className={DOCKED_IN_FLOW} />
+          onClose={onClear} onFollow={follow?.available ? follow.toggle : null} following={follow?.following === true}
+          className={DOCKED_IN_FLOW} />
         <AircraftRegistryFacts stationId={stationId} registration={flightRegistration}
           isDemo={target.flight?.isDemo === true} />
         {target.flight && target.flight.isDemo !== true ? (

@@ -117,10 +117,13 @@ function DemoStripes() {
  *   own: it follows `now`. The axis and the line are hidden from assistive technology.
  * Times are in `timeZone`, for `locale` (the language's by default). An unknown density, bar state or conflict signal
  * throws.
+ * Another band of time (M7, 2026-11-27: the TAF of the weather panel) reuses the same drawing with `barName(bar, row)`,
+ * the full words of a bar instead of timelineBarName's, `barText(bar)`, its visible text instead of the flights, and
+ * `plateKind` (occ-ui/OccPlate.jsx: PLATE_KINDS), the plate of its rows instead of `stand`.
  */
 export default function OccTimeline({
   label, rows = NO_ROWS, windowStart, windowEnd, now, timeZone = 'UTC', locale, selectedBarId = null, onSelectBar,
-  density = 'normal', className = '',
+  density = 'normal', className = '', barName, barText, plateKind = 'stand',
 }) {
   const { t, language, locale: languageLocale } = useTranslation(occUiMessages);
   const [focusedId, setFocusedId] = useState(null);
@@ -198,13 +201,13 @@ export default function OccTimeline({
       {lanes.map((lane, laneIndex) => (
         <div key={lane.row.id} data-occ-timeline-row={lane.row.id} className="contents">
           <div className={OCC_TIMELINE_LAYOUT.plate} style={{ gridRow: laneIndex + 2 }}>
-            <OccPlate kind="stand">{lane.row.label}</OccPlate>
+            <OccPlate kind={plateKind}>{lane.row.label}</OccPlate>
           </div>
           <div data-occ-timeline-track="" className={OCC_TIMELINE_LAYOUT.track[density]} style={{ gridRow: laneIndex + 2 }}>
             {lane.bars.map(({ bar, signal, geometry }, barIndex) => {
               const selected = bar.id === selectedBarId;
               return (
-                <button key={bar.id} type="button" aria-pressed={selected} aria-label={timelineBarName(bar, lane.row, names)}
+                <button key={bar.id} type="button" aria-pressed={selected} aria-label={barName ? barName(bar, lane.row) : timelineBarName(bar, lane.row, names)}
                   tabIndex={bar.id === tabStop ? 0 : -1} data-occ-bar={bar.id} data-state={bar.state}
                   data-estimated={bar.estimated ? 'true' : undefined} data-demo={bar.demo ? 'true' : undefined}
                   data-conflict={signal ?? undefined}
@@ -219,9 +222,13 @@ export default function OccTimeline({
                   {bar.demo ? <DemoStripes /> : null}
                   {signal ? <OccGlyph name={signal} /> : null}
                   <span className="min-w-0 truncate">
-                    {bar.arrivalFlight}
-                    {bar.arrivalFlight && bar.departureFlight ? <span aria-hidden="true">{' → '}</span> : null}
-                    {bar.departureFlight}
+                    {barText ? barText(bar) : (
+                      <>
+                        {bar.arrivalFlight}
+                        {bar.arrivalFlight && bar.departureFlight ? <span aria-hidden="true">{' → '}</span> : null}
+                        {bar.departureFlight}
+                      </>
+                    )}
                   </span>
                 </button>
               );

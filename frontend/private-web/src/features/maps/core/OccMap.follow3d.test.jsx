@@ -1,10 +1,10 @@
-import { act, cleanup, createEvent, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, createEvent, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sharedFakeMapLibre } from '../../../../tests/fakeMapLibre';
 import { LanguageScope } from '../../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../../i18n/languageStore';
 import { haversineM } from '../airport/geo';
-import { ORBIT, ORBIT_VIEWS } from '../kinematics/orbitCamera';
+import { CLOSE_UP_ZOOM, ORBIT, ORBIT_VIEWS, closeChaseZoom } from '../kinematics/orbitCamera';
 import {
   createAirPicture, createDemoBlock, createDemoFlights, TRAFFIC_FLIGHT_KEY as KEY, TRAFFIC_NOON,
 } from '../testing/trafficFixtures';
@@ -13,6 +13,7 @@ import { buildSituation, toFlightsModel, toPictureModel } from '../traffic/situa
 import Follow3dPanel from '../ui/Follow3dPanel';
 import { MODE_3D_STORAGE_KEY } from './aircraft3d';
 import { createRenderClock } from './frameLoop';
+import { occSky } from './mapSky';
 import OccMap from './OccMap';
 import { useOccMap } from './OccMapContext';
 
@@ -61,7 +62,7 @@ function Follow3dProbe() {
 const threeProbe = () => JSON.parse(screen.getByTestId('three-probe').textContent);
 
 // The demo flight on its approach, chosen, on a map whose frames and server time the test moves.
-function renderFollow3d({ appearS = 200 } = {}) {
+function renderFollow3d({ appearS = 200, selection: initial = { kind: 'flight', id: KEY.demoArrival }, onSelect } = {}) {
   const frames = controlledFrames();
   const block = createDemoBlock({ appearAt: Date.parse(TRAFFIC_NOON) - appearS * 1_000, imported: true });
   const response = createDemoFlights(block, { imported: true, standCode: 'A6' });
@@ -78,13 +79,13 @@ function renderFollow3d({ appearS = 200 } = {}) {
     source: null, motion };
   const element = selection => (
     <LanguageScope>
-      <OccMap defaultView="airfield" basemap={false} traffic={traffic} selection={selection}>
+      <OccMap defaultView="airfield" basemap={false} traffic={traffic} selection={selection} onSelect={onSelect}>
         <Follow3dProbe />
         <Follow3dPanel flights={flightsModel.flights} />
       </OccMap>
     </LanguageScope>
   );
-  const view = render(element({ kind: 'flight', id: KEY.demoArrival }));
+  const view = render(element(initial));
   const map = fake.state.liveMaps().at(-1);
   act(() => fake.state.emit(map, 'style.load'));
   frames.run();
@@ -147,6 +148,27 @@ describe('OccMap «Seguir en 3D» (CN-30)', () => {
     expect(haversineM(map.getCenter().toArray(), aircraftAt().geometry.coordinates)).toBeLessThan(0.5);
   });
 
+  it('takes the right slot occ-map.css gives it, left of the control column, flat, and folds to its header (M1)', () => {
+    const { seconds, root } = renderFollow3d();
+    act(() => { screen.getByRole('button', { name: 'start' }).click(); });
+    seconds(1);
+    const panel = screen.getByTestId('follow-3d-panel');
+    // Inside the map's root, the scope of occ-map.css, which places it (.occ-map-follow-panel): no place of its own, no
+    // shadow and no blur.
+    expect(root.contains(panel)).toBe(true);
+    expect(panel).toHaveClass('occ-map-follow-panel', 'bg-occ-panel-float', 'rounded-[var(--occ-radius-overlay)]');
+    expect(panel.className).not.toMatch(/(?:^|\s)(?:absolute|fixed|inset-\S+|top-\S+|right-\S+|bottom-\S+|left-\S+|z-\S+|w-\d+)(?=\s|$)/);
+    expect(panel.className).not.toMatch(/shadow|blur|backdrop/);
+    expect(panel).toHaveAttribute('data-open', 'true');
+    // Folded, only its header stays (occ-map.css lifts its foot by `data-open`); unfolded again, its body comes back.
+    act(() => { screen.getByRole('button', { name: 'Plegar el panel' }).click(); });
+    expect(panel).toHaveAttribute('data-open', 'false');
+    expect(screen.queryByRole('radio', { name: 'Persecución' })).not.toBeInTheDocument();
+    act(() => { screen.getByRole('button', { name: 'Desplegar el panel' }).click(); });
+    expect(panel).toHaveAttribute('data-open', 'true');
+    expect(screen.getByRole('radio', { name: 'Persecución' })).toBeInTheDocument();
+  });
+
   it('turns, tilts and zooms from the panel and by a drag without ending follow mode', () => {
     const { map, seconds } = renderFollow3d();
     act(() => { screen.getByRole('button', { name: 'start' }).click(); });
@@ -202,5 +224,204 @@ describe('OccMap «Seguir en 3D» (CN-30)', () => {
     expect(threeProbe().on).toBe(true);
     act(() => { screen.getByRole('button', { name: 'Dejar de seguir' }).click(); });
     expect(threeProbe().on).toBe(false);
+  });
+
+  it('shows the sky while it follows on a 2D map and takes it away when it ends (M4)', () => {
+    const { map, seconds, root } = renderFollow3d();
+    const skyCalls = () => map.calls.filter(call => call.method === 'setSky');
+    // A 2D map has no sky, and MapLibre is never told so.
+    expect(skyCalls()).toEqual([]);
+    act(() => { screen.getByRole('button', { name: 'start' }).click(); });
+    seconds(1);
+    expect(map.getSky()).toEqual(occSky('dark'));
+    fireEvent(root, createEvent.keyDown(root, { key: 'Escape' }));
+    expect(map.getSky()).toBeUndefined();
+    expect(skyCalls()).toHaveLength(2);
+    expect(map.styleCalls).toEqual([]);
+  });
+});
+
+describe('OccMap double click on an aircraft (M4)', () => {
+  const AT = { point: { x: 100, y: 100 }, lngLat: { lng: -68.36, lat: 18.57 } };
+  const demoUnder = { layer: { id: 'occ-traffic-aviam' }, properties: { id: DEMO_ID, flightKey: KEY.demoArrival } };
+  const under = (map, features) => fake.state.setRenderedFeatures(map,
+    (_geometry, options) => features.filter(feature => options.layers.includes(feature.layer.id)));
+
+  it('chooses the aircraft and starts «Seguir en 3D» without the zoom of MapLibre; on empty map it zooms as always', () => {
+    const onSelect = vi.fn();
+    const { map, rerender, seconds } = renderFollow3d({ selection: null, onSelect });
+    // On empty map the double click is MapLibre's: one level in, nothing chosen, nothing followed.
+    under(map, []);
+    const zoom = map.getZoom();
+    let prevented;
+    act(() => { prevented = fake.state.doubleClick(map, AT); });
+    expect(prevented).toBe(false);
+    expect(map.getZoom()).toBeCloseTo(zoom + 1, 5);
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(threeProbe().on).toBe(false);
+    // On the aircraft: chosen through the page's onSelect, no zoom, and once the page chooses it, the orbit starts.
+    under(map, [demoUnder]);
+    const before = map.getZoom();
+    act(() => { prevented = fake.state.doubleClick(map, AT); });
+    expect(prevented).toBe(true);
+    expect(map.getZoom()).toBe(before);
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith({ kind: 'flight', id: KEY.demoArrival });
+    expect(threeProbe().on).toBe(false);
+    act(() => rerender({ kind: 'flight', id: KEY.demoArrival }));
+    expect(threeProbe()).toEqual({ on: true, view: 'close', following: true });
+    expect(query().get('follow')).toBe('1');
+    // Orbiting, MapLibre's double-click zoom is the orbit's; a double click on the followed aircraft changes nothing.
+    seconds(1);
+    expect(map.doubleClickZoom.isEnabled()).toBe(false);
+    act(() => { prevented = fake.state.doubleClick(map, AT); });
+    expect(threeProbe().on).toBe(true);
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it('on the aircraft already chosen (the first click of the double click chose it) it starts at once', () => {
+    const onSelect = vi.fn();
+    const { map } = renderFollow3d({ onSelect });
+    under(map, [demoUnder]);
+    const zoom = map.getZoom();
+    let prevented;
+    act(() => { prevented = fake.state.doubleClick(map, AT); });
+    expect(prevented).toBe(true);
+    expect(map.getZoom()).toBe(zoom);
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(threeProbe()).toEqual({ on: true, view: 'close', following: true });
+  });
+
+  // Fix M4: the first click of the double click on another aircraft ends the 3D and starts the ease back; the 3D the
+  // double click starts goes back to the view from before the first one, not to that ease partway.
+  it('a double click on another aircraft while it follows keeps the view from before the first 3D to go back to', () => {
+    const { map, seconds, root, rerender } = renderFollow3d();
+    const before = { center: map.getCenter().toArray(), zoom: map.getZoom(), pitch: map.getPitch() };
+    under(map, [demoUnder]);
+    act(() => { fake.state.doubleClick(map, AT); });
+    expect(threeProbe().on).toBe(true);
+    seconds(2);
+    // The first click chooses the other aircraft: the 3D ends and flies back; MapLibre's ease is partway, close in.
+    act(() => rerender(null));
+    expect(threeProbe().on).toBe(false);
+    const partway = { center: [-68.3601, 18.5701], zoom: 19.5, pitch: 70 };
+    act(() => { map.jumpTo(partway); });
+    act(() => rerender({ kind: 'flight', id: KEY.demoArrival }));
+    act(() => { fake.state.doubleClick(map, AT); });
+    expect(threeProbe()).toEqual({ on: true, view: 'close', following: true });
+    seconds(2);
+    fireEvent(root, createEvent.keyDown(root, { key: 'Escape' }));
+    const back = map.cameraCalls.filter(call => call.method === 'easeTo').at(-1).options;
+    expect(haversineM(back.center, before.center)).toBeLessThan(1);
+    expect(back.zoom).toBeCloseTo(before.zoom, 6);
+    expect(back.pitch).toBeCloseTo(before.pitch, 6);
+  });
+
+  it('a 3D started once the ease back is over keeps the camera it starts from', () => {
+    let now = 1_000;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const { map, seconds, root, rerender } = renderFollow3d();
+    under(map, [demoUnder]);
+    act(() => { fake.state.doubleClick(map, AT); });
+    seconds(1);
+    act(() => rerender(null));
+    now += 1_500;
+    const later = { center: [-68.3601, 18.5701], zoom: 17.25, pitch: 30 };
+    act(() => { map.jumpTo(later); });
+    act(() => rerender({ kind: 'flight', id: KEY.demoArrival }));
+    act(() => { fake.state.doubleClick(map, AT); });
+    seconds(1);
+    fireEvent(root, createEvent.keyDown(root, { key: 'Escape' }));
+    const back = map.cameraCalls.filter(call => call.method === 'easeTo').at(-1).options;
+    expect(haversineM(back.center, later.center)).toBeLessThan(1);
+    expect(back.zoom).toBeCloseTo(later.zoom, 6);
+  });
+
+  it('another choice before the page chooses the aircraft forgets the waiting «Seguir en 3D»', () => {
+    const onSelect = vi.fn();
+    const { map, rerender } = renderFollow3d({ selection: null, onSelect });
+    // Asked for the aircraft, then the page chose something else first: the waiting «Seguir en 3D» is forgotten.
+    under(map, [demoUnder]);
+    act(() => { fake.state.doubleClick(map, AT); });
+    act(() => rerender({ kind: 'stand', id: 'A6' }));
+    act(() => rerender({ kind: 'flight', id: KEY.demoArrival }));
+    expect(threeProbe().on).toBe(false);
+  });
+});
+
+
+describe('OccMap «Muy cerca» and the ultra zoom (M4)', () => {
+  const AT = { point: { x: 100, y: 100 }, lngLat: { lng: -68.36, lat: 18.57 } };
+  const demoUnder = { layer: { id: 'occ-traffic-aviam' }, properties: { id: DEMO_ID, flightKey: KEY.demoArrival } };
+  const marked = (map, key) => map.layers.filter(layer => layer.metadata?.[key] !== undefined).map(layer => layer.id);
+  const shown = (map, id) => map.getLayer(id).layout?.visibility ?? 'visible';
+  // What the layers menu gives a marked layer: as the unmarked layers of its group (the rings, centrelines and night).
+  const asGroup = (map, id) => {
+    const group = map.getLayer(id).metadata['occ:group'];
+    const sibling = map.layers.find(layer => layer.metadata?.['occ:group'] === group && !layer.metadata['occ:closeUp']
+      && !layer.id.startsWith('slot-'));
+    return sibling ? shown(map, sibling.id) : null;
+  };
+
+  it('the double click flies in close behind the tail past zoom 19.5, hides the crowding labels and gives all back', () => {
+    const { map, seconds, root } = renderFollow3d();
+    const hidden = marked(map, 'occ:closeUp');
+    const narrowed = marked(map, 'occ:closeUpFilter');
+    // Every tag, the selection rings, the stand designators and the references' words; the trails, estimated rings and
+    // «Demo» plates keep all but the followed aircraft's (nothing of its own sits on its model's tail).
+    expect(hidden).toEqual(expect.arrayContaining(['occ-traffic-tags-other', 'occ-traffic-tags', 'occ-traffic-selected-ring',
+      'occ-selection-ring', 'occ-reference-arp']));
+    expect(narrowed).toEqual(expect.arrayContaining(['occ-trails-live', 'occ-traffic-estimated-ring', 'occ-traffic-demo-plate']));
+    const own = Object.fromEntries(narrowed.map(id => [id, map.getFilter(id)]));
+    const notSelected = ['!=', ['get', 'selected'], true];
+    const narrowedOf = id => (own[id] == null ? notSelected : ['all', own[id], notSelected]);
+    const before = Object.fromEntries(hidden.map(id => [id, shown(map, id)]));
+    fake.state.setRenderedFeatures(map, (_geometry, options) => [demoUnder]
+      .filter(feature => options.layers.includes(feature.layer.id)));
+    act(() => { fake.state.doubleClick(map, AT); });
+    expect(threeProbe()).toEqual({ on: true, view: 'close', following: true });
+    expect(screen.getByRole('radio', { name: 'Muy cerca' })).toHaveAttribute('aria-checked', 'true');
+    expect(map.getMaxZoom()).toBe(ORBIT.maxZoom);
+    seconds(3);
+    expect(map.getZoom()).toBeGreaterThan(CLOSE_UP_ZOOM);
+    expect(map.getPitch()).toBeCloseTo(ORBIT_VIEWS.close.pitch, 0);
+    for (const id of hidden) expect(shown(map, id), id).toBe('none');
+    for (const id of narrowed) expect(map.getFilter(id), id).toEqual(narrowedOf(id));
+    // «Persecución» goes back under 19.5: the labels come back while it still follows.
+    act(() => { screen.getByRole('radio', { name: 'Persecución' }).click(); });
+    seconds(3);
+    expect(map.getZoom()).toBeLessThan(CLOSE_UP_ZOOM);
+    const grouped = hidden.filter(id => asGroup(map, id) !== null);
+    expect(grouped).toEqual(expect.arrayContaining(['occ-night-label', 'occ-reference-centreline-label']));
+    for (const id of grouped) expect(shown(map, id), id).toBe(asGroup(map, id));
+    for (const id of narrowed) expect(map.getFilter(id) ?? null, id).toEqual(own[id] ?? null);
+    // Close again, then Esc: the labels and the map's own zoom limit come back.
+    act(() => { screen.getByRole('radio', { name: 'Muy cerca' }).click(); });
+    seconds(3);
+    expect(shown(map, hidden[0])).toBe('none');
+    fireEvent(root, createEvent.keyDown(root, { key: 'Escape' }));
+    expect(threeProbe().on).toBe(false);
+    for (const id of hidden) expect(shown(map, id), id).toBe(before[id]);
+    for (const id of narrowed) expect(map.getFilter(id) ?? null, id).toEqual(own[id] ?? null);
+    expect(map.getMaxZoom()).toBe(19.5);
+  });
+
+  it('zoomed in all the way, the camera stops short of the model, under 22 on this map, and backs off at once', () => {
+    const { map, seconds } = renderFollow3d();
+    fake.state.setRenderedFeatures(map, (_geometry, options) => [demoUnder]
+      .filter(feature => options.layers.includes(feature.layer.id)));
+    act(() => { fake.state.doubleClick(map, AT); });
+    seconds(3);
+    const close = map.getZoom();
+    const camera = within(screen.getByRole('region', { name: 'Cámara' }));
+    for (let step = 0; step < 12; step += 1) act(() => { camera.getByRole('button', { name: 'Acercar' }).click(); });
+    seconds(3);
+    // The demo airliner on a map 900 px high: MapLibre's camera would stand some 24 m from its middle at 22.
+    const closest = map.getZoom();
+    expect(closest).toBeGreaterThan(close);
+    expect(closest).toBeLessThan(ORBIT.maxZoom);
+    expect(closest).toBeGreaterThan(closeChaseZoom({ lengthM: 38, latDeg: 18.57, viewportHeightPx: 900 }));
+    act(() => { camera.getByRole('button', { name: 'Alejar' }).click(); });
+    seconds(3);
+    expect(map.getZoom()).toBeCloseTo(closest - ORBIT.zoomStep, 2);
   });
 });

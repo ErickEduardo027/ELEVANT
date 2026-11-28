@@ -1,0 +1,127 @@
+{
+  "asset": {
+    "generator": "ELEVANT scripts/models/build-aircraft-models.mjs (glTF-Transform 4.5.1, meshoptimizer 1.2.0)",
+    "version": "2.0",
+    "copyright": "GPL-2.0-only; véanse LICENSE y NOTICE.md en esta carpeta"
+  },
+  "accessors": [
+    {
+      "type": "SCALAR",
+      "componentType": 5123,
+      "count": 23481,
+      "bufferView": 0,
+      "byteOffset": 0
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5122,
+      "count": 8057,
+      "max": [
+        32767,
+        30835,
+        11121
+      ],
+      "min": [
+        -32767,
+        -30835,
+        -11121
+      ],
+      "normalized": true,
+      "bufferView": 1,
+      "byteOffset": 0
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5120,
+      "count": 8057,
+      "normalized": true,
+      "bufferView": 1,
+      "byteOffset": 8
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 46964,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 46964,
+      "byteLength": 96684,
+      "byteStride": 12,
+      "target": 34962
+    }
+  ],
+  "buffers": [
+    {
+      "name": "buffer",
+      "uri": "l1.bin",
+      "byteLength": 143648
+    }
+  ],
+  "materials": [
+    {
+      "name": "body",
+      "doubleSided": true,
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.9,
+          0.91,
+          0.92,
+          1
+        ],
+        "roughnessFactor": 0.7,
+        "metallicFactor": 0
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "name": "B737",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 1,
+            "NORMAL": 2
+          },
+          "mode": 4,
+          "material": 0,
+          "indices": 0
+        }
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "B737",
+      "translation": [
+        0.0007009506225585938,
+        0.0011014938354492188,
+        6.484969347715378
+      ],
+      "scale": [
+        17.866915702819824,
+        17.866915702819824,
+        17.866915702819824
+      ],
+      "mesh": 0
+    }
+  ],
+  "scenes": [
+    {
+      "name": "B737",
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "scene": 0,
+  "extensionsUsed": [
+    "KHR_mesh_quantization"
+  ],
+  "extensionsRequired": [
+    "KHR_mesh_quantization"
+  ]
+}

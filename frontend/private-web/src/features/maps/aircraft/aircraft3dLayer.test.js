@@ -1,14 +1,19 @@
-import { Matrix4, PerspectiveCamera, Vector3 } from 'three';
+import { Matrix4, PerspectiveCamera, ShaderLib, Vector3, Vector4 } from 'three';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OCC_PALETTE } from '../../occ-ui/occPalette';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { destinationPoint } from '../airport/geo';
 import { THREE_PARTS } from './aircraft3dChunk';
 import {
-  AIRCRAFT_3D_LAYER_ID, MAX_MODEL_SCALE, SUN_STEP_DEG, UNUSED_MESH_MS, createAircraft3dLayer, sceneLighting,
+  AIRCRAFT_3D_LAYER_ID, LIVERY_ZONE_ATTRIBUTES, MAX_MODEL_SCALE, SUN_STEP_DEG, UNUSED_MESH_MS, createAircraft3dLayer,
+  patchLiveryShader, sceneLighting,
 } from './aircraft3dLayer';
 import { triangleCount } from './aircraftGeometry';
-import { linearRgb, mercatorFrame, planInstances } from './instancePlan';
+import { CONTACT_SHADOW, contactShadowStrength } from './contactShadow';
+import { linearRgb, liveryInstanceColours, mercatorFrame, planInstances, planLabels, planSprites } from './instancePlan';
+import { LIVERY_ZONES } from './liveries';
+import { sunPosition } from '../traffic/solar';
+import { billboardClip, createTrafficSprites } from './trafficSprites';
 import { AIRCRAFT_TYPES } from './types';
 
 // The layer's life with the real three, in Node, and an injected renderer: three's scene, meshes, lights and raycaster
@@ -260,7 +265,9 @@ describe('the 3D aircraft layer (design G1, G3 and G4)', () => {
     expect(meshesOf(scene)).toHaveLength(2);
 
     const triangles = triangleCount(grown.geometry) * 6 + triangleCount(b738.geometry) * 2;
-    expect(layer.stats()).toEqual({ meshes: 2, instances: 8, triangles, drawCalls: 2, lost: false, failed: false });
+    // M4: and one draw call for the four contact shadows of the aircraft on the ground.
+    expect(layer.stats()).toEqual({ meshes: 2, instances: 8, contacts: 4, triangles, drawCalls: 3, lost: false,
+      failed: false });
   });
 
   it('disposes a mesh unused for 5 minutes together with its geometry', () => {
@@ -284,7 +291,7 @@ describe('the 3D aircraft layer (design G1, G3 and G4)', () => {
     layer.render(gl, input);
     expect(b738.count).toBe(0);
     expect(meshOf(scene, 'B738')).toBe(b738);
-    expect(layer.stats()).toMatchObject({ meshes: 2, instances: 4, drawCalls: 1 });
+    expect(layer.stats()).toMatchObject({ meshes: 2, instances: 4, contacts: 2, drawCalls: 2 });
     clock = 2_000 + UNUSED_MESH_MS - 1;
     layer.render(gl, input);
     expect(meshOf(scene, 'B738')).toBe(b738);
@@ -628,7 +635,8 @@ describe('the 3D aircraft layer (design G1, G3 and G4)', () => {
     expect(map.off.mock.calls.map(([type]) => type)).toEqual(['webglcontextlost', 'webglcontextrestored']);
     expect(map.listenerCount('webglcontextlost') + map.listenerCount('webglcontextrestored')).toBe(0);
     expect(scene.children).toHaveLength(0);
-    expect(layer.stats()).toEqual({ meshes: 0, instances: 0, triangles: 0, drawCalls: 0, lost: false, failed: false });
+    expect(layer.stats()).toEqual({ meshes: 0, instances: 0, contacts: 0, triangles: 0, drawCalls: 0, lost: false,
+      failed: false });
     // Removed, it draws, picks and rebuilds nothing.
     layer.render(gl, view.input);
     expect(made[0].calls.filter(call => call === 'render')).toHaveLength(1);
@@ -659,9 +667,10 @@ describe('the 3D aircraft layer (design G1, G3 and G4)', () => {
     const a320 = meshOf(scene, 'A320');
     const b738 = meshOf(scene, 'B738');
     const triangles = triangleCount(a320.geometry) + triangleCount(b738.geometry);
-    // Two aircraft, two shadows, one drop line: three draw calls.
-    expect(layer.stats()).toEqual({ meshes: 2, instances: 4, triangles: 2 * triangles, drawCalls: 3, lost: false,
-      failed: false });
+    // Two aircraft, two shadows, one drop line and one contact shadow (M4: the one on the ground; the other flies at
+    // 300 m, above CONTACT_SHADOW.fadeM): four draw calls.
+    expect(layer.stats()).toEqual({ meshes: 2, instances: 4, contacts: 1, triangles: 2 * triangles, drawCalls: 4,
+      lost: false, failed: false });
 
     expect(layer.setQuality({ shadows: false, dropLines: false })).toEqual({ shadows: false, dropLines: false });
     expect(map.triggerRepaint).toHaveBeenCalledTimes(1);
@@ -669,7 +678,8 @@ describe('the 3D aircraft layer (design G1, G3 and G4)', () => {
     expect(made[0].calls.filter(call => call === 'render')).toHaveLength(2);
     expect([a320.count, b738.count]).toEqual([1, 1]);
     expect(lines.visible).toBe(false);
-    expect(layer.stats()).toEqual({ meshes: 2, instances: 2, triangles, drawCalls: 2, lost: false, failed: false });
+    expect(layer.stats()).toEqual({ meshes: 2, instances: 2, contacts: 0, triangles, drawCalls: 2, lost: false,
+      failed: false });
     // The aircraft are still there to pick.
     const [x, y] = localOf(GROUND[0]);
     expect(layer.pick(view.toPixel([x, y, 3.5]))).toEqual({ kind: 'aircraft', id: 'f:p:a' });
@@ -685,7 +695,7 @@ describe('the 3D aircraft layer (design G1, G3 and G4)', () => {
     expect(layer.setQuality({ dropLines: true })).toEqual({ shadows: true, dropLines: true });
     expect(lines.visible).toBe(true);
     expect(layer.setQuality()).toEqual({ shadows: true, dropLines: true });
-    expect(layer.stats().drawCalls).toBe(3);
+    expect(layer.stats()).toMatchObject({ contacts: 1, drawCalls: 4 });
   });
 
   it("draws the traffic's models no shorter than minModelPx at the zoom of the frame, and parked ones to scale", () => {
@@ -717,5 +727,356 @@ describe('the 3D aircraft layer (design G1, G3 and G4)', () => {
     map.zoom = 11;
     layer.render(fakeContext('gl'), input);
     expect(scaleOf(0)).toBeCloseTo(MAX_MODEL_SCALE, 6);
+  });
+
+  it('the sun of Punta Cana at the render clock lights noon as day and midnight as night (M4)', () => {
+    // PUJ is UTC-4: local noon is near 16:30 UTC, local midnight near 04:30 UTC.
+    const noon = sunPosition(Date.parse('2026-11-28T16:30:00Z'), ARP);
+    const midnight = sunPosition(Date.parse('2026-11-28T04:30:00Z'), ARP);
+    expect(noon.elevationDeg).toBeGreaterThan(45);
+    expect(sceneLighting(noon).phase).toBe('day');
+    expect(sceneLighting(midnight).phase).toBe('night');
+    // By day the sun is stronger than the night's overhead light, and at noon in late November it stands to the south.
+    expect(sceneLighting(noon).directional.intensity).toBeGreaterThan(sceneLighting(midnight).directional.intensity);
+    expect(sceneLighting(noon).directional.direction[1]).toBeLessThan(0);
+    // In the layer the clock drives it: the same layer goes from day to night as getSun follows the clock.
+    const { createRenderer, made } = fakeRenderers();
+    let clock = Date.parse('2026-11-28T16:30:00Z');
+    const layer = createAircraft3dLayer({ three: THREE_PARTS, originLngLat: ARP, createRenderer,
+      getSun: () => sunPosition(clock, ARP), getInstances: () => ({ revision: 1, plan: planOf(GROUND) }) });
+    const gl = fakeContext('gl');
+    const { input } = viewOf();
+    layer.onAdd(fakeMap(), gl);
+    layer.render(gl, input);
+    const sunLight = made[0].scene.children.find(child => child.isDirectionalLight);
+    expect(sunLight.intensity).toBe(sceneLighting(noon).directional.intensity);
+    clock = Date.parse('2026-11-28T04:30:00Z');
+    layer.render(gl, input);
+    expect(sunLight.intensity).toBe(sceneLighting(midnight).directional.intensity);
+  });
+
+  it('draws a soft contact shadow under each aircraft on the ground, fading as it climbs (M4)', () => {
+    const { createRenderer, made } = fakeRenderers();
+    const climbing = aircraft('f:p:climb', { bearing: 40, metres: 1_500, onGround: false, altM: 20, typeIcao: 'B738' });
+    let state = { revision: 1, plan: planOf([...GROUND, climbing]) };
+    const layer = createAircraft3dLayer({ three: THREE_PARTS, originLngLat: ARP, createRenderer, getInstances: () => state });
+    const map = fakeMap();
+    const gl = fakeContext('gl');
+    const view = viewOf();
+    layer.onAdd(map, gl);
+    layer.render(gl, view.input);
+    const { scene } = made[0];
+    // One mesh for all of them, in a group of its own, so the scene's own meshes stay the types'.
+    expect(meshesOf(scene).map(mesh => mesh.name).sort()).toEqual(['A320', 'B738']);
+    const group = scene.children.find(child => child.isGroup);
+    const contacts = group.children[0];
+    expect(contacts.isInstancedMesh).toBe(true);
+    expect(contacts.name).toBe('contact-shadows');
+    expect(contacts.count).toBe(4);
+    // It only darkens the ground (premultiplied subtractive), writes no depth and goes first: the models cover it.
+    expect(contacts.material.blending).toBe(THREE_PARTS.SubtractiveBlending);
+    expect(contacts.material.premultipliedAlpha).toBe(true);
+    expect(contacts.material.depthWrite).toBe(false);
+    expect(contacts.material.vertexColors).toBe(true);
+    expect(contacts.renderOrder).toBe(-1);
+    // Its disc is darkest in the middle (vertex colours) and each instance carries its strength: full on the ground,
+    // less for the one climbing through 20 m.
+    expect(contacts.geometry.getAttribute('color').getX(0)).toBeCloseTo(CONTACT_SHADOW.darkness, 6);
+    const strengths = Array.from({ length: 4 }, (_, index) => contacts.instanceColor.getX(index));
+    expect(strengths.filter(value => value === 1)).toHaveLength(3);
+    const climbStrength = Math.min(...state.plan.get('B738').contactStrengths);
+    expect(climbStrength).toBeGreaterThan(0);
+    expect(climbStrength).toBeLessThan(1);
+    expect(Math.min(...strengths)).toBeCloseTo(climbStrength, 6);
+    // Under the aircraft, along its heading: the first A320 (track 90°) is long east-west.
+    const [x, y] = localOf(GROUND[0]);
+    const matrix = contacts.instanceMatrix.array.slice(0, 16);
+    expect(matrix[12]).toBeCloseTo(x, 3);
+    expect(matrix[13]).toBeCloseTo(y, 3);
+    expect(matrix[14]).toBeCloseTo(CONTACT_SHADOW.heightM, 6);
+    expect(Math.abs(matrix[4])).toBeCloseTo(CONTACT_SHADOW.alongShare * AIRCRAFT_TYPES.A320.lengthM, 3);
+    expect(layer.stats()).toMatchObject({ contacts: 4 });
+
+    // The governor's «shadows and drop lines» switch takes them away and gives them back.
+    layer.setQuality({ shadows: false });
+    expect(contacts.count).toBe(0);
+    expect(layer.stats().contacts).toBe(0);
+    layer.setQuality({ shadows: true });
+    expect(contacts.count).toBe(4);
+
+    // Above CONTACT_SHADOW.fadeM the climbing one has none; a new revision copies the rest.
+    state = { revision: 2, plan: planOf([...GROUND, { ...climbing, altM: 200 }]) };
+    layer.render(gl, view.input);
+    expect(contacts.count).toBe(3);
+    expect(contactShadowStrength(200)).toBe(0);
+
+    // onRemove disposes its mesh, its disc and its material.
+    const seen = disposals(contacts, contacts.geometry, contacts.material);
+    layer.onRemove(map, gl);
+    expect(seen.size).toBe(3);
+  });
+
+  it('gives the detailed aircraft its own contact shadow, scaled as its model and faded by its height (M4)', () => {
+    const { createRenderer, made } = fakeRenderers();
+    const built = [];
+    const buildDetail = () => {
+      const model = { object: new THREE_PARTS.Group(), pivot: { y: 0, z: 0 }, textured: false, setState: vi.fn(),
+        dispose: vi.fn(), refreshLogo: () => false };
+      built.push(model);
+      return model;
+    };
+    const [lon, lat] = destinationPoint(ARP, 90, 400);
+    let detail = Object.freeze({ id: 'f:p:followed', key: 'A320|cmp|', spec: AIRCRAFT_TYPES.A320, code: 'A320',
+      livery: { id: 'cmp' }, registration: null, lon, lat, headingDeg: 0, heightM: 0, pitchDeg: 0, bankDeg: 0,
+      gearDown: true, lights: {}, gsMs: 0, onStand: false });
+    const layer = createAircraft3dLayer({ three: THREE_PARTS, originLngLat: ARP, createRenderer, buildDetail,
+      getInstances: () => ({ revision: 1, plan: new Map(), detail }) });
+    const gl = fakeContext('gl');
+    const view = viewOf();
+    layer.onAdd(fakeMap(), gl);
+    layer.render(gl, view.input);
+    expect(built).toHaveLength(1);
+    const detailScene = made[0].scene;
+    const contact = detailScene.children.find(child => child.name === 'contact-shadows');
+    expect(contact.isMesh && !contact.isInstancedMesh).toBe(true);
+    expect(contact.visible).toBe(true);
+    expect(contact.renderOrder).toBe(-1);
+    expect(contact.material.blending).toBe(THREE_PARTS.SubtractiveBlending);
+    expect(contact.material.color.r).toBe(1);
+    // North-up: its long axis is the y axis of its frame, the type's length times alongShare.
+    expect(contact.matrix.elements[5]).toBeCloseTo(CONTACT_SHADOW.alongShare * AIRCRAFT_TYPES.A320.lengthM, 6);
+    expect(contact.matrix.elements[0]).toBeCloseTo(CONTACT_SHADOW.acrossShare * AIRCRAFT_TYPES.A320.spanM, 6);
+    expect(layer.stats().detail.drawCalls).toBe(2);
+    // Climbing it fades; out of reach of the ground it is gone.
+    detail = { ...detail, heightM: 15 };
+    layer.render(gl, view.input);
+    expect(contact.material.color.r).toBeCloseTo(contactShadowStrength(15), 6);
+    expect(contact.visible).toBe(true);
+    detail = { ...detail, heightM: 120 };
+    layer.render(gl, view.input);
+    expect(contact.visible).toBe(false);
+    // The governor's switch hides it with the silhouette.
+    detail = { ...detail, heightM: 0 };
+    layer.setQuality({ shadows: false });
+    layer.render(gl, view.input);
+    expect(contact.visible).toBe(false);
+  });
+});
+
+// M9: the instanced models wear their airlines' liveries, per zone, in the same draw call.
+describe("the 3D aircraft layer's liveries (M9)", () => {
+  it("patches three's Lambert vertex shader to pick the instance colour of each vertex's zone", () => {
+    expect(LIVERY_ZONE_ATTRIBUTES).toEqual(['instanceBelly', 'instanceTail', 'instanceEngine', 'instanceWing']);
+    const shader = patchLiveryShader({ vertexShader: ShaderLib.lambert.vertexShader, uniforms: {} });
+    const source = shader.vertexShader;
+    expect(source).toContain('attribute float liveryZone;');
+    for (const name of LIVERY_ZONE_ATTRIBUTES) expect(source).toContain(`attribute vec3 ${name};`);
+    // Three's own chunks stay, and the zone's colour comes after them, for instanced colours only.
+    expect(source.indexOf('#include <color_vertex>')).toBeLessThan(source.indexOf('vColor.rgb = liveryZone < 0.5'));
+    expect(source).toContain('vColor.rgb = liveryZone < 0.5 ? instanceColor.rgb : liveryZone < 1.5 ? instanceBelly : '
+      + 'liveryZone < 2.5 ? instanceTail : liveryZone < 3.5 ? instanceEngine : instanceWing;');
+    expect(() => patchLiveryShader({ vertexShader: 'void main() {}' })).toThrow(/colour chunks/);
+  });
+
+  it("gives each model its zones and copies the plan's zone colours into the instance attributes", () => {
+    const { createRenderer, made } = fakeRenderers();
+    const traffic = [aircraft('f:p:jbu', { bearing: 100, metres: 600, callsign: 'JBU1234' }),
+      aircraft('f:p:cmp', { bearing: 160, metres: 700, callsign: 'CMP893' })];
+    let state = { revision: 1, plan: planInstances(traffic, [], { zoom: 16, minZoom: 14, originLngLat: ARP, livery: true }) };
+    const layer = createAircraft3dLayer({ three: THREE_PARTS, originLngLat: ARP, createRenderer, getInstances: () => state });
+    const gl = fakeContext('gl');
+    const { input } = viewOf();
+    layer.onAdd(fakeMap(), gl);
+    layer.render(gl, input);
+    const a320 = meshOf(made[0].scene, 'A320');
+    expect(a320.material.onBeforeCompile).toBe(patchLiveryShader);
+    expect(a320.material.customProgramCacheKey()).toBe('occ-aircraft-livery-zones');
+    // Every zone of the livery is somewhere on the model: the fin is the tail, the nacelles the engines…
+    const zones = new Set(a320.geometry.getAttribute('liveryZone').array);
+    expect([...zones].sort()).toEqual(LIVERY_ZONES.map((zone, index) => index));
+    const entry = state.plan.get('A320');
+    LIVERY_ZONE_ATTRIBUTES.forEach((name, index) => {
+      const attribute = a320.geometry.getAttribute(name);
+      expect(attribute.isInstancedBufferAttribute, name).toBe(true);
+      expect(attribute.count, name).toBe(a320.instanceMatrix.count);
+      expect(Array.from(attribute.array), name).toEqual(Array.from(entry.zoneColors[LIVERY_ZONES[index + 1]]));
+    });
+    // cmp sorts first: its fin is Copa's blue.
+    expect(Array.from(a320.geometry.getAttribute('instanceTail').array.slice(0, 3)))
+      .toEqual(Array.from(Float32Array.from(liveryInstanceColours({ airlineIcao: 'CMP' }).tail)));
+
+    // A plan without zones paints every zone in its instance colour.
+    const { zoneColors: _ignored, ...older } = entry;
+    state = { revision: 2, plan: new Map([['A320', older]]) };
+    layer.render(gl, input);
+    for (const name of LIVERY_ZONE_ATTRIBUTES) {
+      expect(Array.from(a320.geometry.getAttribute(name).array)).toEqual(Array.from(entry.colors));
+    }
+  });
+});
+
+// PR M2: the sprites of the animated traffic, drawn by the same layer, with a 2D canvas that records nothing.
+describe('the sprites of the animated traffic (PR M2)', () => {
+  function fakeCanvas(width, height) {
+    const context = new Proxy({}, {
+      get: (target, key) => (key in target ? target[key] : () => {}),
+      set: (target, key, value) => {
+        target[key] = value;
+        return true;
+      },
+    });
+    return { width, height, getContext: type => (type === '2d' ? context : null) };
+  }
+
+  function spriteWorld({ createCanvas = fakeCanvas } = {}) {
+    vi.stubGlobal('Path2D', class Path2D {});
+    const { createRenderer } = fakeRenderers();
+    const made = [];
+    const onSpritesFailedChange = vi.fn();
+    let answer = { revision: 0, plan: new Map(), sprites: null };
+    const layer = createAircraft3dLayer({
+      three: THREE_PARTS, originLngLat: ARP, getInstances: () => answer, createRenderer, createCanvas,
+      onSpritesFailedChange, minModelPx: 30,
+      createSprites: options => {
+        const sprites = createTrafficSprites(options);
+        vi.spyOn(sprites, 'sync');
+        made.push(sprites);
+        return sprites;
+      },
+    });
+    const map = { ...fakeMap(), zoom: 15 };
+    map.getZoom = () => map.zoom;
+    layer.onAdd(map, fakeContext('gl'));
+    return {
+      layer, map, made, createRenderer, onSpritesFailedChange,
+      answer: next => {
+        answer = next;
+      },
+    };
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('draws the sprites of each new answer in one draw call, sized at the zoom of every frame, and picks them', () => {
+    const { layer, map, made, answer, createRenderer } = spriteWorld();
+    const view = viewOf();
+    const items = [aircraft('f:p:a', { bearing: 10, metres: 300, trackDeg: 90 }),
+      aircraft('h:p:b', { kind: 'other', bearing: 40, metres: 900, onGround: false, altM: 600 })];
+    answer({ revision: 1, plan: new Map(), sprites: planSprites(items, { originLngLat: ARP }) });
+    layer.render(fakeContext('gl'), view.input);
+    expect(made).toHaveLength(1);
+    expect(made[0].sync).toHaveBeenCalledTimes(1);
+    expect(layer.stats()).toMatchObject({ instances: 0, drawCalls: 1, sprites: 2, spritesFailed: false });
+    // The square of a sprite is its pixel size times the metres of a pixel at the frame's zoom (512 px tiles).
+    const metresPerPixel = zoom => (40_075_016.686 / 512) * Math.cos((ARP[1] * Math.PI) / 180) / 2 ** zoom;
+    expect(made[0].metresPerPx()).toBeCloseTo(metresPerPixel(15), 6);
+    map.zoom = 17;
+    layer.render(fakeContext('gl'), view.input);
+    expect(made[0].metresPerPx()).toBeCloseTo(metresPerPixel(17), 6);
+    // The same revision copies nothing; a new one (the next frame of a moving aircraft) does.
+    expect(made[0].sync).toHaveBeenCalledTimes(1);
+    const moved = items.map(item => ({ ...item, lat: item.lat + 0.0002 }));
+    answer({ revision: 2, plan: new Map(), sprites: planSprites(moved, { originLngLat: ARP }) });
+    layer.render(fakeContext('gl'), view.input);
+    expect(made[0].sync).toHaveBeenCalledTimes(2);
+    // Picked on the CPU where the frame drew it: the sprite's centre, not where it was.
+    const at = view.toPixel([...localOf(moved[1]), 0]);
+    expect(layer.pick(at)).toEqual({ kind: 'aircraft', id: 'h:p:b' });
+    expect(layer.pick({ x: at.x + 200, y: at.y + 200 })).toBeNull();
+    // The scene holds them as one InstancedMesh in its own group, never among the models.
+    const { scene } = createRenderer.mock.results[0].value;
+    expect(meshesOf(scene)).toEqual([]);
+    const group = scene.children.find(child => child.name === 'traffic-sprites');
+    expect(group.children).toHaveLength(1);
+    expect(group.children[0]).toMatchObject({ isInstancedMesh: true, count: 2, frustumCulled: false });
+    expect(group.children[0].material).toMatchObject({ transparent: true, depthTest: false, depthWrite: false });
+    layer.onRemove();
+    expect(layer.stats().sprites ?? 0).toBe(0);
+  });
+
+  it('draws the tags and the chosen ring over the sprites, and picks a tag where this frame drew it', () => {
+    const { layer, answer, createRenderer } = spriteWorld();
+    const view = viewOf();
+    const items = [aircraft('f:p:a', { bearing: 10, metres: 300, flightNumber: 'DM101' }),
+      aircraft('h:p:b', { kind: 'other', bearing: 40, metres: 900, onGround: false, altM: 600 })];
+    const labelsOf = list => planLabels(list, { originLngLat: ARP, zoom: 15, selectedId: 'f:p:a' });
+    answer({ revision: 1, plan: new Map(), sprites: planSprites(items, { originLngLat: ARP }), labels: labelsOf(items) });
+    layer.render(fakeContext('gl'), view.input);
+    expect(layer.stats()).toMatchObject({ sprites: 2, labels: 1, drawCalls: 2 });
+    const { scene } = createRenderer.mock.results[0].value;
+    const group = scene.children.find(child => child.name === 'traffic-labels');
+    const mesh = group.children[0];
+    // The ring and the chosen aircraft's tag, over the sprites; its canvas pixels are the drawing buffer's (ratio 2).
+    expect(mesh).toMatchObject({ isInstancedMesh: true, count: 2, renderOrder: 20 });
+    expect(mesh.material.uniforms.viewport.value.toArray()).toEqual([WIDTH, HEIGHT]);
+    expect(mesh.material.uniforms.pixelRatio.value).toBe(2);
+    // The centre of the tag (the last quad): its aircraft where the frame drew it, plus its offset.
+    const centre = () => {
+      const anchor = mesh.geometry.getAttribute('instanceAnchor').array;
+      const offset = mesh.geometry.getAttribute('instanceOffset').array;
+      const at = view.toPixel([anchor[3], anchor[4], 0]);
+      return { x: at.x + offset[2], y: at.y + offset[3] };
+    };
+    expect(layer.pick(centre())).toEqual({ kind: 'aircraft', id: 'f:p:a' });
+    // The next frame moves the tag with its aircraft; it is picked there.
+    const moved = items.map(item => ({ ...item, lat: item.lat + 0.001 }));
+    answer({ revision: 2, plan: new Map(), sprites: planSprites(moved, { originLngLat: ARP }), labels: labelsOf(moved) });
+    const before = centre();
+    layer.render(fakeContext('gl'), view.input);
+    expect(Math.hypot(centre().x - before.x, centre().y - before.y)).toBeGreaterThan(5);
+    expect(layer.pick(centre())).toEqual({ kind: 'aircraft', id: 'f:p:a' });
+    layer.onRemove();
+    expect(layer.stats().labels).toBeUndefined();
+  });
+
+  it('draws the «Demo» plate facing the screen: its size and offset in pixels are the same at pitch 0 and at pitch 60', () => {
+    const { layer, made, answer } = spriteWorld();
+    const demo = aircraft('f:p:demo', { bearing: 30, metres: 400, isDemo: true });
+    const sprites = planSprites([demo], { originLngLat: ARP });
+    answer({ revision: 1, plan: new Map(), sprites });
+    layer.render(fakeContext('gl'), viewOf().input);
+    // The layer hands the sprites the canvas in CSS pixels, which sizes the billboards.
+    expect(made[0].viewport()).toEqual({ width: WIDTH, height: HEIGHT });
+    const index = sprites.plain.indexOf(1);
+    expect(index).toBeGreaterThanOrEqual(0);
+    const [width, height] = sprites.sizes.slice(2 * index, 2 * index + 2);
+    const [offsetX, offsetY] = sprites.offsets.slice(2 * index, 2 * index + 2);
+    const at = new Vector3(...localOf(demo), 0);
+    // The plate on screen as the shader puts it (billboardClip), in CSS pixels from the top-left corner.
+    const plateOn = view => {
+      const clip = new Vector4(at.x, at.y, at.z, 1).applyMatrix4(view.localToClip).toArray();
+      const pixel = ([x, y, , w]) => ({ x: ((x / w + 1) / 2) * WIDTH, y: ((1 - y / w) / 2) * HEIGHT });
+      const corner = (cx, cy) => pixel(billboardClip(clip, [cx * width + offsetX, cy * height + offsetY],
+        { width: WIDTH, height: HEIGHT }));
+      const centre = pixel(clip);
+      const top = corner(0.5, 0.5);
+      const bottom = corner(-0.5, -0.5);
+      return { width: top.x - bottom.x, height: bottom.y - top.y, below: (top.y + bottom.y) / 2 - centre.y };
+    };
+    // Straight down (pitch 0) and pitched 60° from the south, at the same distance.
+    const flat = plateOn(viewOf({ from: [at.x, at.y - 1, at.z + 2_000], target: [at.x, at.y, at.z] }));
+    const pitched = plateOn(viewOf({ from: [at.x, at.y - 2_000 * Math.sin(Math.PI / 3), 2_000 * Math.cos(Math.PI / 3)],
+      target: [at.x, at.y, at.z] }));
+    for (const plate of [flat, pitched]) {
+      expect(plate.width).toBeCloseTo(width, 6);
+      expect(plate.height).toBeCloseTo(height, 6);
+      // Below its aircraft by its offset (y up in the plan, down on screen).
+      expect(plate.below).toBeCloseTo(-offsetY, 6);
+    }
+  });
+
+  it('without a 2D canvas for the atlas it says so once and keeps drawing its models', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { layer, onSpritesFailedChange, answer, createRenderer } = spriteWorld({ createCanvas: () => null });
+    const items = [aircraft('f:p:a', { bearing: 10, metres: 300 })];
+    answer({ revision: 1, plan: planOf(items), sprites: planSprites(items, { originLngLat: ARP }) });
+    layer.render(fakeContext('gl'), viewOf().input);
+    expect(onSpritesFailedChange).toHaveBeenCalledExactlyOnceWith(true);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(layer.stats()).toMatchObject({ instances: 2, sprites: 0, spritesFailed: true, failed: false });
+    answer({ revision: 2, plan: planOf(items), sprites: planSprites(items, { originLngLat: ARP }) });
+    layer.render(fakeContext('gl'), viewOf().input);
+    expect(onSpritesFailedChange).toHaveBeenCalledTimes(1);
+    expect(createRenderer.mock.results[0].value.calls.filter(call => call === 'render').length).toBeGreaterThan(0);
   });
 });

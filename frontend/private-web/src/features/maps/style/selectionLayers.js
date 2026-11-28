@@ -35,7 +35,9 @@ export function selectionOverlay() {
           'circle-stroke-width': CASING_WIDTH,
           'circle-stroke-color': accent,
         },
-        metadata: { 'occ:group': SELECTION_GROUP },
+        // Close up (M4, core/mapEngine.js: setCloseUp) the ring goes: only «Seguir en 3D» gets there, and the ring of
+        // the followed aircraft, drawn on the ground, sat on its model's tail.
+        metadata: { 'occ:group': SELECTION_GROUP, 'occ:closeUp': 'hide' },
       },
     ],
   };

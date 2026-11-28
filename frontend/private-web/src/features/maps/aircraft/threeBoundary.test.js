@@ -9,7 +9,8 @@ const CHUNK = `${AIRCRAFT}/aircraft3dChunk.js`;
 const LOADER = `${AIRCRAFT}/loadAircraft3d.js`;
 // The modules that take three as a parameter: the models and the layer.
 const LAYER = `${AIRCRAFT}/aircraft3dLayer.js`;
-const PARAMETER_MODULES = [`${AIRCRAFT}/aircraftGeometry.js`, LAYER];
+const PARAMETER_MODULES = [`${AIRCRAFT}/aircraftGeometry.js`, LAYER, `${AIRCRAFT}/gltfModels.js`,
+  `${AIRCRAFT}/liveryMaterial.js`, `${AIRCRAFT}/modelAircraft.js`];
 const SCRIPT = /\.(?:js|jsx|mjs)$/;
 const REGEX_CAN_FOLLOW = '(,=:[!&|?{};';
 
@@ -96,9 +97,11 @@ describe('three stays in its own chunk (design J)', () => {
 
     const importersOfThree = imports.filter(entry => entry.imports.some(item => isThree(item.specifier)));
     expect(importersOfThree.map(entry => entry.file)).toEqual([CHUNK]);
-    // The chunk names what it takes from three and from one addon: no namespace, no default, no Draco, KTX2 or worker.
+    // The chunk names what it takes from three and from two addons: no namespace, no default, no Draco, KTX2, meshopt
+    // or worker. PR M5: the GLTFLoader, which reads the types' 3D models with none of its decoders.
     const fromThree = importersOfThree[0].imports.filter(item => isThree(item.specifier));
-    expect(fromThree.map(item => item.specifier)).toEqual(['three', 'three/addons/utils/BufferGeometryUtils.js']);
+    expect(fromThree.map(item => item.specifier)).toEqual(['three', 'three/addons/loaders/GLTFLoader.js',
+      'three/addons/utils/BufferGeometryUtils.js']);
     for (const item of fromThree) {
       expect(item.kind).toBe('static');
       expect(item.clause).toMatch(/^\{[\s\w,]+\}$/);
@@ -114,7 +117,7 @@ describe('three stays in its own chunk (design J)', () => {
     expect(reachingTheLayer).toEqual([CHUNK]);
   });
 
-  it('aircraftGeometry.js and aircraft3dLayer.js take three as a parameter and import neither three nor maplibre-gl', () => {
+  it('the models and the layer take three as a parameter and import neither three nor maplibre-gl', () => {
     for (const file of PARAMETER_MODULES) {
       const source = readSource(file);
       expect(importsOf(source).filter(item => isThree(item.specifier) || isMapLibre(item.specifier)), file).toEqual([]);
@@ -122,6 +125,16 @@ describe('three stays in its own chunk (design J)', () => {
       const builders = [...stripComments(source).matchAll(/export function \w+\(([^)]*)\)/g)].map(([, parameters]) => parameters);
       expect(builders.some(parameters => /^\s*(?:three\b|\{[^}]*\bthree\b)/.test(parameters)), file).toBe(true);
     }
+  });
+
+  it('the models are read with the GLTFLoader alone: no Draco, KTX2 or meshopt decoder, no worker, no blob: URL', () => {
+    const chunk = stripComments(readSource(CHUNK));
+    expect(chunk).not.toMatch(/DRACOLoader|KTX2Loader|MeshoptDecoder|Worker/);
+    const models = stripComments(readSource(`${AIRCRAFT}/gltfModels.js`));
+    expect(models).toMatch(/new three\.GLTFLoader\(\)\.parse\(/);
+    expect(models).not.toMatch(/setDRACOLoader|setKTX2Loader|setMeshoptDecoder|createObjectURL|new Worker/);
+    // Same origin only: the folder is an absolute path of the application.
+    expect(models).toMatch(/MODELS_BASE_URL = '\/models\/aircraft\/'/);
   });
 
   it('the scan reads imports and skips comments, and strings stay whole', () => {

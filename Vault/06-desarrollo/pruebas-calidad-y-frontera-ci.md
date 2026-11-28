@@ -682,7 +682,58 @@ visual.
   muestran las posiciones alimentadas por los vuelos con el tráfico encima.
   Todas corren a 1440×900 y a 1920×1080, fuera del CI, y una persona revisa sus
   capturas. Ninguna mide los cuadros por segundo: el Chrome de la suite dibuja
-  por software.
+  por software (desde el 27 de noviembre de 2026 la suite tiene un modo GPU;
+  ver [Cuadros por segundo en GPU real](#cuadros-por-segundo-en-gpu-real)).
+
+## Cuadros por segundo en GPU real
+
+Posterior al commit verificado de esta nota: esta sección describe el código
+del carril M2 «Capa de tráfico animada» del 27 de noviembre de 2026
+([ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md), actualización de esa
+fecha), que esa verificación no cubre.
+
+- **Qué se mide.** Las specs de fluidez del laboratorio
+  ([`map-lab.fluency.spec.mjs`](../../frontend/private-web/tests/visual/lab/map-lab.fluency.spec.mjs)
+  y [`map-lab.follow3d.spec.mjs`](../../frontend/private-web/tests/visual/lab/map-lab.follow3d.spec.mjs))
+  cuentan los eventos `render` de MapLibre, es decir, los cuadros que el mapa
+  dibuja de verdad, y no los callbacks de `requestAnimationFrame`. En cada
+  cuadro leen dónde dibujó ese cuadro a cada avión vigilado (la posición
+  interpolada por la capa animada), no dónde lo dejó la última escritura del
+  GeoJSON, y cuentan cualquier cambio de posición como una actualización.
+  Informan los cuadros por segundo, el p50 y el p95 del tiempo de cuadro, la
+  parte de cuadros de más de 33,3 ms, el hueco más largo y las tareas largas
+  ([`perf.mjs`](../../frontend/private-web/tests/visual/support/perf.mjs)).
+- **Dos modos.** Por defecto la suite dibuja con SwiftShader, y esas cifras
+  solo sirven como comprobación de humo: más de 5 cuadros por segundo, sin
+  saltos ni retrocesos y con el tiempo bloqueado acotado. Con
+  `OCC_VISUAL_GPU=1`, la
+  [configuración](../../frontend/private-web/playwright.occ.config.mjs) abre un
+  Chrome visible sin SwiftShader, con ANGLE sobre Direct3D 11, a 1920×1080
+  (`OCC_VISUAL_VIEWPORT` lo cambia); `OCC_VISUAL_GPU=high` pide la GPU
+  dedicada. Una corrida en modo GPU anota el renderizador, la versión de
+  Chrome, la vista y la densidad, y falla si el renderizador es SwiftShader.
+- **Puertas en GPU.** Al menos 30 cuadros por segundo y un p95 de 33,4 ms como
+  mucho; en la spec de fluidez, además, que un avión en movimiento se redibuje
+  30 veces por segundo o más; en la de «Seguir en 3D», los 30 cuadros por
+  segundo y el p95 de 33,4 ms con y sin seguir (el p95 desde el 28 de noviembre
+  de 2026). `OCC_PERF_OUT` guarda cada resultado en un archivo JSON fuera del
+  repositorio.
+- **Perfil de CPU.**
+  [`map-lab.follow3d-profile.spec.mjs`](../../frontend/private-web/tests/visual/lab/map-lab.follow3d-profile.spec.mjs)
+  solo corre con `OCC_PROFILE_OUT=<archivo.cpuprofile>`: graba el perfilador
+  de Chrome mientras sigue en 3D la llegada de `airfield-3d-replay`
+  (`OCC_PROFILE_SECONDS`, 15 s por defecto), guarda el perfil, que abre
+  DevTools, e imprime las funciones con más tiempo propio y total y las capas
+  y teselas que MapLibre recorre en cada cuadro.
+- **En la aplicación.** Ctrl+Alt+F muestra u oculta un medidor de cuadros
+  plano sobre el mapa (cuadros por segundo de los últimos 2 s, cuadro p95,
+  aviones dibujados y la GPU). Está oculto por defecto y sirve para mirar una
+  máquina concreta; no es una prueba.
+- **Qué no es.** El modo GPU necesita una sesión de escritorio con GPU, así que
+  ningún workflow de CI lo corre. Sus cifras dependen de la máquina y de lo que
+  corra a la vez; las del 28 de noviembre de 2026, con `next dev` en la laptop
+  de desarrollo (Intel UHD y RTX 3060), están en la ADR. No hay medición
+  contra un build de producción, porque allí no existe el laboratorio.
 
 ## La consola del OCC (PR U3)
 
@@ -736,7 +787,7 @@ vitest corren con `npm test`; la spec visual, con la suite visual.
   encuadra la vista que sigue el vuelo y después centra su avión, salvo que la
   persona mueva la cámara antes
   ([cámara](../../frontend/private-web/src/features/dashboard/noc/consoleCamera.test.js)
-  y [última medida de los paneles](../../frontend/private-web/src/features/dashboard/noc/useConsoleInsets.test.jsx)).
+  y [última medida de los paneles](../../frontend/private-web/src/features/maps/ui/useStageInsets.test.jsx)).
   El mapa se simula con el MapLibre falso de `tests/fakeMapLibre.js`, y jsdom
   recibe un `ResizeObserver` falso.
 - **Datos sintéticos validados.**

@@ -47,3 +47,12 @@ it('open, draws each visit as a bar with the «ahora» line, and a bar chooses i
   await user.click(screen.getByRole('button', { name: 'Banda de posiciones' }));
   expect(onToggle).toHaveBeenCalledOnce();
 });
+
+it('takes the panel slab under a map and the floating slab over the full-screen map (M1)', () => {
+  const view = render(<PositionsBand stands={STANDS} nowMs={NOW} timeZone="America/Santo_Domingo" open={false} />);
+  const band = () => screen.getByRole('region', { name: 'Banda de posiciones' });
+  expect(band()).toHaveClass('rounded-md', 'bg-occ-panel');
+  view.rerender(<PositionsBand stands={STANDS} nowMs={NOW} timeZone="America/Santo_Domingo" open={false} floating />);
+  expect(band()).toHaveClass('rounded-[var(--occ-radius-overlay)]', 'bg-occ-panel-float');
+  expect(band()).not.toHaveClass('bg-occ-panel');
+});

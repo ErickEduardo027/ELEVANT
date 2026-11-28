@@ -279,7 +279,7 @@ Desde U3, las cifras siguen siendo conteos de consultas acotadas (la planificaci
 
 El catálogo de referencia de las posiciones ([datos](../../frontend/private-web/src/features/dashboard/positionsData.js) y [catálogo](../../frontend/private-web/src/features/dashboard/dashboardPositions.js)) recupera las 42 ubicaciones internas originales: 41 se dibujan y B33 permanece como registro histórico fuera de la vista operativa. Incluye B34–B37 y conserva las 13 coordenadas internas de B20–B32. La [carta AIP de 2024](https://aip.sna.gob.do/Datos/AMDT_AIRAC/AMDT_AIRAC_03-24.pdf) y la [enmienda de 2026](https://aip.sna.gob.do/Datos/AMDT_AIRAC/AMDT_AIRAC_3-26/AMDT_AIRAC_03-26.pdf) sirven solo como referencias de conciliación. La enmienda retira B33; las coordenadas internas difieren de la documentación AIP, especialmente B20–B32, y **no se declaran oficiales ni verificadas**. No consta permiso de IDAC para procesar coordenadas AIP, de acuerdo con su [política de uso](https://aip.sna.gob.do/Aip/CircularSerA); el frontend ya no contiene la transcripción previa. Los códigos planificados sin coincidencia exacta en el catálogo activo, incluido B33, se listan sin ubicación. No hay alias automáticos entre A1 y 1 ni entre códigos parecidos.
 
-**Meteorología MDPC.** Desde el PR U3 se abre desde la píldora del clima, bajo el mapa de Panorama; antes era uno de los dos mapas auxiliares del rediseño anterior, que se describe más abajo como registro. El METAR de Iowa Environmental Mesonet es una réplica no oficial. La interfaz separa la hora observada de la recepción local, avisa tras 75 minutos y conserva el aviso de un refresco fallido. Humedad relativa, sensación térmica y precipitación horaria procedentes de campos IEM se rotulan como derivados. GOES-East infrarrojo e [IMERG](https://gpm.nasa.gov/data/imerg) de NASA GIBS son capas seleccionables. La vista fija las teselas al tiempo reportado por GIBS; si solo hay fecha, muestra únicamente el día sin antigüedad horaria. IMERG estima precipitación y puede retrasarse varias horas; no es radar ni observación local. Se muestran atribución, unidad y opacidad de la capa. Fuentes: [píldora](../../frontend/private-web/src/features/dashboard/noc/WeatherPill.jsx), [palabras del METAR](../../frontend/private-web/src/features/dashboard/noc/weatherWords.js) y [teselas](../../frontend/private-web/src/services/satelliteService.js).
+**Meteorología MDPC.** El METAR y el TAF de MDPC llegan por la API desde NOAA Aviation Weather Center, como dato no oficial. La píldora del clima, bajo el mapa de Panorama, separa la hora observada de la recepción local. Avisa cuando el METAR pasa de 90 minutos o la API lo marca «Stale», y conserva el aviso de un refresco fallido. Su detalle conserva el historial de 6 h de Iowa Environmental Mesonet, una réplica no oficial. En la rama de la línea M7 (28 de noviembre de 2026, sin desplegar), Panorama abre en Región en 3D y su mapa recibe el clima del aeródromo y las capas regionales (bucle GOES, radar, estaciones METAR y SIGMET). El panel flotante «Meteorología PUJ» muestra el METAR decodificado, el TAF, el viento por pista y las horas del sol. En la rama de integración de los mapas (sin desplegar), con los paneles flotantes de M1, el panel va al pie de la columna derecha de Panorama, bajo el lugar del inspector. Se mide en los márgenes del mapa y abre plegado por debajo de 1440 px ([ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md), nota del 28 de noviembre de 2026). En la rama de integración de los mapas (sin desplegar), con la línea M6 integrada, Panorama lee el clima regional por la API con el cliente compartido; el radar es el de IEM (TJUA) con las teselas que nombra cada lectura, y cada lectura respeta el `refreshAfterSeconds` de su respuesta. El segundo mapa de satélite del detalle de la píldora se retiró. Se describe abajo como registro. GOES-East infrarrojo e [IMERG](https://gpm.nasa.gov/data/imerg) de NASA GIBS son capas seleccionables. La vista fija las teselas al tiempo reportado por GIBS; si solo hay fecha, muestra únicamente el día sin antigüedad horaria. IMERG estima precipitación y puede retrasarse varias horas; no es radar ni observación local. Se muestran atribución, unidad y opacidad de la capa. Fuentes: [píldora](../../frontend/private-web/src/features/dashboard/noc/WeatherPill.jsx), [palabras del METAR](../../frontend/private-web/src/features/dashboard/noc/weatherWords.js) y [teselas](../../frontend/private-web/src/services/satelliteService.js).
 
 En esta rama local, la certificación de la imagen AVIAM compara la CSP generada con una lista cerrada que incluye la API certificada, su WebSocket, dos orígenes cartográficos, IEM y NASA GIBS. Rechaza fuentes adicionales o ausentes; la prueba usa la política que genera la aplicación para evitar otra divergencia. Fuentes: [validador](../../frontend/scripts/deployment/csp-tool.mjs), [pruebas](../../frontend/tests/deployment/test-csp-tool.mjs) y [política AVIAM](../../frontend/private-web/src/config/securityHeaders.mjs).
 
@@ -2056,9 +2056,16 @@ tampoco.
   cifras en una franja arriba y el «Inspector» a la derecha desde 1536 px; los
   controles del mapa forman una columna a la derecha (ver
   [Monitoreo OCC más profesional](#monitoreo-occ-más-profesional-cn-32)).
-  «Posiciones» abre plegada, «Cifras de la jornada» también por debajo de
-  1600 px, y «Tablero» y «Alertas» por debajo de 1280 px. «Ocultar paneles»,
-  bajo el mapa, deja solo el mapa (`focus=map`), y «Mostrar paneles» los
+  *Posterior (M1, 27 de noviembre de 2026):* los paneles vuelven a flotar
+  dentro del mapa a pantalla completa, a 12 px de sus bordes, y la columna de
+  control queda fija en el borde derecho; la barra de estado, con «Ocultar
+  paneles», flota al pie dentro del mapa. Por debajo de 1440 px solo abre
+  «Tablero»: las cifras y «Alertas» abren plegadas, y «Posiciones» abre
+  siempre plegada (ver
+  [Mapa a pantalla completa con paneles flotantes](#mapa-a-pantalla-completa-con-paneles-flotantes-m1)).
+  Antes de M1, «Posiciones» abría plegada, «Cifras de la jornada» también por
+  debajo de 1600 px, y «Tablero» y «Alertas» por debajo de 1280 px.
+  «Ocultar paneles» deja solo el mapa (`focus=map`), y «Mostrar paneles» los
   devuelve. Los paneles son casi opacos y sin desenfoque. La consola los mide y
   el mapa encuadra sus vistas en lo que queda a la vista. Lo elegido no queda
   debajo de un panel: la cámara se mueve después de medir el inspector que se
@@ -2278,6 +2285,27 @@ lecturas de M5: la API no cambia.
   [ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md); el laboratorio la
   repite con `perf-approach-feed` y `perf-airfield-feed`
   (`tests/visual/lab/map-lab.fluency.spec.mjs`).
+- **Capa de tráfico animada (posterior al commit verificado, 27 de noviembre
+  de 2026).** Con WebGL2 y tráfico en movimiento, la capa three.js dibuja en
+  cada cuadro todos los aviones a la vista (siluetas en 2D, modelos en 3D, sus
+  rótulos y el anillo del elegido) interpolando entre dos fotogramas clave por
+  avión ([`keyframes.js`](../../frontend/private-web/src/features/maps/traffic/keyframes.js)).
+  Mientras anima, el GeoJSON del tráfico se escribe como mucho dos veces por
+  segundo, y «Seguir en 3D» ya no lo escribe en cada cuadro. El fundido de los
+  rótulos vuelve a 150 ms. El regulador ya no toma por cuadros lentos los que
+  provoca cada escritura con la cámara quieta: solo cuenta los cuadros de una
+  animación continua. Los clics sobre el tráfico se resuelven en la CPU. Sin
+  WebGL2, o si la capa no puede crearse, el mapa vuelve a los iconos y rótulos
+  GeoJSON de antes. Ctrl+Alt+F muestra un medidor de cuadros oculto. Las
+  decisiones y la medición en GPU real están en la actualización del 27 de
+  noviembre de 2026 de [ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md).
+  En la rama de integración (28 de noviembre de 2026) la capa animada respeta
+  además «Muy cerca» de «Seguir en 3D» (sin rótulos ni anillo, sin placa ni
+  anillo de estimado del avión seguido), el doble clic elige por la CPU, el
+  filtro del tablero de Monitoreo atenúa también las siluetas y rótulos
+  animados, los cuadros animados conservan libreas y sombras de contacto, y en
+  el globo no anima por debajo del zoom 12: allí los iconos GeoJSON dibujan
+  todo el tráfico. Detalle en la nota de integración de M2 de ADR-0043.
 - **Qué se mueve y de dónde sale.**
   [`motionStore.js`](../../frontend/private-web/src/features/maps/traffic/motionStore.js)
   une cada lectura con la cinemática pura de `kinematics/`. Un avión en vivo
@@ -2531,9 +2559,122 @@ actualización del 24 de noviembre de 2026 «CN-29 a CN-31» de
 - **Queda pendiente.** Los modelos 3D de Flightradar24 / FlightGear (GPL-2.0)
   no se integraron: la descarga quedó bloqueada por los permisos de la sesión,
   son glTF 1.0 (three 0.187 lee solo glTF 2.0), añadirían unos 37 MB a la
-  imagen y la licencia copyleft requiere confirmación del dueño. La posición de
+  imagen y la licencia copyleft requiere confirmación del dueño (M5 lo cambió
+  después: ver la sección siguiente). La posición de
   la torre es aproximada. Nada de esto acredita un despliegue ni una medición
   en el VPS.
+
+## Modelos 3D de terceros, libreas y «Créditos y licencias» (M5)
+
+Posterior al commit verificado de esta nota: esta sección describe la rama
+`feat/occ-modelos-3d` del plan de mapas (M5), en revisión y sin desplegar. Las
+decisiones están en la actualización del 27 de noviembre de 2026 «M5: modelos
+3D de terceros con licencia GPL» de
+[ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md), que revierte «no se
+usan modelos de terceros» para los modelos 3D.
+
+- **Modelos.** 22 tipos con modelo GPL en glTF 2.0, servidos por la propia
+  aplicación desde
+  [`public/models/aircraft/`](../../frontend/private-web/public/models/aircraft/manifest.json),
+  cada uno como archivo aparte con su `LICENSE`, su `NOTICE.md` (origen,
+  autoría y cambios del 2026-11-27) y su `SOURCE.md` (fuentes fijadas y orden
+  de reconstrucción). Vienen de fr24-3d-models (Aleksei Kalmykov /
+  Flightradar24, conversión de mbr1376), FlightAirMap-3dmodels (Ysurac) y
+  REXO-77/737-MAX, con modelos de FlightGear / FGMEMBERS en su origen; el AT76
+  conserva aparte su GPL-3.0. Los rehace
+  [`build-aircraft-models.mjs`](../../frontend/private-web/scripts/models/build-aircraft-models.mjs)
+  de forma reproducible. El B763, los tipos sin modelo y los modelos que aún
+  cargan siguen con el modelo propio procedural, y el tráfico lejano también.
+- **Niveles y carga.** `GLTFLoader` va en el trozo perezoso de three
+  ([`gltfModels.js`](../../frontend/private-web/src/features/maps/aircraft/gltfModels.js)).
+  L1 entra cuando un tipo se ve grande (unos 17 de zoom para un A320) y L2 en
+  el avión seguido. Sin Draco, meshopt, KTX2 ni `blob:`: la CSP no cambia.
+- **Libreas.** Son de ELEVANT: un sombreador pinta las zonas del modelo con los
+  colores de
+  [`liveries.js`](../../frontend/private-web/src/features/maps/aircraft/liveries.js)
+  y escribe el nombre con Manrope (OFL)
+  ([`liveryMaterial.js`](../../frontend/private-web/src/features/maps/aircraft/liveryMaterial.js)).
+  Doce aerolíneas llevan en la deriva su logotipo de texto de Wikimedia
+  Commons, de dominio público por no alcanzar el umbral de originalidad y
+  marca de su titular, en un solo color, como uso demostrativo y sin
+  afiliación
+  ([`logos/README.md`](../../frontend/private-web/public/models/liveries/logos/README.md));
+  las demás, su código IATA. El tren es el procedural de la app. Solo los
+  aviones de AVIAM llevan librea; el resto del tráfico conserva su color tenue
+  y el elegido su acento, y la leyenda lo dice en 3D (nota del 28 de noviembre
+  en ADR-0043). En L1 las sombras siguen con el modelo procedural.
+- **«Créditos y licencias».** Al final de la atribución de cada mapa OCC hay
+  un enlace que abre un diálogo
+  ([`MapCreditsDialog.jsx`](../../frontend/private-web/src/features/maps/ui/MapCreditsDialog.jsx),
+  [`credits.js`](../../frontend/private-web/src/features/maps/core/credits.js)):
+  cada modelo con su tipo, modelo base, autoría, fuente y commit, procedencia,
+  licencia, «Modificado: 2026-11-27, ELEVANT / AVIAM», sus cambios y sus tres
+  archivos; los logotipos con el aviso de marcas; y las fuentes de datos y
+  teselas que ya acredita el mapa (OpenStreetMap, OpenFreeMap, OpenMapTiles,
+  OurAirports, NASA GIBS, NOAA AWC, la tipografía y la fuente de los datos de
+  aeronaves en pantalla). Se abre con clic, Enter o Espacio, conserva el foco
+  dentro, se cierra con Esc y devuelve el foco al enlace; lee sus dos archivos
+  la primera vez que se abre.
+- **Límites.** Donde la deriva del modelo es más baja que la altura publicada
+  (B788/B789, A33x, CRJ9), la holgura al suelo es estimada; los pozos del tren
+  principal del 737 MAX (REXO) se ven abiertos de lado con el tren recogido.
+  Nada de esto acredita un despliegue ni una revisión visual en el VPS.
+- **Integración con M2, M4, M8 y M9 (28 de noviembre de 2026).** Una sola
+  paleta de librea
+  ([`liveries.js`](../../frontend/private-web/src/features/maps/aircraft/liveries.js):
+  `liveryPaint`) pinta el modelo procedural por zonas y el modelo glTF L1. En
+  el Mapa de posiciones todos los aviones 3D menos el elegido llevan librea,
+  el otro tráfico en tierra cercano incluido, y la leyenda lo dice; en las
+  demás pantallas solo los de AVIAM. Las instancias L1 se mueven con la capa
+  animada, llevan la sombra de contacto y no se dibujan en el globo por
+  debajo del zoom de Mercator. Ver la nota del 28 de noviembre «Integración
+  de los modelos 3D (M5)» de
+  [ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md).
+
+## «Seguir en 3D» ultra cerca (M4, 27 de noviembre de 2026)
+
+Posterior al commit verificado de esta nota: esta sección describe el carril
+M4 del plan de mapas del 27 de noviembre de 2026, en revisión y sin desplegar.
+Las decisiones están en la actualización del 27 de noviembre de 2026 «M4» de
+[ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md).
+
+- **Doble clic.** Un doble clic sobre un avión (su símbolo 2D, su modelo 3D o
+  la posición donde está estacionado) entra en «Seguir en 3D» en la vista
+  «Muy cerca», sin que el mapa se acerque por el doble clic
+  ([`OccMap.jsx`](../../frontend/private-web/src/features/maps/core/OccMap.jsx),
+  [`mapEngine.js`](../../frontend/private-web/src/features/maps/core/mapEngine.js)).
+  Sobre el mapa vacío acerca como siempre. No hay tecla nueva.
+- **Botón en las tres pantallas.** «Seguir en 3D» está en la columna del mapa,
+  debajo de «Seguir», en Panorama, Monitoreo y Mapa de posiciones (no en
+  Planificación)
+  ([`MapFollow3dButton.jsx`](../../frontend/private-web/src/features/maps/ui/MapFollow3dButton.jsx)).
+  El inspector de Panorama ofrece «Seguir» y «Seguir en 3D» en el bloque del
+  vuelo, y «Seguir en 3D» en una posición con su avión estacionado.
+- **Ultra zoom y «Muy cerca».** Siguiendo en 3D el zoom llega a 22 (19,5 fuera
+  de la órbita), sin que la cámara entre en el modelo. La vista «Muy cerca»
+  pone la cámara de 25 a 40 m detrás de la cola, según el tipo. En el Mapa de
+  posiciones, fijado en PUJ, seguir suelta el encuadre del aeropuerto y la
+  órbita conserva el zoom 22; al dejar de seguir vuelven el encuadre y el zoom
+  de la pantalla (integración de M4 y M9).
+- **Etiquetas de cerca.** Pasado el zoom 19,5 se ocultan los rótulos de todo el
+  tráfico, los designadores de las posiciones y las referencias. Del avión
+  seguido se ocultan también su anillo de elección, el rótulo y la estela, que
+  se dibujaban sobre su cola; el panel de «Seguir en 3D» lo nombra. Las señales
+  de las posiciones siguen a la vista. Vuelven al alejar o con Esc.
+- **Cielo, sol y sombra.** En 3D y siguiendo en 3D el mapa tiene cielo con los
+  colores OCC de cada tema
+  ([`mapSky.js`](../../frontend/private-web/src/features/maps/core/mapSky.js)).
+  La luz de los modelos sigue el sol de Punta Cana (día, crepúsculo y noche).
+  Cada avión 3D lleva una sombra de contacto en el suelo que se desvanece con
+  la altura
+  ([`contactShadow.js`](../../frontend/private-web/src/features/maps/aircraft/contactShadow.js));
+  el interruptor de sombras del regulador la oculta.
+- **Pruebas.** Pruebas unitarias del motor, la órbita, el mapa y las tres
+  pantallas, y la suite visual
+  [`map-lab.follow3d.spec.mjs`](../../frontend/private-web/tests/visual/lab/map-lab.follow3d.spec.mjs)
+  (doble clic y «Muy cerca» en la aproximación, el rodaje y la posición, en
+  Chrome con WebGL por software y datos inventados). No se probó con una GPU
+  real ni en el VPS; nada de esto acredita un despliegue.
 
 ## AeroDataBox en la consola, Contratos y Superadministración (15 de noviembre de 2026)
 
@@ -2796,7 +2937,9 @@ API, lo que leen las pantallas ni su cadencia.
   línea arriba; «Posiciones» abajo. El «Inspector» ocupa una columna propia a la
   derecha desde 1536 px; en un portátil de 1366 o 1440 px se acopla bajo el
   «Tablero» y «Alertas» se pliega mientras está abierto, así el mapa conserva
-  su ancho.
+  su ancho. *Posterior (M1):* los paneles vuelven a flotar dentro del mapa, en
+  los mismos lugares (ver
+  [Mapa a pantalla completa con paneles flotantes](#mapa-a-pantalla-completa-con-paneles-flotantes-m1)).
 - **Monitoreo de vuelos**
   ([vista](../../frontend/private-web/src/features/flight-monitoring/FlightMonitoringPage.jsx)).
   El tablero es más denso y se ordena por Hora, Vuelo, Estado, Ruta o Posición.
@@ -2804,10 +2947,32 @@ API, lo que leen las pantallas ni su cadencia.
   por debajo, en lugar del tablero, que vuelve al cerrarlo. El panel reúne lo que
   el mapa sabe del avión («En vivo», con «Seguir»), los horarios con su demora,
   la escala con sus hitos y los enlaces a Planificación y Mapa de posiciones;
-  ninguna tarjeta flota sobre el mapa.
+  ninguna tarjeta flota sobre el mapa. Desde el carril M8 del plan de mapas
+  (27 de noviembre de 2026, rama `feat/occ-monitoreo-mundial`, sin desplegar)
+  el mapa es un globo con atmósfera que se aleja hasta el zoom 1, abre
+  encuadrando la República Dominicana y Puerto Rico y ofrece la vista
+  «0 Mundo» antes de las cuatro; Panorama y Mapa de posiciones siguen en
+  Mercator con sus cuatro vistas
+  ([ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)). Desde lejos, en
+  Mundo y Región, el globo lleva debajo una imagen de NASA GIBS (Black Marble en
+  el tema oscuro, Blue Marble en el claro, en grises y con su crédito) y los
+  aeropuertos grandes del mundo de OurAirports; los dominicanos van más grandes
+  y, desde que se ve el Caribe, siempre rotulados. Esos aeropuertos también dan
+  la posición del origen o destino de un vuelo cuando la API no la trae
+  ([datos](../../frontend/private-web/src/features/maps/airport/data/README.md)).
+  El globo traza además, finas y tenues, las rutas de círculo máximo de todos
+  los vuelos de AVIAM del día; la del vuelo elegido sigue resaltada. El tablero
+  suma los filtros «En vuelo» y «En tierra» a «Llegadas», «Salidas» y «Todos»,
+  y el mapa atenúa los vuelos y rutas que el filtro o la búsqueda dejan fuera
+  (28 de noviembre de 2026, sin desplegar). El carril se verificó solo con
+  pruebas unitarias y el MapLibre simulado; falta verlo en un navegador, y la
+  capa 3D bajo el globo llega con M2. *Posterior (M1):* el tablero y el
+  detalle flotan sobre el mapa a pantalla completa, a la izquierda y a la
+  derecha.
 - **Mapa de posiciones.** 2D/3D, «Centrar PUJ» y pantalla completa pasan al riel
   del mapa. El detalle de la posición usa el mismo panel acoplado, y sus rótulos
-  ya no van en mayúsculas.
+  ya no van en mayúsculas. *Posterior (M1):* la barra, la lista, el detalle y
+  la banda flotan sobre el mapa a pantalla completa.
 - **Demora.** Cada tira de los tableros y el detalle del vuelo muestran «+N»
   cuando el vuelo va 5 minutos o más tarde de su hora programada, con el
   triángulo ámbar desde 15 minutos
@@ -2816,7 +2981,60 @@ API, lo que leen las pantallas ni su cadencia.
 - **Panel acoplado común**
   ([`MapSidePanel`](../../frontend/private-web/src/features/maps/ui/MapSidePanel.jsx)):
   el detalle de Monitoreo y de Mapa de posiciones, y el lugar previsto para el
-  panel de un vuelo en modo seguimiento.
+  panel de un vuelo en modo seguimiento. *Posterior (M1):* tiene también una
+  variante flotante, la que usan ahora los dos detalles.
+
+Las capturas se revisaron en local con la API simulada de la suite visual, a
+1366×768, 1440×900 y 1920×1080, en oscuro y en claro; nada de esto acredita un
+despliegue ni una revisión visual en el VPS.
+
+## Mapa a pantalla completa con paneles flotantes (M1)
+
+Posterior al commit verificado de esta nota: describe el código de la rama
+`feat/occ-mapa-completo`, que esa verificación no cubre. Lo pidió el dueño al
+cerrar la ronda 1 de la
+[caja negra](../12-backlog/caja-negra-2026-11.md): el mapa a pantalla completa
+en Panorama, Monitoreo de vuelos y Mapa de posiciones, con todo flotando
+dentro. Revierte el acoplado de CN-32. Las decisiones están en la nota del 27 de
+noviembre de 2026 de [ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md).
+No cambian la API, lo que leen las pantallas, su cadencia ni el presupuesto de
+peticiones.
+
+- **El mapa llena el marco**
+  ([marco](../../frontend/private-web/src/features/admin-occ/AdminOccLayout.jsx)).
+  Las tres pantallas de mapa ocupan el área de trabajo sin margen ni
+  desplazamiento. Las demás pantallas del OCC no cambian.
+- **Paneles flotantes.** Flotan dentro del mapa a 12 px de sus bordes, casi
+  opacos, sin sombra ni desenfoque, y cada uno se pliega a su pastilla. Están
+  debajo de la columna de control y de sus menús, y debajo de «Seguir en 3D».
+- **La columna de control queda en el borde derecho**
+  ([estilos del mapa](../../frontend/private-web/src/styles/occ-map.css)). El
+  zoom y el riel no se mueven con los paneles. Un panel de la derecha flota a su
+  izquierda, a 112 px del borde, y las franjas de arriba y de abajo terminan
+  antes de la columna. «Capas» y «Leyenda» abren debajo de lo que flota arriba
+  del mapa. Los avisos quedan a la izquierda de la columna.
+- **Los márgenes del mapa**
+  ([medida](../../frontend/private-web/src/features/maps/ui/stageInsets.js)).
+  Cada pantalla mide lo que tapan sus paneles, y el mapa encuadra sus vistas y
+  trae lo elegido al área que queda a la vista. La medida pasó de la consola a
+  los componentes comunes de los mapas.
+- **Panorama.** «Tablero» y «Alertas» van a la izquierda, las cifras arriba,
+  «Posiciones» abajo y el «Inspector» a la derecha desde 1536 px. La barra de
+  estado, con la procedencia, «Ocultar paneles», el clima y las demoras, flota
+  al pie dentro del mapa.
+- **Monitoreo de vuelos.** El tablero flota a la izquierda y el detalle del
+  vuelo a la derecha. Por debajo de 1536 px, abrir el detalle pliega el tablero,
+  que se puede desplegar, y «Cerrar detalle» lo devuelve. En tablet, «Ver
+  vuelos» flota arriba a la izquierda del mapa.
+- **Mapa de posiciones.** La barra flota arriba a la izquierda, la lista a la
+  izquierda, el detalle a la derecha y la banda abajo. Sus avisos son chips
+  arriba al centro, y «Pantalla completa» agranda todo el escenario.
+  Planificación no cambia.
+- **Sin motor de mapa,** la lista que lo reemplaza ocupa el área que dejan los
+  paneles, así que se siguen usando a su lado.
+- **A 1366 px** abre lo esencial: en Panorama, solo «Tablero»; en Monitoreo, el
+  tablero, o el detalle si hay un vuelo elegido; en Mapa de posiciones, la barra
+  y la lista, que se pliega mientras el detalle está abierto.
 
 Las capturas se revisaron en local con la API simulada de la suite visual, a
 1366×768, 1440×900 y 1920×1080, en oscuro y en claro; nada de esto acredita un
@@ -2872,6 +3090,48 @@ posiciones más nuevas que ella.
 
 Todo se probó con redes simuladas: no se midió contra adsb.fi, en un navegador
 ni en el VPS.
+
+## Mapa de posiciones fijado en PUJ y aeropuerto en 3D (M9)
+
+Posterior al commit verificado de esta nota: describe el código de la rama
+`feat/occ-posiciones-puj-3d`, que esa verificación no cubre. Las decisiones están
+en la nota del 27 de noviembre de 2026 de
+[ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md). No cambian la API, lo que
+lee la pantalla ni su cadencia. Planificación, la consola y Monitoreo no cambian.
+
+- **Cámara fijada sobre el aeródromo**
+  ([mapa de posiciones](../../frontend/private-web/src/features/positions-map/components/PositionMap.jsx),
+  [cámaras](../../frontend/private-web/src/features/maps/core/cameraPresets.js)).
+  - La pantalla abre en 3D sobre «Aeródromo», centrada en el punto de referencia
+    de MDPC.
+  - La cámara no sale del plano del aeropuerto más 3 km, con zoom mínimo 13.
+    Desde el 28 de noviembre, mientras sigue un avión la cámara se suelta y
+    llega al zoom 22, para que un despegue no salga de la pantalla. Al dejar de
+    seguir, se vuelve a fijar.
+  - El riel ofrece solo Aeródromo y Rampa: Región y Aproximación no están en
+    esta pantalla, sus teclas no hacen nada y la URL no las abre.
+  - D cambia 2D/3D y L abre «Capas». «Centrar PUJ» vuelve a la vista centrada.
+- **Estructuras estimadas**
+  ([datos](../../frontend/private-web/src/features/maps/airport/data/mdpc.structures.json),
+  [geometría](../../frontend/private-web/src/features/maps/airport/structures.js)).
+  - Las terminales se elevan a una altura estimada y rotulada («15 m est.»).
+  - Los fingers de B20 a B26 son procedurales, sobre la Terminal B.
+  - Las calles de rodaje tienen pavimento con un ancho estimado de 23 m.
+  - Todo está marcado como estimación, sin fuente del AIP ni de cartas, y la
+    leyenda lo dice con «est.».
+  - No hay huellas de FBO ni de hangar en el plano, así que no se dibujan.
+- **Aviones estacionados con librea**
+  ([plan 3D](../../frontend/private-web/src/features/maps/aircraft/instancePlan.js)).
+  - En esta pantalla, los aviones 3D llevan los colores aproximados de su
+    aerolínea por zonas (fuselaje, panza, cola, motores y alas).
+  - El otro tráfico en tierra a menos de 4 km del aeródromo se dibuja en 3D
+    mientras el regulador mantiene la calidad completa.
+
+Las capturas se revisaron en local con la API simulada de la suite visual
+(`positions-map.airport3d.spec.mjs`, Chrome con SwiftShader), a 1366×768 y
+1920×1080, en oscuro y en claro. Falta el aviso
+de marcas de las libreas y una medición con GPU real. Nada de esto acredita un
+despliegue ni una revisión visual en el VPS.
 
 ## Estado de integración
 

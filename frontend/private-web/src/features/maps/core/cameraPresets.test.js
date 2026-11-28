@@ -3,8 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { DASHBOARD_POSITIONS } from '../../dashboard/dashboardPositions';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import {
-  APPROACH_RADIUS_NM, CAMERA_3D, FALLBACK_AIRFIELD_RADIUS_NM, PUJ_ARP, REGION_RADIUS_NM, TERMINALS, VIEW_NAMES,
-  airfieldBounds, boundsCenter, cameraAngles, defaultFlightView, destinationPoint, distanceNm, fitZooms, isInBounds,
+  AIRPORT_FOLLOW_MAX_ZOOM, AIRPORT_LOCK_MARGIN_M, AIRPORT_LOCK_MIN_ZOOM, APPROACH_RADIUS_NM, CAMERA_3D, CAMERA_3D_WIDE,
+  FALLBACK_AIRFIELD_RADIUS_NM, MAP_VIEWS, PUJ_ARP, RD_BOUNDS, RD_FRAMING, REGION_RADIUS_NM, TERMINALS, VIEW_NAMES,
+  WORLD_CAMERA, WORLD_VIEW,
+  airfieldBounds, airportFollowLimits, airportLockBounds, airportLockOptions, boundsCenter, cameraAngles, centredBounds,
+  defaultFlightView, destinationPoint, distanceNm, fitZooms, isInBounds, targetCenter,
   presetForZoom, presetTargets, ringBounds, sameFits, standBounds, standPolygonPresetBounds, targetFor,
   thresholdsFromFits, transitionFor, unionBounds,
 } from './cameraPresets';
@@ -328,5 +331,112 @@ describe('camera presets', () => {
     // The answer is a copy: a caller that changes it changes no preset.
     cameraAngles('ramp', '3d').pitch = 10;
     expect(cameraAngles('ramp', '3d').pitch).toBe(55);
+  });
+
+  it('a screen that opts in (lane M7, Panorama) tilts Región and Aproximación too in 3D, and only in 3D', () => {
+    expect(CAMERA_3D_WIDE).toEqual({ region: { pitch: 35, bearing: 0 }, approach: { pitch: 45, bearing: -17 } });
+    expect(cameraAngles('region', '3d', { wide: true })).toEqual({ pitch: 35, bearing: 0 });
+    expect(cameraAngles('approach', '3d', { wide: true })).toEqual({ pitch: 45, bearing: -17 });
+    // The airport views keep their own tilt, and 2D stays flat everywhere.
+    expect(cameraAngles('airfield', '3d', { wide: true })).toEqual({ pitch: 40, bearing: -17 });
+    expect(cameraAngles('ramp', '3d', { wide: true })).toEqual({ pitch: 55, bearing: -17 });
+    expect(cameraAngles('region', '2d', { wide: true })).toEqual({ pitch: 0, bearing: 0 });
+    expect(cameraAngles('toString', '3d', { wide: true })).toEqual({ pitch: 0, bearing: 0 });
+    // Without the option, or with anything but true, region and approach stay flat.
+    expect(cameraAngles('region', '3d', { wide: 'yes' })).toEqual({ pitch: 0, bearing: 0 });
+    expect(cameraAngles('approach', '3d', {})).toEqual({ pitch: 0, bearing: 0 });
+    expect(Math.max(...Object.values(CAMERA_3D_WIDE).map(tilt => tilt.pitch))).toBeLessThan(65);
+  });
+
+  it('M8: the world view and the RD framing sit outside the four views, whose fits and thresholds stay the same', () => {
+    expect(WORLD_VIEW).toBe('world');
+    expect(MAP_VIEWS).toEqual(['world', 'region', 'approach', 'airfield', 'ramp']);
+    expect(VIEW_NAMES).toEqual(['region', 'approach', 'airfield', 'ramp']);
+    expect(RD_FRAMING).toBe('rd');
+    // The Dominican Republic and Puerto Rico; Punta Cana is inside.
+    expect(RD_BOUNDS).toEqual([[-72.1, 17.3], [-65.2, 20.1]]);
+    expect(isInBounds(PUJ_ARP, RD_BOUNDS)).toBe(true);
+    expect(isInBounds([-66.0018, 18.4394], RD_BOUNDS)).toBe(true);
+    // The world camera looks at the globe from afar, centred near the Dominican Republic.
+    expect(WORLD_CAMERA.zoom).toBeGreaterThanOrEqual(1.5);
+    expect(WORLD_CAMERA.zoom).toBeLessThanOrEqual(2);
+    expect(distanceNm(WORLD_CAMERA.center, PUJ_ARP)).toBeLessThan(150);
+
+    const targets = presetTargets({ stands: STANDS });
+    expect(targets.world).toEqual({ center: [...WORLD_CAMERA.center], zoom: WORLD_CAMERA.zoom, pitch: 0, bearing: 0 });
+    expect(targets.rd).toEqual({ bounds: [[-72.1, 17.3], [-65.2, 20.1]], pitch: 0, bearing: 0 });
+    expect(targetFor(targets, 'world')).toBe(targets.world);
+    expect(targetFor(targets, 'rd')).toBe(targets.rd);
+    expect(targetFor(targets, 'mars')).toBeNull();
+    expect(targetCenter(targets.world)).toEqual([...WORLD_CAMERA.center]);
+    expect(targetCenter(targets.rd)).toEqual(boundsCenter(RD_BOUNDS));
+    expect(targetCenter(null)).toBeNull();
+
+    // Without `world` the fits are the four, as before; with it they carry the world's fixed zoom too.
+    const four = fitZooms(cameraForWidth(1440), targets);
+    expect(Object.keys(four)).toEqual(VIEW_NAMES);
+    const five = fitZooms(cameraForWidth(1440), targets, { world: true });
+    expect(five).toEqual({ ...four, world: WORLD_CAMERA.zoom });
+    expect(thresholdsFromFits(five)).toEqual(thresholdsFromFits(four));
+    expect(sameFits(four, five)).toBe(false);
+    expect(sameFits(five, { ...five })).toBe(true);
+    expect(fitZooms(cameraForWidth(1440), { ...targets, world: null }, { world: true })).toBeNull();
+
+    // The selector: the world below half way between its zoom and the region fit; the four as before elsewhere.
+    const boundary = (five.world + five.region) / 2;
+    expect(presetForZoom(five.world, five)).toBe('world');
+    expect(presetForZoom(boundary - 0.01, five)).toBe('world');
+    expect(presetForZoom(boundary + 0.01, five)).toBe('region');
+    expect(presetForZoom(boundary - 0.01, four)).toBe('region');
+    for (const zoom of [five.region, five.approach, five.airfield, five.ramp, 22]) {
+      expect(presetForZoom(zoom, five)).toBe(presetForZoom(zoom, four));
+    }
+    // The RD framing reads as Región on the selector.
+    const rdZoom = cameraForWidth(1440)(targets.rd.bounds, { bearing: 0 }).zoom;
+    expect(presetForZoom(rdZoom, five)).toBe('region');
+    // Flat and north-up, also in 3D.
+    expect(cameraAngles('world', '3d')).toEqual({ pitch: 0, bearing: 0 });
+    expect(cameraAngles('rd', '3d')).toEqual({ pitch: 0, bearing: 0 });
+  });
+
+  it('M8: Monitoreo opens on the RD framing unless its flight is on approach', () => {
+    expect(defaultFlightView(null, { wide: 'rd' })).toBe('rd');
+    expect(defaultFlightView({ latitude: 18.6, longitude: -68.4 }, { wide: 'rd' })).toBe('approach');
+    expect(defaultFlightView(null)).toBe('region');
+  });
+});
+
+describe('a map fixed on the airport (M9)', () => {
+  it('centres a box on a point by growing it to the smallest box centred there that holds it', () => {
+    const box = [[-68.4, 18.5], [-68.3, 18.6]];
+    const centred = centredBounds(box, [-68.38, 18.55]);
+    // 0.08° to the east edge is the farther side, so the west edge moves out to 0.08° as well.
+    expect(centred[0][0]).toBeCloseTo(-68.46, 12);
+    expect(centred[0][1]).toBeCloseTo(18.5, 12);
+    expect(centred[1][0]).toBeCloseTo(-68.3, 12);
+    expect(centred[1][1]).toBeCloseTo(18.6, 12);
+    expect(centredBounds(box, null)).toBe(box);
+    expect(centredBounds(box, [Number.NaN, 18.5])).toBe(box);
+    const airfield = presetTargets({ layout: MDPC_LAYOUT, airfieldCentre: PUJ_ARP }).airfield.bounds;
+    expect(boundsCenter(airfield)[0]).toBeCloseTo(PUJ_ARP[0], 12);
+    expect(boundsCenter(airfield)[1]).toBeCloseTo(PUJ_ARP[1], 12);
+    // Without a centre the airfield is the layout box plus 300 m, as before.
+    expect(presetTargets({ layout: MDPC_LAYOUT }).airfield.bounds).toEqual(airfieldBounds({ layout: MDPC_LAYOUT }));
+  });
+
+  it('holds the camera in the airfield box plus 3 km and never under zoom 13', () => {
+    const lock = airportLockBounds({ layout: MDPC_LAYOUT });
+    const [west, south, east, north] = MDPC_LAYOUT.meta.bbox;
+    expect(northSouthMetres(lock[0][1], south)).toBeCloseTo(AIRPORT_LOCK_MARGIN_M, 0);
+    expect(northSouthMetres(north, lock[1][1])).toBeCloseTo(AIRPORT_LOCK_MARGIN_M, 0);
+    expect(eastWestMetres(lock[0][0], west, north)).toBeGreaterThanOrEqual(AIRPORT_LOCK_MARGIN_M - 1);
+    expect(eastWestMetres(east, lock[1][0], north)).toBeGreaterThanOrEqual(AIRPORT_LOCK_MARGIN_M - 1);
+    expect(airportLockOptions({ layout: MDPC_LAYOUT })).toEqual({ maxBounds: lock, minZoom: AIRPORT_LOCK_MIN_ZOOM });
+    expect(AIRPORT_LOCK_MIN_ZOOM).toBe(13);
+    // While it follows an aircraft the lock lets go, and the zoom reaches 22 (review of 2026-11-28).
+    expect(airportFollowLimits()).toEqual({ maxBounds: null, minZoom: null, maxZoom: AIRPORT_FOLLOW_MAX_ZOOM });
+    expect(AIRPORT_FOLLOW_MAX_ZOOM).toBe(22);
+    // Without a layout the 1.5 NM ring around the ARP stands in for the airfield box.
+    expect(isInBounds(PUJ_ARP, airportLockBounds())).toBe(true);
   });
 });

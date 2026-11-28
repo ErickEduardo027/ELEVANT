@@ -19,7 +19,7 @@ import { buildStandFeatures } from './standFeatures';
 import { ghostFeatures, placingGhost } from './placing';
 import {
   FOOTPRINT_GROUP, FOOTPRINT_PAINT, PLACING_PAINT, PROGRESS_PAINT, STAND_AUX_SOURCE, STAND_CHIP_LAYER, STAND_FEATURE_STATES,
-  STAND_FILL_LAYER, STAND_FOOTPRINT_SOURCE, STAND_GHOST_SOURCE, STAND_GROUP_SOURCE, STAND_LABEL_LAYER_IDS, STAND_LABEL_MODES,
+  STAND_FILL_LAYER, STAND_FOOTPRINT_SOURCE, STAND_GLYPH_SIZE, STAND_GHOST_SOURCE, STAND_GROUP_SOURCE, STAND_LABEL_LAYER_IDS, STAND_LABEL_MODES,
   STAND_LABEL_SOURCE, STAND_SOURCE, STAND_SOURCES, standDisplayAt, standFill, standLabelFilter, standOverlay, standPaint,
 } from './standLayers';
 import { attachStandGeometry } from './standModel';
@@ -126,6 +126,12 @@ describe('standOverlay', () => {
       'occ-stand-groups', 'occ-stand-groups-arriving', 'occ-stand-glyph', 'occ-stand-glyph-unsized', 'occ-stand-clock',
       'occ-stand-labels', 'occ-stand-labels-3', 'occ-stand-label-selected', 'occ-stand-label-selected-3', 'occ-stand-signal',
     ]);
+    // M4: every label of the stands is hidden close up (core/mapEngine.js: setCloseUp), no other layer of theirs (the
+    // selection's ring, also hidden close up, is the selection overlay's).
+    expect(style.layers.filter(layer => layer.metadata?.['occ:closeUp'] === 'hide' && layer.id !== 'occ-selection-ring')
+      .map(layer => layer.id))
+      .toEqual(style.layers.filter(layer => layer.metadata?.['occ:group'] === 'stands' && layer.type === 'symbol'
+        && layer.id !== 'occ-stand-signal').map(layer => layer.id));
     // A stand is picked by its polygon, a terminal by its chip.
     const picks = style.layers.filter(layer => layer.metadata?.['occ:pick']).map(layer => [layer.id, layer.metadata['occ:pick'], layer.metadata['occ:pickId']]);
     expect(picks).toEqual([[STAND_FILL_LAYER, 'stand', 'code'], [STAND_CHIP_LAYER, 'terminal', 'terminal']]);
@@ -541,6 +547,21 @@ describe('standOverlay', () => {
     expect(SIGNALS.notice.colorToken).toBeNull();
     expect(isSdfImage('signal-notice')).toBe(true);
     expect(passes(signal, { signal: 'notice' }, { type: 1 })).toBe(true);
+  });
+
+  it('keeps the aircraft glyph to scale and the signal and clock outside the stand up to zoom 22 (M9)', () => {
+    // The glyph doubles with every zoom step past 19.5, as the ground does.
+    const glyph = STAND_GLYPH_SIZE.slice(3);
+    expect(glyph.at(-2)).toBe(22);
+    expect(glyph.at(-1) / glyph.at(-3)).toBeCloseTo(2 ** 2.5, 2);
+    const layers = standLayers();
+    for (const id of ['occ-stand-clock', 'occ-stand-signal']) {
+      const offset = layers.find(layer => layer.id === id).layout['icon-offset'];
+      const stops = offset.slice(3);
+      // The last stops: 220 px out at zoom 20, then twice as far for each step to 22.
+      expect(stops.slice(-6).map(stop => (Array.isArray(stop) ? Math.abs(stop[1][1]) : stop)), id)
+        .toEqual([20, 220, 21, 440, 22, 880]);
+    }
   });
 
   it('never imports the dataset (source text guard)', () => {

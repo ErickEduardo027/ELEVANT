@@ -11,12 +11,12 @@ const ADAPTERS = [
   'src/features/flight-monitoring/components/FlightMap.jsx',
 ];
 
-// The old map that keeps its own lifecycle and still swaps the basemap style on a theme change: GoesCloudMap, the
-// satellite map of the console's weather detail, stays frozen until M8 turns the satellite into a layer of the one map
-// (PR U3 retired RegionalTrafficMap with the old dashboard). The test fails once it is gone, so this list never
-// outlives its file.
-const OLD_MAPS = [
+// No old map is left: PR U3 retired RegionalTrafficMap with the old dashboard, and lane M7 (2026-11-27) retired
+// GoesCloudMap, the satellite map of the console's weather detail, once the satellite became a layer of the one map.
+// Its exception went with it, so every file of the map stack is scanned.
+const RETIRED_MAPS = [
   'src/features/maps/GoesCloudMap.jsx',
+  'src/features/maps/RegionalTrafficMap.jsx',
 ];
 
 const SCRIPT = /\.(?:js|jsx|mjs)$/;
@@ -86,27 +86,29 @@ function mapStackFiles() {
 }
 
 describe('one style for the whole map lifetime', () => {
-  it('no module of the engine, style, ui, lab or the two adapters calls setStyle (the frozen GoesCloudMap is excluded)', () => {
+  it('no module of the engine, style, ui, lab or the two adapters calls setStyle, with no exception left', () => {
     const files = mapStackFiles();
     for (const file of ['core/mapEngine.js', 'core/workerUrl.js', 'style/occStyle.js', 'style/basemapLayers.js', 'style/mapImages.js',
       'stands/standLayers.js', 'stands/standFeatures.js', 'stands/useStandDisplay.js', 'core/useMinuteClock.js',
       'traffic/flightLayers.js', 'style/referenceLayers.js']) {
       expect(files).toContain(`src/features/maps/${file}`);
     }
-    for (const file of [...OLD_MAPS, ...ADAPTERS]) {
+    for (const file of ADAPTERS) {
       expect(existsSync(file), `${file} is gone: remove it from this test's lists`).toBe(true);
     }
+    // The retired maps, and the helpers only they used, stay gone (M7, 2026-11-27).
+    for (const file of [...RETIRED_MAPS, 'src/features/maps/basemapStyles.js',
+      'src/features/maps/collapseCompactAttribution.js']) {
+      expect(existsSync(file), file).toBe(false);
+    }
 
-    const scanned = files.filter(file => !OLD_MAPS.includes(file));
-    expect(scanned).toEqual(expect.arrayContaining(ADAPTERS));
-    expect(scanned.filter(file => callsSetStyle(readSource(file)))).toEqual([]);
-    // The frozen maps still do, so the scan would see a call where there is one.
-    for (const file of OLD_MAPS) expect(callsSetStyle(readSource(file)), file).toBe(true);
+    expect(files).toEqual(expect.arrayContaining(ADAPTERS));
+    expect(files.filter(file => callsSetStyle(readSource(file)))).toEqual([]);
   });
 
-  it('only the engine constructs a MapLibre map in the new map stack, the two adapters included', () => {
-    const newStack = mapStackFiles().filter(file => !OLD_MAPS.includes(file));
-    expect(newStack.filter(file => constructsMapLibreMap(readSource(file)))).toEqual(['src/features/maps/core/mapEngine.js']);
+  it('only the engine constructs a MapLibre map in the map stack, the two adapters included', () => {
+    expect(mapStackFiles().filter(file => constructsMapLibreMap(readSource(file))))
+      .toEqual(['src/features/maps/core/mapEngine.js']);
   });
 
   it('the scan reads calls and skips comments, strings and regular expressions', () => {

@@ -1,0 +1,247 @@
+import { act, cleanup, renderHook } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createElevantApiClient } from '@elevant/api-client';
+import {
+  createRemoteRegionWeatherAdapter, createSimulatedRegionWeatherAdapter, defaultRegionWeatherAdapter,
+  REGION_WEATHER_OPERATIONS,
+} from '../../services/regionWeatherService';
+import { createServerClock } from '../../services/serverClock';
+import { administratorAccess, DepartmentAccessProvider } from '../access/DepartmentAccessContext';
+import { DepartmentPermissionCodes } from '../access/testAccess';
+import { createOccShellValue, OccShellTestProvider } from '../admin-occ/shell/testing/occShellFixtures';
+import { MAP_PERMISSIONS } from '../maps/mapPermissions';
+import {
+  createRadarFrames, createRegionWeather, createRegionWeatherScenario, createSigmets, createWindGrid, radarTemplateAt,
+  WEATHER_NOON, WEATHER_STATION_ID,
+} from '../maps/testing/weatherFixtures';
+import {
+  REGION_WEATHER_MAX_DELAY_MS, REGION_WEATHER_READS, regionReadStatus, regionWeatherDelayMs, regionWeatherPollMs,
+  useRegionWeather,
+} from './useRegionWeather';
+
+const NOON = Date.parse(WEATHER_NOON);
+const ACCESS = administratorAccess('operations', DepartmentPermissionCodes.operations);
+const WITHOUT_MAP = { ...ACCESS, kind: 'Member', canManageDepartmentUsers: false,
+  permissions: ACCESS.permissions.filter(code => !MAP_PERMISSIONS.includes(code)) };
+
+let visibility = 'visible';
+const flush = (ms = 0) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+const readsOf = adapter => adapter.calls.map(call => call.read).sort();
+
+function setup(props = {}, { access = ACCESS, scenario = createRegionWeatherScenario(), adapter } = {}) {
+  const used = adapter ?? createSimulatedRegionWeatherAdapter({ scenario });
+  const shell = createOccShellValue();
+  const wrapper = ({ children }) => (
+    <DepartmentAccessProvider initialAccess={access} load={vi.fn().mockResolvedValue(access)} observe={false}>
+      <OccShellTestProvider value={shell}>{children}</OccShellTestProvider>
+    </DepartmentAccessProvider>
+  );
+  const hook = renderHook(current => useRegionWeather(current),
+    { wrapper, initialProps: { adapter: used, stationId: WEATHER_STATION_ID, ...props } });
+  return { ...hook, adapter: used, shell };
+}
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+  vi.setSystemTime(NOON);
+  visibility = 'visible';
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility });
+});
+
+afterEach(() => {
+  cleanup();
+  delete document.visibilityState;
+  vi.clearAllTimers();
+  vi.useRealTimers();
+});
+
+describe('useRegionWeather (lane M7)', () => {
+  it('reads the four regional answers once through the injected adapter', async () => {
+    const { result, adapter } = setup();
+    expect(result.current.region.status).toBe('loading');
+    await flush();
+    expect(readsOf(adapter)).toEqual(['radar', 'region', 'sigmets', 'wind']);
+    expect(adapter.calls.every(call => call.stationId === WEATHER_STATION_ID)).toBe(true);
+    const { region, sigmets, wind, radar } = result.current;
+    expect([region.status, sigmets.status, wind.status, radar.status]).toEqual(['success', 'success', 'success', 'success']);
+    expect(region.data.stations.map(station => station.icao)).toContain('MDPC');
+    expect(sigmets.data.sigmets).toHaveLength(3);
+    expect(radar.data.frames.length).toBeGreaterThan(0);
+    expect(wind.data.grid.points).toHaveLength(9);
+    expect(result.current.demo).toBe(false);
+  });
+
+  it('polls on its own pace: the radar index every five minutes, the rest every ten, the wind grid as the API asks', async () => {
+    const { adapter } = setup();
+    const count = read => adapter.calls.filter(call => call.read === read).length;
+    await flush();
+    await flush(300_000);
+    expect(count('radar')).toBe(2);
+    expect(count('region')).toBe(1);
+    await flush(300_000);
+    expect(count('radar')).toBe(3);
+    for (const read of ['region', 'sigmets']) expect(count(read)).toBe(2);
+    // The wind grid answers refreshAfterSeconds 3600: asked again after an hour, not after ten minutes.
+    expect(count('wind')).toBe(1);
+    await flush(3_000_000);
+    expect(count('wind')).toBe(2);
+  });
+
+  it("never asks sooner than the answer's refreshAfterSeconds (2026-11-28)", async () => {
+    const scenario = createRegionWeatherScenario();
+    const slow = (answer, seconds) => ({ ...answer, refreshAfterSeconds: seconds });
+    const waited = createRegionWeatherScenario({
+      region: slow(createRegionWeather({ status: 'Unavailable' }), 900),
+      sigmets: slow(createSigmets({ status: 'Unavailable' }), 900),
+      wind: slow(scenario.wind, 3600),
+      radar: slow(scenario.radar, 900),
+    });
+    const { adapter } = setup({}, { scenario: waited });
+    const count = read => adapter.calls.filter(call => call.read === read).length;
+    await flush();
+    await flush(600_000);
+    for (const read of ['region', 'sigmets', 'wind', 'radar']) expect(count(read), read).toBe(1);
+    await flush(300_000);
+    for (const read of ['region', 'sigmets', 'radar']) expect(count(read), read).toBe(2);
+    expect(count('wind')).toBe(1);
+    await flush(2_700_000);
+    expect(count('wind')).toBe(2);
+  });
+
+  it('waits while the tab is hidden and reads once it shows again', async () => {
+    const { adapter } = setup();
+    await flush();
+    visibility = 'hidden';
+    await flush(600_000);
+    expect(adapter.calls).toHaveLength(4);
+    visibility = 'visible';
+    act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+    await flush();
+    expect(adapter.calls.length).toBeGreaterThan(4);
+  });
+
+  it('an Unavailable or Disabled answer is empty and keeps its state for the layers menu', async () => {
+    const { result } = setup({}, { scenario: createRegionWeatherScenario({ status: 'Disabled' }) });
+    await flush();
+    expect(result.current.region.status).toBe('empty');
+    expect(result.current.region.data.status).toBe('Disabled');
+    expect(result.current.radar.data.frames).toEqual([]);
+  });
+
+  it('a failed read is an error and backs off; a refused one is unauthorized and is not asked again', async () => {
+    const failing = createRegionWeatherScenario({ failure: ({ read }) => (read === 'radar' ? { status: 503 } : null) });
+    const { result, adapter } = setup({}, { scenario: failing });
+    await flush();
+    expect(result.current.radar.status).toBe('error');
+    expect(result.current.region.status).toBe('success');
+    // The first retry after twice the five minutes, not after five.
+    await flush(300_000);
+    expect(adapter.calls.filter(call => call.read === 'radar')).toHaveLength(1);
+    await flush(300_000);
+    expect(adapter.calls.filter(call => call.read === 'radar')).toHaveLength(2);
+
+    cleanup();
+    const refused = createRegionWeatherScenario({ failure: ({ read }) => (read === 'sigmets' ? { status: 403 } : null) });
+    const second = setup({}, { scenario: refused });
+    await flush();
+    expect(second.result.current.sigmets.status).toBe('unauthorized');
+    await flush(3_600_000);
+    expect(second.adapter.calls.filter(call => call.read === 'sigmets')).toHaveLength(1);
+  });
+
+  it('reads nothing without a map permission, without a station, disabled, or for a read nobody wants', async () => {
+    const denied = setup({}, { access: WITHOUT_MAP });
+    await flush();
+    expect(denied.adapter.calls).toEqual([]);
+    expect(denied.result.current.region.status).toBe('unauthorized');
+    cleanup();
+    for (const props of [{ stationId: '' }, { enabled: false }]) {
+      const quiet = setup(props);
+      await flush();
+      expect(quiet.adapter.calls).toEqual([]);
+      expect(quiet.result.current.radar.status).toBe('loading');
+      cleanup();
+    }
+    const some = setup({ wanted: { wind: false, radar: false }, demo: true });
+    await flush();
+    expect(readsOf(some.adapter)).toEqual(['region', 'sigmets']);
+    expect(some.result.current.demo).toBe(true);
+  });
+
+  it('keeps the plan pace and the back-off pure', () => {
+    expect(Object.values(REGION_WEATHER_READS).map(entry => entry.pollMs)).toEqual([600_000, 600_000, 600_000, 300_000]);
+    const radar = REGION_WEATHER_READS.radar;
+    expect(regionWeatherDelayMs(radar)).toBe(300_000);
+    expect(regionWeatherDelayMs(radar, 2)).toBe(1_200_000);
+    expect(regionWeatherDelayMs(radar, 9)).toBe(REGION_WEATHER_MAX_DELAY_MS);
+    // The API's refreshAfterSeconds only ever slows a read down.
+    expect(regionWeatherPollMs(radar, 0, { refreshAfterSeconds: 3600 })).toBe(3_600_000);
+    expect(regionWeatherPollMs(radar, 0, { refreshAfterSeconds: 900 })).toBe(900_000);
+    expect(regionWeatherPollMs(radar, 0, { refreshAfterSeconds: 60 })).toBe(300_000);
+    expect(regionWeatherPollMs(radar, 2, { refreshAfterSeconds: 900 })).toBe(1_200_000);
+    expect(regionWeatherPollMs(radar, 0, null)).toBe(300_000);
+    expect(regionWeatherPollMs(radar, 0, { refreshAfterSeconds: Number.NaN })).toBe(300_000);
+    expect(['success', 'empty', 'forbidden', 'unauthorized', 'timeout', 'error', 'idle', 'loading'].map(regionReadStatus))
+      .toEqual(['success', 'empty', 'unauthorized', 'unauthorized', 'error', 'error', 'loading', 'loading']);
+  });
+});
+
+describe('the regional weather adapters (services/regionWeatherService.js)', () => {
+  it("the remote one calls the shared client with the station, and Panorama's default is the remote one", async () => {
+    const client = Object.fromEntries(Object.values(REGION_WEATHER_OPERATIONS).map(({ read }) => [read,
+      vi.fn().mockResolvedValue({ status: 'Live', serverTime: WEATHER_NOON })]));
+    const adapter = createRemoteRegionWeatherAdapter({ client });
+    for (const { method, read } of Object.values(REGION_WEATHER_OPERATIONS)) {
+      await expect(adapter[method]({ stationId: WEATHER_STATION_ID })).resolves.toMatchObject({ status: 'Live' });
+      expect(client[read]).toHaveBeenCalledWith({ stationId: WEATHER_STATION_ID },
+        expect.objectContaining({ cache: 'no-store', signal: expect.any(AbortSignal) }));
+    }
+    const failing = createRemoteRegionWeatherAdapter({ client: { ...client,
+      getOccSigmets: vi.fn().mockRejectedValue(Object.assign(new Error('refused'), { status: 503, code: 'x' })) } });
+    await expect(failing.getSigmets({ stationId: WEATHER_STATION_ID })).rejects.toMatchObject({ status: 503, code: 'x' });
+    const panorama = defaultRegionWeatherAdapter();
+    expect(panorama.simulated).toBeUndefined();
+    expect(Object.keys(panorama).sort()).toEqual(['clock', 'getRadarFrames', 'getRegionWeather', 'getSigmets', 'getWindGrid']);
+  });
+
+  it("the remote one reads the four answers of lane M6 through the real shared client, IEM's TJUA tiles included",
+    async () => {
+      const inForce = createSigmets().sigmets.slice(0, 1);
+      const answers = {
+        '/api/v1/occ/weather/region': createRegionWeather(),
+        '/api/v1/occ/weather/sigmets': createSigmets({ sigmets: inForce }),
+        '/api/v1/occ/weather/wind': createWindGrid(),
+        '/api/v1/occ/weather/radar': createRadarFrames(),
+      };
+      const fetch = vi.fn(async input => {
+        const url = new URL(String(input?.url ?? input));
+        expect(url.searchParams.get('stationId')).toBe(WEATHER_STATION_ID);
+        const body = answers[url.pathname];
+        return new Response(JSON.stringify(body ?? {}), { status: body ? 200 : 404,
+          headers: { 'content-type': 'application/json' } });
+      });
+      const client = createElevantApiClient({ baseUrl: 'https://api.example.test', fetch });
+      const adapter = createRemoteRegionWeatherAdapter({ client, clock: createServerClock() });
+      const [region, sigmets, wind, radar] = await Promise.all([adapter.getRegionWeather, adapter.getSigmets,
+        adapter.getWindGrid, adapter.getRadarFrames].map(read => read({ stationId: WEATHER_STATION_ID })));
+      expect(fetch).toHaveBeenCalledTimes(4);
+      expect(region.stations).toHaveLength(6);
+      expect(sigmets.sigmets.map(sigmet => sigmet.id)).toEqual(['MDCS-SIGMET-A1']);
+      expect(wind.refreshAfterSeconds).toBe(3600);
+      expect(radar.provider).toBe('iem-tjua');
+      expect(radar.frames.at(-1).tileUrlTemplate).toBe(radarTemplateAt(radar.frames.at(-1).time));
+      // An answer outside the contract is refused by the shared client, never drawn.
+      answers['/api/v1/occ/weather/radar'] = { ...createRadarFrames(), provider: 'rainviewer' };
+      await expect(adapter.getRadarFrames({ stationId: WEATHER_STATION_ID })).rejects.toBeInstanceOf(Error);
+    });
+
+  it('the simulated one moves its instants to now when asked, and answers 404 for a missing part', async () => {
+    const later = NOON + 3_600_000;
+    const adapter = createSimulatedRegionWeatherAdapter({ scenario: { ...createRegionWeatherScenario(), wind: null },
+      now: () => later, shift: true });
+    const region = await adapter.getRegionWeather({ stationId: WEATHER_STATION_ID });
+    expect(Date.parse(region.serverTime)).toBe(later);
+    await expect(adapter.getWindGrid({ stationId: WEATHER_STATION_ID })).rejects.toMatchObject({ status: 404 });
+    expect(adapter.calls.map(call => call.read)).toEqual(['region', 'wind']);
+  });
+});

@@ -1,14 +1,22 @@
 import { MercatorCoordinate } from 'maplibre-gl';
 import { Color, Matrix4, Quaternion, SRGBColorSpace, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
-import { OCC_PALETTE } from '../../occ-ui/occPalette';
+import { OCC_PALETTE, occColor } from '../../occ-ui/occPalette';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { destinationPoint, METRES_PER_NM } from '../airport/geo';
 import { thresholdsFromFits } from '../core/cameraPresets';
 import {
-  AIRCRAFT_3D_COLORS, AIRCRAFT_3D_RADIUS_NM, DROP_LINE_MIN_M, SHADOW, TYPE_MEMO_LIMIT, instanceKey, linearRgb,
-  mercatorFrame, planInstances, typeMemoSizeForTests, pivotOf, poseMatrix,
+  AIRCRAFT_3D_COLORS, AIRCRAFT_3D_RADIUS_NM, DROP_LINE_MIN_M, GROUND_TRAFFIC_3D_RADIUS_M, SHADOW, TYPE_MEMO_LIMIT,
+  instanceKey, linearRgb, liveryInstanceColours, mercatorFrame, planInstances, planLabels, planSprites,
+  typeMemoSizeForTests, pivotOf, poseMatrix,
 } from './instancePlan';
+import { contactShadowMatrix, contactShadowSize, contactShadowStrength } from './contactShadow';
+import { DEFAULT_LIVERY, LIVERIES, LIVERY_ZONES } from './liveries';
+import { SPRITE_CELLS, cellUv } from './spriteAtlas';
+import { altitudeColour, mapColorsFor } from '../style/mapColors';
+import { buildOccStyle } from '../style/occStyle';
+import { OUTSIDE_FILTER_OPACITY, trafficOverlay } from '../traffic/trafficLayers';
+import { DEMO_PLATE_IMAGE, ESTIMATED_RING_IMAGE } from '../style/trafficImages';
 import { AIRCRAFT_TYPES, CATEGORY_FALLBACKS } from './types';
 
 // Synthetic aircraft around the ARP of Punta Cana: invented ids and places, the shape of the map's RenderAircraft
@@ -346,6 +354,44 @@ describe('the 3D instance plan (design G3)', () => {
   });
 });
 
+describe('liveries and gear (PR M5)', () => {
+  it("only an AVIAM aircraft wears its airline's livery: the chosen one, other traffic and every shadow none", () => {
+    const list = [
+      aircraft('f:a', { airlineIcao: 'CMP' }),
+      aircraft('f:b', { bearing: 90, metres: 300, airlineIcao: 'JBU' }),
+      aircraft('h:c', { kind: 'other', bearing: 180, metres: 900, onGround: false, altM: 1_200, airlineIcao: 'UAL' }),
+      aircraft('f:d', { bearing: 270, metres: 300 }),
+    ];
+    const entry = planInstances(list, [], { ...OPTIONS, selectedId: 'f:b' }).get('A320');
+    expect(entry.ids).toEqual(['f:a', 'f:b', 'f:d', 'h:c', null, null, null, null]);
+    // AVIAM's own aircraft in their airline's livery, an unknown airline in the default one.
+    expect(entry.liveries).toEqual(['CMP', null, 'DEFAULT', null, null, null, null, null]);
+    expect(Object.isFrozen(entry.liveries)).toBe(true);
+    // The other traffic and the chosen aircraft keep their role colours.
+    expect(colourOf(entry, 1)).toEqual(Array.from(Float32Array.from(AIRCRAFT_3D_COLORS.selected)));
+    expect(colourOf(entry, 3)).toEqual(Array.from(Float32Array.from(AIRCRAFT_3D_COLORS.other)));
+    // A parked aircraft wears its airline's livery too.
+    const parked = planInstances([], [{ id: 's:A5', lon: list[0].lon, lat: list[0].lat, headingDeg: 0, typeIcao: 'A320',
+      model: 'A320', kind: 'aviam', airlineIcao: 'DAL' }], OPTIONS).get('A320');
+    expect(parked.liveries).toEqual(['DAL', null]);
+  });
+
+  it("puts the gear down on a stand and on the ground, up in a climb, and gives each shadow its aircraft's gear", () => {
+    const list = [
+      aircraft('f:a'),
+      aircraft('f:b', { bearing: 90, metres: 2_000, onGround: false, altM: FIELD_M + 900, vrateMs: 8, phase: 'climb' }),
+    ];
+    const entry = planInstances(list, [{ id: 's:A5', lon: list[0].lon, lat: list[0].lat, headingDeg: 0, typeIcao: 'A320',
+      model: 'A320', kind: 'aviam' }], { ...OPTIONS, fieldElevationM: FIELD_M }).get('A320');
+    expect(entry.ids.slice(0, 3)).toEqual(['f:a', 'f:b', 's:A5']);
+    expect([...entry.gear]).toEqual([1, 0, 1, 1, 0, 1]);
+    // An attitude that eased the gear decides it.
+    const eased = planInstances(list, [], { ...OPTIONS, fieldElevationM: FIELD_M,
+      attitudes: new Map([['f:b', { heightM: 900, pitchDeg: 5, bankDeg: 0, gearDown: true }]]) }).get('A320');
+    expect([...eased.gear]).toEqual([1, 1, 1, 1]);
+  });
+});
+
 describe('poseMatrix and attitudes (CN-30)', () => {
   const apply = (matrix, [x, y, z]) => new Vector3(x, y, z).applyMatrix4(new Matrix4().fromArray(matrix));
 
@@ -393,5 +439,337 @@ describe('poseMatrix and attitudes (CN-30)', () => {
     // Left out when the detailed model draws it.
     expect(planInstances([climbing], [], { zoom: 16, minZoom: 15, originLngLat: MDPC_LAYOUT.meta.arp,
       excludeId: 'f:climb' }).size).toBe(0);
+  });
+
+  it('plans the soft contact shadow of each aircraft, full on the ground and none from fadeM up (M4)', () => {
+    const parked = { id: 's:B2', lon: ARP[0] + 0.003, lat: ARP[1], headingDeg: 45, typeIcao: 'A320', kind: 'aviam' };
+    const low = aircraft('f:low', { bearing: 90, metres: 900, onGround: false, altM: FIELD_M + 10, trackDeg: 90 });
+    const high = aircraft('f:high', { bearing: 270, metres: 900, onGround: false, altM: FIELD_M + 400, trackDeg: 270 });
+    const plan = planInstances([aircraft('f:ground', { bearing: 180, metres: 500 }), low, high], [parked],
+      { ...OPTIONS, fieldElevationM: FIELD_M });
+    const entry = plan.get('A320');
+    expect(entry.ids.slice(0, entry.aircraftCount)).toEqual(['f:ground', 'f:high', 'f:low', 's:B2']);
+    expect(entry.contacts).toHaveLength(16 * entry.aircraftCount);
+    const strengths = [...entry.contactStrengths];
+    expect(strengths[0]).toBe(1);
+    expect(strengths[1]).toBe(0);
+    expect(strengths[2]).toBeCloseTo(contactShadowStrength(10), 6);
+    expect(strengths[3]).toBe(1);
+    // Under each aircraft, a little above the ground, along its heading and the size of its type.
+    const [x, y] = translationOf(entry, 3);
+    const expected = contactShadowMatrix({ x, y, headingDeg: 45, ...contactShadowSize(AIRCRAFT_TYPES.A320) });
+    [...entry.contacts.slice(48, 64)].forEach((value, index) => expect(value).toBeCloseTo(expected[index], 3));
+    // None for the one above fadeM.
+    expect([...entry.contacts.slice(16, 32)].every(value => value === 0)).toBe(true);
+    // The spread of the low one: wider than on the ground.
+    const along = index => Math.hypot(entry.contacts[16 * index + 4], entry.contacts[16 * index + 5]);
+    expect(along(2) / along(0)).toBeCloseTo(contactShadowSize(AIRCRAFT_TYPES.A320, 10).alongM
+      / contactShadowSize(AIRCRAFT_TYPES.A320).alongM, 4);
+  });
+});
+
+// M9: the liveries of Mapa de posiciones and the other traffic on the ground near the field.
+describe('the 3D instance plan with liveries (M9)', () => {
+  const zoneOf = (entry, zone, index) => (zone === 'fuselage'
+    ? colourOf(entry, index)
+    : Array.from(entry.zoneColors[zone].slice(3 * index, 3 * index + 3)));
+  const expectZones = (entry, index, colours) => {
+    for (const zone of LIVERY_ZONES) expect(zoneOf(entry, zone, index), zone).toEqual(float32(colours[zone]));
+  };
+
+  it("liveryInstanceColours gives each zone of the airline's livery in linear colour, the default livery otherwise", () => {
+    const copa = liveryInstanceColours({ callsign: 'CMP893' });
+    expect(Object.keys(copa)).toEqual(LIVERY_ZONES);
+    expect(copa).toEqual({ fuselage: linearRgb(LIVERIES.CMP.fuselage), belly: linearRgb(LIVERIES.CMP.belly),
+      tail: linearRgb(LIVERIES.CMP.tail), engine: linearRgb(LIVERIES.CMP.engine), wing: linearRgb(LIVERIES.CMP.wing) });
+    // The same frozen object for the same livery, however it is named.
+    expect(liveryInstanceColours({ airlineIata: 'CM' })).toBe(copa);
+    expect(Object.isFrozen(copa)).toBe(true);
+    expect(liveryInstanceColours({ callsign: 'N123AB' }).tail).toEqual(linearRgb(DEFAULT_LIVERY.tail));
+  });
+
+  it('without livery every zone of an aircraft is its monochrome colour, and the shadows are the shadow colour', () => {
+    const plan = planInstances([aircraft('f:p:mono', { bearing: 90, metres: 300, callsign: 'CMP893' })], [], OPTIONS);
+    const entry = plan.get('A320');
+    expect(Object.keys(entry.zoneColors)).toEqual(LIVERY_ZONES.filter(zone => zone !== 'fuselage'));
+    expectZones(entry, 0, Object.fromEntries(LIVERY_ZONES.map(zone => [zone, AIRCRAFT_3D_COLORS.aviam])));
+    expectZones(entry, 1, Object.fromEntries(LIVERY_ZONES.map(zone => [zone, AIRCRAFT_3D_COLORS.shadow])));
+  });
+
+  it("with livery parked and nearby aircraft wear their airline's colours; the chosen one and the shadows do not", () => {
+    const parked = { id: 's:B20', lon: ARP[0] + 0.001, lat: ARP[1], headingDeg: 200, typeIcao: 'A320', model: 'A320',
+      kind: 'aviam', flightNumber: 'CM 893' };
+    const taxiing = aircraft('f:p:taxi', { bearing: 45, metres: 600, callsign: 'JBU1234' });
+    const chosen = aircraft('f:p:chosen', { bearing: 135, metres: 600, callsign: 'DAL455' });
+    const plan = planInstances([taxiing, chosen], [parked], { ...OPTIONS, livery: true, selectedId: 'f:p:chosen' });
+    const entry = plan.get('A320');
+    expect(entry.ids).toEqual(['f:p:chosen', 'f:p:taxi', 's:B20', null, null, null]);
+    expectZones(entry, 0, Object.fromEntries(LIVERY_ZONES.map(zone => [zone, AIRCRAFT_3D_COLORS.selected])));
+    expectZones(entry, 1, liveryInstanceColours({ airlineIcao: 'JBU' }));
+    expectZones(entry, 2, liveryInstanceColours({ airlineIcao: 'CMP' }));
+    // A livery has a hue: jetBlue's fin is not its white body.
+    expect(zoneOf(entry, 'tail', 1)).not.toEqual(zoneOf(entry, 'fuselage', 1));
+    for (const index of [3, 4, 5]) {
+      expectZones(entry, index, Object.fromEntries(LIVERY_ZONES.map(zone => [zone, AIRCRAFT_3D_COLORS.shadow])));
+    }
+    // Its stand's scale for the parked one, the traffic's floor for the rest; the livery moves no matrix.
+    expect(Array.from(entry.floorLengths)).toEqual(float32([AIRCRAFT_TYPES.A320.lengthM, AIRCRAFT_TYPES.A320.lengthM, 0,
+      AIRCRAFT_TYPES.A320.lengthM, AIRCRAFT_TYPES.A320.lengthM, 0]));
+    const plain = planInstances([taxiing, chosen], [parked], { ...OPTIONS, selectedId: 'f:p:chosen' }).get('A320');
+    expect(Array.from(entry.matrices)).toEqual(Array.from(plain.matrices));
+  });
+
+  it('with livery the L1 models of PR M5 wear the same airline as the procedural zones, other traffic included', () => {
+    const parked = { id: 's:B20', lon: ARP[0] + 0.001, lat: ARP[1], headingDeg: 200, typeIcao: 'A320', model: 'A320',
+      kind: 'aviam', flightNumber: 'CM 893' };
+    const ground = aircraft('h:7a7b7c', { kind: 'other', onGround: true, bearing: 300, metres: 1_500, callsign: 'AAL1234' });
+    const chosen = aircraft('f:p:chosen', { bearing: 135, metres: 600, callsign: 'DAL455' });
+    const options = { ...OPTIONS, livery: true, groundRadiusM: GROUND_TRAFFIC_3D_RADIUS_M, selectedId: 'f:p:chosen' };
+    const entry = planInstances([ground, chosen], [parked], options).get('A320');
+    expect(entry.ids).toEqual(['f:p:chosen', 'h:7a7b7c', 's:B20', null, null, null]);
+    // Mapa de posiciones (M9): every aircraft but the chosen one wears its airline, the other traffic too.
+    expect(entry.liveries).toEqual([null, 'AAL', 'CMP', null, null, null]);
+    expectZones(entry, 1, liveryInstanceColours({ airlineIcao: 'AAL' }));
+    // Without livery (the other screens, contracts 2.4) only AVIAM's aircraft wear it.
+    const plain = planInstances([ground, chosen], [parked], { ...options, livery: false }).get('A320');
+    expect(plain.liveries).toEqual([null, null, 'CMP', null, null, null]);
+  });
+
+  it('draws other traffic on the ground in 3D within groundRadiusM of the ARP only, at its heading on the ground', () => {
+    const near = aircraft('h:7a7b7c', { kind: 'other', onGround: true, bearing: 300, metres: 1_500, trackDeg: 75,
+      typeIcao: 'B738', callsign: 'AAL1234' });
+    const beyond = aircraft('h:8a8b8c', { kind: 'other', onGround: true, bearing: 300,
+      metres: GROUND_TRAFFIC_3D_RADIUS_M + 500, typeIcao: 'B738' });
+    const hidden = aircraft('h:9a9b9c', { kind: 'other', onGround: true, metres: 200, hiddenInStand: true });
+    expect(GROUND_TRAFFIC_3D_RADIUS_M).toBe(4_000);
+    // Without the radius it stays 2D (contracts 2.4), with or without livery.
+    expect(planInstances([near, beyond], [], { ...OPTIONS, livery: true }).size).toBe(0);
+    const plan = planInstances([near, beyond, hidden], [], { ...OPTIONS, livery: true,
+      groundRadiusM: GROUND_TRAFFIC_3D_RADIUS_M });
+    expect([...plan.keys()]).toEqual(['B738']);
+    const entry = plan.get('B738');
+    expect(entry.ids).toEqual(['h:7a7b7c', null]);
+    const [x, y] = local([near.lon, near.lat]);
+    expect(translationOf(entry, 0)).toEqual(float32([x, y, 0]));
+    const nose = new Vector3(0, 1, 0).transformDirection(matrixOf(entry, 0));
+    expect(Math.atan2(nose.x, nose.y) * (180 / Math.PI)).toBeCloseTo(75, 4);
+    expectZones(entry, 0, liveryInstanceColours({ airlineIcao: 'AAL' }));
+    expect(entry.dropLines.length).toBe(0);
+    // A radius that is not a number is none.
+    expect(planInstances([near], [], { ...OPTIONS, groundRadiusM: Number.NaN }).size).toBe(0);
+  });
+});
+
+// PR M2: what the animated layer draws of the traffic, at the positions of one frame.
+describe('planSprites (PR M2)', () => {
+  const hex = channels => `#${channels.map(value => Math.round(value * 255).toString(16).padStart(2, '0')).join('')}`;
+  const tintOf = (sprites, index) => hex(Array.from(sprites.colors.slice(3 * index, 3 * index + 3)));
+  const spriteAt = (sprites, index) => ({
+    id: sprites.ids[index],
+    xy: [sprites.matrices[16 * index + 12], sprites.matrices[16 * index + 13]],
+    size: [sprites.sizes[2 * index], sprites.sizes[2 * index + 1]],
+    offset: [sprites.offsets[2 * index], sprites.offsets[2 * index + 1]],
+    cell: Array.from(sprites.cells.slice(4 * index, 4 * index + 4)),
+    opacity: sprites.opacities[index],
+    plain: sprites.plain[index],
+  });
+
+  it('draws one silhouette per aircraft where the frame puts it, turned to its track and tinted by its altitude', () => {
+    const climbing = aircraft('f:climb', { bearing: 90, metres: 2_000, onGround: false, altM: 1_200, trackDeg: 90 });
+    const taxiing = aircraft('h:taxi', { kind: 'other', bearing: 200, metres: 600, trackDeg: 45 });
+    const far = aircraft('h:far', { kind: 'other', bearing: 10, metres: 200 * METRES_PER_NM, onGround: false, altM: 9_000 });
+    const sprites = planSprites([climbing, taxiing, far], { originLngLat: ARP });
+    expect(sprites.count).toBe(3);
+    // Other traffic on the ground first, then in the air, then the ELEVANT flights.
+    expect([...sprites.ids]).toEqual(['h:taxi', 'h:far', 'f:climb']);
+    const frame = mercatorFrame(ARP);
+    const climb = spriteAt(sprites, 2);
+    expect(climb.xy[0]).toBeCloseTo(frame.toLocal([climbing.lon, climbing.lat])[0], 1);
+    expect(climb.xy[1]).toBeCloseTo(frame.toLocal([climbing.lon, climbing.lat])[1], 1);
+    // T(x, y, 0) · Rz(−track): a track of 90 points the nose (+y) east.
+    const nose = new Vector3(0, 1, 0).applyMatrix4(matrixOf(sprites, 2)).sub(new Vector3(...climb.xy, 0));
+    expect(nose.x).toBeCloseTo(1, 6);
+    expect(nose.y).toBeCloseTo(0, 6);
+    // Sizes in CSS pixels, as the icons are drawn (trafficFeatures: TRAFFIC_SCALES): 30 × 1.25 for an ELEVANT A320.
+    expect(climb.size).toEqual([37.5, 37.5]);
+    expect(climb.cell).toEqual(cellUv('ac-narrow-solid').map(value => expect.closeTo(value, 6)));
+    // The altitude scale of the map (3 900 ft rounds to the hundred), the ground's grey, far traffic at any distance.
+    expect(tintOf(sprites, 2)).toBe(altitudeColour('dark', { altFt: 3_900 }));
+    expect(tintOf(sprites, 0)).toBe(mapColorsFor('dark').altitude.ground);
+    expect(tintOf(sprites, 1)).toBe(altitudeColour('dark', { altFt: 29_500 }));
+    expect(spriteAt(sprites, 0).size).toEqual([0.6 * 30, 0.6 * 30]);
+    expect(Array.from(sprites.halos.slice(0, 3)).map(value => Math.round(value * 255)))
+      .toEqual([0x0b, 0x12, 0x18]);
+  });
+
+  it('marks the chosen, departing, stale, estimated and demo aircraft as the GeoJSON layers do', () => {
+    const chosen = aircraft('f:chosen', { onGround: false, altM: 300 });
+    const departure = aircraft('f:dep', { direction: 'Departure', bearing: 90, metres: 300 });
+    const stale = aircraft('h:stale', { kind: 'other', quality: 'stale', opacity: 0.8, bearing: 180, metres: 300 });
+    const estimated = aircraft('f:est', { quality: 'estimated', bearing: 270, metres: 300 });
+    const demo = aircraft('f:demo', { isDemo: true, bearing: 0, metres: 900 });
+    const sprites = planSprites([chosen, departure, stale, estimated, demo], { originLngLat: ARP, selectedId: 'f:chosen' });
+    const ids = [...sprites.ids];
+    // The chosen one after the rest, in the accent at 1.4; the ring and the plate last, without an id.
+    expect(ids).toEqual(['h:stale', 'f:dep', 'f:est', 'f:demo', 'f:chosen', null, null]);
+    expect(tintOf(sprites, 4)).toBe(OCC_PALETTE['--occ-accent']);
+    expect(spriteAt(sprites, 4).size).toEqual([1.4 * 30, 1.4 * 30]);
+    expect(spriteAt(sprites, 1).cell).toEqual(cellUv('ac-narrow-hollow').map(value => expect.closeTo(value, 6)));
+    expect(spriteAt(sprites, 0).opacity).toBeCloseTo(0.4, 6);
+    const ring = spriteAt(sprites, 5);
+    expect(ring.cell).toEqual(cellUv(ESTIMATED_RING_IMAGE).map(value => expect.closeTo(value, 6)));
+    expect(ring.size).toEqual([40 * 1.25, 40 * 1.25]);
+    expect(tintOf(sprites, 5)).toBe(OCC_PALETTE['--occ-muted']);
+    const plate = spriteAt(sprites, 6);
+    expect(plate).toMatchObject({ plain: 1, size: [SPRITE_CELLS[DEMO_PLATE_IMAGE].width, SPRITE_CELLS[DEMO_PLATE_IMAGE].height] });
+    // Below the silhouette (its half size 13.75 px takes the 25 px step), in screen pixels: an image with its own
+    // colours is a billboard (aircraft/trafficSprites.js: billboardClip), so its matrix only places its aircraft.
+    expect(plate.offset).toEqual([0, -25]);
+    expect(plate.xy).toEqual(spriteAt(sprites, 3).xy);
+    const up = new Vector3(0, 1, 0).applyMatrix4(matrixOf(sprites, 6)).sub(new Vector3(...plate.xy, 0));
+    expect(Math.atan2(up.x, up.y)).toBeCloseTo(0, 6);
+  });
+
+  it('paints the chosen aircraft and the estimated ring in the OCC colours of the theme, as the GeoJSON layers do', () => {
+    const chosen = aircraft('f:chosen', { onGround: false, altM: 300 });
+    const estimated = aircraft('f:est', { quality: 'estimated', bearing: 270, metres: 300 });
+    const haloOf = (sprites, index) => hex(Array.from(sprites.halos.slice(3 * index, 3 * index + 3)));
+    const paintOf = (theme, id) => buildOccStyle({ basemap: false, overlays: [trafficOverlay({ theme })], theme })
+      .layers.find(layer => layer.id === id).paint;
+    for (const theme of ['dark', 'light']) {
+      const sprites = planSprites([chosen, estimated], { originLngLat: ARP, selectedId: 'f:chosen', theme });
+      expect([...sprites.ids]).toEqual(['f:est', 'f:chosen', null]);
+      const selected = paintOf(theme, 'occ-traffic-selected');
+      expect(tintOf(sprites, 1)).toBe(occColor('accent', theme));
+      expect(haloOf(sprites, 1)).toBe(occColor('nav', theme));
+      expect(tintOf(sprites, 1)).toBe(selected['icon-color']);
+      expect(haloOf(sprites, 1)).toBe(selected['icon-halo-color']);
+      const ring = paintOf(theme, 'occ-traffic-estimated-ring');
+      expect(tintOf(sprites, 2)).toBe(occColor('muted', theme));
+      expect(haloOf(sprites, 2)).toBe(occColor('nav', theme));
+      expect(tintOf(sprites, 2)).toBe(ring['icon-color']);
+      expect(haloOf(sprites, 2)).toBe(ring['icon-halo-color']);
+    }
+    // The light theme's own tokens, not the dark ones.
+    const light = planSprites([chosen, estimated], { originLngLat: ARP, selectedId: 'f:chosen', theme: 'light' });
+    expect(tintOf(light, 1)).not.toBe(occColor('accent'));
+    expect(tintOf(light, 2)).not.toBe(occColor('muted'));
+  });
+
+  it('leaves out the silhouettes of models and of aircraft on their stand, never their marks', () => {
+    const modelled = aircraft('f:model', { quality: 'estimated' });
+    const parked = aircraft('f:parked', { isDemo: true, bearing: 90, metres: 200 });
+    const chosenParked = aircraft('f:chosen', { bearing: 180, metres: 200 });
+    const sprites = planSprites([modelled, parked, chosenParked], { originLngLat: ARP, selectedId: 'f:chosen',
+      modelIds: new Set(['f:model']), parkedIds: new Set(['f:parked', 'f:chosen']) });
+    expect([...sprites.ids]).toEqual(['f:chosen', null, null]);
+    expect(planSprites([], { originLngLat: ARP }).count).toBe(0);
+    expect(planSprites([{ ...modelled, hiddenInStand: true }], { originLngLat: ARP }).count).toBe(0);
+  });
+
+  it('plans models at any distance with radiusNm Infinity (the animated 3D)', () => {
+    const far = aircraft('h:far', { kind: 'other', bearing: 45, metres: 40 * METRES_PER_NM, onGround: false, altM: 3_000 });
+    expect(planInstances([far], [], OPTIONS).size).toBe(0);
+    const plan = planInstances([far], [], { ...OPTIONS, radiusNm: Infinity });
+    expect(plan.get('A320')).toMatchObject({ aircraftCount: 1, ids: ['h:far', null] });
+  });
+});
+
+describe('planLabels (PR M2)', () => {
+  const byId = labels => new Map(labels.tags.map(tag => [tag.id, tag]));
+  const traffic = [
+    aircraft('f:air', { bearing: 10, metres: 900, onGround: false, altM: 300, flightNumber: 'DM1' }),
+    aircraft('f:ground', { bearing: 90, metres: 300, flightNumber: 'DM2' }),
+    aircraft('f:parked', { bearing: 180, metres: 200, flightNumber: 'DM3' }),
+    aircraft('h:other', { kind: 'other', hex: 'other', callsign: 'JBU1', bearing: 270, metres: 500, onGround: false,
+      altM: 900 }),
+    aircraft('h:stale', { kind: 'other', hex: 'stale', callsign: 'JBU2', bearing: 300, metres: 500, onGround: false,
+      altM: 900, quality: 'stale', opacity: 0.8 }),
+  ];
+
+  it('below the ramp zoom: ELEVANT tags give way (the chosen first, then air, then ground), other traffic only on demand', () => {
+    const labels = planLabels(traffic, { originLngLat: ARP, zoom: 14, parkedIds: new Set(['f:parked']),
+      focusId: 'h:other', otherTagsMinZoom: 13 });
+    const tags = byId(labels);
+    expect([...tags.keys()].sort()).toEqual(['f:air', 'f:ground', 'h:other']);
+    expect(tags.get('f:air')).toMatchObject({ priority: 1, always: false });
+    expect(tags.get('f:ground')).toMatchObject({ priority: 2, always: false });
+    // The one under the pointer always shows, first.
+    expect(tags.get('h:other')).toMatchObject({ priority: 0, always: true });
+    expect(tags.get('h:other').tag).toMatchObject({ aviam: false, tag1: 'JBU1' });
+    // Placed where the frame draws it, past its silhouette as the GeoJSON tags are (radius + 0.4 em).
+    const [x, y] = mercatorFrame(ARP).toLocal([traffic[0].lon, traffic[0].lat]);
+    expect(tags.get('f:air')).toMatchObject({ x, y });
+    // A narrow-body (30 px icon, 4 px inset) at the ELEVANT scale 1.25: (30 - 8) / 2 × 1.25 = 13.75 px.
+    expect(tags.get('f:air').offsetPx).toBeCloseTo(13.8 + 0.4 * 12, 1);
+    // The parked aircraft is its stand's: no tag, no mark; nothing is chosen, so no ring.
+    expect(labels.marks.map(mark => mark.id)).not.toContain('f:parked');
+    expect(labels.marks).toHaveLength(4);
+    expect(labels.ring).toBeNull();
+  });
+
+  it('from the ramp zoom every ELEVANT tag shows; all the traffic tags only from their zoom, dimmed when stale', () => {
+    const close = byId(planLabels(traffic, { originLngLat: ARP, zoom: 15.5, labelsOn: true, otherTagsMinZoom: 16 }));
+    expect(close.get('f:air')).toMatchObject({ priority: 1, always: true });
+    expect(close.get('f:ground')).toMatchObject({ priority: 1, always: true });
+    expect(close.has('h:other')).toBe(false);
+    const all = byId(planLabels(traffic, { originLngLat: ARP, zoom: 16, labelsOn: true, otherTagsMinZoom: 16 }));
+    expect(all.get('h:other')).toMatchObject({ priority: 3, always: false });
+    expect(all.get('h:stale').opacity).toBeCloseTo(0.4, 6);
+    expect(all.get('h:stale').tag.suffix).toMatch(/^Sin actualizar/);
+  });
+
+  it('rings the chosen aircraft where the frame draws it and uses the words of the write', () => {
+    const words = new Map([['f:air', { aviam: true, dir: 'arr', tag1: 'WRITE', suffix: '', tag2: '', tagStand: '' }]]);
+    const labels = planLabels(traffic, { originLngLat: ARP, zoom: 12, selectedId: 'f:parked', words,
+      parkedIds: new Set(['f:parked']) });
+    const [x, y] = mercatorFrame(ARP).toLocal([traffic[2].lon, traffic[2].lat]);
+    expect(labels.ring).toEqual({ x, y });
+    expect(labels.marks.map(mark => mark.id)).toContain('f:parked');
+    expect(byId(labels).has('f:parked')).toBe(false);
+    expect(byId(labels).get('f:air').tag.tag1).toBe('WRITE');
+  });
+});
+
+// Integration of M2 with M4 and M8: the sprites and tags of the animated traffic close up and under the board's filter.
+describe('planSprites and planLabels close up and with the board filter (M4, M8)', () => {
+  const chosen = aircraft('f:chosen', { quality: 'estimated', isDemo: true, flightNumber: 'DM1' });
+  const demo = aircraft('f:demo', { isDemo: true, bearing: 90, metres: 400, flightNumber: 'DM2' });
+  const outsideOpacity = (sprites, id) => sprites.opacities[sprites.ids.indexOf(id)];
+
+  it('close up leaves out the followed aircraft\'s estimated ring and «Demo» plate, never its silhouette or others\' marks', () => {
+    const far = planSprites([chosen, demo], { originLngLat: ARP, selectedId: 'f:chosen' });
+    expect(far.ids.filter(id => id === null)).toHaveLength(3);
+    const close = planSprites([chosen, demo], { originLngLat: ARP, selectedId: 'f:chosen', closeUpId: 'f:chosen' });
+    expect([...close.ids]).toEqual(['f:demo', 'f:chosen', null]);
+    // The plate that stays is the other demo flight's, below its own silhouette.
+    expect([close.matrices[16 * 2 + 12], close.matrices[16 * 2 + 13]])
+      .toEqual([close.matrices[12], close.matrices[13]]);
+  });
+
+  it('close up shows no tag and no ring, the marks stay', () => {
+    const options = { originLngLat: ARP, zoom: 20, selectedId: 'f:chosen' };
+    const far = planLabels([chosen, demo], options);
+    expect(far.tags.map(tag => tag.id).sort()).toEqual(['f:chosen', 'f:demo']);
+    expect(far.ring).not.toBeNull();
+    const close = planLabels([chosen, demo], { ...options, closeUp: true });
+    expect(close.tags).toEqual([]);
+    expect(close.ring).toBeNull();
+    expect(close.marks.map(mark => mark.id).sort()).toEqual(['f:chosen', 'f:demo']);
+  });
+
+  it('dims the silhouette, the plate and the tag of what the board filter leaves out, not its estimated ring', () => {
+    const outsideIds = new Set(['f:chosen']);
+    const sprites = planSprites([chosen, demo], { originLngLat: ARP, outsideIds });
+    // f:demo, f:chosen, the ring, then the two plates (f:chosen's first).
+    expect([...sprites.ids]).toEqual(['f:chosen', 'f:demo', null, null, null]);
+    expect(outsideOpacity(sprites, 'f:chosen')).toBeCloseTo(OUTSIDE_FILTER_OPACITY, 6);
+    expect(outsideOpacity(sprites, 'f:demo')).toBe(1);
+    expect(sprites.opacities[2]).toBe(1);
+    expect(sprites.opacities[3]).toBeCloseTo(OUTSIDE_FILTER_OPACITY, 6);
+    expect(sprites.opacities[4]).toBe(1);
+    const tags = planLabels([chosen, demo], { originLngLat: ARP, zoom: 16, outsideIds }).tags;
+    expect(tags.find(tag => tag.id === 'f:chosen').opacity).toBeCloseTo(OUTSIDE_FILTER_OPACITY, 6);
+    expect(tags.find(tag => tag.id === 'f:demo').opacity).toBe(1);
   });
 });

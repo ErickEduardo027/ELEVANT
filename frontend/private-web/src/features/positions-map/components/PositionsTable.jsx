@@ -18,6 +18,10 @@ import { positionsMapMessages } from '../positionsMapMessages';
 // page tests and the cycle E2E find a stand by, `position-list-item`; the panel keeps `positions-side-panel`.
 
 const REASONS = Object.freeze(['no-positions', 'no-results']);
+// Its slab: the panel's in the drawer of a tablet; over the full-screen map (M1, `floating`) the near-opaque floating
+// one with the overlay radius, flat, as the other floating panels of the OCC.
+const PANEL_SLAB = 'rounded-md bg-occ-panel';
+const FLOATING_SLAB = 'rounded-[var(--occ-radius-overlay)] bg-occ-panel-float';
 
 /**
  * Who covers a stand: the board's coverage (now, with its windows of today: N26, standCoverageNames), else the agent of
@@ -44,10 +48,10 @@ export function visitAgentOf(position) {
 /**
  * The table. `positions` are the stands on screen (filtered by terminal and search, with their display state);
  * `emptyReason` is `no-positions` or `no-results` when there is none; `selectedPositionId` is the chosen stand and
- * `onSelectPosition(id)` chooses one.
+ * `onSelectPosition(id)` chooses one. `floating` draws it on the floating slab, over the full-screen map (M1).
  */
 export default function PositionsTable({ positions, emptyReason = null, selectedPositionId = null, onSelectPosition,
-  className = '' }) {
+  floating = false, className = '' }) {
   const { t, language } = useTranslation(positionsMapMessages);
   const { t: tMap } = useTranslation(mapMessages);
 
@@ -102,7 +106,7 @@ export default function PositionsTable({ positions, emptyReason = null, selected
   const reason = REASONS.includes(emptyReason) ? emptyReason : 'no-positions';
   return (
     <section data-testid="positions-side-panel" aria-label={t('list.drawer')}
-      className={`flex min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-occ-line bg-occ-panel ${className}`}>
+      className={`flex min-h-0 min-w-0 flex-col overflow-hidden border border-occ-line ${floating ? FLOATING_SLAB : PANEL_SLAB} ${className}`}>
       <OccDataTable caption={t('list.drawer')} columns={columns} rows={emptyReason ? [] : positions}
         getRowId={position => position.id} selectedId={selectedPositionId}
         onSelectRow={id => onSelectPosition?.(id)} rowTestId="position-list-item" stackBelow={false}

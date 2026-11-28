@@ -1,0 +1,173 @@
+{
+  "source": "Wikimedia Commons",
+  "logos": {
+    "AA": {
+      "commonsFile": "File:American_Airlines_wordmark_(2013).svg",
+      "page": "https://commons.wikimedia.org/wiki/File:American_Airlines_wordmark_(2013).svg",
+      "file": "https://upload.wikimedia.org/wikipedia/commons/8/81/American_Airlines_wordmark_%282013%29.svg",
+      "uploaded": "2016-03-04T01:03:40Z",
+      "commonsSha1": "65205d6d5d03549a784c195d8f0d0404db1a3228",
+      "tag": "PD-textlogo",
+      "trademarked": true,
+      "size": {
+        "width": 244.9,
+        "height": 24.391
+      },
+      "sha256": "b44d2633b3841971aacdc64c032d167dceaded807d9bb03ca6bd39783bc9df86"
+    },
+    "AC": {
+      "commonsFile": "File:Air_Canada_2017.svg",
+      "page": "https://commons.wikimedia.org/wiki/File:Air_Canada_2017.svg",
+      "file": "https://upload.wikimedia.org/wikipedia/commons/2/24/Air_Canada_2017.svg",
+      "uploaded": "2020-05-16T09:11:10Z",
+      "commonsSha1": "2db8e0dfd36d71e83026385ca30a25307ad79f45",
+      "tag": "PD-textlogo",
+      "trademarked": true,
+      "size": {
+        "width": 159.5,
+        "height": 20.8
+      },
+      "sha256": "c99d40d1e794ac1a196d1c666beefbdfa455276f100656aba7968f74b75afdc6"
+    },
+    "AV": {
+      "commonsFile": "File:Avianca_2023_wordmark.svg",
+      "page": "https://commons.wikimedia.org/wiki/File:Avianca_2023_wordmark.svg",
+      "file": "https://upload.wikimedia.org/wikipedia/commons/1/1f/Avianca_2023_wordmark.svg",
+      "uploaded": "2025-11-23T13:40:38Z",
+      "commonsSha1": "eaed2490924ff8180a5c6cdbd8a9962251ce21ec",
+      "tag": "PD-shape",
+      "trademarked": true,
+      "size": {
+        "width": 132.292,
+        "height": 30.08
+      },
+      "sha256": "1fea8f4c4de4ce843d05b6b0b0769fd0f682c76c773baae42649a46564392c91"
+    },
+    "B6": {
+      "commonsFile": "File:JetBlue_Airways_Logo.svg",
+      "page": "https://commons.wikimedia.org/wiki/File:JetBlue_Airways_Logo.svg",
+      "file": "https://upload.wikimedia.org/wikipedia/commons/3/3c/JetBlue_Airways_Logo.svg",
+      "uploaded": "2012-08-31T22:17:00Z",
+      "commonsSha1": "94d2d8e212e475ae7509b2a7d231b2db895c57a5",
+      "tag": "PD-textlogo",
+      "trademarked": true,
+      "size": {
+        "width": 584.8,
+        "height": 196.061
+      },
+      "sha256": "b8a822879347b60011d5f70c3d4bbb668947562ff3b18eaea49f8b3c8660d07b"
+    },
+    "DL": {
+      "commonsFile": "File:Delta_logo.svg",
+      "page": "https://commons.wikimedia.org/wiki/File:Delta_logo.svg",
+      "file": "https://upload.wikimedia.org/wikipedia/commons/d/d1/Delta_logo.svg",
+      "uploaded": "2018-12-18T21:10:06Z",
+      "commonsSha1": "0da240dcc0ff4e7bd33a1baef78d024b56448236",
+      "tag": "PD-textlogo",
+      "trademarked": true,
+      "size": {
+        "width": 1000,
+        "height": 154
+      },
+      "sha256": "9dcdd6acba0a4e0fffbe33b392f48480d3651ea6bf35d589d364eefa1ac9e61e"
+    },
+    "F9": {
+      "commonsFile": "File:Frontier_Airlines_logo.svg",
+      "page": "https://commons.wikimedia.org/wiki/File:Frontier_Airlines_logo.svg",
+      "file": "https://upload.wikimedia.org/wikipedia/commons/c/cf/Frontier_Airlines_logo.svg",
+      "uploaded": "2020-03-09T00:48:54Z",
+      "commonsSha1": "432e1956be19d56121de047225cedc4bf1a2cfc2",
+      "tag": "PD-textlogo",
+      "trademarked": true,
+      "size": {
+        "width": 250,
+        "height": 55
+      },
+      "sha256": "51c0d56f11230166129dfc95ca6f7743005a91d6be22560e8164f961512187ba"
+    },
+    "NK": {
+      "commonsFile": "File:Spirit_Airlines_logo_2014.svg",
+      "page": "https://commons.wikimedia.org/wiki/File:Spirit_Airlines_logo_2014.svg",
+      "file": "https://upload.wikimedia.org/wikipedia/commons/0/05/Spirit_Airlines_logo_2014.svg",
+      "uploaded": "2017-05-03T16:31:14Z",
+      "commonsSha1": "c066a99af1c4a9c68d39fe591f6d800c63c4fd96",
+      "tag": "PD-textlogo",
+      "trademarked": true,
+      "size": {
+        "width": 108.821,
+        "height": 35.952
+      },
+      "sha256": "6f2665dca6c14eb117cf0d472d8652cc89928e248d8b845b5ed5510ffe6ab560"
+    },
+    "P5": {
+      "commonsFile": "File:Wingo_logo_2016.svg",
+      "page": "https://commons.wikimedia.org/wiki/File:Wingo_logo_2016.svg",
+      "file": "https://upload.wikimedia.org/wikipedia/commons/a/a7/Wingo_logo_2016.svg",
+      "uploaded": "2025-06-05T23:46:46Z",
+      "commonsSha1": "aedf822dc0fdc76265feaedc810b41653b7d5070",
+      "tag": "PD-shape",
+      "trademarked": true,
+      "size": {
+        "width": 595.21,
+        "height": 158.55
+      },
+      "sha256": "deb9c79ec900eafc08968906a3a01dbf2e31c15518c5a8d675786ebb95c5092b"
+    },
+    "UA": {
+      "commonsFile": "File:United_Airlines_wordmark.svg",
+      "page": "https://commons.wikimedia.org/wiki/File:United_Airlines_wordmark.svg",
+      "file": "https://upload.wikimedia.org/wikipedia/commons/4/48/United_Airlines_wordmark.svg",
+      "uploaded": "2026-10-09T09:51:44Z",
+      "commonsSha1": "7eed8b44b1f6b011eb9bf25607b475526ef61caf",
+      "tag": "PD-textlogo",
+      "trademarked": true,
+      "size": {
+        "width": 2758,
+        "height": 435
+      },
+      "sha256": "9e2c130d056482dd1749441f6ff0baf4c06a86b7e9ff6391b33a5ddd43d3c737"
+    },
+    "UX": {
+      "commonsFile": "File:Air_Europa_Logo_(2015).svg",
+      "page": "https://commons.wikimedia.org/wiki/File:Air_Europa_Logo_(2015).svg",
+      "file": "https://upload.wikimedia.org/wikipedia/commons/5/59/Air_Europa_Logo_%282015%29.svg",
+      "uploaded": "2016-03-13T18:06:46Z",
+      "commonsSha1": "8e04a10eee88d25d17cdea65c1d34aaaf53007a3",
+      "tag": "PD-textlogo",
+      "trademarked": true,
+      "size": {
+        "width": 334,
+        "height": 65.5
+      },
+      "sha256": "356d5834c0c66afd9e5ad26c7bcaccdd0c6eccb22d2ba438e9071eafb91825f5"
+    },
+    "WG": {
+      "commonsFile": "File:Sunwings_logo_2015.svg",
+      "page": "https://commons.wikimedia.org/wiki/File:Sunwings_logo_2015.svg",
+      "file": "https://upload.wikimedia.org/wikipedia/commons/8/89/Sunwings_logo_2015.svg",
+      "uploaded": "2016-02-23T14:18:54Z",
+      "commonsSha1": "cb66b44583c55cf4a50996f9878c9075678a66b2",
+      "tag": "PD-textlogo",
+      "trademarked": true,
+      "size": {
+        "width": 240,
+        "height": 90.548
+      },
+      "sha256": "f9cb914fe7f52be66860928105a3e603c35bd7e5fc680f75e58c9cc679fabc5b"
+    },
+    "WS": {
+      "commonsFile": "File:WestJetLogo2018.svg",
+      "page": "https://commons.wikimedia.org/wiki/File:WestJetLogo2018.svg",
+      "file": "https://upload.wikimedia.org/wikipedia/commons/1/16/WestJetLogo2018.svg",
+      "uploaded": "2025-07-26T07:04:56Z",
+      "commonsSha1": "e220be6af04f0797ee05ca2845fff0395025f381",
+      "tag": "PD-textlogo",
+      "trademarked": true,
+      "size": {
+        "width": 602.2,
+        "height": 120.8
+      },
+      "sha256": "85a532f798ed3a9d83d80027640fc78b52da7612f6d50ee5e7256ab4b5244c9c"
+    }
+  }
+}

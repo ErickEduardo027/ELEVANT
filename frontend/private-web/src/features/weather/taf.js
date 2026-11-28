@@ -180,7 +180,20 @@ export function describeTafPeriod(period, { language = 'es' } = {}) {
   const locale = localeFor(language);
   const span = `${stationTime(period.from, locale)}–${stationTime(period.to, locale)}`;
   const label = changeLabel(t, period, language);
-  return [label ? `${label} ${span}` : span, windText(t, period.wind),
-    visibilityText(period.visibilityStatuteMiles, locale), period.weather, cloudsText(period.clouds)]
-    .filter(Boolean).join(' · ');
+  return [label ? `${label} ${span}` : span, ...conditionParts(t, period, locale)].join(' · ');
+}
+
+function conditionParts(t, period, locale) {
+  return [windText(t, period.wind), visibilityText(period.visibilityStatuteMiles, locale), period.weather,
+    cloudsText(period.clouds)].filter(Boolean);
+}
+
+/**
+ * What a period forecasts, without its kind or its span (M7, 2026-11-27: the text of a bar of the weather panel's TAF
+ * band, whose row and position already say both): «100° 15 kt G25 · 4 km · SHRA · BKN015». An empty string without a
+ * period or without conditions.
+ */
+export function tafPeriodConditions(period, { language = 'es' } = {}) {
+  if (!period) return '';
+  return conditionParts(createTranslator(mapMessages, language), period, localeFor(language)).join(' · ');
 }

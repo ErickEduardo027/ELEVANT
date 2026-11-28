@@ -3,6 +3,7 @@ import { useCallback } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { createSimulatedOccMapAdapter } from '../../../services/occMapService';
+import { createSimulatedRegionWeatherAdapter } from '../../../services/regionWeatherService';
 import { administratorAccess, DepartmentAccessProvider } from '../../access/DepartmentAccessContext';
 import { DepartmentPermissionCodes } from '../../access/testAccess';
 import { OCC_DEMO_MINUTE, OCC_REQUEST_BUDGET, OCC_REQUEST_PLAN } from '../../admin-occ/live/occRequestPlan';
@@ -12,7 +13,9 @@ import {
 } from '../../admin-occ/shell/testing/occShellFixtures';
 import { boardStand } from '../../maps/testing/mapFixtures';
 import { createTrafficScenario, TRAFFIC_NOON, TRAFFIC_STATION_ID } from '../../maps/testing/trafficFixtures';
+import { createRegionWeatherScenario } from '../../maps/testing/weatherFixtures';
 import { useMapSituation } from '../../maps/useMapSituation';
+import { useRegionWeather } from '../../weather/useRegionWeather';
 import { useConsoleData } from './useConsoleData';
 
 // The console within the OCC request budget (contratos 2.7), with the real hooks: useConsoleData over counted
@@ -111,6 +114,9 @@ async function replay(script) {
   const shell = createOccShellValue();
   const adapter = createSimulatedOccMapAdapter({ scenario: createTrafficScenario(), latencyMs: READ_LATENCY_MS });
   const services = consoleServices(record);
+  // Panorama's regional weather (lane M7) on its own polls of five and ten minutes.
+  const weather = createSimulatedRegionWeatherAdapter({ scenario: createRegionWeatherScenario(),
+    latencyMs: READ_LATENCY_MS });
   const wrapper = ({ children }) => (
     <DepartmentAccessProvider initialAccess={ACCESS} load={vi.fn().mockResolvedValue(ACCESS)} observe={false}>
       <OccShellTestProvider value={shell}>
@@ -122,6 +128,7 @@ async function replay(script) {
   renderHook(() => {
     useConsoleData({ accountId: OCC_TEST_ACCOUNT_ID, stationId: TRAFFIC_STATION_ID, stationCode: 'PUJ', services });
     useMapSituation({ stationId: TRAFFIC_STATION_ID, service: adapter });
+    useRegionWeather({ adapter: weather, stationId: TRAFFIC_STATION_ID });
   }, { wrapper });
 
   const hint = startObserver(record, resources => shell.announce(resources));
@@ -141,10 +148,13 @@ async function replay(script) {
   const counted = [
     ...requests.filter(request => inMinute(request.at)).map(request => request.key),
     ...adapter.calls.filter(call => inMinute(call.at - start)).map(call => call.read),
+    ...weather.calls.filter(call => inMinute(call.at - start)).map(call => `weather:${call.read}`),
   ];
   const byKey = {};
   for (const key of counted) byKey[key] = (byKey[key] ?? 0) + 1;
-  return { total: counted.length, byKey, subscriptions: shell.subscriptions() };
+  // The regional weather reads made since the mount, all four once when it mounts (lane M7).
+  const weatherReads = weather.calls.map(call => call.read);
+  return { total: counted.length, byKey, subscriptions: shell.subscriptions(), weatherReads };
 }
 
 const breakdown = result => `${result.total} requests: ${JSON.stringify(result.byKey)}`;
@@ -167,6 +177,9 @@ describe('the console within the OCC request budget (contratos 2.7)', () => {
     // Two cursor polls, the air picture every 10 s, every 60 s read once, the presence lease twice: the plan's minute.
     expect(rest.byKey).toEqual({ 'shell:cursor': 2, airPicture: 6, mapFlights: 1, planning: 1, positions: 1,
       reviewQueue: 1, readiness: 1, notices: 1, presence: 2 });
+    // The regional weather (lane M7) read once each when Panorama opened, and not again within the counted minute (the
+    // worst case: Panorama leaves out the wind grid while it is not drawn, 2026-11-28).
+    expect(rest.weatherReads.sort()).toEqual(['radar', 'region', 'sigmets', 'wind']);
     // Who listens to what: the flights to occ_planning, the queue to occ_review, the frame's notices to notifications.
     expect(rest.subscriptions).toEqual(['notifications', 'occ_planning', 'occ_review']);
   });

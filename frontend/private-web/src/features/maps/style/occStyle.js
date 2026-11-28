@@ -1,5 +1,6 @@
 import { occThemeColor } from '../../occ-ui/occPalette';
 import { BASEMAP_SOURCE_ID, FONT_STACKS, basemapLayers } from './basemapLayers';
+import { mapColorsFor } from './mapColors';
 import { basemapThemeColor } from './mapTheme';
 
 // The one style document of the OCC maps, built in code and handed to the map as an object: the NOC base map over
@@ -48,6 +49,15 @@ export const THRESHOLD_NAMES = Object.freeze(['polygons', 'codes', 'threeLine', 
 
 const THRESHOLD_KEYS = ['occ:minThreshold', 'occ:maxThreshold'];
 const EMPTY_COLLECTION = Object.freeze({ type: 'FeatureCollection', features: Object.freeze([]) });
+
+/**
+ * The deepest zoom MapLibre cuts the GeoJSON overlays into tiles at (PR M2, 2026-11-28); beyond it those tiles are drawn
+ * overzoomed. MapLibre's own default (18) cut «Seguir en 3D» (zoom 18.3, pitch 72) into some 25 tiles per source, and
+ * the CPU profile had MapLibre choosing, clipping and drawing those tiles of 11 sources as the largest cost of the
+ * main thread. At 16 a tile of the airfield is about 580 m wide, cut into 8192 units of 7 cm: under a third of a pixel
+ * at the map's deepest zoom (19.5), so nothing drawn moves. A source that names its own `maxzoom` keeps it.
+ */
+export const OVERLAY_MAX_ZOOM = 16;
 
 const RGBA = /^rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)$/;
 const hexOf = channels => `#${channels.map(value => Number(value).toString(16).padStart(2, '0')).join('')}`;
@@ -126,6 +136,34 @@ const HTTPS_TILE = /^https:\/\/[^/\s]+\/\S*$/;
 const isHttpsRaster = source => source?.type === 'raster' && source.url === undefined && Array.isArray(source.tiles)
   && source.tiles.length > 0 && source.tiles.every(tile => typeof tile === 'string' && HTTPS_TILE.test(tile));
 
+/** The projections a screen can ask for: Mercator (every map until M8) or the globe of Monitoreo (M8). */
+export const PROJECTIONS = Object.freeze(['mercator', 'globe']);
+
+/**
+ * The zoom from which MapLibre's globe is plain Mercator again: its `globe` projection blends from vertical perspective
+ * at zoom 11 to Mercator at 12 (maplibre-gl 6.16). Below it the three.js aircraft, which compose Mercator frames, wait
+ * (core/OccMap.jsx, M8) until they learn the globe's own matrices (M2).
+ */
+export const GLOBE_MERCATOR_ZOOM = 12;
+
+/**
+ * The atmosphere round the globe (M8), in the colours of `theme`: space, a rim of air at the horizon and a fog of the
+ * sea's colour. The atmosphere shows from afar and fades out between zoom 5 and 7, so the Región view and closer look
+ * as they do in Mercator; the fog stays at the horizon, off the ground of a tilted airfield.
+ */
+export function globeSky(theme = 'dark') {
+  const { space, horizon, fog } = mapColorsFor(theme).sky;
+  return {
+    'sky-color': space,
+    'horizon-color': horizon,
+    'fog-color': fog,
+    'sky-horizon-blend': 0.6,
+    'horizon-fog-blend': 0.5,
+    'fog-ground-blend': 0.9,
+    'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 5, 1, 7, 0],
+  };
+}
+
 /**
  * Builds the style. `basemap: false` leaves out the vector source and every tile layer (the land colour stays as the
  * background), which the map lab uses to render without the network. An overlay is
@@ -133,8 +171,12 @@ const isHttpsRaster = source => source?.type === 'raster' && source.url === unde
  * its slot and its `metadata['occ:group']`, may name a threshold in `occ:minThreshold` / `occ:maxThreshold`, and
  * keeps its order inside the slot. A source is GeoJSON, born empty, or (PR M8) a raster with its https `tiles`, taken
  * as given. Duplicate ids, other sources, unknown slots or thresholds and missing sources throw.
+ * `projection` (M8) is 'mercator' (the default: the style names no projection and no sky, as before) or 'globe': the
+ * style then carries `projection: { type: 'globe' }` and, unless `sky` is false or a sky of its own, the atmosphere of
+ * globeSky in the theme's colours. A screen opts into the globe this way, at start, never with setStyle.
  */
-export function buildOccStyle({ basemap = true, overlays = [], theme = 'dark' } = {}) {
+export function buildOccStyle({ basemap = true, overlays = [], theme = 'dark', projection = 'mercator', sky } = {}) {
+  if (!PROJECTIONS.includes(projection)) throw new RangeError(`Unknown map projection: ${String(projection)}`);
   const sources = {};
   const slots = new Map(SLOT_ORDER.map(slot => [slot, []]));
   const layers = basemapLayers({ theme });
@@ -160,7 +202,7 @@ export function buildOccStyle({ basemap = true, overlays = [], theme = 'dark' } 
       if (source?.type !== 'geojson') {
         throw new Error(`Overlay source ${id} must be a GeoJSON source or a raster source with https tiles`);
       }
-      sources[id] = { ...source, data: EMPTY_COLLECTION };
+      sources[id] = { maxzoom: OVERLAY_MAX_ZOOM, ...source, data: EMPTY_COLLECTION };
     }
   }
   for (const overlay of overlays) {
@@ -185,5 +227,11 @@ export function buildOccStyle({ basemap = true, overlays = [], theme = 'dark' } 
   }
 
   // A plain copy: nothing frozen or shared with the constants reaches MapLibre or the caller.
-  return JSON.parse(JSON.stringify({ version: 8, name: 'OCC', glyphs: GLYPHS_URL, sources, layers: ordered }));
+  const globe = projection === 'globe';
+  const skySpec = sky === false || !globe ? null : (sky !== null && typeof sky === 'object' ? sky : globeSky(theme));
+  return JSON.parse(JSON.stringify({
+    version: 8, name: 'OCC', glyphs: GLYPHS_URL, sources, layers: ordered,
+    ...(globe ? { projection: { type: 'globe' } } : {}),
+    ...(skySpec ? { sky: skySpec } : {}),
+  }));
 }

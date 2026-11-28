@@ -1,0 +1,127 @@
+{
+  "asset": {
+    "generator": "ELEVANT scripts/models/build-aircraft-models.mjs (glTF-Transform 4.5.1, meshoptimizer 1.2.0)",
+    "version": "2.0",
+    "copyright": "GPL-3.0-only; véanse LICENSE y NOTICE.md en esta carpeta"
+  },
+  "accessors": [
+    {
+      "type": "SCALAR",
+      "componentType": 5123,
+      "count": 41028,
+      "bufferView": 0,
+      "byteOffset": 0
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5122,
+      "count": 16545,
+      "max": [
+        32263,
+        32767,
+        8265
+      ],
+      "min": [
+        -32263,
+        -32767,
+        -8265
+      ],
+      "normalized": true,
+      "bufferView": 1,
+      "byteOffset": 0
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5120,
+      "count": 16545,
+      "normalized": true,
+      "bufferView": 1,
+      "byteOffset": 8
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 82056,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 82056,
+      "byteLength": 198540,
+      "byteStride": 12,
+      "target": 34962
+    }
+  ],
+  "buffers": [
+    {
+      "name": "buffer",
+      "uri": "l1.bin",
+      "byteLength": 280596
+    }
+  ],
+  "materials": [
+    {
+      "name": "body",
+      "doubleSided": true,
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.9,
+          0.91,
+          0.92,
+          1
+        ],
+        "roughnessFactor": 0.7,
+        "metallicFactor": 0
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "name": "AT76",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 1,
+            "NORMAL": 2
+          },
+          "mode": 4,
+          "material": 0,
+          "indices": 0
+        }
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "AT76",
+      "translation": [
+        0,
+        0,
+        4.127034991979599
+      ],
+      "scale": [
+        13.585000038146973,
+        13.585000038146973,
+        13.585000038146973
+      ],
+      "mesh": 0
+    }
+  ],
+  "scenes": [
+    {
+      "name": "AT76",
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "scene": 0,
+  "extensionsUsed": [
+    "KHR_mesh_quantization"
+  ],
+  "extensionsRequired": [
+    "KHR_mesh_quantization"
+  ]
+}

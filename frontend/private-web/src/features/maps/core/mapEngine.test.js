@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GPUInitializationError, createFakeMapLibre } from '../../../../tests/fakeMapLibre';
 import { createImageResolver } from '../style/mapImages';
 import { buildOccStyle, groupLayerIds } from '../style/occStyle';
-import { BASEMAP_TIMEOUT_MS, createMapEngine, liveEngineCount } from './mapEngine';
+import { BASEMAP_TIMEOUT_MS, createMapEngine, ENGINE_MAX_ZOOM, ENGINE_MIN_ZOOM, liveEngineCount } from './mapEngine';
+import { occSky } from './mapSky';
 import { MAPLIBRE_WORKER_URL } from './workerUrl';
 
 // Point stands with clusters, their codes behind a derived threshold, and flights: enough to exercise every call.
@@ -79,7 +80,8 @@ describe('map engine', () => {
       renderWorldCopies: false,
       canvasContextAttributes: { antialias: true },
       validateStyle: true,
-      fadeDuration: 0,
+      // PR M2: a 150 ms fade, so the frames drawn continuously do not each pay a full placement of the labels.
+      fadeDuration: 150,
       interactive: true,
       center: [-68.3634, 18.5674],
       zoom: 15,
@@ -283,6 +285,25 @@ describe('map engine', () => {
     expect(insetOf('top')).toBe('0px');
   });
 
+  it('setCameraLimits sets the bounds and zoom range, null for the engine defaults, and waits for a move with afterMove', () => {
+    const { engine, map } = setup();
+    expect(map.options).toMatchObject({ minZoom: ENGINE_MIN_ZOOM, maxZoom: ENGINE_MAX_ZOOM });
+    const box = [[-68.42, 18.53], [-68.32, 18.6]];
+    engine.setCameraLimits({ maxBounds: box, minZoom: 13 });
+    expect(map.options).toMatchObject({ maxBounds: box, minZoom: 13, maxZoom: ENGINE_MAX_ZOOM });
+    engine.setCameraLimits({ maxBounds: null, minZoom: null, maxZoom: 22 });
+    expect(map.options).toMatchObject({ maxBounds: null, minZoom: ENGINE_MIN_ZOOM, maxZoom: 22 });
+    // A move on its way: the limits wait for its end; a later call replaces a wait not yet applied.
+    map.moving = true;
+    engine.setCameraLimits({ maxBounds: box, minZoom: 12 }, { afterMove: true });
+    engine.setCameraLimits({ maxBounds: box, minZoom: 13 }, { afterMove: true });
+    expect(map.options.maxBounds).toBeNull();
+    map.moving = false;
+    map._fire('moveend', {});
+    expect(map.options).toMatchObject({ maxBounds: box, minZoom: 13, maxZoom: ENGINE_MAX_ZOOM });
+    expect(map.calls.filter(call => call.method === 'setMinZoom').map(call => call.args[0])).toEqual([13, ENGINE_MIN_ZOOM, 13]);
+  });
+
   it('setGroupVisibility toggles only the layers of that group', () => {
     const { engine, map } = ready(setup());
     const stands = groupLayerIds(STYLE, 'stands');
@@ -465,6 +486,21 @@ describe('map engine', () => {
     engine.destroy();
     expect(() => engine.setRasterTiles('occ-weather-goes', [latest])).not.toThrow();
     expect(map.calls.filter(call => call.method === 'setTiles')).toHaveLength(2);
+  });
+
+  it('setPaint sets a paint property of a layer once the style has loaded, and leaves a missing layer alone', () => {
+    // Lane M7: the frames of a weather loop switch their raster-opacity.
+    const { engine, map, state } = setup();
+    const paintCalls = () => map.calls.filter(call => call.method === 'setPaintProperty');
+    engine.setPaint('occ-stand-codes', 'text-opacity', 0.5);
+    expect(paintCalls()).toEqual([]);
+    state.emit(map, 'style.load');
+    expect(map.getLayer('occ-stand-codes').paint['text-opacity']).toBe(0.5);
+    expect(() => engine.setPaint('occ-nowhere', 'raster-opacity', 0)).not.toThrow();
+    expect(paintCalls().map(call => call.args)).toEqual([['occ-stand-codes', 'text-opacity', 0.5]]);
+    engine.destroy();
+    expect(() => engine.setPaint('occ-stand-codes', 'text-opacity', 1)).not.toThrow();
+    expect(paintCalls()).toHaveLength(1);
   });
 
   it('setFilter gives a layer its filter once the style has loaded, and MapLibre keeps it through a context loss', () => {
@@ -744,6 +780,164 @@ describe('map engine', () => {
     expect(quiet.map.listenerCount('click') + quiet.map.listenerCount('mousemove')).toBe(0);
   });
 
+  it('reports a double click with what is under it; prevented, MapLibre does not zoom, else it zooms in (M4)', () => {
+    let prevent = true;
+    const onDoubleClick = vi.fn(event => { if (prevent) event.preventDefault(); });
+    const { engine, map, state } = ready(setup({ onDoubleClick }));
+    engine.jumpTo({ center: [-68.36, 18.57], zoom: 16 });
+    const feature = { id: 1, layer: { id: 'occ-stand-points' }, properties: { code: 'B21' } };
+    state.setRenderedFeatures(map, () => [feature]);
+    const at = { point: { x: 10, y: 20 }, lngLat: { lng: -68.36, lat: 18.57 } };
+    expect(state.doubleClick(map, at)).toBe(true);
+    expect(onDoubleClick).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      point: { x: 10, y: 20 }, lngLat: [-68.36, 18.57], hit: { kind: 'stand', id: 'B21', feature },
+      preventDefault: expect.any(Function),
+    }));
+    expect(map.getZoom()).toBe(16);
+    // Not prevented (nothing to follow under it): MapLibre's own zoom, one level in.
+    prevent = false;
+    expect(state.doubleClick(map, at)).toBe(false);
+    expect(map.getZoom()).toBe(17);
+    // Without the handler the engine does not listen to double clicks.
+    expect(setup().map.listenerCount('dblclick')).toBe(0);
+  });
+
+  it('setOrbitMode lifts the zoom limit to 22 with the tilt and gives both back, easing the camera within (M4)', () => {
+    const { engine, map } = ready(setup({ camera: { center: [-68.36, 18.57], zoom: 17 } }));
+    expect(map.getMaxZoom()).toBe(19.5);
+    engine.setOrbitMode(true);
+    expect([map.getMaxZoom(), map.getMaxPitch()]).toEqual([22, 85]);
+    expect(map.doubleClickZoom.isEnabled()).toBe(false);
+    engine.jumpTo({ zoom: 21.6, pitch: 80 });
+    expect(map.getZoom()).toBe(21.6);
+    // Twice is once: the limits saved are the map's own, not the orbit's.
+    engine.setOrbitMode(true);
+    engine.setOrbitMode(false);
+    expect([map.getMaxZoom(), map.getMaxPitch()]).toEqual([19.5, 65]);
+    expect(map.getZoom()).toBe(19.5);
+    expect(map.doubleClickZoom.isEnabled()).toBe(true);
+  });
+
+  it('setCameraLimits and setOrbitMode do not fight: the orbit keeps zoom 22 and gives back the latest limits (M4, M9)', () => {
+    const { engine, map } = ready(setup({ camera: { center: [-68.36, 18.57], zoom: 15 } }));
+    const box = [[-68.42, 18.53], [-68.32, 18.6]];
+    // The airport lock of Mapa de posiciones (M9), then «Seguir en 3D» and, after it, the release of the lock.
+    engine.setCameraLimits({ maxBounds: box, minZoom: 13 });
+    engine.setOrbitMode(true);
+    expect(map.getMaxZoom()).toBe(22);
+    engine.setCameraLimits({ maxBounds: null, minZoom: null, maxZoom: 22 });
+    expect(map.options).toMatchObject({ maxBounds: null, minZoom: ENGINE_MIN_ZOOM, maxZoom: 22 });
+    // A screen's lower limit during the orbit waits for its end: the orbit keeps 22 meanwhile.
+    engine.setCameraLimits({ maxBounds: null, minZoom: null, maxZoom: 20 });
+    expect(map.getMaxZoom()).toBe(22);
+    engine.jumpTo({ zoom: 21.6 });
+    engine.setOrbitMode(false);
+    expect([map.getMaxZoom(), map.getZoom()]).toEqual([20, 20]);
+    // As OccMap ends it: the orbit off, the flight home under way, then the lock back once it lands (afterMove), which
+    // restores the screen's own range.
+    engine.setOrbitMode(true);
+    engine.setOrbitMode(false);
+    map.moving = true;
+    engine.setCameraLimits({ maxBounds: box, minZoom: 13 }, { afterMove: true });
+    expect(map.getMaxZoom()).toBe(20);
+    map.moving = false;
+    map._fire('moveend', {});
+    expect(map.options).toMatchObject({ maxBounds: box, minZoom: 13, maxZoom: ENGINE_MAX_ZOOM });
+    // A wait still pending when the orbit ends applies at the end of its jump, not under the limit it gives back.
+    engine.setOrbitMode(true);
+    engine.setCameraLimits({ maxBounds: null, minZoom: null, maxZoom: 22 });
+    map.moving = true;
+    engine.setCameraLimits({ maxBounds: box, minZoom: 13 }, { afterMove: true });
+    engine.setOrbitMode(false);
+    map.moving = false;
+    map._fire('moveend', {});
+    expect(map.options).toMatchObject({ maxBounds: box, minZoom: 13, maxZoom: ENGINE_MAX_ZOOM });
+    // Without the release (Panorama, Monitoreo) the orbit gives back the map's own limit.
+    engine.setOrbitMode(true);
+    engine.setOrbitMode(false);
+    expect(map.getMaxZoom()).toBe(ENGINE_MAX_ZOOM);
+  });
+
+  it('setCloseUp hides the layers marked for it and narrows the filtered ones; their groups win back (M4)', () => {
+    const overlay = {
+      sources: { 'occ-traffic': { type: 'geojson', promoteId: 'id' }, 'occ-stands': { type: 'geojson' } },
+      layers: [
+        { slot: 'traffic', id: 'occ-traffic-points', type: 'circle', source: 'occ-traffic',
+          metadata: { 'occ:group': 'traffic' } },
+        { slot: 'traffic', id: 'occ-traffic-tags', type: 'symbol', source: 'occ-traffic', filter: ['==', ['get', 'own'], false],
+          layout: { visibility: 'none' }, metadata: { 'occ:group': 'traffic.labels', 'occ:closeUp': 'hide' } },
+        { slot: 'traffic', id: 'occ-aviam-tags', type: 'symbol', source: 'occ-traffic', filter: ['get', 'own'],
+          metadata: { 'occ:group': 'traffic', 'occ:closeUpFilter': ['get', 'selected'] } },
+        { slot: 'standLabels', id: 'occ-stand-codes', type: 'symbol', source: 'occ-stands',
+          metadata: { 'occ:group': 'stands', 'occ:closeUp': 'hide' } },
+      ],
+    };
+    const style = buildOccStyle({ overlays: [overlay] });
+    const { engine, map } = ready(setup({ style }));
+    const shown = id => map.getLayer(id).layout.visibility ?? 'visible';
+    expect(engine.isCloseUp()).toBe(false);
+    // The other traffic's tags are on from the layers menu.
+    engine.setGroupVisibility('traffic.labels', true);
+    engine.setCloseUp(true);
+    expect(engine.isCloseUp()).toBe(true);
+    expect(['occ-traffic-points', 'occ-traffic-tags', 'occ-stand-codes', 'occ-aviam-tags'].map(shown))
+      .toEqual(['visible', 'none', 'none', 'visible']);
+    expect(map.getFilter('occ-aviam-tags')).toEqual(['all', ['get', 'own'], ['get', 'selected']]);
+    // Nothing more while the answer stays.
+    const calls = map.layoutCalls.length + map.filterCalls.length;
+    engine.setCloseUp(true);
+    expect(map.layoutCalls.length + map.filterCalls.length).toBe(calls);
+    // A group turned on close up stays hidden until the camera goes back; one turned off stays off after it.
+    engine.setGroupVisibility('stands', true);
+    expect(shown('occ-stand-codes')).toBe('none');
+    engine.setGroupVisibility('traffic.labels', false);
+    engine.setCloseUp(false);
+    expect(['occ-traffic-tags', 'occ-stand-codes'].map(shown)).toEqual(['none', 'visible']);
+    expect(map.getFilter('occ-aviam-tags')).toEqual(['get', 'own']);
+    engine.setGroupVisibility('traffic.labels', true);
+    engine.setCloseUp(true);
+    engine.setCloseUp(false);
+    expect(shown('occ-traffic-tags')).toBe('visible');
+  });
+
+  it('setSky waits for the style, sets the sky once, takes it away and puts it back after a context loss (M4)', () => {
+    const context = setup();
+    const { engine, map, state } = context;
+    const skyCalls = () => map.calls.filter(call => call.method === 'setSky');
+    const sky = occSky('dark');
+    // No sky asked for: MapLibre is never told to have none.
+    engine.setSky(null);
+    expect(engine.getSky()).toBeNull();
+    // Before the style has loaded the call waits.
+    engine.setSky(sky);
+    expect(skyCalls()).toHaveLength(0);
+    ready(context);
+    expect(skyCalls()).toHaveLength(1);
+    expect(map.getSky()).toEqual(sky);
+    expect(engine.getSky()).toEqual(sky);
+    // The same sky again, even as another object, changes nothing; a copy is kept, so changing the caller's does not.
+    engine.setSky(occSky('dark'));
+    sky['sky-color'] = '#ff0000';
+    expect(skyCalls()).toHaveLength(1);
+    expect(engine.getSky()['sky-color']).toBe(occSky('dark')['sky-color']);
+    // A context loss drops it with the style; the rebuilt style gets it back.
+    state.loseContext(map);
+    state.restoreContext(map);
+    state.emit(map, 'style.load');
+    expect(skyCalls()).toHaveLength(2);
+    expect(map.getSky()).toEqual(occSky('dark'));
+    // null takes it away (MapLibre's setSky(undefined)), and a context loss then brings none back.
+    engine.setSky(null);
+    expect(skyCalls().at(-1).args).toEqual([undefined]);
+    expect(map.getSky()).toBeUndefined();
+    state.loseContext(map);
+    state.restoreContext(map);
+    state.emit(map, 'style.load');
+    expect(skyCalls()).toHaveLength(3);
+    // The sky is a property of the style: never a setStyle.
+    expect(map.styleCalls).toHaveLength(0);
+  });
+
   it('onUserGesture hears a person pan, zoom, rotate and tilt the map, never a move the code makes', () => {
     const onUserGesture = vi.fn();
     const onCamera = vi.fn();
@@ -887,6 +1081,35 @@ describe('map engine', () => {
     expect(map.listenerCount()).toBe(0);
     expect(setup().map.listenerCount('idle')).toBe(0);
     return expect(idle).resolves.toBe(true);
+  });
+
+  it('reports every frame MapLibre draws to onRender, and listens to render only with a handler (PR M2)', () => {
+    const onRender = vi.fn();
+    const { engine, map, state } = ready(setup({ onRender }));
+    state.emit(map, 'render');
+    state.emit(map, 'render');
+    expect(onRender).toHaveBeenCalledTimes(2);
+    expect(onRender.mock.calls[0]).toEqual([]);
+    engine.destroy();
+    expect(map.listenerCount()).toBe(0);
+    expect(setup().map.listenerCount('render')).toBe(0);
+  });
+
+  it('rendererInfo reads the GPU from the WebGL context of the map, unmasked where it can (PR M2)', () => {
+    const { engine, map } = ready(setup());
+    expect(engine.rendererInfo()).toBeNull();
+    const debug = { UNMASKED_RENDERER_WEBGL: 0x9246, UNMASKED_VENDOR_WEBGL: 0x9245 };
+    const values = new Map([[0x9246, 'ANGLE (Intel, Intel(R) UHD Graphics Direct3D11)'], [0x9245, 'Google Inc. (Intel)'],
+      [0x1f01, 'WebKit WebGL'], [0x1f00, 'WebKit']]);
+    const gl = { RENDERER: 0x1f01, VENDOR: 0x1f00, getParameter: key => values.get(key), getExtension: () => debug };
+    map.painter = { context: { gl } };
+    expect(engine.rendererInfo()).toEqual({ renderer: 'ANGLE (Intel, Intel(R) UHD Graphics Direct3D11)',
+      vendor: 'Google Inc. (Intel)' });
+    // A browser without the extension answers the plain strings.
+    gl.getExtension = () => null;
+    expect(engine.rendererInfo()).toEqual({ renderer: 'WebKit WebGL', vendor: 'WebKit' });
+    engine.destroy();
+    expect(engine.rendererInfo()).toBeNull();
   });
 
   it('getVisibleBounds is the part of the map the insets leave in sight, never more than getBounds', () => {

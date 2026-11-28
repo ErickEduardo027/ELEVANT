@@ -138,3 +138,188 @@ export function createAerodromeWeather({ status = 'Live', observedAt, raw, wind,
 export function createWeatherScenario(options = {}) {
   return { at: WEATHER_NOON, weather: createAerodromeWeather(options), failure: null };
 }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The regional weather (lane M7): synthetic answers of GET occ/weather/region, occ/weather/sigmet, occ/weather/wind and
+// occ/weather/radar in the shapes lane M6 builds (OccRegionWeatherResponse, OccSigmetsResponse, OccWindGridResponse,
+// OccRadarFramesResponse), at the lab's noon. Invented reports at the real positions of six airports of
+// region.context.json; nothing comes from aviationweather.gov, Open-Meteo, RainViewer or IEM.
+
+/** The credit of the regional reads. */
+export const REGION_CREDIT = Object.freeze({ name: 'NOAA Aviation Weather Center', url: 'https://aviationweather.gov' });
+
+// One station's METAR with the fields of the contract; `wind` as [direction, speed, gust].
+function regionMetar({ icao, category, wind = [100, 12, null], visibility = 6, ceiling = null, observedMinutes = -10,
+  temperature = 28 }) {
+  const [direction, speed, gust] = wind;
+  const observedAt = weatherInstant(observedMinutes);
+  const windText = direction === null
+    ? `VRB${pad(speed, 2)}KT`
+    : `${pad(direction, 3)}${pad(speed, 2)}${gust ? `G${pad(gust, 2)}` : ''}KT`;
+  return {
+    raw: `${icao} ${dayTime(observedAt)}Z ${windText} 9999 SCT020 ${temperature}/22 Q1014`,
+    observedAt,
+    windDirectionDegrees: direction,
+    windSpeedKnots: speed,
+    windGustKnots: gust,
+    visibilityStatuteMiles: visibility,
+    ceilingFeet: ceiling,
+    flightCategory: category,
+    temperatureCelsius: temperature,
+    dewpointCelsius: 22,
+    altimeterHectopascals: 1014,
+  };
+}
+
+/**
+ * The stations of the regional answer: MDPC VFR with the airfield's wind, MDSD MVFR, MDLR IFR in a shower, TJSJ LIFR in
+ * a squall (gust 45 kt), MDST without a category and calm, and MDCY without a report (no METAR).
+ */
+export const REGION_STATIONS = Object.freeze([
+  { icao: 'MDPC', iata: 'PUJ', name: 'Punta Cana', p: [-68.364558, 18.567093], metar: { category: 'VFR', wind: [100, 13, null] } },
+  { icao: 'MDSD', iata: 'SDQ', name: 'Las Américas', p: [-69.6689, 18.429701], metar: { category: 'MVFR', wind: [120, 8, null], ceiling: 2500 } },
+  { icao: 'MDLR', iata: 'LRM', name: 'La Romana', p: [-68.911111, 18.452222], metar: { category: 'IFR', wind: [90, 18, 28], visibility: 2, ceiling: 800 } },
+  { icao: 'TJSJ', iata: 'SJU', name: 'San Juan', p: [-66.001801, 18.4394], metar: { category: 'LIFR', wind: [60, 35, 45], visibility: 0.5, ceiling: 300 } },
+  { icao: 'MDST', iata: 'STI', name: 'Cibao', p: [-70.604431, 19.40406], metar: { category: null, wind: [0, 0, null] } },
+  { icao: 'MDCY', iata: 'AZS', name: 'Samaná El Catey', p: [-69.737405, 19.269259], metar: null },
+].map(entry => Object.freeze(entry)));
+
+const regionStation = ({ icao, iata, name, p, metar }, observedMinutes) => ({
+  icao,
+  iata,
+  name,
+  latitude: p[1],
+  longitude: p[0],
+  metar: metar === null ? null : regionMetar({ icao, ...metar, observedMinutes }),
+  taf: icao === 'MDPC'
+    ? { raw: WEATHER_TAF_RAW, issuedAt: weatherInstant(-240), validFrom: weatherInstant(-180), validTo: weatherInstant(1260) }
+    : null,
+});
+
+const WITH_REPORTS = new Set(['Live', 'Stale']);
+
+// The envelope every regional answer has, with the reasons of the contract (OCC_REGION_WEATHER_REASONS): Disabled is
+// `not_configured`, Stale and Unavailable a provider's failure, Live none.
+function envelope(status, { serverTime = WEATHER_NOON, refreshAfterSeconds = 300 } = {}) {
+  let reason = null;
+  if (status === 'Disabled') reason = 'not_configured';
+  else if (status !== 'Live') reason = 'provider_error';
+  return {
+    stationId: WEATHER_STATION_ID,
+    status,
+    reason,
+    serverTime,
+    refreshAfterSeconds,
+    credit: { ...REGION_CREDIT },
+  };
+}
+
+/**
+ * An answer of GET occ/weather/region at noon in one of its four states: Live and Stale carry REGION_STATIONS (a Stale
+ * one observed three hours before), Unavailable and Disabled none. `stations` replaces the list as given.
+ */
+export function createRegionWeather({ status = 'Live', stations, serverTime } = {}) {
+  const observed = status === 'Stale' ? -180 : -10;
+  return {
+    ...envelope(status, { serverTime }),
+    stations: stations ?? (WITH_REPORTS.has(status) ? REGION_STATIONS.map(station => regionStation(station, observed)) : []),
+  };
+}
+
+/**
+ * The SIGMETs of the region at noon: a convective one (TS, EMBD, up to FL450) north of Hispaniola in force from an
+ * hour before to three hours after noon, a turbulence one already over, and a tropical cyclone that starts tomorrow.
+ */
+export function createSigmets({ status = 'Live', sigmets, serverTime } = {}) {
+  const list = [
+    {
+      id: 'MDCS-SIGMET-A1', firId: 'MDCS', hazard: 'TS', qualifier: 'EMBD', validFrom: weatherInstant(-60),
+      validTo: weatherInstant(180), baseFeet: null, topFeet: 45000,
+      raw: 'MDCS SIGMET A1 VALID 131400/131800 MDSD- MDCS SANTO DOMINGO FIR EMBD TS OBS TOP FL450 MOV W 10KT NC',
+      polygon: [[-70.5, 20.2], [-68.5, 20.4], [-68.2, 19.6], [-70.2, 19.4], [-70.5, 20.2]],
+    },
+    {
+      id: 'TJZS-SIGMET-B2', firId: 'TJZS', hazard: 'TURB', qualifier: 'SEV', validFrom: weatherInstant(-360),
+      validTo: weatherInstant(-60), baseFeet: 25000, topFeet: 39000, raw: 'TJZS SIGMET B2 SEV TURB FL250/390',
+      polygon: [[-67, 19.5], [-65.5, 19.5], [-65.5, 18.8], [-67, 18.8]],
+    },
+    {
+      id: 'MDCS-SIGMET-A2', firId: 'MDCS', hazard: 'TC', qualifier: null, validFrom: weatherInstant(1440),
+      validTo: weatherInstant(1800), baseFeet: null, topFeet: null, raw: 'MDCS SIGMET A2 TC',
+      polygon: [[-72, 17], [-70, 17], [-70, 16], [-72, 16]],
+    },
+  ];
+  return {
+    ...envelope(status, { serverTime, refreshAfterSeconds: 600 }),
+    sigmets: sigmets ?? (WITH_REPORTS.has(status) ? list : []),
+  };
+}
+
+/**
+ * A radar tile template of the fixtures for a frame time, as the API writes it (lane M6, IemRadarParser): IEM's ridge
+ * tiles of TJUA's N0B scan of that minute, on the IEM origin the CSP allows.
+ */
+export const radarTemplateAt = time => 'https://mesonet.agron.iastate.edu/c/tile.py/1.0.0/ridge::JUA-N0B-'
+  + `${time.replace(/\D/g, '').slice(0, 12)}/{z}/{x}/{y}.png`;
+
+/** The deepest zoom of IEM's radar tiles, as the API answers it with frames (lane M6). */
+export const RADAR_TILES_MAX_ZOOM = 10;
+
+/**
+ * An answer of GET occ/weather/radar at noon: `count` frames ten minutes apart, the latest five minutes before noon,
+ * from IEM's TJUA (`provider` iem-tjua, max zoom RADAR_TILES_MAX_ZOOM). Unavailable and Disabled answers have no frames,
+ * no provider and zoom 0, as the contract asks.
+ */
+export function createRadarFrames({ status = 'Live', count = 8, provider = 'iem-tjua', frames, serverTime } = {}) {
+  const withFrames = WITH_REPORTS.has(status);
+  const list = Array.from({ length: count }, (_, index) => {
+    const time = weatherInstant(-5 - (count - 1 - index) * 10);
+    return { time, tileUrlTemplate: radarTemplateAt(time) };
+  });
+  return {
+    ...envelope(status, { serverTime, refreshAfterSeconds: 300 }),
+    provider: withFrames ? provider : null,
+    maxZoom: withFrames ? RADAR_TILES_MAX_ZOOM : 0,
+    frames: frames ?? (withFrames ? list : []),
+  };
+}
+
+/**
+ * An answer of GET occ/weather/wind at noon: a 3 × 3 grid over the region, the trade wind from the east. Unavailable and
+ * Disabled answers keep the grid's box without points, as the contract asks.
+ */
+export function createWindGrid({ status = 'Live', serverTime } = {}) {
+  const [lonMin, lonMax, latMin, latMax] = [-72, -64, 16.5, 21.5];
+  const points = [];
+  for (let row = 0; row < 3; row += 1) {
+    for (let column = 0; column < 3; column += 1) {
+      points.push({
+        latitude: latMin + (row * (latMax - latMin)) / 2,
+        longitude: lonMin + (column * (lonMax - lonMin)) / 2,
+        speedKnots: 12 + row * 2 + column,
+        directionDegrees: 90 + column * 5,
+      });
+    }
+  }
+  return {
+    ...envelope(status, { serverTime, refreshAfterSeconds: 3600 }),
+    validAt: WITH_REPORTS.has(status) ? WEATHER_NOON : null,
+    grid: { lonMin, lonMax, latMin, latMax, columns: 3, rows: 3, points: WITH_REPORTS.has(status) ? points : [] },
+  };
+}
+
+/**
+ * The four regional answers at noon, for services/regionWeatherService.js: createSimulatedRegionWeatherAdapter
+ * ({ scenario: createRegionWeatherScenario() }). `status` sets the state of all four; each answer can be replaced
+ * (`region`, `sigmets`, `wind`, `radar`), and `failure` is passed through.
+ */
+export function createRegionWeatherScenario({ status = 'Live', region, sigmets, wind, radar, failure } = {}) {
+  return {
+    at: WEATHER_NOON,
+    region: region ?? createRegionWeather({ status }),
+    sigmets: sigmets ?? createSigmets({ status }),
+    wind: wind ?? createWindGrid({ status }),
+    radar: radar ?? createRadarFrames({ status }),
+    ...(failure ? { failure } : {}),
+  };
+}

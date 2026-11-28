@@ -53,3 +53,49 @@ export const SHOWCASE_SCENARIO = Object.freeze({
   // Not a traffic scenario of lab/trafficScenes.js: the showcase of the detailed models.
   showcase: true,
 });
+
+// M5 (2026-11-28): the gallery of the third-party 3D models for the visual review of every type
+// (tests/visual/lab/map-lab.models.spec.mjs): each type of public/models/aircraft/manifest.json three times, with three
+// liveries of liveries.js (the airlines in turn, and the generic one without a callsign), stopped on the grass and the
+// runway of Punta Cana with the track of 08. The three liveries of a type stand in three rows 400 m apart, so the camera
+// of one never has another row between it and its aircraft; the types follow one another 160 m apart along the row.
+// Invented addresses (the f0d1 block) and ZZ- registrations. Pure data.
+
+/** The types with a model of their own (public/models/aircraft/manifest.json), in the order of the gallery. */
+export const GALLERY_TYPES = Object.freeze([
+  'A319', 'A320', 'A20N', 'A321', 'A21N', 'A332', 'A333', 'A339', 'B737', 'B738', 'B739', 'B38M', 'B39M', 'B752',
+  'B772', 'B77W', 'B788', 'B789', 'E190', 'E195', 'CRJ9', 'AT76',
+]);
+// The ICAO callsign prefixes of liveries.js in turn, and null for the generic livery.
+const GALLERY_AIRLINES = Object.freeze([
+  'CMP', 'AAL', 'DAL', 'UAL', 'JBU', 'SWA', 'ACA', 'WJA', 'SWG', 'TSC', 'AFR', 'AEA', 'AVA', 'RPB', 'DWI', 'NKS', 'FFT',
+  null,
+]);
+const WIDE = new Set(['A332', 'A333', 'A339', 'B772', 'B77W', 'B788', 'B789']);
+const GALLERY_TRACK = 73.8;
+const GALLERY_ROW_M = 400;
+const GALLERY_STEP_M = 160;
+const hex2 = value => value.toString(16).padStart(2, '0');
+const lateral = (point, metres) => destinationPoint(point, END_08.headingTrue + (metres < 0 ? 90 : -90), Math.abs(metres));
+
+/** The aircraft of the gallery: `{ hex, callsign, registration, type, airline, livery, at, track }`, three per type. */
+export const GALLERY_AIRCRAFT = Object.freeze(GALLERY_TYPES.flatMap((type, index) => [0, 1, 2].map(row => {
+  const serial = index * 3 + row;
+  const airline = GALLERY_AIRLINES[serial % GALLERY_AIRLINES.length];
+  return Object.freeze({
+    hex: `f0d1${hex2(serial)}`, callsign: airline ? `${airline}${100 + serial}` : null,
+    registration: `ZZ-G${hex2(serial).toUpperCase()}`, type, airline, livery: row,
+    at: lateral(along08(300 + index * GALLERY_STEP_M), [0, GALLERY_ROW_M, -GALLERY_ROW_M][row]), track: GALLERY_TRACK,
+  });
+})));
+
+/** The scenario of the gallery scene, as lab/trafficScenes.js reads one. */
+export const GALLERY_SCENARIO = Object.freeze({
+  at: TRAFFIC_NOON,
+  picture: createAirPicture({
+    aircraft: GALLERY_AIRCRAFT.map(item => ({ ...fix(item), category: WIDE.has(item.type) ? 'A5' : 'A3' })),
+  }),
+  flights: createMapFlights({ flights: [] }),
+  tracks: {},
+  showcase: true,
+});

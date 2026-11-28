@@ -4,6 +4,7 @@ import { sharedFakeMapLibre } from '../../../../tests/fakeMapLibre';
 import { OCC_PALETTES } from '../../occ-ui/occPalette';
 import { ThemeProvider, useTheme } from '../../shell/useTheme';
 import { BASEMAP_THEMES } from '../style/mapTheme';
+import { occSky } from './mapSky';
 import OccMap from './OccMap';
 
 vi.mock('maplibre-gl', async () => (await import('../../../../tests/fakeMapLibre.js')).sharedFakeMapLibre().module);
@@ -61,5 +62,27 @@ describe('OccMap and the theme', () => {
     expect(dark.getBearing()).toBeCloseTo(20, 6);
     // Contracts 2.4: the style is handed over at creation and never swapped.
     for (const map of fake.state.maps) expect(map.styleCalls).toEqual([]);
+  });
+
+  it('shows the sky of its theme in the 3D views and none in 2D, without a setStyle (M4)', () => {
+    window.localStorage.setItem('elevant-theme', 'light');
+    const element = pitchMode => <ThemeProvider><OccMap pitchMode={pitchMode} /></ThemeProvider>;
+    const view = render(element('3d'));
+    const map = fake.state.liveMaps().at(-1);
+    act(() => fake.state.emit(map, 'style.load'));
+    expect(map.getSky()).toEqual(occSky('light'));
+    view.rerender(element('2d'));
+    expect(map.getSky()).toBeUndefined();
+    view.rerender(element('3d'));
+    expect(map.getSky()).toEqual(occSky('light'));
+    expect(map.calls.filter(call => call.method === 'setSky')).toHaveLength(3);
+    expect(map.styleCalls).toEqual([]);
+  });
+
+  it('opens a 2D map without telling MapLibre about a sky (M4)', () => {
+    render(<OccMap pitchMode="2d" />);
+    const map = fake.state.liveMaps().at(-1);
+    act(() => fake.state.emit(map, 'style.load'));
+    expect(map.calls.filter(call => call.method === 'setSky')).toEqual([]);
   });
 });

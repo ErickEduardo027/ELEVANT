@@ -14,6 +14,7 @@ import {
   createConsoleApi, mapFlights, notices, ping, planningSnapshot, positionsBoard, reviewQueue, stationDay,
 } from './visual/occ/fixtures/consoleApi.mjs';
 import { OCC_ACCESS, STATION } from './visual/occ/fixtures/occApi.mjs';
+import { REGION_WEATHER_PATHS } from './visual/occ/fixtures/regionWeatherApi.mjs';
 
 // The synthetic API of the console's visual spec (tests/visual/occ/console.spec.mjs) must be answers the app accepts:
 // the shared client validates every read strictly, and the console checks the station of each answer, so a fixture
@@ -182,5 +183,37 @@ describe('visual suite console fixtures', () => {
     const reading = toWeatherReading(answer.json, { receivedAt: Date.now() });
     expect(reading).toMatchObject({ apiStatus: 'Live', source: { name: 'NOAA Aviation Weather Center' } });
     expect(reading.observation.metar).toMatchObject({ qnhHpa: 1015, wind: { directionDeg: 100, speedKt: 13 } });
+  });
+
+  it('the regional weather of Panorama (lane M7) answers live and passes the strict validators of the shared client', async () => {
+    vi.useFakeTimers({ now: NOW, toFake: ['Date'] });
+    const stationId = STATION.stationId;
+    const api = createConsoleApi();
+    const read = path => api.handle(get(`${path}?stationId=${stationId}`),
+      new URL(`https://api.elevant.test${path}?stationId=${stationId}`));
+    const region = read(REGION_WEATHER_PATHS.region);
+    const sigmets = read(REGION_WEATHER_PATHS.sigmets);
+    const wind = read(REGION_WEATHER_PATHS.wind);
+    const radar = read(REGION_WEATHER_PATHS.radar);
+    for (const answer of [region, sigmets, wind, radar]) {
+      expect(answer.status).toBe(200);
+      expect(answer.json).toMatchObject({ stationId, status: 'Live', serverTime: new Date(NOW).toISOString() });
+    }
+    await expect(clientAnswering(region.json).getOccRegionWeather({ stationId })).resolves.toBeTruthy();
+    await expect(clientAnswering(sigmets.json).getOccSigmets({ stationId })).resolves.toBeTruthy();
+    await expect(clientAnswering(wind.json).getOccWindGrid({ stationId })).resolves.toBeTruthy();
+    await expect(clientAnswering(radar.json).getOccRadarFrames({ stationId })).resolves.toBeTruthy();
+    // MDPC is VFR with its TAF; the radar's frames are IEM's TJUA tiles of their minute, the latest 5 minutes old.
+    expect(region.json.stations.find(station => station.icao === 'MDPC')).toMatchObject({ metar: { flightCategory: 'VFR' },
+      taf: { raw: expect.stringMatching(/^TAF MDPC /) } });
+    expect(radar.json.frames).toHaveLength(8);
+    expect(radar.json.frames.at(-1)).toEqual({ time: new Date(NOW - 5 * 60_000).toISOString(),
+      tileUrlTemplate: 'https://mesonet.agron.iastate.edu/c/tile.py/1.0.0/ridge::JUA-N0B-202611141455/{z}/{x}/{y}.png' });
+    expect(api.reads).toMatchObject({ 'regionWeather.region': 1, 'regionWeather.sigmets': 1, 'regionWeather.wind': 1,
+      'regionWeather.radar': 1 });
+    // Without it the four reads are left to the suite's Problem Details 404.
+    const without = createConsoleApi({ regionWeather: false });
+    expect(without.handle(get(REGION_WEATHER_PATHS.radar), new URL(`https://api.elevant.test${REGION_WEATHER_PATHS.radar}`)))
+      .toBeNull();
   });
 });

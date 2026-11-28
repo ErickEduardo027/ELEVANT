@@ -1,14 +1,18 @@
 import { mapStandCode } from '../../positions-map/positionsMapMappers';
 import { METRES_PER_NM, haversineM } from '../airport/geo';
 import { createAttitudeTracker } from '../aircraft/attitude';
-import { AIRCRAFT_3D_RADIUS_NM, aircraft3dColors, instanceKey, planInstances } from '../aircraft/instancePlan';
+import {
+  AIRCRAFT_3D_RADIUS_NM, GROUND_TRAFFIC_3D_RADIUS_M, aircraft3dColors, instanceKey, planInstances, planLabels,
+  planSprites,
+} from '../aircraft/instancePlan';
 import { resolveLivery } from '../aircraft/liveries';
 import { loadAircraft3d } from '../aircraft/loadAircraft3d';
 import { resolveAircraftType } from '../aircraft/types';
-import { isDrawn } from '../traffic/trafficFeatures';
+import { interpolate, keyframesMoving } from '../traffic/keyframes';
 import { sunPosition } from '../traffic/solar';
-import { TRAFFIC_SOURCE } from '../traffic/trafficFeatures';
-import { isRetired, standCodeOf } from './cameraPresets';
+import { TRAFFIC_SOURCE, isDrawn, tagTextOf } from '../traffic/trafficFeatures';
+import { TAG_DECLUTTER_UNTIL_ZOOM } from '../traffic/trafficLayers';
+import { isInBounds, isRetired, standCodeOf } from './cameraPresets';
 
 // The 3D aircraft of an OccMap (PR M7, design G1 to G4 as contracts 2.3 amend them): the person's 2D/3D choice, the
 // stands' parked aircraft for the instance plan, the translation of a 3D pick into the map's selection, the frame-time
@@ -16,6 +20,17 @@ import { isRetired, standCodeOf } from './cameraPresets';
 // the map which aircraft the 3D draws, so their 2D symbols give way. The controller has no clock and no read of its
 // own: OccMap hands it the aircraft of each write of its traffic, on its one frame loop (core/frameLoop.js), and the
 // layer reads the plan of that write.
+//
+// PR M2, the animated traffic: with `animate` on and the write's keyframes (traffic/keyframes.js), the layer draws
+// every aircraft of the traffic, in 2D or 3D, at the positions of each frame: the controller interpolates the keyframes
+// at the frame loop's instant (`frameTime`) for the aircraft in or around the area in sight (`frameZone`), and plans
+// their models (3D on, in sight at any distance, never smaller than MIN_MODEL_PX) and flat sprites (the rest: the
+// silhouettes, dashed rings and «Demo» plates the GeoJSON layers drew; aircraft/instancePlan.js: planSprites). A frame
+// where nothing moves reuses the last answer. Until the layer draws (the chunk loading, no WebGL2, a failed renderer or
+// atlas) and while its context is lost, the map keeps its GeoJSON icons, as before. The tags and the chosen aircraft's
+// ring move with them (aircraft/trafficLabels.js: planLabels, laid out by the layer), and the groups the layers menu
+// hides (`shown`) and other traffic on the ground below its threshold (`otherGroundMinZoom`) are left out, as the GeoJSON
+// layers leave them out.
 
 /** Where a browser keeps the 2D/3D choice of the OCC maps (design G4). */
 export const MODE_3D_STORAGE_KEY = 'elevant-occ-map-3d:v1';
@@ -25,6 +40,11 @@ export const MODE_3D_STORAGE_KEY = 'elevant-occ-map-3d:v1';
  * drawing take one step down; `stableMs` of fast frames take one step back up (never out of the pause, which waits
  * for «Volver a 3D»). A gap longer than `maxGapMs` is the map idling, not a slow frame. The steps: full quality, no
  * shadows and drop lines, the pixel ratios of `pixelRatios`, then the 3D paused (never while a flight is followed).
+ *
+ * PR M2 (2026-11-28): only frames the map draws while it animates continuously are measured (the animated traffic
+ * moving, «Seguir en 3D», the camera moving), and only when the frame before was one too: then the time between two
+ * draws is what a frame costs. The few renders each write of the traffic asks for with a still camera (2 to 15 a
+ * second, CN-18) leave gaps that are the write's cadence, not slow frames, and read as the map idling.
  */
 export const GOVERNOR = Object.freeze({
   slowFrameMs: 22, windowMs: 2_000, stableMs: 30_000, maxGapMs: 250, pixelRatios: Object.freeze([1.25, 1]),
@@ -51,6 +71,24 @@ export const AIRCRAFT_3D_SLOT = 'models';
  * aircraft/aircraftDetail.js); the followed aircraft («Seguir en 3D») always is.
  */
 export const DETAIL_MIN_ZOOM = 16.5;
+
+/**
+ * What the 3D may draw under the map's projection (M8): in Mercator, `minZoom` and `followedId` as given; on the globe,
+ * nothing below `globeMercatorZoom` (style/occStyle.js: GLOBE_MERCATOR_ZOOM), where the globe is Mercator again, because
+ * the layer composes Mercator frames: the 3D threshold is at least that zoom and the followed aircraft («Seguir en 3D»)
+ * keeps its 2D symbol below it. `animates` (integration of M8 with M2) says whether the layer may animate the traffic:
+ * always in Mercator, and on the globe only from that zoom, so below it the GeoJSON icons draw every aircraft as before
+ * (no aircraft of Monitoreo's world view ever goes missing).
+ */
+export function projected3d({ projection = 'mercator', zoom, minZoom, followedId = null, globeMercatorZoom }) {
+  if (projection !== 'globe' || !Number.isFinite(globeMercatorZoom)) return { minZoom, followedId, animates: true };
+  const mercator = Number.isFinite(zoom) && zoom >= globeMercatorZoom;
+  return {
+    minZoom: Number.isFinite(minZoom) ? Math.max(minZoom, globeMercatorZoom) : minZoom,
+    followedId: mercator ? followedId : null,
+    animates: mercator,
+  };
+}
 
 const NO_IDS = Object.freeze(new Set());
 // The layer a 3D pick names in its feature: the custom layer's id (aircraft/aircraft3dLayer.js), which this module may
@@ -128,7 +166,9 @@ export function writeMode3d(storage, on) {
  * aircraft on it to scale (its footprint `solid`: Ocupada or Por liberar with a known type), at the stand's centre, nose
  * along its heading. Its id is that of the ELEVANT aircraft parked there (`parkedIds`, the stands' own, by its
  * turnaround), else `s:<code>`; a stand whose visit has an aircraft of the traffic that is not parked (still moving)
- * draws none, so no aircraft is drawn twice.
+ * draws none, so no aircraft is drawn twice. M9: it carries what names its airline for its livery
+ * (aircraft/liveries.js: resolveLivery), the owner's `airlineIcao`, `airlineIata` and `callsign`, and the stand's
+ * flight number.
  */
 export function parkedFromStands(stands = [], aircraft = [], parkedIds = NO_IDS) {
   const byTurnaround = new Map();
@@ -157,9 +197,41 @@ export function parkedFromStands(stands = [], aircraft = [], parkedIds = NO_IDS)
       typeIcao: type,
       model: type,
       kind: 'aviam',
+      // M9 and PR M5: what names the airline of the aircraft parked there (its owner's callsign and codes, else the
+      // stand's flight), for the livery its model wears (aircraft/liveries.js); null where nothing names it.
+      airlineIcao: owner?.airlineIcao ?? null,
+      airlineIata: owner?.airlineIata ?? null,
+      callsign: owner?.callsign ?? null,
+      flightNumber: owner?.flightNumber ?? display.flightNumber ?? null,
     });
   }
   return parked;
+}
+
+/**
+ * The traffic aircraft parked on each stand (M4, «Seguir en 3D»): a Map from the stand's code to the selection of the
+ * AVIAM aircraft of the traffic that is on its box for the stand's visit (`parkedIds`, stands/standFeatures.js:
+ * parkedAircraftIds), `{ kind, id }` as a click on that aircraft selects it, frozen. A double click on such a stand, or
+ * its inspector's «Seguir en 3D», follows that aircraft; a stand whose aircraft the traffic does not draw has none.
+ */
+export function parkedTrafficByStand(stands = [], aircraft = [], parkedIds = NO_IDS) {
+  const drawn = Array.isArray(aircraft) ? aircraft : [];
+  const byTurnaround = new Map();
+  for (const item of drawn) {
+    if (item?.turnaroundId != null && item.kind === 'aviam' && parkedIds.has(item.id)) byTurnaround.set(item.turnaroundId, item);
+  }
+  const targets = new Map();
+  if (byTurnaround.size === 0) return targets;
+  for (const stand of Array.isArray(stands) ? stands : []) {
+    if (stand === null || typeof stand !== 'object' || isRetired(stand)) continue;
+    const owner = byTurnaround.get(stand.display?.visit?.turnaroundId);
+    if (!owner) continue;
+    const code = mapStandCode(standCodeOf(stand));
+    if (code === '' || targets.has(code)) continue;
+    const hit = translatePick({ id: owner.id }, drawn);
+    if (hit !== null) targets.set(code, Object.freeze({ kind: hit.kind, id: hit.id }));
+  }
+  return targets;
 }
 
 /**
@@ -182,9 +254,11 @@ export function translatePick(picked, drawn = []) {
 }
 
 /**
- * The governor's arithmetic, without a map: `sample(dtMs, atMs)` takes the time between two frames the map drew and
- * answers the step to take (`-1` down, `+1` up, `0` none). `level` starts at 0; `setFollowing(on)` keeps it out of the
- * pause while a flight is followed; `reset()` forgets the frames.
+ * The governor's arithmetic, without a map: `sample(dtMs, atMs, { continuous })` takes the time between two frames the
+ * map drew and answers the step to take (`-1` down, `+1` up, `0` none). `continuous` false (PR M2) says the map was not
+ * drawing every frame across that time (a render a write asked for with a still camera): the time is no frame's cost
+ * and the window starts again, as after a gap. `level` starts at 0; `setFollowing(on)` keeps it out of the pause while a
+ * flight is followed; `reset()` forgets the frames.
  */
 export function createGovernor({ limits = GOVERNOR, following = false } = {}) {
   let frames = [];
@@ -208,8 +282,8 @@ export function createGovernor({ limits = GOVERNOR, following = false } = {}) {
       windowStart = null;
       fastSince = null;
     },
-    sample(dtMs, atMs) {
-      if (!finite(dtMs) || !finite(atMs) || dtMs <= 0 || dtMs > limits.maxGapMs) {
+    sample(dtMs, atMs, { continuous = true } = {}) {
+      if (continuous !== true || !finite(dtMs) || !finite(atMs) || dtMs <= 0 || dtMs > limits.maxGapMs) {
         // The map idled: what comes next is a new stretch of drawing.
         frames = [];
         windowStart = null;
@@ -243,7 +317,10 @@ export function createGovernor({ limits = GOVERNOR, following = false } = {}) {
  * `theme` the colours of the aircraft (aircraft/instancePlan.js: aircraft3dColors), `getNow()` the instant of the
  * map's render clock (the sun is read at it), `onChange()` hears every change of what the 3D draws or says (OccMap then
  * writes its traffic again and shows the notice), `governor` false switches the governor off (the map lab), and
- * `load`, `now` and `webgl` (whether the browser has WebGL2) are for tests.
+ * `load`, `now` and `webgl` (whether the browser has WebGL2) are for tests. `liveries` (M9, Mapa de posiciones): every
+ * aircraft the 3D draws wears its airline's livery (aircraft/instancePlan.js: liveryInstanceColours), and other traffic
+ * on the ground within GROUND_TRAFFIC_3D_RADIUS_M of the ARP is drawn in 3D too while the governor is at full quality
+ * (its first step down, the lighter scene, gives it back to 2D).
  *
  * - `setEnabled(on)`: the 3D mode; off removes the layer (and its renderer) from the map;
  * - `plan({ aircraft, parked, zoom, minZoom, selectedId, followedId })`: the aircraft of a write of the traffic; plans
@@ -259,12 +336,25 @@ export function createGovernor({ limits = GOVERNOR, following = false } = {}) {
  * - `setFollowing(on)`, `pause()` and `resume()` («Volver a 3D»), `state()` → `{ enabled, status, notice, level,
  *   follow }` (status `off` · `idle` · `loading` · `ready` · `failed` · `paused`; notice `null` · `failed` · `paused`;
  *   follow, the followed aircraft's 3D: `off` without one, `loading`, `ready`, or `failed` when the browser cannot draw
- *   3D, so the map says it shows it in 2D), `stats()` (the layer's, or null) and `dispose()`.
+ *   3D, so the map says it shows it in 2D), `stats()` (the layer's, or null) and `dispose()`; PR M2: `framePosition(id)`
+ *   and `framedCount()`, what the last animated frame drew.
+ * - PR M2: `animate` (with `frameTime()`, the frame loop's instant, and `frameZone()`, the area in sight and its margin)
+ *   lets `plan({ …, animation: { keyframes }, parkedIds })` hand the layer the keyframes of a write of moving traffic: the
+ *   layer then draws every aircraft each frame, in 2D too, and `plan` answers all their ids; `animating()` says whether
+ *   it does and `animationMoving(tMs)` whether a frame at that instant moves one (the map repaints those frames). The
+ *   same plan takes what the tags need: `focusId` (the aircraft under the pointer), `labelsOn` («Etiquetas de todo el
+ *   tráfico»), `language`, `shown` (`{ aviam, other }`, false for a group the layers menu hides), `otherGroundMinZoom`
+ *   (other traffic on the ground from that zoom up) and `otherTagsMinZoom` (the tags of all traffic from that zoom up).
+ * - Integration of M2 with M4, M8 and M9: the animated frames plan the models with the liveries and the ground traffic
+ *   near the field (`liveries`), so the parked aircraft keep their airline's colours, and with their contact shadows;
+ *   close up (`engine.isCloseUp()`, «Seguir en 3D» past zoom 19.5) they draw no tag and no ring, and the followed
+ *   aircraft no estimated ring or «Demo» plate (as the GeoJSON layers hide them); `setOutside(ids)` dims the aircraft
+ *   Monitoreo's board filter leaves out (OccMap's flightEmphasis), as the feature state `outside` dims their icons.
  */
 export function createAircraft3dController({
   engine, originLngLat, fieldElevationM = 0, theme = 'dark', getNow = () => Date.now(), onChange,
   governor: governed = true, load = loadAircraft3d, now = () => globalThis.performance?.now() ?? Date.now(),
-  webgl = supportsWebgl2,
+  webgl = supportsWebgl2, liveries = false, animate = false, frameTime = null, frameZone = null,
 } = {}) {
   const colors = aircraft3dColors(theme);
   const governor = createGovernor();
@@ -282,6 +372,8 @@ export function createAircraft3dController({
   let current = { revision: 0, plan: new Map() };
   let drawnIds = NO_IDS;
   let lastFrameAt = null;
+  // Whether the map drew the last frame while it animated continuously (PR M2: what the governor measures).
+  let lastContinuous = false;
   let basePixelRatio = null;
   // CN-30: the eased attitude of every aircraft the 3D draws, the followed aircraft («Seguir en 3D»: always in 3D, its
   // detailed model, even while the 3D is off or paused for the rest) and what the last plan drew in detail.
@@ -294,6 +386,16 @@ export function createAircraft3dController({
   // gets or loses its detailed model) without waiting for the traffic's next write.
   let lastPlanZoom = null;
   let lastSelectedId = null;
+  // PR M2: what the last write gave the animation (`{ keyframes, items, parked, parkedIds, selectedId, zoom, minZoom,
+  // eased }`), whether the layer's sprites could not be built, and the last frame's answer.
+  let animation = null;
+  let spritesFailed = false;
+  let frameCache = null;
+  // The aircraft the layer's last animated frame drew, by id, where it drew them (PR M2: the frame meter and the visual
+  // suite read the positions on screen, not those of the last write).
+  let frameDrawn = new Map();
+  // M8 (integration with M2): the aircraft Monitoreo's board filter leaves out, dimmed in the animated frames too.
+  let outsideIds = NO_IDS;
 
   const changed = () => {
     if (!disposed) onChange?.();
@@ -349,32 +451,61 @@ export function createAircraft3dController({
     Promise.resolve().then(changed);
   }
 
-  // Each frame the map draws with the 3D on: the governor hears how long it took since the previous one.
+  // Whether the map draws every frame now (PR M2): the animated traffic moves (the frame loop repaints each frame), the
+  // followed aircraft is posed every frame («Seguir en 3D»), or the camera moves.
+  function drawingContinuously() {
+    if (animating() && keyframesMoving(animation.keyframes, typeof frameTime === 'function' ? frameTime() : now())) {
+      return true;
+    }
+    if (followingCamera && followedId !== null) return true;
+    return engine?.map?.isMoving?.() === true;
+  }
+
+  // Each frame the map draws with the 3D on: the governor hears how long it took since the previous one, when both were
+  // drawn while the map animates continuously (PR M2: never the gap between two writes of the traffic). The animated 2D
+  // traffic draws no model: the governor has nothing to lighten then.
   function onRendered() {
     checkDetailZoom();
     const at = now();
     const dt = lastFrameAt === null ? null : at - lastFrameAt;
     lastFrameAt = at;
-    if (!governed || dt === null) return;
-    const step = governor.sample(dt, at);
+    const continuousNow = drawingContinuously();
+    const continuous = continuousNow && lastContinuous;
+    lastContinuous = continuousNow;
+    if (!governed || dt === null || (!enabled && followedId === null)) return;
+    const before = governor.level;
+    const step = governor.sample(dt, at, { continuous });
     if (step === 0) return;
     if (governor.level >= GOVERNOR_PAUSED) {
       pauseNow();
       return;
     }
     applyLevel(governor.level);
+    // M9: the ground traffic's 3D follows the full quality; after this frame the map writes its traffic again.
+    if (liveries === true && (before === 0) !== (governor.level === 0)) Promise.resolve().then(changed);
   }
 
   function createLayer() {
     const made = modules.createAircraft3dLayer({
       three: modules.three,
       originLngLat,
-      getInstances: () => current,
+      getInstances: () => (animating() ? frameAnswer() : current),
       getSun: () => sunPosition(getNow(), originLngLat),
       minModelPx: MIN_MODEL_PX,
+      theme,
       onFailedChange: failed => {
         layerFailed = failed === true;
-        setStatus(layerFailed ? 'failed' : 'ready', layerFailed ? 'failed' : null);
+        // With the 3D off only the animation drew (PR M2): no 3D notice, the map just writes its icons again.
+        if (!enabled && followedId === null) changed();
+        else setStatus(layerFailed ? 'failed' : 'ready', layerFailed ? 'failed' : null);
+      },
+      onSpritesFailedChange: failed => {
+        spritesFailed = failed === true;
+        // After this frame: the map's onChange writes its icons again, never inside the layer's render.
+        Promise.resolve().then(() => {
+          syncForcedLayer();
+          changed();
+        });
       },
     });
     const render = made.render.bind(made);
@@ -442,14 +573,19 @@ export function createAircraft3dController({
     governor.level = GOVERNOR_PAUSED;
     governor.reset();
     lastFrameAt = null;
+    lastContinuous = false;
     // The followed aircraft keeps its layer: only the rest of the 3D pauses.
     if (!forced()) removeLayer();
     setStatus('paused', 'paused');
   }
 
   const drawing = () => enabled && added && !layerFailed && status === 'ready' && engine?.map != null;
-  // The followed aircraft forces the layer onto the map even while the 3D is off or paused for the rest.
-  const forced = () => followedId !== null && detailFound !== null;
+  // PR M2: the animation wants the layer while the write gave it keyframes and the browser can draw it.
+  const wantsAnimation = () => animate === true && !spritesFailed && animation !== null && !disposed && webgl();
+  const animating = () => wantsAnimation() && added && !layerFailed && layer !== null && engine?.map != null;
+  // The followed aircraft forces the layer onto the map even while the 3D is off or paused for the rest; so does the
+  // animated traffic.
+  const forced = () => (followedId !== null && detailFound !== null) || wantsAnimation();
   const drawingDetail = () => added && !layerFailed && engine?.map != null && (forced() || drawing());
 
   // The eased attitude of an aircraft at the controller's clock (aircraft/attitude.js).
@@ -479,6 +615,109 @@ export function createAircraft3dController({
     if (added && (!enabled || status === 'paused')) removeLayer();
   }
 
+  // The words of the tags of a write (PR M2): every ELEVANT flight's, and other traffic's while chosen, under the
+  // pointer or with all the tags on.
+  function tagWordsOf(items, { selectedId, focusId, labelsOn, language }) {
+    const words = new Map();
+    for (const item of items) {
+      if (!isDrawn(item)) continue;
+      if (item.kind !== 'aviam' && !labelsOn && item.id !== selectedId && item.id !== focusId) continue;
+      words.set(item.id, tagTextOf(item, { language }));
+    }
+    return words;
+  }
+
+  // The ids the animation draws: every aircraft of the write (their GeoJSON icons, rings and plates give way).
+  function animatedIdsOf(aircraft) {
+    const ids = new Set();
+    for (const item of Array.isArray(aircraft) ? aircraft : []) if (item?.id != null && isDrawn(item)) ids.add(item.id);
+    return ids;
+  }
+
+  // Whether the animation draws an aircraft (PR M2): the layers menu shows its group (the chosen one always shows, as
+  // the selection's own layers draw it), and other traffic on the ground only from its threshold up.
+  function shownAt(item, onGround, zoom) {
+    if (item.id === animation.selectedId) return true;
+    const aviam = item.kind === 'aviam';
+    if (animation.shown[aviam ? 'aviam' : 'other'] === false) return false;
+    if (aviam || onGround !== true || !finite(animation.otherGroundMinZoom)) return true;
+    return finite(zoom) && zoom >= animation.otherGroundMinZoom;
+  }
+
+  // The band of the zoom for the frame cache: below or above each threshold the frame's answer depends on.
+  function zoomBand(zoom) {
+    if (animation === null || !finite(zoom)) return '';
+    return [animation.otherGroundMinZoom, animation.otherTagsMinZoom, TAG_DECLUTTER_UNTIL_ZOOM]
+      .map(limit => (finite(limit) && zoom >= limit ? 1 : 0)).join('');
+  }
+
+  // One frame of the animated traffic (PR M2): the keyframes at the frame loop's instant, for the aircraft in or around
+  // the area in sight, planned as models (3D) and sprites. A frame where nothing moves, after one that already rested
+  // at the same write, bearing and area in sight, answers that one, so the layer copies nothing.
+  function frameAnswer() {
+    const t = typeof frameTime === 'function' ? frameTime() : now();
+    const camera = engine?.getCamera?.() ?? null;
+    const bearing = camera?.bearing ?? 0;
+    // A zoom across the threshold of other traffic on the ground or of the tags draws another frame.
+    const zoomKey = zoomBand(camera?.zoom);
+    const moving = keyframesMoving(animation.keyframes, t);
+    const zone = typeof frameZone === 'function' ? frameZone() : null;
+    const zoneKey = Array.isArray(zone) ? zone.flat().join(',') : '';
+    const closeUp = engine?.isCloseUp?.() === true;
+    if (!moving && frameCache !== null && frameCache.rest && frameCache.animation === animation
+      && frameCache.bearing === bearing && frameCache.zoneKey === zoneKey && frameCache.detail === current.detail
+      && frameCache.zoomKey === zoomKey && frameCache.closeUp === closeUp && frameCache.outsideIds === outsideIds) {
+      return frameCache.answer;
+    }
+    const states = interpolate(animation.keyframes, t, { include: zone ? point => isInBounds(point, zone) : null });
+    const items = [];
+    const frameEased = new Map();
+    const zoom = camera?.zoom;
+    for (const [id, state] of states) {
+      const base = animation.items.get(id);
+      if (base === undefined || !shownAt(base, state.onGround, zoom)) continue;
+      const item = { ...base, lon: state.lon, lat: state.lat, onGround: state.onGround,
+        altM: finite(state.altM) ? state.altM : base.altM, gsMs: finite(state.gsMs) ? state.gsMs : base.gsMs,
+        trackDeg: finite(state.trackDeg) ? state.trackDeg : base.trackDeg,
+        opacity: finite(state.opacity) ? state.opacity : base.opacity };
+      items.push(item);
+      // The attitude eased at the write, at this frame's height: the climb or descent between two writes is smooth.
+      const attitude = animation.eased.get(id);
+      if (attitude !== undefined) {
+        const climb = finite(item.altM) && finite(base.altM) && item.onGround !== true ? item.altM - base.altM : 0;
+        frameEased.set(id, { ...attitude, heightM: Math.max(0, attitude.heightM + climb) });
+      }
+    }
+    // The detailed aircraft where this frame draws it; the followed one is posed by the follow camera (poseFollowed).
+    let detail = current.detail ?? null;
+    if (detail !== null && detail.followed !== true && detailFound !== null && !detailFound.onStand) {
+      const moved = items.find(item => item.id === detail.id);
+      if (moved !== undefined) detail = poseDetail({ item: moved, onStand: false });
+    }
+    const models = enabled && status === 'ready'
+      ? planInstances(items, animation.parked, { zoom: animation.zoom, minZoom: animation.minZoom, originLngLat,
+        fieldElevationM, selectedId: animation.selectedId, colors, attitudes: frameEased,
+        excludeId: detail?.id ?? null, radiusNm: Infinity, livery: liveries === true,
+        groundRadiusM: liveries === true && governor.level === 0 ? GROUND_TRAFFIC_3D_RADIUS_M : 0 })
+      : new Map();
+    const modelIds = new Set();
+    for (const entry of models.values()) for (const id of entry.ids) if (id !== null) modelIds.add(id);
+    if (detail !== null) modelIds.add(detail.id);
+    const sprites = planSprites(items, { originLngLat, theme, selectedId: animation.selectedId, modelIds,
+      parkedIds: animation.parkedIds, outsideIds, closeUpId: closeUp ? animation.selectedId : null });
+    const labels = planLabels(items, { originLngLat, selectedId: animation.selectedId, focusId: animation.focusId,
+      labelsOn: animation.labelsOn, zoom, words: animation.words, parkedIds: animation.parkedIds,
+      language: animation.language, otherTagsMinZoom: animation.otherTagsMinZoom, outsideIds, closeUp });
+    // At rest the layer lays the tags out once more where the aircraft stopped.
+    labels.rest = !moving;
+    revision += 1;
+    frameDrawn = new Map(items.map(item => [item.id, item]));
+    const answer = { revision, plan: models, detail, sprites, labels };
+    frameCache = { animation, bearing, zoneKey, zoomKey, detail: current.detail, answer, rest: !moving, closeUp,
+      outsideIds };
+    return answer;
+  }
+
   function followStatus() {
     if (followedId === null) return 'off';
     if (layerFailed || (modules === null && failedAt !== null)) return 'failed';
@@ -491,6 +730,7 @@ export function createAircraft3dController({
       if (next === enabled) return;
       enabled = next;
       lastFrameAt = null;
+      lastContinuous = false;
       governor.reset();
       if (!enabled) {
         if (!forced()) removeLayer();
@@ -503,7 +743,11 @@ export function createAircraft3dController({
       else setStatus('idle', null);
     },
 
-    plan({ aircraft = [], parked = [], zoom, minZoom, selectedId = null, followedId: followed = null } = {}) {
+    plan({
+      aircraft = [], parked = [], zoom, minZoom, selectedId = null, followedId: followed = null, animation: frames = null,
+      parkedIds = NO_IDS, focusId = null, labelsOn = false, language = 'es', shown = null, otherGroundMinZoom = null,
+      otherTagsMinZoom = null,
+    } = {}) {
       if (disposed) {
         drawnIds = NO_IDS;
         return drawnIds;
@@ -521,7 +765,21 @@ export function createAircraft3dController({
         found = findAircraft(aircraft, parked, selectedId);
       }
       detailFound = found;
-      if (!enabled && found === null) {
+      // PR M2: the keyframes of this write, for the frames until the next one.
+      animation = animate === true && frames?.keyframes != null ? {
+        keyframes: frames.keyframes,
+        items: new Map((Array.isArray(aircraft) ? aircraft : []).filter(item => item?.id != null)
+          .map(item => [item.id, item])),
+        parked, parkedIds: parkedIds instanceof Set ? parkedIds : NO_IDS, selectedId: selectedId ?? null, zoom, minZoom,
+        eased: new Map(), focusId: focusId ?? null, labelsOn: labelsOn === true, language,
+        shown: { aviam: shown?.aviam !== false, other: shown?.other !== false },
+        otherGroundMinZoom: finite(otherGroundMinZoom) ? otherGroundMinZoom : null,
+        otherTagsMinZoom: finite(otherTagsMinZoom) ? otherTagsMinZoom : null,
+        words: null,
+      } : null;
+      // The words of the tags that may show, once per write: the frames between only move them.
+      if (animation !== null) animation.words = tagWordsOf(animation.items.values(), animation);
+      if (!enabled && found === null && !wantsAnimation()) {
         syncForcedLayer();
         current = { revision: (revision += 1), plan: new Map(), detail: null };
         drawnIds = NO_IDS;
@@ -529,7 +787,7 @@ export function createAircraft3dController({
       if (followChanged) Promise.resolve().then(changed);
         return drawnIds;
       }
-      if (enabled && reached && modules === null) startLoad();
+      if (((enabled && reached) || wantsAnimation()) && modules === null) startLoad();
       syncForcedLayer();
       // The attitude of every aircraft the plan may draw: near the airfield, and the detailed one wherever it is.
       const eased = new Map();
@@ -545,12 +803,22 @@ export function createAircraft3dController({
       const detail = found === null ? null : poseDetail(found);
       if (found !== null) kept.add(found.item.id);
       attitudes.retain(kept);
+      if (animation !== null) animation.eased = eased;
       const plan = enabled && status !== 'paused'
         ? planInstances(aircraft, parked, { zoom, minZoom, originLngLat, fieldElevationM, selectedId, colors,
-          attitudes: eased, excludeId: detail?.id ?? null })
+          attitudes: eased, excludeId: detail?.id ?? null, livery: liveries === true,
+          groundRadiusM: liveries === true && governor.level === 0 ? GROUND_TRAFFIC_3D_RADIUS_M : 0 })
         : new Map();
       revision += 1;
       current = { revision, plan, detail };
+      frameCache = null;
+      if (animating()) {
+        // Every aircraft of the write, as a model or a sprite, each frame (PR M2).
+        drawnIds = animatedIdsOf(aircraft);
+        if (followChanged) Promise.resolve().then(changed);
+        engine.map.triggerRepaint?.();
+        return drawnIds;
+      }
       const ids = new Set();
       if (drawing()) {
         for (const entry of plan.values()) {
@@ -587,6 +855,12 @@ export function createAircraft3dController({
     /** The ids the last plan drew in 3D (their 2D symbols give way). */
     drawnIds: () => drawnIds,
 
+    /** PR M2: whether the layer animates the traffic now (its GeoJSON icons, rings and plates give way). */
+    animating: () => animating(),
+
+    /** PR M2: whether a frame at `tMs` moves an aircraft the layer animates: the map repaints every such frame. */
+    animationMoving: tMs => animating() && keyframesMoving(animation.keyframes, tMs),
+
     /**
      * The pose of the detailed aircraft the layer draws now (CN-30): `{ id, lon, lat, heightM, headingDeg, pitchDeg,
      * bankDeg, gearDown, onStand, followed, … }` (detailOf), or null. The follow camera aims at its height over the
@@ -595,7 +869,7 @@ export function createAircraft3dController({
     followedPose: () => current.detail ?? null,
 
     pick(point) {
-      if (!drawing() || layer === null) return null;
+      if ((!drawing() && !animating()) || layer === null) return null;
       try {
         return layer.pick(point);
       } catch {
@@ -618,6 +892,7 @@ export function createAircraft3dController({
       governor.level = 0;
       governor.reset();
       lastFrameAt = null;
+      lastContinuous = false;
       if (layer !== null) showLayer();
       else setStatus('idle', null);
     },
@@ -625,6 +900,27 @@ export function createAircraft3dController({
     state: () => ({ enabled, status, notice, level: governor.level, follow: followStatus() }),
 
     stats: () => (layer === null || !added ? null : layer.stats()),
+
+    // PR M2: where the last animated frame drew an aircraft, `[lng, lat]`, or null (not animated, or not in that frame);
+    // `framedCount()` how many aircraft that frame drew (0 while the layer does not animate).
+    framePosition(id) {
+      if (!animating()) return null;
+      const item = frameDrawn.get(id);
+      return item === undefined ? null : [item.lon, item.lat];
+    },
+    framedCount: () => (animating() ? frameDrawn.size : 0),
+
+    /**
+     * M8 (integration with M2): the ids of the aircraft Monitoreo's board filter leaves out (a Set; anything else is
+     * none), dimmed in the animated frames as their GeoJSON icons are; the next frame draws them so.
+     */
+    setOutside(ids) {
+      const next = ids instanceof Set && ids.size > 0 ? new Set(ids) : NO_IDS;
+      if (next.size === outsideIds.size && [...next].every(id => outsideIds.has(id))) return;
+      outsideIds = next;
+      frameCache = null;
+      if (animating()) engine.map.triggerRepaint?.();
+    },
 
     dispose() {
       if (disposed) return;

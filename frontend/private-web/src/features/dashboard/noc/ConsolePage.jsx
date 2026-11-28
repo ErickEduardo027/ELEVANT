@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Toast from '../../../components/Toast';
+import { MEDIA_QUERIES } from '../../../config/breakpoints';
 import { useToast } from '../../../hooks/useToast';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { normalizeStandCode } from '../../../services/standCodes';
@@ -12,13 +13,17 @@ import { useAirportRoutes } from '../../aviation-reference/useAirportRoutes';
 import { STATION_TIME_ZONE } from '../../admin-occ/shell/status/OccClocks';
 import { matchFlight, relatedEntities } from '../../maps/core/mapSelection';
 import OccMap from '../../maps/core/OccMap';
+import { useOccMap } from '../../maps/core/OccMapContext';
 import Follow3dPanel from '../../maps/ui/Follow3dPanel';
 import MapDock from '../../maps/ui/MapDock';
+import MapFollow3dButton from '../../maps/ui/MapFollow3dButton';
 import MapLayersMenu from '../../maps/ui/MapLayersMenu';
 import MapLegend from '../../maps/ui/MapLegend';
 import MapMotionControl from '../../maps/ui/MapMotionControl';
 import MapPresetSwitcher from '../../maps/ui/MapPresetSwitcher';
 import MapSourceStatus from '../../maps/ui/MapSourceStatus';
+import { sameInsets } from '../../maps/ui/stageInsets';
+import { useStageInsets } from '../../maps/ui/useStageInsets';
 import { routesOverlay } from '../../maps/style/routeLayers';
 import { useOptionalTheme } from '../../shell/useTheme';
 import { useMediaQuery } from '../../../hooks/useMediaQuery';
@@ -34,10 +39,9 @@ import ConsoleAssignDrawer from './ConsoleAssignDrawer';
 import {
   REVEAL_MARGIN_PX, aimKeyOf, aimVerdict, freeAreaOf, inFreeArea, revealOf, selectionKeyOf, standGeometryOf,
 } from './consoleCamera';
-import { sameInsets } from './consoleInsets';
 import { consoleMessages } from './consoleMessages';
 import { buildFigures } from './consoleModel';
-import ConsoleOverlay, { CONSOLE_OVERLAY_LAYOUT } from './ConsoleOverlay';
+import ConsoleOverlay, { CONSOLE_OVERLAY_LAYOUT, CONSOLE_PANEL_EDGES } from './ConsoleOverlay';
 import { CONSOLE_ACTION } from './consoleStyles';
 import EngineStatusProbe from './EngineStatusProbe';
 import FiguresPanel from './FiguresPanel';
@@ -48,36 +52,53 @@ import PositionsPanel from './PositionsPanel';
 import ProvenanceLine from './ProvenanceLine';
 import { flightsByTurnaroundOf } from './standTimeline';
 import { useConsoleClock } from './useConsoleClock';
-import { useConsoleInsets } from './useConsoleInsets';
+import WeatherPanel from './WeatherPanel';
 import WeatherPill from './WeatherPill';
 
-// The OCC console, Panorama (contratos 2.5, owner decision 15; CN-32): the full-bleed map under the status bar, opening
-// on Rampa, with its panels docked flush against its edges (ConsoleOverlay.jsx: the lists at the left, the figures along
-// the top, the band along the bottom and the inspector at the right from 1536 px), the maps lane's control rail down
-// the right edge of the area they leave and, under the map, the provenance line and the weather pill. Presentational:
+// The OCC console, Panorama (contratos 2.5, owner decision 15; CN-32; M1 «pantalla completa con paneles flotantes»):
+// the map fills the whole section under the status bar, opening on Región in 3D with the regional weather and
+// «Meteorología PUJ» (lane M7; on Rampa until 2026-11-28), and everything floats inside it (ConsoleOverlay.jsx: the
+// lists at the left, the figures along the top, the band along the bottom, the inspector at the right from 1536 px,
+// «Meteorología PUJ» at the foot of the right column and, at the foot of the map, the console's status bar with the
+// provenance line, «Ocultar paneles» and the weather and delays pills), left of the maps lane's control column at the
+// true right edge of the map. Presentational:
 // the route (ConsoleRoute.jsx) reads and passes everything; this page only holds what the person does on it (the board's
 // tab, which dialog is open, what the engine reports). One selection for the map, the board, the band and the inspector: the URL's (contratos 2.1).
 //
 // When the engine cannot draw, the same panels go into a plain grid beside the map's list (the map stays mounted in
-// the same place); with `focus=map` the panels hide behind «Mostrar paneles»; on a narrow screen they open folded.
+// the same place); with `focus=map` the panels hide behind «Mostrar paneles» and only the status bar stays; on a
+// smaller screen most of them open folded.
 
 const EMPTY = Object.freeze([]);
 const NO_INSETS = Object.freeze({ top: 0, right: 0, bottom: 0, left: 0 });
-const NARROW_QUERY = '(max-width: 1279.98px)';
+// Below 1440 px (a 1366 px laptop) only «Tablero» opens: the figures, the alerts and the band open folded, so the map
+// keeps most of the section in sight (M1). Below 768 px, where the open board would leave the map less than its least
+// visible area (maps/ui/stageInsets.js), the board opens folded too.
+const COMPACT_QUERY = '(max-width: 1439.98px)';
+const NARROW_QUERY = MEDIA_QUERIES.belowMd;
 // From 1536 px the inspector takes a column of its own at the right of the map (ConsoleOverlay.jsx).
 const WIDE_QUERY = '(min-width: 1536px)';
 // Where the pill of a new arrival goes: the top left of the area the panels leave in sight (OccMap's inset variables),
-// short of the map's control column at the right edge of that area (the zoom group and the rail, --occ-map-rail wide
-// and 12 px from the edge, occ-map.css: CN-32), so it wraps instead of running over them.
+// 12 px in from it at both sides, and so short of where that area ends at the right (--occ-map-clear-right: the map's
+// control column at its true right edge, or a panel floating left of it, occ-map.css), so it wraps instead of running
+// over them.
 const ARRIVAL_PLACE = Object.freeze({
   top: 'calc(var(--occ-map-inset-top, 0px) + 12px)', left: 'calc(var(--occ-map-inset-left, 0px) + 12px)',
-  maxWidth: 'calc(100% - var(--occ-map-inset-left, 0px) - var(--occ-map-inset-right, 0px) '
-    + '- var(--occ-map-rail, 5.5rem) - 36px)',
+  maxWidth: 'calc(100% - var(--occ-map-inset-left, 0px) - var(--occ-map-clear-right, 0px) - 24px)',
 });
 
 // The console tells the boot screen when its first data is on screen (ConsoleRoute.jsx). The map it hosts draws from
 // the first frame, before that data, so its own report does not end the wait: the console opens with data (contratos 2.6).
 const CONSOLE_MAP_BOOT = Object.freeze({ markReady: () => {} });
+
+// Lane M7 (2026-11-28): Panorama opens in Región in 3D with the regional weather; 3 and 4 still go to Aeródromo and Rampa.
+export const CONSOLE_DEFAULT_VIEW = 'region';
+// «Meteorología PUJ» names the runway in use the map draws (OccMapContext's `runwayInUse`, with the recent live
+// arrivals the map saw), so the panel and the map never say two runways (2026-11-28).
+function MapWeatherPanel(props) {
+  const { runwayInUse } = useOccMap();
+  return <WeatherPanel {...props} runway={runwayInUse ?? null} />;
+}
 
 const matches = query => typeof window !== 'undefined' && typeof window.matchMedia === 'function'
   && window.matchMedia(query).matches;
@@ -137,11 +158,13 @@ function revealNow({ chosen = null, target = null, stands = EMPTY, flights = EMP
  * - `live`: the map situation (maps/useMapSituation.js), read once for the map, the board and the inspector.
  * - `data`: the console's own reads (useConsoleData: `planning`, `positions`, `reviewQueue`, `readiness`, `notices`).
  * - `stands`: the stands as the map draws them (useStandDisplay over the positions board and the map flights).
+ * - `regionWeather`: useRegionWeather's view (lane M7), the regional layers of the map; without it the map draws none.
  * - `weather`: useMdpcWeather's view; `selection`: the URL selection store (maps/core/useMapSelection.js).
  * - `accountId`: the signed-in account, whose closed «Llegada nueva» pills the tab remembers (arrivalMemory.js).
  * - `onShown()`: called once the console is on screen (its route tells the OCC boot screen when its data are too).
  */
-export default function ConsolePage({ station, live, data, stands = EMPTY, weather, selection, accountId = null, onShown }) {
+export default function ConsolePage({ station, live, data, stands = EMPTY, weather, regionWeather, selection,
+  accountId = null, onShown }) {
   const { t } = useTranslation(consoleMessages);
   const router = useRouter();
   const mapRef = useRef(null);
@@ -153,13 +176,15 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
   const [drawerRevision, setDrawerRevision] = useState(0);
   const { toasts, showToast, dismissToast } = useToast();
   // Read once: the console is a client-only route, so the first render already knows the screen.
+  const [compact] = useState(() => matches(COMPACT_QUERY));
   const [narrow] = useState(() => matches(NARROW_QUERY));
   // Followed while the window changes: the inspector moves between the left column and its own.
   const wide = useMediaQuery(WIDE_QUERY);
 
   const layout = engineStatus === 'unavailable' ? 'grid' : 'map';
   const focusMap = selection.focus === 'map';
-  const { insets, rootRef, measure, measured } = useConsoleInsets({ enabled: layout === 'map' && !focusMap });
+  // Measured over the map, also with `focus=map`: the status bar stays there while the panels hide.
+  const { insets, rootRef, measure, measured } = useStageInsets({ edges: CONSOLE_PANEL_EDGES, enabled: layout === 'map' });
   const { planning, positions, reviewQueue, readiness, notices } = data;
   const { selection: chosen, selectFlight, selectStand, selectAircraft, clear, setFocus, setFollow, setView } = selection;
 
@@ -245,7 +270,7 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
   // The camera and the panels (contratos 2.5; consoleCamera.js). The panels take room from the map, and when that room
   // changes the map's padding changes with it, which MapLibre applies as a jump that also stops a move under way: what
   // sat near the edge of a panel can end up under it. So the console moves the camera only once the panels are measured
-  // (useConsoleInsets: `measured`):
+  // (useStageInsets: `measured`):
   // - a move it asks for when something is chosen on the console or on the map (an aim) goes once the URL has that
   //   selection, so the inspector that opens with a first selection, beside a folded «Alertas», already counts. A
   //   strip, a turnaround or a pending item flies to its flight, else to its stand; a click on the map or a bar of the
@@ -261,7 +286,7 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
   const [aimTick, setAimTick] = useState(0);
   const userMoves = useRef(0);
   const insetsKey = `${insets.top}|${insets.right}|${insets.bottom}|${insets.left}`;
-  const framedView = selection.view ?? 'ramp';
+  const framedView = selection.view ?? CONSOLE_DEFAULT_VIEW;
   const framedTerminal = selection.terminal ?? null;
   const held = chosen !== null || selection.follow;
   // The newest selection and what the map draws of it, for the moves that run after this render.
@@ -462,14 +487,18 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
   // panel (the map's traffic moving, the clock of another panel) does not render it again.
   const place = layout === 'grid' ? 'grid' : 'float';
   const classes = CONSOLE_OVERLAY_LAYOUT[place];
-  // Over the map the panels are docked flush against its edges (CN-32); in the fallback they are the plain grid.
-  const panelLayout = place === 'grid' ? 'grid' : 'dock';
+  // Over the map the panels float on the near-opaque slab (M1); in the fallback they are the plain grid.
+  const panelLayout = place;
+  const strip = place === 'float';
   const panelRef = panelId => (place === 'float' ? measure(panelId) : undefined);
   const boardRef = panelRef('board');
   const figuresRef = panelRef('figures');
   const alertsRef = panelRef('alerts');
   const inspectorRef = panelRef('inspector');
   const positionsRef = panelRef('positions');
+  const statusRef = panelRef('status');
+  const showPanelsRef = panelRef('showPanels');
+  const weatherRef = panelRef('weather');
   const boardState = useMemo(() => boardStateOf(live, board), [board, live]);
   const planningState = useMemo(() => panelStateOf(planning), [planning]);
   const positionsState = useMemo(() => panelStateOf(positions), [positions]);
@@ -487,15 +516,16 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
     selectItem, selectedId, timeZone]);
   const figuresPanel = useMemo(() => (
     <FiguresPanel figures={figures} state={planningState} labels={planningLabels} timeZone={timeZone}
-      measureRef={figuresRef} layout={panelLayout} defaultFolded={narrow} className={classes.figuresPanel} />
-  ), [classes.figuresPanel, figures, figuresRef, narrow, panelLayout, planningLabels, planningState, timeZone]);
+      measureRef={figuresRef} layout={panelLayout} strip={strip} defaultFolded={compact}
+      className={classes.figuresPanel} />
+  ), [classes.figuresPanel, compact, figures, figuresRef, panelLayout, planningLabels, planningState, strip, timeZone]);
   const alertsPanel = useMemo(() => (
     <AlertsPanel alerts={alerts} notices={notices} pending={pending} pendingSources={pendingSources}
       labels={remoteLabels} onOpen={openNotice} onSelectPending={selectItem} onAssign={setAssignTurnaroundId}
       onImport={openImport} timeZone={timeZone} measureRef={alertsRef} layout={panelLayout}
-      defaultFolded={narrow} className={chosen ? classes.alertsPanelWithInspector : classes.alertsPanel} />
-  ), [alerts, alertsRef, chosen, classes.alertsPanel, classes.alertsPanelWithInspector, narrow, notices, openImport, openNotice,
-    panelLayout, pending, pendingSources, remoteLabels, selectItem, timeZone]);
+      defaultFolded={compact} className={chosen ? classes.alertsPanelWithInspector : classes.alertsPanel} />
+  ), [alerts, alertsRef, chosen, classes.alertsPanel, classes.alertsPanelWithInspector, compact, notices, openImport,
+    openNotice, panelLayout, pending, pendingSources, remoteLabels, selectItem, timeZone]);
   const inspectorPanel = useMemo(() => (chosen ? (
     <InspectorPanel selection={chosen} target={target} telemetry={telemetry}
       stationAirport={stationAirport} stationId={station.stationId} stand={selectedStand}
@@ -507,17 +537,33 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
     inspectorRef, mapFlights, nowMs, openImport, panelLayout, selectedStand, standFlight, station.stationId,
     stationAirport, stripOf, target, telemetry, timeZone, wide]);
   const positionsPanel = useMemo(() => (
-    // Docked under the strip of figures (CN-32), the band does not repeat them in its summary.
+    // Under the strip of figures over the map (CN-32), the band does not repeat them in its summary.
     <PositionsPanel stands={stands} flightsByTurnaround={flightsByTurnaround} aircraft={aircraft}
-      figures={panelLayout === 'dock' ? null : figures}
+      figures={figures} showFigures={!strip}
       state={positionsState} labels={remoteLabels} nowMs={nowMs} timeZone={timeZone}
       selectedBarId={selectedTurnaroundId} onSelectStand={selectBandStand}
       measureRef={positionsRef} layout={panelLayout} className={classes.positionsPanel} />
   ), [aircraft, classes.positionsPanel, figures, flightsByTurnaround, nowMs, panelLayout, positionsRef, positionsState,
-    remoteLabels, selectBandStand, selectedTurnaroundId, stands, timeZone]);
+    remoteLabels, selectBandStand, selectedTurnaroundId, stands, strip, timeZone]);
   const panels = useMemo(() => ({ board: boardPanel, figures: figuresPanel, alerts: alertsPanel,
     inspector: inspectorPanel, positions: positionsPanel }),
   [alertsPanel, boardPanel, figuresPanel, inspectorPanel, positionsPanel]);
+  // The console's status bar: where the map's data come from, «Ocultar paneles» over the map, and the weather and the
+  // delays of the airport, whose details open above them. Over the map it floats at the foot of the stage, measured
+  // as a panel along the bottom edge; in the fallback it closes the grid.
+  const hidePanels = useCallback(() => setFocus('map'), [setFocus]);
+  const status = useMemo(() => (
+    <>
+      <ProvenanceLine stands={stands} picture={live.picture} situation={live.situation} flights={mapFlights}
+        clock={live.clock} className="min-w-0 flex-1" />
+      {layout === 'map' && !focusMap ? (
+        <button type="button" onClick={hidePanels} className={CONSOLE_ACTION}>{t('focus.hide')}</button>
+      ) : null}
+      <WeatherPill weather={weather} className="ml-auto" />
+      <AirportDelaysPill stationId={station.stationId} label={station.stationCode || 'PUJ'} />
+    </>
+  ), [focusMap, hidePanels, layout, live.clock, live.picture, live.situation, mapFlights, stands, station.stationCode,
+    station.stationId, t, weather]);
 
   const pill = useMemo(() => (arrival ? (
     <NewArrivalPill flight={arrival} onFollow={follow} onDismiss={dismissArrival} />
@@ -526,13 +572,24 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
   const dialogOpen = importOpen || assignTurnaroundId !== null;
   const isShortcutBlocked = useCallback(() => dialogOpen, [dialogOpen]);
   const showPanels = useCallback(() => setFocus(null), [setFocus]);
+  // «Meteorología PUJ» (lane M7) floats over the map at the foot of the right column (ConsoleOverlay.jsx), measured
+  // into the insets like the other panels (M1). Below 1440 px it opens folded, as the figures and the alerts do, so the
+  // map keeps its free area on a 1366 px laptop.
+  const weatherPanel = useMemo(() => (layout === 'map' && weather ? (
+    <MapWeatherPanel ref={weatherRef} weather={weather} nowMs={nowMs ?? undefined} panelLayout="float"
+      defaultFolded={compact} className={classes.weatherPanel} />
+  ) : null), [classes.weatherPanel, compact, layout, nowMs, weather, weatherRef]);
   // What the map hosts, kept while nothing of it changes, so the map is not handed new children on every render.
   const mapChildren = useMemo(() => (
     <>
       <EngineStatusProbe onChange={setEngineStatus} />
-      {layout === 'map' && !focusMap ? <ConsoleOverlay layout="float" wide={wide} {...panels} /> : null}
+      {layout === 'map' ? (
+        <ConsoleOverlay layout="float" wide={wide} showPanels={!focusMap} status={status} statusRef={statusRef}
+          weather={weatherPanel} {...panels} />
+      ) : null}
+      {/* Measured as the top of the maximised map, so the pill of a new arrival opens under it. */}
       {layout === 'map' && focusMap ? (
-        <button type="button" onClick={showPanels}
+        <button ref={showPanelsRef} type="button" onClick={showPanels} data-occ-console-show=""
           className={`absolute left-3 top-3 z-20 bg-occ-panel-float ${CONSOLE_ACTION}`}>
           {t('focus.show')}
         </button>
@@ -545,27 +602,32 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
           {pill}
         </div>
       ) : null}
-      {/* The control rail (CN-32): the views and 3D, the pause, «Capas» and «Leyenda». «Seguir» is the S key, «Ver y
-          seguir» and the inspector's flight. */}
+      {/* The control rail (CN-32): the views and 3D, «Seguir en 3D» (M4, also a double click on an aircraft), the
+          pause, «Capas» and «Leyenda». «Seguir» is the S key, «Ver y seguir» and the inspector's flight. */}
       <MapDock>
         <MapPresetSwitcher />
+        <MapFollow3dButton />
         <MapMotionControl compact />
         <MapLayersMenu />
-        {/* Folded at first: the console's map is the ramp beside the panels, and the legend opens over it. */}
+        {/* Folded at first: the legend opens over the map beside the panels. */}
         <MapLegend defaultOpen={false} />
       </MapDock>
     </>
   ), [focusMap, layout, live.clock, live.picture, live.retry, live.sourceState, live.status, panels, pill, showPanels,
-    t, wide, mapFlights, station.stationCode, followOperational]);
+    showPanelsRef, status, statusRef, t, wide, mapFlights, station.stationCode, followOperational, weatherPanel]);
 
+  // Over the map, the map is the whole section and everything floats in it (M1); in the fallback, the section scrolls:
+  // the map's box with its list, then the grid of panels.
   return (
     <div data-occ-console={layout}
-      className={`relative flex h-full min-h-0 flex-col bg-occ-canvas ${layout === 'grid' ? 'overflow-y-auto' : ''}`}>
+      className={layout === 'grid' ? 'relative flex h-full min-h-0 flex-col overflow-y-auto bg-occ-canvas'
+        : 'relative h-full min-h-0 bg-occ-canvas'}>
       <h1 className="sr-only">{t('title')}</h1>
       <div ref={rootRef} data-occ-console-map=""
-        className={layout === 'grid' ? 'relative h-80 shrink-0' : 'relative min-h-0 flex-1'}>
+        className={layout === 'grid' ? 'relative h-80 shrink-0' : 'relative h-full min-h-0'}>
         <OccBootContext.Provider value={CONSOLE_MAP_BOOT}>
-          <OccMap ref={mapRef} defaultView="ramp" stands={stands} flights={mapFlights} traffic={traffic}
+          <OccMap ref={mapRef} defaultView={CONSOLE_DEFAULT_VIEW} regional3d weather={weather ?? null}
+            regionWeather={regionWeather} stands={stands} flights={mapFlights} traffic={traffic}
             selection={chosen} onSelect={handleMapSelect} insets={insets} labels={mapLabels}
             overlays={routeOverlays} overlayData={routes.overlayData}
             onCameraChange={handleCamera} isShortcutBlocked={isShortcutBlocked}>
@@ -576,18 +638,9 @@ export default function ConsolePage({ station, live, data, stands = EMPTY, weath
       {layout === 'grid' ? (
         <>
           {pill ? <div className="px-2 pt-2">{pill}</div> : null}
-          <ConsoleOverlay layout="grid" {...panels} />
+          <ConsoleOverlay layout="grid" status={status} {...panels} />
         </>
       ) : null}
-      <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t border-occ-line bg-occ-panel px-3 py-1">
-        <ProvenanceLine stands={stands} picture={live.picture} situation={live.situation} flights={mapFlights}
-          clock={live.clock} className="min-w-0 flex-1" />
-        {layout === 'map' && !focusMap ? (
-          <button type="button" onClick={() => setFocus('map')} className={CONSOLE_ACTION}>{t('focus.hide')}</button>
-        ) : null}
-        <WeatherPill weather={weather} className="ml-auto" />
-        <AirportDelaysPill stationId={station.stationId} label={station.stationCode || 'PUJ'} />
-      </div>
       {importOpen && canOpenImport ? (
         <ProviderFlightsDialog stationId={station.stationId} date={planningDate} timeZone={timeZone}
           revision={live.flights?.serverTime ?? 0} onClose={() => setImportOpen(false)} onImported={reread} />

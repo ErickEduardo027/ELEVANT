@@ -21,3 +21,7 @@
 
 # Preserve official DGII schema bytes, including upstream whitespace; SHA256 recorded in docs/reference.
 backend/Elevant.Infrastructure/Finance/XmlSchemas/*.xsd -text -whitespace
+
+# 3D models of the OCC maps (frontend/private-web/public/models): the glTF JSON is text, its buffers are binary.
+*.gltf text eol=lf
+*.bin binary

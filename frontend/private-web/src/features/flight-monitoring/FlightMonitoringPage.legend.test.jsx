@@ -71,13 +71,20 @@ describe('FlightMonitoringPage with its map', () => {
     const [button, ...others] = screen.getAllByRole('button', { name: 'Leyenda' });
     expect(others).toEqual([]);
     expect(screen.getByTestId('occ-map')).toContainElement(button);
+    // The board floats inside the map (M1), so the legend that flies out of the rail opens over it, never under it.
+    const board = screen.getByRole('region', { name: 'Tablero de vuelos' });
+    expect(screen.getByTestId('occ-map')).toContainElement(board);
+    expect(board).toHaveAttribute('data-layout', 'float');
+    expect(within(board).queryByRole('button', { name: 'Leyenda' })).not.toBeInTheDocument();
+    // The globe's world base (M8) is explained in the Región view it opens on, before the flights.
     expect(within(screen.getByTestId('map-legend')).getAllByRole('listitem', { hidden: true }).map(item => item.textContent))
-      .toEqual(['VueloApunta según su rumbo; al norte si no se conoce']);
+      .toEqual(['Luces de las ciudadesNASA Black Marble (2016), desde lejos', 'VueloApunta según su rumbo; al norte si no se conoce']);
   });
 
-  it('has no legend while no flight has a position, and leaves the explaining to the map', () => {
+  it('explains only the world base while no flight has a position, and leaves the explaining to the map', () => {
     renderPage({ station: { code: 'PUJ' }, flights: [flight({ latitude: null, longitude: null })] });
-    expect(screen.queryByRole('button', { name: 'Leyenda' })).not.toBeInTheDocument();
+    expect(within(screen.getByTestId('map-legend')).getAllByRole('listitem', { hidden: true }).map(item => item.textContent))
+      .toEqual(['Luces de las ciudadesNASA Black Marble (2016), desde lejos']);
     // The page no longer adds its own notice: inside the OCC frame the map says how its traffic is
     // (maps/ui/MapSourceStatus.jsx), and every flight reaches the map, placed or not.
     expect(screen.queryByText(/Sin posición de aeronaves en vivo/)).not.toBeInTheDocument();
@@ -89,7 +96,7 @@ describe('FlightMonitoringPage with its map', () => {
     renderPage(DATA, { english: true });
     expect(screen.getAllByRole('button', { name: 'Legend' })).toHaveLength(1);
     expect(within(screen.getByTestId('map-legend')).getAllByRole('listitem', { hidden: true }).map(item => item.textContent))
-      .toEqual(['FlightPoints along its heading; north when unknown']);
+      .toEqual(['City lightsNASA Black Marble (2016), from afar', 'FlightPoints along its heading; north when unknown']);
     expect(screen.queryByText('Leyenda')).not.toBeInTheDocument();
   });
 });

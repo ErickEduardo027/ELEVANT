@@ -3,6 +3,7 @@ import { VectorTile } from '@mapbox/vector-tile';
 import { PbfReader } from 'pbf';
 import { describe, expect, it } from 'vitest';
 import { basemapLayers } from '../src/features/maps/style/basemapLayers';
+import { WORLD_BASE_TILES } from '../src/features/maps/style/worldBaseLayers';
 import { GOES_TILE_TEMPLATE, IMERG_TILE_TEMPLATE } from '../src/services/satelliteService';
 import { GIBS_ORIGIN, gibsTileRequest, isolate } from './visual/support/isolate.mjs';
 import {
@@ -95,6 +96,27 @@ const gibsUrl = (template, time, { z, y, x }) => new URL(template.replace('/defa
   .replace('{z}', String(z)).replace('{y}', String(y)).replace('{x}', String(x)));
 
 describe('synthetic satellite images of the visual suite (PR M8)', () => {
+  it('answers the world base of the globe (M8): the static Blue Marble and Black Marble pinned to 2016, opaque', () => {
+    const tileOf = (template, { z, y, x }) => new URL(template.replace('{z}', String(z)).replace('{y}', String(y))
+      .replace('{x}', String(x)));
+    expect(gibsTileRequest(tileOf(WORLD_BASE_TILES.light, { z: 2, y: 1, x: 1 }))).toEqual({
+      layer: 'BlueMarble_ShadedRelief_Bathymetry', image: 'bluemarble', time: null, z: 2, y: 1, x: 1,
+    });
+    expect(gibsTileRequest(tileOf(WORLD_BASE_TILES.dark, { z: 3, y: 3, x: 2 }))).toEqual({
+      layer: 'VIIRS_Black_Marble', image: 'blackmarble', time: '2016-01-01', z: 3, y: 3, x: 2,
+    });
+    // A temporal layer must name its time, and a static one may not name a time of its own.
+    expect(gibsTileRequest(tileOf(WORLD_BASE_TILES.dark.replace('/2016-01-01/', '/'), { z: 3, y: 3, x: 2 }))).toBeNull();
+    expect(gibsTileRequest(tileOf(WORLD_BASE_TILES.light.replace('/default/', '/default/2016-01-01/'),
+      { z: 2, y: 1, x: 1 }))).toBeNull();
+    for (const image of ['bluemarble', 'blackmarble']) {
+      const { width, height, pixels } = readPng(syntheticSatelliteTile(image, 5, 9, 14));
+      expect([width, height]).toEqual([256, 256]);
+      const alphas = Array.from({ length: width * height }, (_, index) => pixels[index * 4 + 3]);
+      expect(new Set(alphas)).toEqual(new Set([255]));
+    }
+  });
+
   it('answers the satellite images of NASA GIBS pinned to their time with a synthetic PNG, and nothing else', () => {
     expect(gibsTileRequest(gibsUrl(GOES_TILE_TEMPLATE, '2026-11-13T14:50:00Z', { z: 5, y: 14, x: 9 }))).toEqual({
       layer: 'GOES-East_ABI_Band13_Clean_Infrared', image: 'goes', time: '2026-11-13T14:50:00Z', z: 5, y: 14, x: 9,
@@ -136,7 +158,9 @@ describe('synthetic satellite images of the visual suite (PR M8)', () => {
     expect(colours.size).toBeGreaterThanOrEqual(5);
     // Made once, the same every time; nothing for another image.
     expect(syntheticSatelliteTile('goes', tile.z, tile.x, tile.y)).toBe(png);
-    expect(syntheticSatelliteTile('radar', 5, 9, 14)).toBeNull();
+    expect(syntheticSatelliteTile('lightning', 5, 9, 14)).toBeNull();
+    // IEM's TJUA radar (M7) is an image of the suite too: a real PNG of the same size.
+    expect(readPng(syntheticSatelliteTile('radar', 5, 9, 14)).width).toBe(256);
     // The pixels run on across tiles: the centre of a tile's pixel is where Web Mercator puts it.
     const [west] = tilePixelLngLat(5, 9, 14, -0.5, 0);
     expect(west).toBeCloseTo((9 / 32) * 360 - 180, 9);

@@ -1,7 +1,16 @@
 import { occColor } from '../../occ-ui/occPalette';
 import { EARTH_RADIUS_M, METRES_PER_NM, haversineM } from '../airport/geo';
-import { isDrawn } from '../traffic/trafficFeatures';
+import { altitudeColour, mapColorsFor } from '../style/mapColors';
+import {
+  AIRCRAFT_ICON_INSET, AIRCRAFT_ICON_SIZES, DEMO_PLATE_CENTRE_PX, DEMO_PLATE_IMAGE, ESTIMATED_RING_IMAGE, aircraftImage,
+} from '../style/trafficImages';
+import { TRAFFIC_SCALES, altitudeFeet, drawnRadius, isDrawn, tagTextOf } from '../traffic/trafficFeatures';
+import { OUTSIDE_FILTER_OPACITY, TAG_DECLUTTER_UNTIL_ZOOM, TAG_STYLE } from '../traffic/trafficLayers';
+import { gearDown } from './attitude';
+import { LIVERY_ZONES, liveryZones, resolveLivery } from './liveries';
+import { SPRITE_CELLS, cellUv } from './spriteAtlas';
 import { resolveAircraftType } from './types';
+import { contactShadowMatrix, contactShadowSize, contactShadowStrength } from './contactShadow';
 
 // What the 3D layer draws (design G1 and G3, contracts 2.3 and 2.4): one entry per aircraft type present, with the
 // instance matrices and colours of its aircraft and of their ground shadows, in the local frame of the ARP. Pure, and
@@ -16,6 +25,16 @@ import { resolveAircraftType } from './types';
 /** Only aircraft this close to the ARP are drawn in 3D (design G1): the airfield and its approaches. */
 export const AIRCRAFT_3D_RADIUS_NM = 6;
 
+// Note of 2026-11-27 (M9, approved plan): on Mapa de posiciones only, contracts 2.4 give way twice. Its 3D aircraft wear
+// their airlines' liveries (brand colours of aircraft/liveries.js, the chosen one still in the accent), and other
+// traffic on the ground near the field is drawn in 3D too, while the governor is at full quality. Every other map keeps
+// the monochrome aircraft and its ground traffic in 2D: both are options of planInstances, off by default.
+/**
+ * With the liveries on (M9, Mapa de posiciones), other traffic on the ground this close to the ARP is drawn in 3D too:
+ * the airfield, its aprons and its taxiways, not an aircraft parked at a field nearby.
+ */
+export const GROUND_TRAFFIC_3D_RADIUS_M = 4_000;
+
 /** Above this height an airborne aircraft gets a drop line to the ground, so its position on the map reads. */
 export const DROP_LINE_MIN_M = 3;
 
@@ -25,7 +44,6 @@ export const SHADOW = Object.freeze({ heightM: 0.05, flatten: 0.01 });
 /** How many distinct type descriptions the plan keeps resolved (aircraft/types.js: resolveAircraftType). */
 export const TYPE_MEMO_LIMIT = 256;
 
-const RADIUS_M = AIRCRAFT_3D_RADIUS_NM * METRES_PER_NM;
 const MAX_MERCATOR_LATITUDE = 85.051129;
 // MapLibre's mercator coordinates (src/geo/mercator_coordinate.ts): the world is [0, 1] on both axes, y grows south,
 // and one metre at latitude φ is 1 / (2π · 6 371 008.8 m · cos φ) units.
@@ -119,6 +137,29 @@ const LIGHT_3D_COLORS = Object.freeze({
 export function aircraft3dColors(theme) {
   return theme === 'light' ? LIGHT_3D_COLORS : AIRCRAFT_3D_COLORS;
 }
+
+// The zones an instance paints besides its base colour (`colors`, the fuselage), in LIVERY_ZONES order.
+const EXTRA_ZONES = Object.freeze(LIVERY_ZONES.filter(zone => zone !== 'fuselage'));
+const liveryMemo = new Map();
+
+/**
+ * The instance colours of an aircraft's livery (M9): the linear `[r, g, b]` of each zone of LIVERY_ZONES
+ * (aircraft/liveries.js: liveryZones) of the airline resolveLivery finds for `item`, frozen, kept per livery. The one
+ * helper both the instanced procedural models and the models from files (lane M5) paint with.
+ */
+export function liveryInstanceColours(item) {
+  const livery = resolveLivery(item);
+  let colours = liveryMemo.get(livery.id);
+  if (colours === undefined) {
+    const zones = liveryZones(livery);
+    colours = Object.freeze(Object.fromEntries(LIVERY_ZONES.map(zone => [zone, linearRgb(zones[zone])])));
+    liveryMemo.set(livery.id, colours);
+  }
+  return colours;
+}
+
+// Every zone in one colour: the monochrome aircraft, the chosen one and the shadows.
+const uniformZones = colour => Object.fromEntries(LIVERY_ZONES.map(zone => [zone, colour]));
 
 /** The key of a resolved type in the plan: its ICAO designator, or `@` and its category for a generic airframe. */
 export function instanceKey(resolved) {
@@ -215,12 +256,18 @@ function writeMatrix(target, offset, { x, y, z, headingDeg, flatten, pitchDeg = 
   target.set([cos, -sin, 0, 0, sin, cos, 0, 0, 0, 0, flatten, 0, x, y, z, 1], offset);
 }
 
-// What the layer can place, or null: other traffic on the ground stays 2D (contracts 2.4), and an aircraft in the air
-// without an altitude too, because no height is made up for it.
-function placeable(item, { fieldElevationM }) {
+// What the layer can place, or null: other traffic on the ground stays 2D (contracts 2.4) unless it is within
+// `groundRadiusM` of the ARP (M9), and an aircraft in the air without an altitude too, because no height is made up
+// for it.
+function placeable(item, { fieldElevationM, originLngLat, groundRadiusM }) {
   if (!isDrawn(item) || item.id == null) return null;
   const aviam = item.kind === 'aviam';
-  if (item.onGround === true) return aviam ? { item, aviam, z: 0 } : null;
+  if (item.onGround === true) {
+    if (aviam) return { item, aviam, z: 0 };
+    const near = groundRadiusM > 0 && finite(item.lon) && finite(item.lat)
+      && haversineM(originLngLat, [item.lon, item.lat]) <= groundRadiusM;
+    return near ? { item, aviam, z: 0 } : null;
+  }
   if (!finite(item.altM)) return null;
   return { item, aviam, z: Math.max(0, item.altM - fieldElevationM) };
 }
@@ -235,7 +282,9 @@ const byId = (a, b) => {
  * (traffic/situationModel.js: RenderAircraft); `parkedAircraft` the aircraft standing on their stands,
  * `{ id, lon, lat, headingDeg, typeIcao, model, sizeCategory, kind? }`, each owning the aircraft of the map with its id.
  *
- * Answers `Map<key, { spec, approximate, aircraftCount, count, matrices, colors, floorLengths, ids, dropLines }>`, the keys
+ * Answers `Map<key, { spec, approximate, aircraftCount, count, matrices, colors, zoneColors, floorLengths, ids, liveries,
+ * gear, dropLines, contacts, contactStrengths }>`, the keys
+ * dropLines }>`, the keys
  * (instanceKey) sorted, empty below `minZoom` (the caller's 3D threshold: the airfield fit − 0.3, contracts 2.3):
  * - only aircraft within AIRCRAFT_3D_RADIUS_NM of `originLngLat` (the ARP) that the 2D layers draw (isDrawn); other
  *   traffic on the ground stays 2D, and so does an aircraft in the air without an altitude;
@@ -248,20 +297,37 @@ const byId = (a, b) => {
  * - `floorLengths` (PR M7) holds, per instance, the model's length in metres for an aircraft of the traffic and its
  *   shadow, which the layer may draw larger at a far zoom (aircraft3dLayer.js: minModelPx), and 0 for one on its stand;
  * - colours (`colors` option, AIRCRAFT_3D_COLORS by default): the chosen aircraft (`selectedId`) in `selected`, AVIAM
- *   aircraft in `aviam`, other traffic in `other`, shadows in `shadow`;
+ *   aircraft in `aviam`, other traffic in `other`, shadows in `shadow`; `colors` paints the fuselage and `zoneColors`
+ *   (`{ belly, tail, engine, wing }`, 3 linear floats per instance each) the other zones of aircraft/liveries.js:
+ *   LIVERY_ZONES, in the same colour unless `livery`;
+ * - M9: with `livery`, every aircraft but the chosen one and the shadows wears its airline's livery
+ *   (liveryInstanceColours: fuselage, belly, fin, engines and wings), and with `groundRadiusM` other traffic on the
+ *   ground within that many metres of the ARP is drawn too (GROUND_TRAFFIC_3D_RADIUS_M), as the traffic is;
+ * - PR M5: `liveries` holds per instance the id of the livery a type's glTF model wears up close (aircraft/liveries.js:
+ *   resolveLivery, painted by aircraft/liveryMaterial.js from the same liveryPaint as `zoneColors`): for an AVIAM
+ *   aircraft, and with `livery` (M9, the Mapa de posiciones' exception to contracts 2.4) for every aircraft; null for
+ *   the chosen aircraft (it keeps the selection's accent), for other traffic without `livery` (it keeps its plain
+ *   colour, so the livery itself marks AVIAM's aircraft) and for a shadow; `gear` 1 where the landing gear is down (on
+ *   a stand, on the ground, or as aircraft/attitude.js eased it) and 0 where it is up, a shadow as its aircraft;
  * - `spec` and `approximate` come from resolveAircraftType: a type the table lacks takes its category's generic
  *   airframe under the category's own key, approximate.
  * - CN-30: `attitudes` (`Map<id, { heightM, pitchDeg, bankDeg }>`, aircraft/attitude.js) pitch and bank an aircraft of
  *   the traffic (poseMatrix) and set its height; its shadow stays level. `excludeId` is left out of the plan: the
  *   aircraft the detailed model draws (core/aircraft3d.js).
+ * - M4 (2026-11-28): `contacts` holds the matrix of each aircraft's soft contact shadow (contactShadow.js: 16 floats,
+ *   in the aircraft's order) and `contactStrengths` its strength, 1 on the ground and 0 from CONTACT_SHADOW.fadeM up
+ *   (its matrix then zero).
+ * - PR M2: `radiusNm` widens the circle (AIRCRAFT_3D_RADIUS_NM by default; Infinity for none): the animated layer draws
+ *   every aircraft in sight as a model, and the layer's size floor keeps the far ones from vanishing.
  * The input is never changed; the same input gives the same plan.
  */
 export function planInstances(renderAircraft = [], parkedAircraft = [], {
   zoom, minZoom, originLngLat, fieldElevationM = 0, selectedId = null, colors = AIRCRAFT_3D_COLORS,
-  attitudes = null, excludeId = null,
+  attitudes = null, excludeId = null, livery = false, groundRadiusM = 0, radiusNm = AIRCRAFT_3D_RADIUS_NM,
 } = {}) {
   const plan = new Map();
   if (!(zoom >= minZoom)) return plan;
+  const radiusM = (finite(radiusNm) ? radiusNm : Infinity) * METRES_PER_NM;
   const attitudeOf = id => (attitudes instanceof Map ? attitudes.get(id) ?? null : null);
   const frame = mercatorFrame(originLngLat);
   const field = finite(fieldElevationM) ? fieldElevationM : 0;
@@ -274,14 +340,24 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
   const placed = [...parked.values()];
   for (const item of list(renderAircraft)) {
     if (item?.id == null || parked.has(item.id) || item.id === excludeId) continue;
-    const entry = placeable(item, { fieldElevationM: field });
+    const entry = placeable(item, { fieldElevationM: field, originLngLat,
+      groundRadiusM: finite(groundRadiusM) ? groundRadiusM : 0 });
     if (entry !== null) placed.push(entry);
   }
+
+  const plain = { aviam: uniformZones(colors.aviam), other: uniformZones(colors.other) };
+  const selectedZones = uniformZones(colors.selected);
+  const shadowZones = uniformZones(colors.shadow);
+  const paintOf = entry => {
+    if (entry.item.id === selectedId) return selectedZones;
+    if (livery === true) return liveryInstanceColours(entry.item);
+    return plain[entry.aviam ? 'aviam' : 'other'];
+  };
 
   const groups = new Map();
   for (const entry of placed) {
     const point = [entry.item.lon, entry.item.lat];
-    if (haversineM(originLngLat, point) > RADIUS_M) continue;
+    if (radiusM !== Infinity && haversineM(originLngLat, point) > radiusM) continue;
     const resolved = resolvedTypeOf(entry.item);
     const key = instanceKey(resolved);
     const [x, y] = frame.toLocal(point);
@@ -293,10 +369,19 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
     // The attitude the controller eased for it (CN-30): its pitch, its bank and its height over the field.
     const attitude = entry.onStand === true ? null : attitudeOf(entry.item.id);
     const z = finite(attitude?.heightM) ? attitude.heightM : entry.z;
+    const selected = entry.item.id === selectedId;
+    // PR M5: the livery its type's model wears up close, and its gear. Only an AVIAM aircraft wears its airline's
+    // livery: the chosen one keeps the selection's accent and other traffic its plain colour, so the 3D picture still
+    // tells AVIAM's aircraft from the rest (contracts 2.4; ADR-0043, note of 2026-11-28). With `livery` (M9, the Mapa
+    // de posiciones) every aircraft but the chosen one wears it, as its procedural model does (paintOf).
+    const down = entry.onStand === true || (typeof attitude?.gearDown === 'boolean' ? attitude.gearDown
+      : gearDown({ heightM: z, onGround: entry.item.onGround === true, phase: entry.item.phase ?? null,
+        vrateMs: finite(entry.item.vrateMs) ? entry.item.vrateMs : null }));
     group.members.push({ id: entry.item.id, x, y, z, headingDeg: heading, onStand: entry.onStand === true,
+      livery: selected || !(entry.aviam || livery === true) ? null : resolveLivery(entry.item).id, gearDown: down,
       pitchDeg: finite(attitude?.pitchDeg) ? attitude.pitchDeg : 0, bankDeg: finite(attitude?.bankDeg) ? attitude.bankDeg : 0,
       pivot: pivotOf(resolved.spec),
-      colour: entry.item.id === selectedId ? colors.selected : colors[entry.aviam ? 'aviam' : 'other'] });
+      zones: paintOf(entry) });
     groups.set(key, group);
   }
 
@@ -306,23 +391,43 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
     const aircraftCount = members.length;
     const matrices = new Float32Array(32 * aircraftCount);
     const instanceColors = new Float32Array(6 * aircraftCount);
+    const zoneColors = Object.fromEntries(EXTRA_ZONES.map(zone => [zone, new Float32Array(6 * aircraftCount)]));
     // The length a model may grow from (aircraft3dLayer.js: minModelPx): an aircraft of the traffic, as its 2D symbol,
     // is never drawn smaller than a few pixels; one on its stand keeps the stand's scale, as its footprint does.
     const floorLengths = new Float32Array(2 * aircraftCount);
     const ids = [];
+    const liveries = [];
+    const gear = new Float32Array(2 * aircraftCount);
     const drops = [];
+    // M4: the soft contact shadow under each aircraft (contactShadow.js), fading with its height.
+    const contacts = new Float32Array(16 * aircraftCount);
+    const contactStrengths = new Float32Array(aircraftCount);
     members.forEach((member, index) => {
       writeMatrix(matrices, 16 * index, { ...member, flatten: 1 });
       writeMatrix(matrices, 16 * (aircraftCount + index), { ...member, z: SHADOW.heightM, flatten: SHADOW.flatten,
         pitchDeg: 0, bankDeg: 0 });
-      instanceColors.set(member.colour, 3 * index);
-      instanceColors.set(colors.shadow, 3 * (aircraftCount + index));
+      instanceColors.set(member.zones.fuselage, 3 * index);
+      instanceColors.set(shadowZones.fuselage, 3 * (aircraftCount + index));
+      for (const zone of EXTRA_ZONES) {
+        zoneColors[zone].set(member.zones[zone], 3 * index);
+        zoneColors[zone].set(shadowZones[zone], 3 * (aircraftCount + index));
+      }
       ids[index] = member.id;
       ids[aircraftCount + index] = null;
+      liveries[index] = member.livery;
+      liveries[aircraftCount + index] = null;
+      gear[index] = member.gearDown ? 1 : 0;
+      gear[aircraftCount + index] = gear[index];
       const floor = member.onStand ? 0 : resolved.spec.lengthM;
       floorLengths[index] = floor;
       floorLengths[aircraftCount + index] = floor;
       if (member.z > DROP_LINE_MIN_M) drops.push(member.x, member.y, member.z, member.x, member.y, 0);
+      const strength = contactShadowStrength(member.z);
+      contactStrengths[index] = strength;
+      if (strength > 0) {
+        contacts.set(contactShadowMatrix({ x: member.x, y: member.y, headingDeg: member.headingDeg,
+          ...contactShadowSize(resolved.spec, member.z) }), 16 * index);
+      }
     });
     plan.set(key, Object.freeze({
       spec: resolved.spec,
@@ -331,10 +436,210 @@ export function planInstances(renderAircraft = [], parkedAircraft = [], {
       count: 2 * aircraftCount,
       matrices,
       colors: instanceColors,
+      zoneColors: Object.freeze(zoneColors),
       floorLengths,
       ids: Object.freeze(ids),
+      liveries: Object.freeze(liveries),
+      gear,
       dropLines: Float32Array.from(drops),
+      contacts,
+      contactStrengths,
     }));
   }
   return plan;
+}
+
+// The sRGB channels of a #rrggbb colour, 0 to 1: the sprites' shader paints them as they are, as MapLibre does.
+const srgbMemo = new Map();
+function srgb(colour) {
+  let channels = srgbMemo.get(colour);
+  if (channels === undefined) {
+    const match = /^#([\da-f]{6})$/i.exec(colour ?? '');
+    if (match === null) throw new RangeError(`Not a #rrggbb colour: ${String(colour)}`);
+    channels = Object.freeze([0, 2, 4].map(start => Number.parseInt(match[1].slice(start, start + 2), 16) / 255));
+    srgbMemo.set(colour, channels);
+  }
+  return channels;
+}
+
+// The plate's centre below an aircraft of drawn half size `radius` (traffic/trafficLayers.js: plateOffset).
+function plateCentrePx(radius) {
+  let centre = DEMO_PLATE_CENTRE_PX[0][1];
+  for (const [from, value] of DEMO_PLATE_CENTRE_PX) if (radius >= from) centre = value;
+  return centre;
+}
+
+const clamp01 = value => Math.min(1, Math.max(0, value));
+
+/**
+ * The flat sprites of the animated traffic layer (PR M2, aircraft/aircraft3dLayer.js): what the GeoJSON layers draw of
+ * each aircraft (traffic/trafficLayers.js), at the positions of this frame. `aircraft` are the aircraft of the frame
+ * (the write's items at their interpolated positions, traffic/keyframes.js); options:
+ * - `originLngLat` (the ARP of the layer's frame), `theme` (the altitude colours and the chosen aircraft's and the
+ *   estimated ring's OCC colours, as style/occStyle.js swaps them for the GeoJSON layers), `selectedId`;
+ * - `modelIds`: aircraft drawn as models (no silhouette, their marks stay); `parkedIds`: ELEVANT aircraft their stand
+ *   draws (no silhouette unless chosen, their marks stay);
+ * - M8 (integration with M2): `outsideIds`, the aircraft Monitoreo's board filter leaves out (OccMap's flightEmphasis),
+ *   whose silhouette and «Demo» plate are dimmed by OUTSIDE_FILTER_OPACITY as the GeoJSON layers dim them (their
+ *   estimated ring is not, as the GeoJSON ring is not);
+ * - M4 (integration with M2): `closeUpId`, close up («Seguir en 3D» past zoom 19.5), the followed aircraft, whose
+ *   estimated ring and «Demo» plate are left out, as the GeoJSON layers leave them (they sat on its model's tail).
+ * Each sprite is a rectangle of the atlas (aircraft/spriteAtlas.js) on the ground of the frame, sized in CSS pixels, so
+ * the layer scales it by the metres of a pixel at the frame's zoom and it keeps its size on screen as an icon does:
+ * - a silhouette: its category's (hollow for a departing ELEVANT flight), turned to its track, `scale` as
+ *   trafficFeatures sizes it, tinted with the altitude scale (style/mapColors.js: grey on the ground), the chosen one in
+ *   the accent, dimmed to half when stale and faded by its own opacity;
+ * - an estimated position: its dashed ring, muted; a demo flight: its «Demo» plate below it, facing the screen at every
+ *   pitch and bearing as the GeoJSON plate does (aircraft/trafficSprites.js draws an image with its own colours as a
+ *   billboard: its size and offset are screen pixels, its matrix only places its aircraft).
+ * Answers `{ count, matrices, colors, halos, opacities, sizes, offsets, cells, plain, ids }`: per sprite 16 floats
+ * (T(x, y, 0) · Rz(−angle), column-major), 3 sRGB floats of tint and of halo, its opacity, its width and height in px,
+ * its offset in px along its own axes, its atlas rectangle `[u0, v0, du, dv]`, 1 for an image with its own colours, and
+ * the aircraft's id for a silhouette (null for a mark). Drawing order: other traffic on the ground, other traffic in the
+ * air, ELEVANT flights, the chosen aircraft, then the rings and the plates.
+ */
+export function planSprites(aircraft = [], {
+  originLngLat, theme = 'dark', selectedId = null, modelIds = null, parkedIds = null, outsideIds = null,
+  closeUpId = null,
+} = {}) {
+  const frame = mercatorFrame(originLngLat);
+  const models = modelIds instanceof Set ? modelIds : new Set();
+  const parked = parkedIds instanceof Set ? parkedIds : new Set();
+  const outside = outsideIds instanceof Set ? outsideIds : null;
+  const halo = mapColorsFor(theme).altitude.halo;
+  const bands = [[], [], [], [], [], []];
+  for (const item of list(aircraft)) {
+    if (item?.id == null || !isDrawn(item)) continue;
+    const aviam = item.kind === 'aviam';
+    const departure = aviam && item.direction === 'Departure';
+    const ground = item.onGround === true;
+    const selected = item.id === selectedId;
+    const category = resolvedTypeOf(item).iconCategory;
+    let scale = TRAFFIC_SCALES.other;
+    if (selected) scale = TRAFFIC_SCALES.selected;
+    else if (aviam) scale = TRAFFIC_SCALES.aviam;
+    else if (ground) scale = TRAFFIC_SCALES.otherGround;
+    const [x, y] = frame.toLocal([item.lon, item.lat]);
+    const own = finite(item.opacity) ? clamp01(item.opacity) : 1;
+    const dimmed = own * (item.quality === 'stale' ? 0.5 : 1)
+      * (outside !== null && outside.has(item.id) ? OUTSIDE_FILTER_OPACITY : 1);
+    const bare = closeUpId != null && item.id === closeUpId;
+    const icon = aircraftImage(category, { hollow: departure });
+    const iconPx = SPRITE_CELLS[icon].width * scale;
+    if (!models.has(item.id) && (selected || !(aviam && parked.has(item.id)))) {
+      let band = 2;
+      if (selected) band = 3;
+      else if (!aviam) band = ground ? 0 : 1;
+      bands[band].push({ id: item.id, x, y, angle: finite(item.trackDeg) ? item.trackDeg : 0, image: icon,
+        width: iconPx, height: iconPx, offsetY: 0,
+        tint: selected ? occColor('accent', theme) : altitudeColour(theme, { ground, altFt: altitudeFeet(item) }),
+        halo: selected ? occColor('nav', theme) : halo, opacity: dimmed });
+    }
+    if (item.quality === 'estimated' && !bare) {
+      const ring = SPRITE_CELLS[ESTIMATED_RING_IMAGE];
+      bands[4].push({ id: null, x, y, angle: 0, image: ESTIMATED_RING_IMAGE, width: ring.width * scale,
+        height: ring.height * scale, offsetY: 0, tint: occColor('muted', theme), halo: occColor('nav', theme), opacity: own });
+    }
+    if (aviam && item.isDemo === true && !bare) {
+      const plate = SPRITE_CELLS[DEMO_PLATE_IMAGE];
+      const radius = Math.round(((AIRCRAFT_ICON_SIZES[category] - 2 * AIRCRAFT_ICON_INSET) / 2) * scale * 10) / 10;
+      bands[5].push({ id: null, x, y, angle: 0, image: DEMO_PLATE_IMAGE,
+        width: plate.width, height: plate.height, offsetY: -plateCentrePx(radius), tint: '#ffffff', halo: '#ffffff',
+        opacity: dimmed });
+    }
+  }
+  const sprites = bands.flat();
+  const count = sprites.length;
+  const matrices = new Float32Array(16 * count);
+  const colors = new Float32Array(3 * count);
+  const halos = new Float32Array(3 * count);
+  const opacities = new Float32Array(count);
+  const sizes = new Float32Array(2 * count);
+  const offsets = new Float32Array(2 * count);
+  const cells = new Float32Array(4 * count);
+  const plain = new Float32Array(count);
+  const ids = [];
+  sprites.forEach((sprite, index) => {
+    writeMatrix(matrices, 16 * index, { x: sprite.x, y: sprite.y, z: 0, headingDeg: sprite.angle, flatten: 1 });
+    colors.set(srgb(sprite.tint), 3 * index);
+    halos.set(srgb(sprite.halo), 3 * index);
+    opacities[index] = sprite.opacity;
+    sizes[2 * index] = sprite.width;
+    sizes[2 * index + 1] = sprite.height;
+    offsets[2 * index + 1] = sprite.offsetY;
+    cells.set(cellUv(sprite.image), 4 * index);
+    plain[index] = SPRITE_CELLS[sprite.image].plain ? 1 : 0;
+    ids[index] = sprite.id;
+  });
+  return Object.freeze({ count, matrices, colors, halos, opacities, sizes, offsets, cells, plain,
+    ids: Object.freeze(ids) });
+}
+
+/**
+ * Which tags of the animated traffic may show, where, and how strongly (PR M2, aircraft/trafficLabels.js lays them out),
+ * as the GeoJSON tags show them (traffic/trafficLayers.js, CN-29):
+ * - an ELEVANT flight's always, except on the stand that draws it (`parkedIds`); below TAG_DECLUTTER_UNTIL_ZOOM it gives
+ *   way where it would cover another tag (the chosen one's first, then those in the air, then those on the ground);
+ *   from that zoom on it shows over what is there;
+ * - other traffic's while it is chosen or under the pointer (`focusId`), and with «Etiquetas de todo el tráfico»
+ *   (`labelsOn`) from `otherTagsMinZoom` up, giving way to every other tag (low zoom: ELEVANT, chosen and hovered only).
+ * `aircraft` are the aircraft of the frame; `words` their tags' words by id (traffic/trafficFeatures.js: tagTextOf,
+ * made at the write; one missing is made here). Answers `{ tags, marks, ring }` in the frame's metres: `tags`
+ * `{ id, x, y, tag, priority, always, offsetPx, opacity }` (the gap past the silhouette as the GeoJSON tags keep it,
+ * the opacity of a stale or fading aircraft), `marks` `{ id, x, y, radius }` the silhouettes a tag keeps off, and
+ * `ring` `{ x, y }` the chosen aircraft's ring, or null.
+ * - M8 (integration with M2): the tags of `outsideIds` (Monitoreo's board filter) are dimmed by OUTSIDE_FILTER_OPACITY,
+ *   as the GeoJSON tags are.
+ * - M4 (integration with M2): `closeUp` («Seguir en 3D» past zoom 19.5) shows no tag and no ring, as the GeoJSON tags
+ *   and the selection rings hide close up (core/mapEngine.js: setCloseUp); the marks stay.
+ */
+export function planLabels(aircraft = [], {
+  originLngLat, selectedId = null, focusId = null, labelsOn = false, zoom = null, words = null, parkedIds = null,
+  language = 'es', otherTagsMinZoom = null, outsideIds = null, closeUp = false,
+} = {}) {
+  const frame = mercatorFrame(originLngLat);
+  const parked = parkedIds instanceof Set ? parkedIds : new Set();
+  const outside = outsideIds instanceof Set ? outsideIds : null;
+  const hidden = closeUp === true;
+  const close = finite(zoom) && zoom >= TAG_DECLUTTER_UNTIL_ZOOM;
+  const othersShown = labelsOn === true && (!finite(otherTagsMinZoom) || (finite(zoom) && zoom >= otherTagsMinZoom));
+  const tags = [];
+  const marks = [];
+  let ring = null;
+  for (const item of list(aircraft)) {
+    if (item?.id == null || !isDrawn(item)) continue;
+    const aviam = item.kind === 'aviam';
+    const ground = item.onGround === true;
+    const selected = item.id === selectedId;
+    const focused = item.id === focusId;
+    const onStand = aviam && parked.has(item.id);
+    let scale = TRAFFIC_SCALES.other;
+    if (selected) scale = TRAFFIC_SCALES.selected;
+    else if (aviam) scale = TRAFFIC_SCALES.aviam;
+    else if (ground) scale = TRAFFIC_SCALES.otherGround;
+    const radius = drawnRadius(resolvedTypeOf(item).iconCategory, scale);
+    const [x, y] = frame.toLocal([item.lon, item.lat]);
+    if (selected && !hidden) ring = { x, y };
+    if (!onStand || selected) marks.push({ id: item.id, x, y, radius });
+    if (hidden) continue;
+    let priority = null;
+    let always = false;
+    if (aviam && !onStand) {
+      always = close || selected || focused;
+      if (selected) priority = 0;
+      else priority = close || !ground ? 1 : 2;
+    } else if (!aviam && (selected || focused)) {
+      priority = 0;
+      always = true;
+    } else if (!aviam && othersShown) priority = 3;
+    if (priority === null) continue;
+    const tag = words?.get?.(item.id) ?? tagTextOf(item, { language });
+    const size = aviam ? TAG_STYLE.aviam.size : TAG_STYLE.other.size;
+    const own = finite(item.opacity) ? clamp01(item.opacity) : 1;
+    tags.push({ id: item.id, x, y, tag, priority, always,
+      offsetPx: radius + TAG_STYLE.radialOffsetEm * size,
+      opacity: own * (item.quality === 'stale' ? 0.5 : 1)
+        * (outside !== null && outside.has(item.id) ? OUTSIDE_FILTER_OPACITY : 1) });
+  }
+  return { tags, marks, ring };
 }

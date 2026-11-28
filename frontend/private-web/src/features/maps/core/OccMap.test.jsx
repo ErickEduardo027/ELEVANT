@@ -299,6 +299,25 @@ describe('OccMap', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
+  it('leaves the map keys to a child that opts out with data-occ-map-keys="off" (M1)', () => {
+    const onSelect = vi.fn();
+    const { map } = renderMap({
+      selection: { kind: 'stand', id: 'A5' }, onSelect,
+      children: <div data-occ-map-keys="off"><button type="button">Meteorología</button></div>,
+    });
+    loadStyle(map);
+    const root = screen.getByTestId('occ-map');
+    const button = screen.getByRole('button', { name: 'Meteorología' });
+    // Inside the opted-out child (the console's status bar): Esc and the views are not the map's.
+    expect(press(button, 'Escape').defaultPrevented).toBe(false);
+    expect(press(button, '1').defaultPrevented).toBe(false);
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(root).toHaveAttribute('data-occ-view', 'ramp');
+    // On the map itself they still are.
+    expect(press(map.getCanvas(), 'Escape').defaultPrevented).toBe(true);
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(null);
+  });
+
   it('leaves exactly one live map after a StrictMode double mount', () => {
     const before = liveEngineCount();
     const { map, unmount } = renderMap({}, { strict: true });
@@ -869,9 +888,9 @@ describe('OccMap', () => {
     expect(map.options.fadeDuration).toBe(300);
     expect(map.options.locale).toMatchObject({ 'Map.Title': 'Mapa del OCC', 'NavigationControl.ZoomIn': 'Acercar' });
     cleanup();
-    // Without them the engine keeps its own: no symbol fade (CN-18).
+    // Without them the engine keeps its own: a 150 ms symbol fade (PR M2; it was none from CN-18).
     render(<OccMap stands={STANDS} />);
-    expect(fake.state.liveMaps().at(-1).options.fadeDuration).toBe(0);
+    expect(fake.state.liveMaps().at(-1).options.fadeDuration).toBe(150);
   });
 
   it('answers no pixel without a map', async () => {
@@ -926,7 +945,7 @@ describe('OccMap', () => {
     // One setData per source when the map starts, and no clustering any more.
     expect(sources.map(source => source.setDataCalls.length)).toEqual([1, 1, 1, 1]);
     expect(sources.map(source => source.updateDataCalls.length)).toEqual([0, 0, 0, 0]);
-    expect(sources[0].spec).toEqual({ type: 'geojson', promoteId: 'code', data: { type: 'FeatureCollection', features: [] } });
+    expect(sources[0].spec).toEqual({ type: 'geojson', promoteId: 'code', maxzoom: 16, data: { type: 'FeatureCollection', features: [] } });
     const [polygons, , labels, groups] = sources;
     expect(polygons.data.features).toHaveLength(41);
     expect(polygons.data.features.every(feature => feature.geometry.type === 'Polygon')).toBe(true);
@@ -1601,6 +1620,8 @@ describe('OccMap', () => {
       'src/features/maps/ui/FlightDataBlock.jsx', 'src/features/maps/ui/MapLayersMenu.jsx',
       // PR M6: the pause control and the follow button.
       'src/features/maps/ui/MapMotionControl.jsx', 'src/features/maps/ui/MapFollowButton.jsx',
+      // CN-30, flat since M1: the panel of «Seguir en 3D».
+      'src/features/maps/ui/Follow3dPanel.jsx',
     ];
     const tokens = new Set(Object.keys(tailwindConfig.theme.extend.colors.occ));
     for (const file of files) {
@@ -1643,6 +1664,104 @@ describe('OccMap', () => {
     renderMap();
     expect(screen.getByTestId('occ-map')).toHaveClass('occ-map');
   });
+
+  it('styles only its own MapLibre controls, never those of a map nested among its children (M1)', () => {
+    const css = readSource('src/styles/occ-map.css').replace(/\/\*[\s\S]*?\*\//g, '');
+    const selectors = [...css.matchAll(/([^{}]+)\{/g)].map(([, prelude]) => prelude.trim())
+      .filter(prelude => !prelude.startsWith('@')).flatMap(prelude => prelude.split(',').map(part => part.trim()))
+      .filter(selector => selector.includes('.maplibregl-'));
+    expect(selectors.length).toBeGreaterThan(15);
+    // The map's root with its own host, and, among its children, a raw MapLibre map (M1 wrote this for the GOES map of
+    // the weather pill in the console's status bar, which M7 retired; it holds for any nested map), each with the same
+    // controls.
+    const { container } = render(<div className="occ-map" />);
+    const controls = parent => {
+      const corner = position => `<div class="maplibregl-ctrl-${position}">`
+        + '<div class="maplibregl-ctrl maplibregl-ctrl-group">'
+        + '<button type="button"><span class="maplibregl-ctrl-icon"></span></button><button type="button"></button></div>'
+        + '<details class="maplibregl-ctrl maplibregl-ctrl-attrib maplibregl-compact maplibregl-compact-show" open>'
+        + '<summary class="maplibregl-ctrl-attrib-button"></summary><a href="#">OSM</a>'
+        // The link to the dialog of the map's credits (PR M5).
+        + '<a href="#" class="occ-map-credits-link">Créditos y licencias</a></details>'
+        + '<div class="maplibregl-ctrl maplibregl-ctrl-scale"></div></div>';
+      parent.innerHTML = `<div class="maplibregl-control-container">${['top-left', 'top-right', 'bottom-left', 'bottom-right']
+        .map(corner).join('')}</div>`;
+      return [...parent.querySelectorAll('*')];
+    };
+    const root = container.firstElementChild;
+    root.innerHTML = '<div class="occ-map-host"></div><div data-occ-console-status=""><div><div class="nested"></div></div></div>';
+    const own = controls(root.querySelector('.occ-map-host'));
+    const nested = controls(root.querySelector('.nested'));
+    for (const selector of selectors) {
+      expect(nested.filter(element => element.matches(selector)), selector).toEqual([]);
+      // The map's own controls answer to every rule, the states of a pointer or a focus left aside.
+      const resting = selector.replace(/:(?:hover|active|focus-visible|focus)\b/g, '');
+      if (!selector.includes(':root:not(.dark)')) expect(own.some(element => element.matches(resting)), selector).toBe(true);
+    }
+  });
+
+  it('keeps the control column at the true right edge of the map and the right slot left of it (M1)', () => {
+    const css = readSource('src/styles/occ-map.css').replace(/\/\*[\s\S]*?\*\//g, '');
+    // The innermost rules in their order, the narrow map's included: each selector with its declarations.
+    const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, prelude, body]) => ({
+      selector: prelude.trim(),
+      declarations: Object.fromEntries(body.split(';').map(text => text.trim()).filter(Boolean).map(text => {
+        const colon = text.indexOf(':');
+        return [text.slice(0, colon).trim(), text.slice(colon + 1).trim().replace(/\s+/g, ' ')];
+      })),
+    }));
+    const all = selector => rules.filter(rule => rule.selector === selector).map(rule => rule.declarations);
+    const [root] = all('.occ-map');
+    // The column keeps a reserve at the right edge: its gap, the rail and the gap to a panel floating at its left. What
+    // the map shows ends at the column, or further in at such a panel, whose right inset holds the reserve.
+    expect(root['--occ-map-rail-reserve']).toBe('calc(var(--occ-map-rail) + 2 * var(--occ-map-gap))');
+    expect(root['--occ-map-clear-right'])
+      .toBe('max(var(--occ-map-inset-right, 0px), calc(var(--occ-map-rail) + var(--occ-map-gap)))');
+    // The zoom group and the rail never move with the insets: the column stays where it is whatever the panels report,
+    // and only the area in sight reads the right inset, through --occ-map-clear-right.
+    expect(all('.occ-map > .occ-map-host .maplibregl-ctrl-top-right')).toEqual([{ top: '0', right: '0' }]);
+    const [dock] = all('.occ-map .occ-map-dock');
+    expect(dock).toMatchObject({ top: 'calc(var(--occ-map-gap) + var(--occ-map-zoom-height) + 8px)',
+      right: 'var(--occ-map-gap)', bottom: 'var(--occ-map-gap)' });
+    expect(Object.values(dock).join(' ')).not.toMatch(/--occ-map-inset/);
+    expect(rules.filter(rule => Object.values(rule.declarations).some(value => value.includes('--occ-map-inset-right')))
+      .map(rule => rule.selector)).toEqual(['.occ-map']);
+    // The scale and the credits sit left of the column, or of a panel left of it.
+    expect(all('.occ-map > .occ-map-host .maplibregl-ctrl-bottom-right')[0].right).toBe('var(--occ-map-clear-right)');
+    // «Seguir en 3D» takes the right slot: left of the column, inside the top and bottom insets; over the screen's
+    // panels and under the rail, whose menus open over it. On a narrow map it is a sheet along the bottom, still left of
+    // the column.
+    const [follow, narrowFollow] = all('.occ-map .occ-map-follow-panel');
+    expect(follow).toMatchObject({ right: 'var(--occ-map-rail-reserve)',
+      top: 'calc(var(--occ-map-inset-top, 0px) + var(--occ-map-gap))',
+      bottom: 'calc(var(--occ-map-inset-bottom, 0px) + var(--occ-map-gap))' });
+    expect(Number(follow['z-index'])).toBeGreaterThan(10);
+    expect(Number(follow['z-index'])).toBeLessThan(Number(dock['z-index']));
+    expect(narrowFollow).toEqual({ top: 'auto', left: 'var(--occ-map-gap)', width: 'auto', 'max-height': '55%' });
+    // Folded, its header stays at the top of the slot, or at the bottom of a narrow map.
+    expect(all('.occ-map .occ-map-follow-panel[data-open="false"]')).toEqual([{ bottom: 'auto' },
+      { bottom: 'calc(var(--occ-map-inset-bottom, 0px) + var(--occ-map-gap))' }]);
+    // A screen's own notices (Mapa de posiciones, M1) sit at the top centre of the area in sight, short of the column,
+    // and push the traffic's chips under them.
+    const [pageChips] = all('.occ-map .occ-map-page-chips');
+    expect(pageChips).toMatchObject({ top: 'calc(var(--occ-map-inset-top, 0px) + var(--occ-map-gap))',
+      left: 'calc(var(--occ-map-inset-left, 0px) + (100% - var(--occ-map-inset-left, 0px) - var(--occ-map-clear-right)) / 2)',
+      transform: 'translateX(-50%)' });
+    expect(all('.occ-map .occ-map-page-chips ~ .occ-map-source-status .occ-map-source-chips')).toEqual([
+      { top: 'calc(var(--occ-map-inset-top, 0px) + var(--occ-map-gap) + 3.25rem)' }]);
+    // The list of a map that cannot draw fills the area the floating panels leave, short of the column, so the
+    // panels stay usable beside it.
+    expect(all('.occ-map .occ-map-unavailable')).toEqual([{ top: 'var(--occ-map-inset-top, 0px)',
+      right: 'var(--occ-map-clear-right)', bottom: 'var(--occ-map-inset-bottom, 0px)',
+      left: 'var(--occ-map-inset-left, 0px)' }]);
+    // A menu of the rail opens under the panels floating along the top (Mapa de posiciones' bar), never over them,
+    // and still ends at the bottom of the column.
+    const [flyout] = all('.occ-map .occ-map-flyout');
+    expect(flyout).toMatchObject({
+      top: 'calc(max(var(--occ-map-gap), var(--occ-map-inset-top, 0px)) - var(--occ-map-gap) - var(--occ-map-zoom-height) - 8px)',
+      'max-height': 'calc(100% + var(--occ-map-zoom-height) + 8px + var(--occ-map-gap) - max(var(--occ-map-gap), var(--occ-map-inset-top, 0px)))',
+    });
+  });
 });
 // The traffic of PR M5 at the lab's noon: the synthetic air picture and map flights, the demo arrival estimated on
 // final, and the trails the picture's short trails draw.
@@ -1669,6 +1788,50 @@ const attributionOf = map => map.controls.find(entry => entry.control instanceof
 const NOWHERE = { center: [-72.4, 22.4], zoom: 11 };
 
 describe('OccMap traffic (PR M5)', () => {
+  it('M8: the board filter dims by feature state the AVIAM aircraft it leaves out, and writes no traffic data', () => {
+    const traffic = { ...noonTraffic(), flights: createMapFlights().flights };
+    const keys = traffic.flights.map(row => row.flightKey);
+    function FilterProbe() {
+      const { boardFilter } = useOccMap();
+      return <pre data-testid="filter-probe">{String(boardFilter)}</pre>;
+    }
+    const view = render(<OccMap defaultView="region" traffic={traffic}><FilterProbe /></OccMap>);
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    const outside = id => map.featureStateOf('occ-traffic', id)?.outside;
+    // No filter: nothing dimmed.
+    expect(keys.map(key => outside(`f:${key}`))).toEqual(keys.map(() => undefined));
+    expect(screen.getByTestId('filter-probe').textContent).toBe('false');
+    // The AVIAM icons multiply their opacity by the feature state.
+    expect(JSON.stringify(map.options.style.layers.find(layer => layer.id === 'occ-traffic-aviam'))).toContain('"feature-state","outside"');
+    const writes = map.getSource('occ-traffic').updateDataCalls.length;
+
+    view.rerender(<OccMap defaultView="region" traffic={traffic} flightEmphasis={[TRAFFIC_FLIGHT_KEY.arrival]}>
+      <FilterProbe /></OccMap>);
+    expect(outside(`f:${TRAFFIC_FLIGHT_KEY.arrival}`)).toBeUndefined();
+    for (const key of keys.filter(key => key !== TRAFFIC_FLIGHT_KEY.arrival)) expect(outside(`f:${key}`), key).toBe(true);
+    expect(screen.getByTestId('filter-probe').textContent).toBe('true');
+    // The same filter in a new list writes no state again.
+    const states = map.calls.filter(call => call.method === 'setFeatureState').length;
+    view.rerender(<OccMap defaultView="region" traffic={traffic} flightEmphasis={[TRAFFIC_FLIGHT_KEY.arrival]}>
+      <FilterProbe /></OccMap>);
+    expect(map.calls.filter(call => call.method === 'setFeatureState')).toHaveLength(states);
+
+    // Another filter changes only the keys whose state changes.
+    view.rerender(<OccMap defaultView="region" traffic={traffic}
+      flightEmphasis={[TRAFFIC_FLIGHT_KEY.arrival, TRAFFIC_FLIGHT_KEY.demoArrival]}><FilterProbe /></OccMap>);
+    expect(outside(`f:${TRAFFIC_FLIGHT_KEY.demoArrival}`)).toBe(false);
+    expect(map.calls.filter(call => call.method === 'setFeatureState')).toHaveLength(states + 1);
+
+    // Taken away: every key it dimmed is cleared; a filter that keeps every flight dims nothing.
+    view.rerender(<OccMap defaultView="region" traffic={traffic} flightEmphasis={null}><FilterProbe /></OccMap>);
+    expect(keys.map(key => outside(`f:${key}`)).filter(Boolean)).toEqual([]);
+    expect(screen.getByTestId('filter-probe').textContent).toBe('false');
+    view.rerender(<OccMap defaultView="region" traffic={traffic} flightEmphasis={keys}><FilterProbe /></OccMap>);
+    expect(screen.getByTestId('filter-probe').textContent).toBe('false');
+    expect(map.getSource('occ-traffic').updateDataCalls).toHaveLength(writes);
+  });
+
   it('draws the traffic with one updateData per read and never re-creates the map', () => {
     const traffic = noonTraffic();
     const view = render(<OccMap defaultView="region" traffic={traffic}><TrafficProbe /></OccMap>);
@@ -1832,7 +1995,9 @@ describe('OccMap traffic (PR M5)', () => {
     // Its ring, a circle of the traffic overlay in the selection slot, under the cyan aircraft, drawn from the chosen
     // aircraft's own feature: the selection source, which rings the stands and the flights a screen places, stays empty.
     const ring = map.getLayer('occ-traffic-selected-ring');
-    expect(ring).toMatchObject({ type: 'circle', source: 'occ-traffic', filter: ['==', ['get', 'selected'], true] });
+    // PR M2: one the layer animates is ringed there, moving with it; this ring is the fallback.
+    expect(ring).toMatchObject({ type: 'circle', source: 'occ-traffic',
+      filter: ['all', ['==', ['get', 'selected'], true], ['!=', ['get', 'animated'], true]] });
     expect(ring.paint['circle-stroke-color']).toBe(occColor('accent'));
     expect(ring.paint['circle-stroke-width']).toBe(2);
     expect(ids.indexOf('occ-traffic-selected-ring')).toBeGreaterThan(ids.indexOf('slot-selection'));
@@ -3072,5 +3237,27 @@ describe('OccMap weather (PR M8)', () => {
     expect(within(card()).getByText('Viento 120° 9 kt · No oficial')).toBeInTheDocument();
     view.rerender(element({ weather: weatherAt({ status: 'Unavailable' }) }));
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+  });
+});
+
+describe('OccMap world base and world airports (M8)', () => {
+  it('draws them only on the globe, the base under the night and the Dominican airports labelled', () => {
+    const mercator = render(<OccMap defaultView="region" traffic={{ aircraft: [], flights: [] }} />);
+    const flat = fake.state.liveMaps().at(-1);
+    expect(flat.options.style.sources['occ-world-base']).toBeUndefined();
+    expect(flat.options.style.layers.some(layer => layer.id === 'occ-rd-airport-labels')).toBe(false);
+    mercator.unmount();
+
+    render(<OccMap defaultView="region" projection="globe" mapOptions={{ minZoom: 1 }} traffic={{ aircraft: [], flights: [] }} />);
+    const globe = fake.state.liveMaps().at(-1);
+    const { sources, layers } = globe.options.style;
+    expect(sources['occ-world-base']).toMatchObject({ type: 'raster', maxzoom: 8 });
+    const ids = layers.map(layer => layer.id);
+    expect(ids.indexOf('occ-world-base-image')).toBeLessThan(ids.indexOf('occ-night'));
+    expect(ids).toContain('occ-rd-airport-labels');
+    loadStyle(globe);
+    const airports = globe.getSource('occ-reference-ourairports').data.features.filter(item => item.properties.kind === 'airport');
+    expect(airports.find(item => item.properties.icao === 'KJFK')?.properties).toMatchObject({ world: true, rd: false });
+    expect(airports.find(item => item.properties.icao === 'MDSD')?.properties).toMatchObject({ rd: true });
   });
 });

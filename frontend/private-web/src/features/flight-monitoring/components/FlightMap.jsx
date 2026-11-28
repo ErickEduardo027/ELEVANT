@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { useOptionalOccShellChannel } from '../../admin-occ/shell/occShellContext';
 import { useOccStation } from '../../admin-occ/useOccStation';
+import { counterpartPoint } from '../../maps/airport/worldAirports';
 import { PUJ_ARP, defaultFlightView, lngLatOf } from '../../maps/core/cameraPresets';
 import { matchFlight } from '../../maps/core/mapSelection';
 import OccMap from '../../maps/core/OccMap';
@@ -10,10 +11,12 @@ import { useOccMap } from '../../maps/core/OccMapContext';
 import { useMapSelection } from '../../maps/core/useMapSelection';
 import { mapMessages } from '../../maps/mapMessages';
 import { STAND_REFERENCE } from '../../maps/stands/standReference';
+import { FLIGHT_ROUTES_SOURCE, flightRouteFeatures, flightRoutesOverlay } from '../../maps/style/flightRouteLayers';
 import { isDrawn } from '../../maps/traffic/trafficFeatures';
 import FlightDataBlock from '../../maps/ui/FlightDataBlock';
 import Follow3dPanel from '../../maps/ui/Follow3dPanel';
 import MapDock from '../../maps/ui/MapDock';
+import MapFollow3dButton from '../../maps/ui/MapFollow3dButton';
 import MapFollowButton from '../../maps/ui/MapFollowButton';
 import MapLayersMenu from '../../maps/ui/MapLayersMenu';
 import MapLegend from '../../maps/ui/MapLegend';
@@ -22,6 +25,7 @@ import MapPresetSwitcher from '../../maps/ui/MapPresetSwitcher';
 import MapSourceStatus from '../../maps/ui/MapSourceStatus';
 import { RAIL_ICON_TOOL, RAIL_TOOL_ROW } from '../../maps/ui/railClasses';
 import { useMapSituation } from '../../maps/useMapSituation';
+import { useOptionalTheme } from '../../shell/useTheme';
 import { useMdpcWeather } from '../../weather/useMdpcWeather';
 import { flightMonitoringMessages } from '../flightMonitoringMessages';
 import { CrosshairIcon, RotateCcwIcon } from './icons';
@@ -29,27 +33,41 @@ import { CrosshairIcon, RotateCcwIcon } from './icons';
 const EMPTY = Object.freeze([]);
 // Room left around the flights and PUJ when «Restablecer vista» frames them.
 const RESET_PADDING_PX = 60;
-// The data block is docked at the top left of the map, so it never follows the aircraft on screen.
-const DOCKED_BLOCK_STYLE = Object.freeze({ top: 12, left: 12 });
+// The data block is docked at the top left of the area the page's floating panels leave in sight (OccMap's inset
+// variables, M1), so it never follows the aircraft on screen and never goes under the board.
+const DOCKED_BLOCK_STYLE = Object.freeze({
+  top: 'calc(var(--occ-map-inset-top, 0px) + 12px)', left: 'calc(var(--occ-map-inset-left, 0px) + 12px)',
+  maxWidth: 'calc(100% - var(--occ-map-inset-left, 0px) - var(--occ-map-clear-right, 0px) - 24px)',
+});
+
+// Monitoreo looks at the world (M8): the globe with its atmosphere, a zoom out to 1 (the engine's own limits stay for
+// the other screens) and an opening on the Dominican Republic and Puerto Rico.
+const MONITORING_MAP_OPTIONS = Object.freeze({ minZoom: 1 });
+const OPENING_VIEW = 'rd';
 
 const findFlight = (flights, id) => (id == null ? null : flights.find(flight => String(flight.id) === String(id)) ?? null);
 
 
-// The map of Monitoreo de vuelos on the one map engine: a thin adapter over OccMap over the NOC style. It opens on the
-// region, or on the approach when the linked flight is within 40 NM (contracts 2.3), draws the flights that carry a
+// The map of Monitoreo de vuelos on the one map engine: a thin adapter over OccMap over the NOC style, on the globe with
+// the world view «0 Mundo» (M8). It opens on the Dominican Republic and Puerto Rico (M8; the region before), or on the
+// approach when the linked flight is within 40 NM (contracts 2.3), draws the flights that carry a
 // position as symbols, which its legend explains while one is on screen, and keeps «Restablecer vista» and «Centrar
 // PUJ». Inside the OCC shell it also draws the live traffic, the data block of the chosen aircraft, the layers menu and
 // (PR M6) follow mode, «Seguir» beside the view selector (LiveFlightMap). `detail` is the page's own card of its selected
 // flight: the plain map shows it, the live map only for a flight it does not know. `theme` is accepted and ignored: the
-// OCC maps follow the shell theme on their own (OccMap).
+// OCC maps follow the shell theme on their own (OccMap). `follow3dButton` (M4) adds «Seguir en 3D» under «Seguir» in the
+// rail (Monitoreo de vuelos opts in). The map fills the page's stage (M1, «pantalla completa con paneles flotantes»):
+// `panels`, the page's floating panels, float inside it, under its cards and its control column, and `insets` (what
+// they cover, measured by the page) frame its views, place its controls and keep the chosen flight in sight.
 function FlightMapView({
   flights = EMPTY, selectedFlightId = null, onSelectFlight, traffic, weather, drawnFlights, selection: chosen,
-  onSelect, framePoints = EMPTY, children,
+  onSelect, framePoints = EMPTY, overlays, overlayData, flightEmphasis = null, follow3dButton = false, insets,
+  panels = null, children,
 }) {
   const { t } = useTranslation(flightMonitoringMessages);
   const { t: tMap } = useTranslation(mapMessages);
   const mapRef = useRef(null);
-  const [defaultView] = useState(() => defaultFlightView(findFlight(flights, selectedFlightId)));
+  const [defaultView] = useState(() => defaultFlightView(findFlight(flights, selectedFlightId), { wide: OPENING_VIEW }));
   // The flight the map last flew to; the one it opens with is framed by its view.
   const flownRef = useRef(selectedFlightId);
 
@@ -78,7 +96,7 @@ function FlightMapView({
 
   function resetView() {
     const points = [...flights.map(lngLatOf).filter(Boolean), ...framePoints];
-    if (points.length === 0) mapRef.current?.flyToPreset('region');
+    if (points.length === 0) mapRef.current?.flyToPreset(OPENING_VIEW);
     else mapRef.current?.flyToBounds([PUJ_ARP, ...points], { padding: RESET_PADDING_PX });
   }
 
@@ -86,9 +104,14 @@ function FlightMapView({
     <OccMap
       ref={mapRef}
       testId="flight-map-container"
-      className="rounded-md"
       defaultView={defaultView}
+      projection="globe"
+      mapOptions={MONITORING_MAP_OPTIONS}
+      insets={insets}
       presetStands={STAND_REFERENCE}
+      overlays={overlays}
+      overlayData={overlayData}
+      flightEmphasis={flightEmphasis}
       flights={drawnFlights ?? flights}
       traffic={traffic}
       weather={weather}
@@ -102,12 +125,14 @@ function FlightMapView({
       fallbackItems={fallbackItems}
       onFallbackSelect={selectFlight}
     >
+      {panels}
       {children}
       {/* The control rail (CN-32): the views and 3D, «Seguir», the screen's two framing tools in one slab, the pause,
           «Capas» and «Leyenda». */}
       <MapDock>
         <MapPresetSwitcher />
         <MapFollowButton />
+        {follow3dButton ? <MapFollow3dButton /> : null}
         <div className={RAIL_TOOL_ROW}>
           <button type="button" onClick={resetView} title={t('map.resetView')} aria-label={t('map.resetView')}
             className={RAIL_ICON_TOOL}>
@@ -128,6 +153,22 @@ function FlightMapView({
 }
 
 /**
+ * The flight keys of every map flight that shares a visit with one of `keys` (`null` for no filter): the air picture
+ * draws a visit's aircraft under the key of its arrival or of its departure, so a kept leg keeps the aircraft of both.
+ */
+function visitKeysOf(keys, mapFlights) {
+  if (!Array.isArray(keys)) return null;
+  const flights = Array.isArray(mapFlights) ? mapFlights.filter(flight => flight != null) : [];
+  const visitOf = flight => flight.visitKey ?? (flight.turnaroundId == null ? null : `t:${String(flight.turnaroundId)}`);
+  const kept = new Set(keys.map(String));
+  const visits = new Set(flights.filter(flight => kept.has(String(flight.flightKey))).map(visitOf).filter(Boolean));
+  for (const flight of flights) {
+    if (flight.flightKey != null && visits.has(visitOf(flight))) kept.add(String(flight.flightKey));
+  }
+  return [...kept];
+}
+
+/**
  * Monitoreo inside the OCC shell: the same map with the live traffic of the station (useMapSituation over the air
  * picture and the map flights, at the cadences of contracts 2.7). The page's flights (ids are leg ids) are joined to
  * the map flights with matchFlight: a flight whose aircraft the traffic draws is drawn once, as traffic, and a click on
@@ -138,12 +179,13 @@ function FlightMapView({
  * The state of the traffic (from the air picture alone, its age on the server's clock), the credit of its source and,
  * apart, a failed read of the AVIAM flights sit over the map (MapSourceStatus). The chosen flight or
  * aircraft has its data block (FlightDataBlock) and its route on the map: inside the page's side panel when the page
- * gives its `dataBlockSlot` (CN-32: the flight's inspector, so nothing floats over the map), else docked at the top left
- * of the map, as for another aircraft; a flight of the page the map does not know (outside its window, or while the map
+ * gives its `dataBlockSlot` (CN-32; the flight's inspector, so the flight has one card), else docked at the top left
+ * of the area the page's panels leave in sight (M1), as for another aircraft; a flight of the page the map does not know (outside its window, or while the map
  * cannot read its flights) keeps the page's own card, as does every flight of the page while the map cannot draw.
  */
 function LiveFlightMap({
   flights = EMPTY, selectedFlightId = null, onSelectFlight, detail = null, onSelectionFlights, dataBlockSlot = null,
+  emphasisedFlightIds = null, follow3dButton = false, insets, panels = null,
 }) {
   const { stationId } = useOccStation();
   const { selection: urlSelection, selectAircraft, clear } = useMapSelection();
@@ -178,6 +220,27 @@ function LiveFlightMap({
     if (selectedFlightId != null && selectedHex !== null) clear();
   }, [clear, selectedFlightId, selectedHex]);
 
+  // The board's filter on the map (M8): the map flights of the strips it keeps, by key, and the chosen flight always;
+  // `null` while the board keeps every flight. The routes are the kept legs'; the aircraft, every leg of a kept visit,
+  // since the air picture draws one aircraft per visit under the key of either leg (traffic/situationModel.js).
+  const chosenKey = chosenMapFlight?.flightKey ?? null;
+  const emphasis = useMemo(() => {
+    if (!Array.isArray(emphasisedFlightIds)) return null;
+    const keys = emphasisedFlightIds.map(id => matchFlight(mapFlights, String(id))?.flightKey).filter(Boolean);
+    return chosenKey === null ? keys : [...keys, chosenKey];
+  }, [emphasisedFlightIds, mapFlights, chosenKey]);
+  const aircraftEmphasis = useMemo(() => visitKeysOf(emphasis, mapFlights), [emphasis, mapFlights]);
+  // The great circles of every AVIAM flight (M8), the chosen one's left to its own route; the board's filter dims the
+  // others. Written again only when the map flights, the filter or the chosen flight change.
+  const theme = useOptionalTheme()?.theme === 'light' ? 'light' : 'dark';
+  const routeOverlays = useMemo(() => [flightRoutesOverlay({ theme })], [theme]);
+  const stationAirport = live.flights?.stationAirport ?? null;
+  const routeData = useMemo(() => ({
+    [FLIGHT_ROUTES_SOURCE]: flightRouteFeatures(mapFlights, {
+      station: counterpartPoint(stationAirport) ?? PUJ_ARP, emphasised: emphasis, exclude: chosenKey,
+    }),
+  }), [mapFlights, stationAirport, emphasis, chosenKey]);
+
   const handleSelect = next => {
     if (next?.kind === 'aircraft') {
       onSelectFlight?.(null);
@@ -199,7 +262,9 @@ function LiveFlightMap({
   const pageDetail = selectedFlightId != null && live.status !== 'loading' ? detail : null;
   return (
     <FlightMapView flights={flights} selectedFlightId={selectedFlightId} onSelectFlight={onSelectFlight} traffic={traffic}
-      weather={weather} drawnFlights={drawnFlights} selection={selection} onSelect={handleSelect} framePoints={framePoints}>
+      weather={weather} drawnFlights={drawnFlights} selection={selection} onSelect={handleSelect} framePoints={framePoints}
+      overlays={routeOverlays} overlayData={routeData} flightEmphasis={aircraftEmphasis} follow3dButton={follow3dButton}
+      insets={insets} panels={panels}>
       <MapSourceStatus status={live.status} picture={live.picture} sourceState={live.sourceState} clock={live.clock}
         onRetry={live.retry} />
       <SelectionCard target={target} detail={pageDetail} telemetry={live.telemetry} slot={dataBlockSlot}
@@ -231,6 +296,10 @@ function SelectionCard({ target, detail, slot = null, ...block }) {
  * of its selected flight (`detail`). `onSelectionFlights({ flight, flights })` (U5) hears, inside the shell, the chosen
  * flight as the map flights know it (`null` when they do not) and the map flights themselves, after each read.
  * `dataBlockSlot` (CN-32), an element of the page's side panel, receives the chosen flight's live data block.
+ * `emphasisedFlightIds` (M8), the ids of the page's flights the board's filter keeps (`null` for every flight): inside
+ * the shell the map dims the other AVIAM aircraft and their routes.
+ * `panels` (M1) are the page's floating panels, rendered inside the map, and `insets` ({ top, right, bottom, left } in
+ * px, optional) what they cover of it.
  */
 export default function FlightMap({ detail = null, ...props }) {
   const channel = useOptionalOccShellChannel();

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 // The kinematics is a pure function of its inputs and of an explicit time (contracts 2.3: every screen shows the
 // aircraft in the same place). Its sources never read a clock or randomness and never import JSON: the layout
 // arrives as a parameter. The route of the chosen flight is kinematics/flightRoute.js, so it is checked with the
-// rest; traffic/routeFeatures.js is PR M5's (it reads the services and the dataset) and stays out of this check.
+// rest, and so are the traffic layer's keyframes (traffic/keyframes.js, PR M2); traffic/routeFeatures.js is PR M5's (it reads the services and the dataset) and stays out of this check.
 // Paths are relative to this package, as airportLayout.test.js reads its inputs.
 const maps = 'src/features/maps/';
 const here = `${maps}kinematics/`;
@@ -13,7 +13,7 @@ function sources() {
   const kinematics = readdirSync(here)
     .filter(name => name.endsWith('.js') && !name.endsWith('.test.js'))
     .map(name => ({ name: `kinematics/${name}`, path: `${here}${name}` }));
-  const others = ['airport/runwayInUse.js']
+  const others = ['airport/runwayInUse.js', 'traffic/keyframes.js']
     .filter(name => existsSync(`${maps}${name}`))
     .map(name => ({ name, path: `${maps}${name}` }));
   return [...kinematics, ...others].sort((a, b) => (a.name < b.name ? -1 : 1));
@@ -38,6 +38,7 @@ describe('kinematics purity', () => {
       'kinematics/followCamera.js', 'kinematics/handoff.js', 'kinematics/kinematicsFixtures.js',
       'kinematics/kinematicsMessages.js', 'kinematics/legPlans.js', 'kinematics/legs.js', 'kinematics/pathBuilder.js',
       'kinematics/perfProfiles.js', 'kinematics/smoothing.js', 'kinematics/taxiRoute.js', 'kinematics/units.js',
+      'traffic/keyframes.js',
     ]));
     const found = [];
     for (const file of files) {

@@ -12,17 +12,21 @@ import { ORBIT_VIEW_NAMES } from '../kinematics/orbitCamera';
 import { mapMessages } from '../mapMessages';
 import { flightFacts, operationFacts } from './followPanelModel';
 
-// The panel of «Seguir en 3D» (CN-30): docked on the right of the map while its camera orbits the followed aircraft
-// (core/OccMap.jsx), collapsible, a bottom sheet on a narrow screen. It shows:
-// - the camera: the five views, turn / tilt / zoom in steps or held, «Restablecer vista», «Girar automáticamente» and
-//   «Dejar de seguir» (Esc does the same; a drag on the map orbits, the wheel zooms);
+// The panel of «Seguir en 3D» (CN-30): in the right slot of the map while its camera orbits the followed aircraft
+// (core/OccMap.jsx), collapsible. occ-map.css places it (.occ-map-follow-panel, M1): left of the map's control column,
+// inside the top and bottom insets, so it covers neither the zoom group nor the rail and the rail's menus open over it;
+// on a narrow map a sheet along the bottom, still left of the column. It is never measured into the insets: folded, its
+// pill would feed the inset it is placed by. It shows:
+// - the camera: the six views («Muy cerca», M4, flies in close behind the tail), turn / tilt / zoom in steps or held,
+//   «Restablecer vista», «Girar automáticamente» and «Dejar de seguir» (Esc does the same; a drag on the map orbits,
+//   the wheel zooms);
 // - the flight: the identity, the route, the instruments (altitude, speed, vertical rate, heading), the squawk, how far
 //   from Punta Cana and when it arrives, and its phase, read twice a second from the map's own frames;
 // - the operation of an ELEVANT flight from its map flight row (code, state, stand, the times of its leg, the delay, the
 //   milestones by phase) and what the page adds of it (`operational(flight)`: `{ agents, services, notes }`, the names
 //   of its assigned agents and services and notes of it, or a node). Other traffic shows the
 //   flight alone.
-// The content is this component's; where it sits can be another dock's (`className`, `docked`).
+// The content is this component's; `className` adds to where it sits.
 
 const finite = value => typeof value === 'number' && Number.isFinite(value);
 const noSubscription = () => () => {};
@@ -115,7 +119,7 @@ const signed = value => (value > 0 ? `+${value}` : String(value));
 /**
  * The panel; nothing while the map does not follow in 3D. `flights` are the screen's map flight rows (the followed
  * flight's row is found by its key), `stationCode` the station's code (PUJ by default), `operational` what the page adds
- * of an ELEVANT flight's operation (a node, or a function of its row), `className` where it sits.
+ * of an ELEVANT flight's operation (a node, or a function of its row), `className` classes added to its own.
  */
 export default function Follow3dPanel({ flights = null, stationCode = 'PUJ', operational = null, className = '' }) {
   const { follow, view3d } = useOccMap();
@@ -165,7 +169,8 @@ export default function Follow3dPanel({ flights = null, stationCode = 'PUJ', ope
       aria-labelledby={titleId}
       data-testid="follow-3d-panel"
       data-follow-view={three.view ?? ''}
-      className={`pointer-events-auto absolute inset-x-2 bottom-2 z-30 flex max-h-[55%] flex-col overflow-hidden rounded-md border border-occ-line border-l-2 border-l-occ-accent bg-occ-panel-float text-sm text-occ-text shadow-lg sm:inset-x-auto sm:bottom-2 sm:right-2 sm:top-2 sm:max-h-none sm:w-80 ${open ? '' : 'sm:bottom-auto'} ${className}`.trim()}
+      data-open={open ? 'true' : 'false'}
+      className={`occ-map-follow-panel pointer-events-auto flex flex-col overflow-hidden rounded-[var(--occ-radius-overlay)] border border-occ-line border-l-2 border-l-occ-accent bg-occ-panel-float text-sm text-occ-text ${className}`.trim()}
     >
       <header className="flex items-center gap-2 border-b border-occ-line px-3 py-2">
         <div className="min-w-0 flex-1">

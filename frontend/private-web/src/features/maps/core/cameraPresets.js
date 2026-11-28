@@ -11,6 +11,24 @@ import { layoutBounds, standPolygonBounds } from '../airport/layoutBounds';
 // Coordinates are [longitude, latitude]; bounds are [[west, south], [east, north]], as MapLibre takes them.
 
 export const VIEW_NAMES = Object.freeze(['region', 'approach', 'airfield', 'ramp']);
+
+/**
+ * The world view of M8 («0 Mundo»): only on a screen that opts into it (OccMap's `projection="globe"`, Monitoreo). It is
+ * a camera of its own over the globe, centred near the Dominican Republic, not a fitted box, and it stays out of the
+ * four views every threshold is derived from.
+ */
+export const WORLD_VIEW = 'world';
+/** Every view a screen can show, from the farthest: the world first (where a screen has it), then the four. */
+export const MAP_VIEWS = Object.freeze([WORLD_VIEW, ...VIEW_NAMES]);
+export const WORLD_CAMERA = Object.freeze({ center: Object.freeze([-70.2, 18.8]), zoom: 1.7 });
+
+/**
+ * The framing Monitoreo opens on (M8): the island of Hispaniola's Dominican side and Puerto Rico, 17.3° N to 20.1° N
+ * and 72.1° W to 65.2° W. It is not a view of the selector: at its fitted zoom the selector says «Región», and the
+ * thresholds stay those of the four views.
+ */
+export const RD_FRAMING = 'rd';
+export const RD_BOUNDS = Object.freeze([Object.freeze([-72.1, 17.3]), Object.freeze([-65.2, 20.1])]);
 export const TERMINALS = Object.freeze(['A', 'B', 'FBO']);
 
 /** The aerodrome reference point of Punta Cana. */
@@ -24,14 +42,31 @@ export const AIRFIELD_MARGIN_M = 300;
 export const FALLBACK_AIRFIELD_RADIUS_NM = 1.5;
 // Only for a station without one located stand: the ramp then frames a small ring around the ARP.
 export const RAMP_FALLBACK_RADIUS_NM = 0.6;
+// The camera of a map fixed on the airport (M9, Mapa de posiciones): the airfield box plus 3 km bounds it, and it never
+// zooms out past 13, so the screen keeps PUJ in sight.
+export const AIRPORT_LOCK_MARGIN_M = 3000;
+export const AIRPORT_LOCK_MIN_ZOOM = 13;
+// While it follows an aircraft (M9), a map fixed on the airport may zoom in this far (the engine stops at 19.5).
+export const AIRPORT_FOLLOW_MAX_ZOOM = 22;
 
 /**
  * The tilt of the 3D mode by view (contracts 2.3): the ramp keeps today's values of the positions map, the airfield
- * tilts less so the whole field stays in sight. Region and approach stay 2D.
+ * tilts less so the whole field stays in sight. Region and approach stay 2D, except on a screen that opts in
+ * (CAMERA_3D_WIDE).
  */
 export const CAMERA_3D = Object.freeze({
   airfield: Object.freeze({ pitch: 40, bearing: -17 }),
   ramp: Object.freeze({ pitch: 55, bearing: -17 }),
+});
+
+/**
+ * The tilt of Región and Aproximación in 3D on a screen that opts in (lane M7, 2026-11-28: Panorama opens in Región in
+ * 3D with the weather): gentle enough that the 250 NM ring and the 40 NM approach stay in sight, north up over the
+ * region and turned as the airport views over the approach. Every other screen keeps them flat.
+ */
+export const CAMERA_3D_WIDE = Object.freeze({
+  region: Object.freeze({ pitch: 35, bearing: 0 }),
+  approach: Object.freeze({ pitch: 45, bearing: -17 }),
 });
 
 // How the derived stand thresholds sit against the fitted zooms (contracts 2.3).
@@ -175,22 +210,63 @@ export function airfieldBounds({ stands = [], layout = null } = {}) {
   return padBounds(box, AIRFIELD_MARGIN_M);
 }
 
+/**
+ * The smallest bounds centred on `centre` (`[lng, lat]`) that hold `bounds`, or `bounds` as they are without a centre.
+ */
+export function centredBounds(bounds, centre) {
+  if (!isBounds(bounds) || !Array.isArray(centre) || !isCoordinate(centre[0]) || !isCoordinate(centre[1])) return bounds;
+  const [[west, south], [east, north]] = bounds;
+  const [lng, lat] = centre;
+  const dLng = Math.max(Math.abs(lng - west), Math.abs(east - lng));
+  const dLat = Math.max(Math.abs(lat - south), Math.abs(north - lat));
+  return [[lng - dLng, lat - dLat], [lng + dLng, lat + dLat]];
+}
+
+/**
+ * The bounds a map fixed on the airport keeps its camera in (M9): the airfield box (the layout's, else the 1.5 NM ring
+ * with the stands) plus 3 km, as MapLibre's `maxBounds` takes them.
+ */
+export function airportLockBounds({ stands = [], layout = null } = {}) {
+  const box = layoutBounds(layout) ?? unionBounds(ringBounds(PUJ_ARP, FALLBACK_AIRFIELD_RADIUS_NM), standBounds(stands));
+  return padBounds(box, AIRPORT_LOCK_MARGIN_M);
+}
+
+/** The MapLibre options of a map fixed on the airport (M9): `maxBounds` (airportLockBounds) and `minZoom` 13. */
+export function airportLockOptions({ stands = [], layout = null } = {}) {
+  return { maxBounds: airportLockBounds({ stands, layout }), minZoom: AIRPORT_LOCK_MIN_ZOOM };
+}
+
+/**
+ * The camera limits of a map fixed on the airport while it follows an aircraft (M9, OccMap `followLimits`): no bounds
+ * and the engine's own minimum zoom, so a departure climbing out or an arrival further out than the airfield box plus
+ * 3 km stays framed, and zoom 22 at most; the lock of airportLockOptions comes back when following ends.
+ */
+export function airportFollowLimits() {
+  return { maxBounds: null, minZoom: null, maxZoom: AIRPORT_FOLLOW_MAX_ZOOM };
+}
+
 const northUp = bounds => ({ bounds, pitch: 0, bearing: 0 });
+const boxOf = bounds => bounds.map(corner => [...corner]);
 
 /**
  * What each view frames, 2D and north-up: `{ region, approach, airfield, ramp, terminals: { A, B, FBO } }`, each
  * `{ bounds, pitch: 0, bearing: 0 }`. With an airport layout the airfield is its box plus 300 m, the ramp its active
  * stand polygons plus 120 m and each terminal its own polygons plus 120 m; without one, the stand points frame them
- * (each plus its margin). A terminal without a stand to frame is `null` and falls back to the ramp.
+ * (each plus its margin). A terminal without a stand to frame is `null` and falls back to the ramp. `airfieldCentre`
+ * (`[lng, lat]`, M9: the ARP on Mapa de posiciones) centres the airfield on that point: its box grows to the smallest
+ * one centred there that holds it.
  */
-export function presetTargets({ stands = [], layout = null } = {}) {
+export function presetTargets({ stands = [], layout = null, airfieldCentre = null } = {}) {
   const ramp = standPolygonPresetBounds(layout)
     ?? standBounds(stands)
     ?? padBounds(ringBounds(PUJ_ARP, RAMP_FALLBACK_RADIUS_NM), STAND_MARGIN_M);
   return {
+    // M8: the world camera and the framing of the Dominican Republic, for the screens that use them.
+    world: { center: [...WORLD_CAMERA.center], zoom: WORLD_CAMERA.zoom, pitch: 0, bearing: 0 },
+    rd: northUp(boxOf(RD_BOUNDS)),
     region: northUp(ringBounds(PUJ_ARP, REGION_RADIUS_NM)),
     approach: northUp(ringBounds(PUJ_ARP, APPROACH_RADIUS_NM)),
-    airfield: northUp(airfieldBounds({ stands, layout })),
+    airfield: northUp(centredBounds(airfieldBounds({ stands, layout }), airfieldCentre)),
     ramp: northUp(ramp),
     terminals: Object.fromEntries(TERMINALS.map(code => {
       const bounds = layout ? standPolygonPresetBounds(layout, { terminal: code }) : standBounds(stands, { terminal: code });
@@ -199,18 +275,30 @@ export function presetTargets({ stands = [], layout = null } = {}) {
   };
 }
 
-/** The target of a view, the terminal preset when `view` is `ramp` and the terminal has stands. */
+const FRAMINGS = Object.freeze([...MAP_VIEWS, RD_FRAMING]);
+
+/**
+ * The target of a view (the world and the RD framing of M8 included), the terminal preset when `view` is `ramp` and the
+ * terminal has stands. The world's target is a camera (`center`, `zoom`), every other one a box (`bounds`).
+ */
 export function targetFor(targets, view, terminal = null) {
-  if (!targets || !VIEW_NAMES.includes(view)) return null;
+  if (!targets || !FRAMINGS.includes(view)) return null;
   if (view === 'ramp' && terminal != null) return targets.terminals?.[terminal] ?? targets.ramp;
   return targets[view];
 }
 
+/** The middle of a target: the world's centre, else the middle of its box. */
+export function targetCenter(target) {
+  const center = target?.center;
+  return Array.isArray(center) && center.length === 2 && center.every(isCoordinate) ? [...center] : boundsCenter(target?.bounds);
+}
+
 /**
  * The zoom at which each view fits the screen: `{ region, approach, airfield, ramp }`, or `null` while any of them
- * cannot be fitted. `cameraForBounds(bounds, { bearing })` is the map's (the caller adds the padding).
+ * cannot be fitted. `cameraForBounds(bounds, { bearing })` is the map's (the caller adds the padding). With `world`
+ * (M8) the result also carries the world's zoom, its fixed camera's.
  */
-export function fitZooms(cameraForBounds, targets) {
+export function fitZooms(cameraForBounds, targets, { world = false } = {}) {
   if (typeof cameraForBounds !== 'function' || !targets) return null;
   const fits = {};
   for (const view of VIEW_NAMES) {
@@ -219,6 +307,11 @@ export function fitZooms(cameraForBounds, targets) {
     if (!Number.isFinite(zoom)) return null;
     fits[view] = zoom;
   }
+  if (world) {
+    const zoom = targets.world?.zoom;
+    if (!Number.isFinite(zoom)) return null;
+    fits.world = zoom;
+  }
   return fits;
 }
 
@@ -226,7 +319,9 @@ export function fitZooms(cameraForBounds, targets) {
 export function sameFits(first, second) {
   if (first === second) return true;
   if (!first || !second) return false;
-  return VIEW_NAMES.every(view => Math.abs(first[view] - second[view]) < 1e-9);
+  if (Number.isFinite(first.world) !== Number.isFinite(second.world)) return false;
+  return [...VIEW_NAMES, ...(Number.isFinite(first.world) ? [WORLD_VIEW] : [])]
+    .every(view => Math.abs(first[view] - second[view]) < 1e-9);
 }
 
 /**
@@ -250,12 +345,14 @@ export function thresholdsFromFits(fits) {
 
 /**
  * The view the camera really shows at `zoom`: each boundary lies half way between two consecutive fitted zooms, so
- * the view selector stays truthful when the user zooms freely. `null` before the fit.
+ * the view selector stays truthful when the user zooms freely. `null` before the fit. With the world's zoom in the fits
+ * (M8), a zoom below half way between it and the region fit is the world.
  */
 export function presetForZoom(zoom, fits) {
   if (!Number.isFinite(zoom) || !fits) return null;
   const zooms = VIEW_NAMES.map(view => fits[view]);
   if (!zooms.every(Number.isFinite)) return null;
+  if (Number.isFinite(fits.world) && zoom < (fits.world + fits.region) / 2) return WORLD_VIEW;
   for (let index = 0; index < VIEW_NAMES.length - 1; index += 1) {
     if (zoom < (zooms[index] + zooms[index + 1]) / 2) return VIEW_NAMES[index];
   }
@@ -276,14 +373,22 @@ export function transitionFor(fromZoom, toZoom) {
     : { method: 'easeTo', duration, essential: false };
 }
 
-/** Pitch and bearing of a view: the 3D tilt of airfield and ramp when the mode is 3D, flat and north-up otherwise. */
-export function cameraAngles(view, pitchMode) {
-  const tilt = pitchMode === '3d' && Object.hasOwn(CAMERA_3D, view) ? CAMERA_3D[view] : null;
+/**
+ * Pitch and bearing of a view: the 3D tilt of airfield and ramp when the mode is 3D, and of region and approach as well
+ * with `wide` (CAMERA_3D_WIDE, a screen that opts in); flat and north-up otherwise.
+ */
+export function cameraAngles(view, pitchMode, { wide = false } = {}) {
+  if (pitchMode !== '3d') return { pitch: 0, bearing: 0 };
+  let tilt = Object.hasOwn(CAMERA_3D, view) ? CAMERA_3D[view] : null;
+  if (tilt === null && wide === true && Object.hasOwn(CAMERA_3D_WIDE, view)) tilt = CAMERA_3D_WIDE[view];
   return tilt ? { ...tilt } : { pitch: 0, bearing: 0 };
 }
 
-/** The view Monitoreo opens on: `approach` when the linked flight has a position within 40 NM of the ARP. */
-export function defaultFlightView(flight) {
+/**
+ * The view Monitoreo opens on: `approach` when the linked flight has a position within 40 NM of the ARP, else `wide`
+ * (`region` by default; M8 opens Monitoreo on the RD framing, `rd`).
+ */
+export function defaultFlightView(flight, { wide = 'region' } = {}) {
   const point = lngLatOf(flight?.position ?? flight);
-  return point !== null && distanceNm(point, PUJ_ARP) <= APPROACH_RADIUS_NM ? 'approach' : 'region';
+  return point !== null && distanceNm(point, PUJ_ARP) <= APPROACH_RADIUS_NM ? 'approach' : wide;
 }

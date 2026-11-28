@@ -1,20 +1,25 @@
 import { OCC_BOOT_SEEN_KEY } from '../../../src/features/admin-occ/boot/occBootSession.js';
 import { ARRIVAL_ON_FINAL_KEY, DEMO_FLIGHT_KEYS, createConsoleApi, iemCurrents } from './fixtures/consoleApi.mjs';
 import { AUTH_STORAGE_KEY, occSession } from './fixtures/occApi.mjs';
+import { expectFloatingLayout } from './occScreen.mjs';
 import { mapReady, shoot } from '../support/map.mjs';
 import { expect, test } from '../support/test.mjs';
 
 // Panorama, the OCC console (PR U3, contratos 2.5): the full-bleed map with its floating panels, on the one map engine,
 // with a synthetic OCC session and a stubbed API (fixtures/consoleApi.mjs: one coherent day at Punta Cana) and today's
 // METAR of IEM answered by a route of this spec. Photographed for review at 1920 × 1080 and 1440 × 900, the laptop the
-// console is presented on (owner decision 11): the panels open and folded, a flight and a stand selected, the fallback
+// console is presented on (owner decision 11), and the panels open and folded at the 1366 × 768 audit laptop too (M1):
+// the panels open and folded, a flight and a stand selected, the fallback
 // without a map engine, the pill of a demo flight already on its way when the console opens with the board's legend,
 // an operation still open after its departure (N30), the pill of a new demo arrival, and a strip chosen beside a folded
 // «Alertas». Each test opens the console as a later OCC entry of its tab, so the OCC boot screen (PR U4) never covers it.
 
 const PAGE = '/admin-occ/dashboard';
 const SIZES = Object.freeze([{ width: 1920, height: 1080 }, { width: 1440, height: 900 }]);
-const IEM = 'https://mesonet.agron.iastate.edu/**';
+// The panels open and folded are checked at the 1366 × 768 laptop of the audit too (M1).
+const LAYOUT_SIZES = Object.freeze([...SIZES, { width: 1366, height: 768 }]);
+// Only IEM's JSON API: its radar tiles fall through to support/isolate.mjs, which answers them with synthetic echoes.
+const IEM = 'https://mesonet.agron.iastate.edu/api/**';
 const PANELS = Object.freeze(['Tablero', 'Alertas', 'Cifras de la jornada', 'Posiciones']);
 
 const panel = (page, name) => page.getByRole('region', { name, exact: true });
@@ -57,6 +62,19 @@ async function settled(page, map, { pause = false } = {}) {
   await expect(map).toHaveAttribute('data-occ-settled', 'true');
 }
 
+// M1: the map fills the screen and the console's panels float over it, 12 px from its edges, clear of its control column:
+// «Tablero» over «Alertas» at the left, the figures along the top and the band along the bottom short of the column, and
+// the status bar at the foot. Open or folded to their pills.
+async function expectConsoleFloats(page, map) {
+  const panels = Object.fromEntries(PANELS.map(name => [name, panel(page, name)]));
+  panels.status = page.locator('[data-occ-console-status]');
+  const { boxes } = await expectFloatingLayout(page, map, panels);
+  expect(Math.round(boxes.Alertas.x), 'the alerts in the column of the board').toBe(Math.round(boxes.Tablero.x));
+  expect(boxes.Alertas.y, 'the alerts under the board').toBeGreaterThanOrEqual(boxes.Tablero.y + boxes.Tablero.height - 1);
+  expect(boxes.status.y, 'the status bar under the band')
+    .toBeGreaterThanOrEqual(boxes.Posiciones.y + boxes.Posiciones.height - 1);
+}
+
 async function setOpen(page, name, open) {
   const button = foldButton(page, name);
   if ((await button.getAttribute('aria-expanded')) !== String(open)) await button.click();
@@ -64,29 +82,26 @@ async function setOpen(page, name, open) {
 }
 
 test.describe('the OCC console on the map engine', () => {
-  for (const size of SIZES) {
+  for (const size of LAYOUT_SIZES) {
     test(`panels open and folded at ${size.width}×${size.height}`, async ({ page, isolation }, testInfo) => {
       await page.setViewportSize(size);
       const { root, map } = await openConsole(page, isolation);
       await expect(root).toHaveAttribute('data-occ-console', 'map');
       await expect(map).toHaveAttribute('data-occ-view', 'ramp');
       await settled(page, map);
-      // The figures are one strip along the top of the map (CN-32), open from 1280 px; the band opens folded.
-      await expect(panel(page, 'Cifras de la jornada')).toHaveAttribute('data-folded', 'false');
+      // M1: below 1440 px only «Tablero» opens, the figures and the alerts open folded; the band always opens folded.
+      const compact = size.width < 1440;
+      await expect(panel(page, 'Cifras de la jornada')).toHaveAttribute('data-folded', compact ? 'true' : 'false');
+      await expect(panel(page, 'Alertas')).toHaveAttribute('data-folded', compact ? 'true' : 'false');
       await expect(panel(page, 'Posiciones')).toHaveAttribute('data-folded', 'true');
-      // Docked flush against the map: «Tablero» and «Alertas» share the left column, the figures run along the top.
-      const [boardBox, alertsBox, figuresBox, mapBox] = await Promise.all([panel(page, 'Tablero').boundingBox(),
-        panel(page, 'Alertas').boundingBox(), panel(page, 'Cifras de la jornada').boundingBox(), map.boundingBox()]);
-      expect(Math.round(boardBox.x), 'the board against the left edge of the map').toBe(Math.round(mapBox.x));
-      expect(Math.round(alertsBox.x)).toBe(Math.round(boardBox.x));
-      expect(alertsBox.y, 'the alerts under the board').toBeGreaterThanOrEqual(boardBox.y + boardBox.height - 1);
-      expect(Math.round(figuresBox.y), 'the figures against the top edge of the map').toBe(Math.round(mapBox.y));
+      await expectConsoleFloats(page, map);
       await shoot(page, testInfo, `u3-consola-inicio-${size.width}`);
 
       for (const name of PANELS) await setOpen(page, name, false);
       await expect(map).toHaveAttribute('data-occ-settled', 'true');
       // Folded, the map's insets are the pills alone: nothing is taken from the left or the right.
       await expect.poll(() => map.evaluate(node => node.style.getPropertyValue('--occ-map-inset-left'))).toBe('0px');
+      await expectConsoleFloats(page, map);
       await shoot(page, testInfo, `u3-consola-plegada-${size.width}`);
 
       for (const name of PANELS) await setOpen(page, name, true);
@@ -94,15 +109,16 @@ test.describe('the OCC console on the map engine', () => {
       await expect(map).toHaveAttribute('data-occ-settled', 'true');
       await expect.poll(async () => Number.parseFloat(await map.evaluate(node =>
         node.style.getPropertyValue('--occ-map-inset-left')))).toBeGreaterThan(300);
-      // The open band takes its height from the bottom of the map: the view dock moves above it, never over its rows.
-      await expect.poll(async () => {
-        const band = await panel(page, 'Posiciones').boundingBox();
-        const dock = await map.locator('.occ-map-dock').boundingBox();
-        return band && dock ? Math.round(band.y - (dock.y + dock.height)) : -1;
-      }).toBeGreaterThanOrEqual(0);
+      // The open band takes its height from the bottom of the map, and ends short of the control column, which keeps
+      // its place at the right edge (M1): the band never runs under the rail.
+      await expect.poll(async () => Number.parseFloat(await map.evaluate(node =>
+        node.style.getPropertyValue('--occ-map-inset-bottom')))).toBeGreaterThan(100);
+      await expectConsoleFloats(page, map);
       await shoot(page, testInfo, `u3-consola-abierta-${size.width}`);
     });
+  }
 
+  for (const size of SIZES) {
     test(`a flight and a stand selected at ${size.width}×${size.height}`, async ({ page, isolation }, testInfo) => {
       await page.setViewportSize(size);
       const { map } = await openConsole(page, isolation);
@@ -116,6 +132,9 @@ test.describe('the OCC console on the map engine', () => {
       await expect(inspector.getByRole('dialog', { name: 'Vuelo ZZ161' })).toBeVisible();
       await expect(inspector.getByRole('list', { name: 'Hitos de la escala' })).toBeVisible();
       await expect(map).toHaveAttribute('data-occ-settled', 'true');
+      // The inspector floats too (M1): from 1536 px at the right of the map, 12 px left of the control column; below,
+      // in the column of the board.
+      await expectFloatingLayout(page, map, { Tablero: panel(page, 'Tablero'), Inspector: inspector });
       await shoot(page, testInfo, `u3-consola-vuelo-${size.width}`);
 
       // The stand of the band: a click on its bar selects it on the map, with its facts in the inspector.

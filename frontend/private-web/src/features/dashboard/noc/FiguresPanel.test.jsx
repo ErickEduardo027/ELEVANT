@@ -59,4 +59,35 @@ describe('FiguresPanel', () => {
     expect(tileOf('In operation').querySelector('[data-occ-stat-detail]'))
       .toHaveTextContent(/^Attention: 1 open after departure$/);
   });
+
+  it('is the strip along the top of the map only when asked (`strip`), whatever its layout (M1)', () => {
+    const figureClasses = () => [...document.querySelectorAll('[data-occ-stat] dt + dd')].map(dd => dd.className);
+    const show = props => render(
+      <LanguageScope>
+        <FiguresPanel figures={FIGURES} state={{ status: 'success' }} timeZone="America/Santo_Domingo" {...props} />
+      </LanguageScope>,
+    );
+    // Floating over the map: one line, the header at the left of the figures, «Cifras» on the button of a laptop
+    // (below 1400 px) while its name stays the whole title, and each figure a size down.
+    show({ layout: 'float', strip: true });
+    let panel = screen.getByRole('region', { name: 'Cifras de la jornada' });
+    expect(panel).toHaveAttribute('data-layout', 'float');
+    expect(panel).toHaveAttribute('data-orientation', 'row');
+    const button = within(panel).getByRole('button', { name: 'Cifras de la jornada' });
+    expect(within(button).getByText('Cifras')).toHaveAttribute('aria-hidden', 'true');
+    expect(figureClasses()).toHaveLength(6);
+    for (const className of figureClasses()) expect(className).toContain('text-lg');
+    cleanup();
+    // Without `strip` the same floating layout is a panel of tiles: the header over them, the whole title on the
+    // button, the figures at their size.
+    for (const layout of ['float', 'grid']) {
+      show({ layout });
+      panel = screen.getByRole('region', { name: 'Cifras de la jornada' });
+      expect(panel, layout).toHaveAttribute('data-layout', layout);
+      expect(panel, layout).toHaveAttribute('data-orientation', 'column');
+      expect(within(panel).queryByText('Cifras'), layout).toBeNull();
+      for (const className of figureClasses()) expect(className, layout).toContain('text-2xl');
+      cleanup();
+    }
+  });
 });

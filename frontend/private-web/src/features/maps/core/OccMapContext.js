@@ -1,8 +1,11 @@
 import { createContext, useContext } from 'react';
+import { VIEW_NAMES } from './cameraPresets';
 
 // What OccMap shares with its DOM overlays and with the panels around it, so a list or a switcher needs no ref:
 // - state: `engineStatus` ('starting' | 'ready' | 'unavailable'), `basemapStatus` ('off' | 'loading' | 'ok' |
-//   'degraded'), `activeView` (the view the camera really shows, from presetForZoom), `fits` and `thresholds`;
+//   'degraded'), `activeView` (the view the camera really shows, from presetForZoom), `fits` and `thresholds`, and
+//   `views`, the views the map offers (the four, the world first on a map with the globe, M8, or fewer on a map fixed on
+//   the airport, M9), which the switcher shows;
 // - meta: `standsOnScreen`, the stands whose polygon the map draws in the area the insets leave in sight (from the
 //   polygon threshold on; the legend lists their states, signals and tags), `chipsOnScreen`, the terminals whose chip
 //   it draws there (below that threshold), `standMarksOnScreen`, the stand marks it draws there (`chipArriving`, the
@@ -13,7 +16,7 @@ import { createContext, useContext } from 'react';
 //   pointer, whichever it follows; `ghost` and `pending`, the boxes of a stand being placed),
 //   `flightsOnScreen`, the flights drawn in that area (the list changes when other flights come into sight, not when
 //   they move inside it), and `airfieldOnScreen`, the airfield items the map draws there (`runway`, `taxiway`,
-//   `holdBar`, `apron`, `terminal`, in that order);
+//   `taxiwayPavement`, `holdBar`, `apron`, `terminal`, `building`, `jetBridge`, in that order);
 // - actions: `requestView(view, { terminal })` flies and writes `view=` in the URL, `flyToPreset(view, { terminal })`
 //   only flies, `flyToStand(code, { minZoom })` centres a stand and `flyToFlight(id, { minZoom })` a flight.
 // - traffic (PR M5): `trafficOnScreen`, the aircraft kinds, tags, trails and parts of the chosen flight's route drawn in
@@ -39,8 +42,16 @@ import { createContext, useContext } from 'react';
 //   follow (it moves its traffic), whether it follows now (`follow=1`), whether the selection names an aircraft it
 //   draws, and the action of the S key (ui/MapFollowButton.jsx, the data block's «Seguir»). CN-30: `follow.three` is
 //   «Seguir en 3D»: `{ on, view, auto, subject, start(), stop(), setView(view), rotate(sign), tilt(sign), zoom(sign),
-//   hold(kind, sign), reset(), setAuto(on) }`, `subject` a store of the followed aircraft as the frames draw it (the
-//   panel's, ui/Follow3dPanel.jsx); outside an OccMap there is none.
+//   hold(kind, sign), reset(), setAuto(on), startOn(target), parkedAt(code) }`, `subject` a store of the followed
+//   aircraft as the frames draw it (the panel's, ui/Follow3dPanel.jsx); outside an OccMap there is none. M4:
+//   `startOn({ kind, id })` starts it on the aircraft a click on it would select, choosing it first when it is not the
+//   selection (a double click on the map, a stand's inspector), and answers whether the map can follow it;
+//   `parkedAt(code)` is the selection of the traffic aircraft parked on that stand, or null.
+// - board filter (M8, OccMap's `flightEmphasis`): `boardFilter`, whether the filter of Monitoreo's board dims AVIAM
+//   aircraft on the map, for the legend.
+// - runway in use (2026-11-28): `runwayInUse`, the runway the map draws in use (`{ arrival, departure, source }`, from
+//   traffic/referenceFeatures.js: mapRunwayInUse with the recent live arrivals it saw and the weather it was given),
+//   whether or not its centreline is on screen, so a panel over the map names the same runway; null outside an OccMap.
 // Outside an OccMap the value is a map that does nothing and shows nothing.
 
 const doNothing = () => {};
@@ -49,6 +60,7 @@ export const OCC_MAP_IDLE = Object.freeze({
   engineStatus: 'starting',
   basemapStatus: 'off',
   activeView: null,
+  views: VIEW_NAMES,
   fits: null,
   thresholds: null,
   standsOnScreen: Object.freeze([]),
@@ -64,6 +76,7 @@ export const OCC_MAP_IDLE = Object.freeze({
     route: Object.freeze([]) }),
   trafficSource: null,
   referencesOnScreen: Object.freeze({ kinds: Object.freeze([]), runway: null }),
+  runwayInUse: null,
   layers: Object.freeze({ keys: Object.freeze([]), values: Object.freeze({}), notes: Object.freeze({}) }),
   setLayer: doNothing,
   layersMenuOpen: false,
@@ -71,6 +84,7 @@ export const OCC_MAP_IDLE = Object.freeze({
   registerLayersMenu: () => doNothing,
   motion: Object.freeze({ available: false, paused: false, pausedAt: null, dataAt: null, pause: doNothing, resume: doNothing }),
   follow: Object.freeze({ available: false, following: false, canFollow: false, toggle: doNothing }),
+  boardFilter: false,
 });
 
 export const OccMapContext = createContext(OCC_MAP_IDLE);

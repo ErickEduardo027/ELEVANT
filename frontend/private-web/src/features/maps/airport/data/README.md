@@ -2,10 +2,11 @@
 
 Esta carpeta guarda el plano del aeropuerto de Punta Cana (MDPC / PUJ) que
 dibujan los mapas del OCC desde el PR M3
-([ADR-0043](../../../../../../../docs/adr/0043-occ-maps-one-engine.md)). Los
-dos JSON se generan con `scripts/maps/build-mdpc-layout.mjs` y no se editan a
-mano: una prueba los reconstruye y falla si no son idénticos a los
-versionados.
+([ADR-0043](../../../../../../../docs/adr/0043-occ-maps-one-engine.md)). El
+plano y el contexto regional se generan con
+`scripts/maps/build-mdpc-layout.mjs` y no se editan a mano: una prueba los
+reconstruye y falla si no son idénticos a los versionados. El tercero,
+`mdpc.structures.json`, sí se escribe a mano (abajo).
 
 ## Qué hay aquí
 
@@ -40,6 +41,97 @@ escribe una sola vez. Van en una fuente propia, con los ejes de pista
 extendidos, que salen de los umbrales y rumbos de OurAirports del plano, y esa
 fuente lleva el crédito «OurAirports» (abajo, en Licencias).
 
+**`mdpc.structures.json`**, las estructuras en 3D (esquema 1, desde el carril
+M9, 27 de noviembre de 2026). A diferencia de los otros dos, **se escribe a
+mano**: ninguna prueba lo reconstruye y el generador no lo toca. Toda medida
+que guarda es una **estimación** (`source: 'estimate'`). Cada una lleva su
+`note` y `reviewedBy: null` hasta que alguien la confirme, y el mapa la rotula
+con «est.». Ninguna sale del AIP ni de las cartas del aeropuerto. Erick, como
+dueño del producto, puede corregir cualquier valor: lo cambia aquí, explica el
+cambio en `note` y pone su rol en `reviewedBy`.
+
+- `buildings`: la altura (`heightM`) y la base (`baseM`) de cada huella de
+  terminal del plano. Cada una se nombra por su id (`layoutId`, el de
+  `terminals`):
+  - las salidas y las llegadas de la Terminal A, ~12 m;
+  - el edificio principal de la Terminal A, ~14 m;
+  - la Terminal B, ~15 m;
+  - el edificio sin nombre al oeste de la Terminal B, ~13 m.
+
+  Las huellas que se solapan en OSM llevan alturas distintas, para que no
+  parpadeen al dibujarse.
+- `kindDefaults`: la altura que tomaría cada clase de edificio cuando el plano
+  tenga su huella: terminal ~12 m, FBO ~8 m y hangar ~14 m. **Hoy el plano no
+  guarda ninguna huella de FBO ni de hangar**, porque el extracto de OSM solo
+  trae terminales. Por eso no se dibuja ninguna: su geometría nunca se inventa.
+- `jetBridges`: una pasarela por cada posición con `bridge: true` (B20 a B26).
+  - Cada una nombra la terminal (`terminalId`) y el lado de su polígono contra
+    el que se apoya (`edgeIndex`: el tramo que va del punto `edgeIndex` al
+    siguiente). El lado se eligió a mano: es la cara del muelle que mira a la
+    posición.
+  - Medidas de la pasarela: el radio de la rotonda (`rotundaRadiusM`, 2,3 m),
+    lo que la rotonda sube sobre el túnel (`rotundaRiseM`, 0,6 m), el ancho y
+    el alto del túnel (`tunnelWidthM`, 2,6 m, y `tunnelHeightM`, 3 m) y la
+    altura de su base (`baseHeightM`, 3,4 m, la de la puerta).
+  - Lleva también el avión de referencia (`designType`: un A320 de
+    [`types.js`](../../aircraft/types.js)) y la distancia de su puerta
+    delantera a la nariz (`doorAftOfNoseM`, 6 m).
+  - Por último, cuánto se aparta la rotonda hacia la izquierda del avión
+    (`rotundaLateralM`, 8 m).
+- `taxiwayPavement`: la media anchura de las calzadas de rodaje, 11,5 m
+  (23 m de calzada). Vale para toda calle del plano, porque el plano no guarda
+  el ancho de cada una.
+
+Lo lee [`structures.js`](../structures.js) (`MDPC_STRUCTURES`), que lo
+convierte en GeoJSON (`structureFeatures`):
+
+- los edificios, extruidos desde su base hasta su altura, con su rótulo
+  («15 m est.»);
+- las pasarelas, construidas solas:
+  - el avión de referencia se estaciona con su centro en el centro de la
+    posición y la nariz hacia su rumbo;
+  - la rotonda se apoya en el lado elegido, a un radio de él, en el punto más
+    cercano al que queda 8 m a la izquierda de la puerta;
+  - el túnel va del centro de la rotonda a la puerta delantera izquierda;
+- las calzadas: cada eje de rodaje con un búfer de 11,5 m, uniones redondas y
+  extremos redondos.
+
+Cada elemento lleva `estimate: true`. Las pruebas
+([`structures.test.js`](../structures.test.js)) comprueban:
+
+- que cada anillo cierra y tiene área;
+- que cada pasarela llega a la puerta, que esa puerta cae dentro de su
+  posición, que la rotonda queda fuera del edificio y que el túnel no lo
+  cruza;
+- que cada calzada contiene su eje y no se dobla sobre sí misma;
+- que el archivo describe cada terminal del plano y cada posición con
+  pasarela, ni una más.
+
+**`world.airports.json`** (carril M8, 27 de noviembre de 2026): los aeropuertos
+del mundo que dibuja el globo de Monitoreo. Son los aeropuertos grandes
+(`large_airport`) con servicio regular y código IATA, más todos los
+dominicanos grandes, medianos o pequeños con IATA: 1 157 filas, unos 89 kB.
+Cada fila es una tupla `[icao, iata, nombre, lng, lat, país]` (`meta.fields`),
+con la posición en 4 decimales (unos 11 m) y en orden de OACI; `iata` es
+`null` cuando no tiene. Lo lee [`worldAirports.js`](../worldAirports.js)
+(`WORLD_AIRPORTS`):
+
+- en el globo, Mundo y Región dibujan sus puntos y códigos tras los de la región,
+  sin repetirlos, y los dominicanos (MDPC, MDSD, MDST, MDLR, MDPP, MDCY, MDJB,
+  MDBH, MDCR, MDSI y MDCZ) van más grandes y, desde que se ve el Caribe, siempre
+  rotulados ([`referenceLayers.js`](../../style/referenceLayers.js));
+- en todos los mapas, cuando la fila de la API no trae la posición del origen o
+  destino de un vuelo, se toma la de su aeropuerto, primero de
+  `region.context.json` y luego de aquí, por OACI y luego por IATA
+  (`counterpartPoint`).
+
+No pasa por `build-mdpc-layout.mjs`: lo escribe directamente
+`scripts/maps/fetch-ourairports-world.mjs` (abajo), y no hay prueba de
+igualdad, porque la entrada completa (unos 12 MB) no se versiona.
+[`worldAirports.test.js`](../worldAirports.test.js) comprueba su forma: el
+esquema, el orden, códigos únicos, el tamaño y que estén los dominicanos y los
+aeropuertos de los vuelos de AVIAM.
+
 **El límite de la FIR Santo Domingo (MDCS) no está en esta carpeta.** El plan
 permitía extraerlo una sola vez del proyecto VATSpy (`FIRBoundaries.dat`,
 CC BY-SA 4.0). El 14 de noviembre de 2026 ese archivo ya no estaba en su
@@ -61,6 +153,7 @@ Se extrajeron a mano el 13 de noviembre de 2026. Las mismas fechas van en
 | OurAirports, por su espejo de GitHub ([`fetch-ourairports-mdpc.mjs`](../../../../../scripts/maps/fetch-ourairports-mdpc.mjs) → `scripts/maps/input/ourairports.mdpc.json`) | MDPC, los extremos y umbrales de sus pistas, sus frecuencias, PNA y PCA, y los aeropuertos de la región | `fetchedAt`: 2026-11-13T17:35:18Z | Dominio público |
 | ELEVANT: [`positionsData.js`](../../../dashboard/positionsData.js) | Los 42 puntos internos de las posiciones (41 activos y la B33 retirada): el centro de cada posición (decisión 20) | El archivo versionado | Referencia interna, sin verificar contra el AIP: no es oficial |
 | La tabla manual, `scripts/maps/input/stand-overrides.json` | Las correcciones de la revisión (abajo) | Cada entrada lleva su nota | Propia |
+| OurAirports, por su espejo de GitHub ([`fetch-ourairports-world.mjs`](../../../../../scripts/maps/fetch-ourairports-world.mjs) → `world.airports.json`) | Los aeropuertos del mundo del globo (carril M8) | `meta.fetchedAt` del archivo: 2026-11-28T02:31:42Z | Dominio público |
 
 ## Licencias
 
@@ -91,7 +184,9 @@ Se extrajeron a mano el 13 de noviembre de 2026. Las mismas fechas van en
     (`OURAIRPORTS_ATTRIBUTION`, en [`attribution.js`](../../core/attribution.js)).
     MapLibre lo muestra solo mientras alguna de esas capas está en pantalla,
     como en Región y Aproximación, y una sola vez cuando el aeródromo también
-    se ve.
+    se ve;
+  - desde el carril M8, los aeropuertos del mundo (`world.airports.json`) van en
+    esa misma fuente, con el mismo crédito.
 - **AIP y cartas del aeropuerto.** Nunca se copian sus coordenadas, ni a la
   tabla manual ni a ningún otro archivo: no consta permiso del IDAC para
   procesarlas. En la revisión, la carta de estacionamiento solo se mira para
@@ -122,6 +217,11 @@ Todo se corre desde `frontend/private-web`. Nada de esto corre en
      región.
    - Antes de seguir, revisa el diff de las entradas: un cambio en OSM puede
      mover una posición o cambiar su rumbo.
+   - Los aeropuertos del mundo se regeneran aparte, también a mano:
+     `node scripts/maps/fetch-ourairports-world.mjs` descarga la tabla de
+     aeropuertos del espejo y escribe `world.airports.json`; con
+     `--from <airports.csv>` lee una copia descargada antes. Revisa el diff:
+     una línea por aeropuerto.
 
 2. **Generar el plano.** Sin red ni reloj: dos corridas dan los mismos bytes.
 

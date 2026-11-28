@@ -13,6 +13,22 @@ const KIND_LABELS = Object.freeze({
   otherGround: 'legend.traffic.otherGround',
 });
 
+// PR M5: in 3D, up close, an AVIAM aircraft wears its airline's livery and other traffic keeps its plain colour
+// (aircraft/instancePlan.js: liveries); other traffic on the ground stays 2D.
+const KIND_3D_HINTS = Object.freeze({
+  aviamArrival: 'legend.traffic.aviam3dHint',
+  aviamDeparture: 'legend.traffic.aviam3dHint',
+  other: 'legend.traffic.other3dHint',
+});
+// Integration of M5 with M9: with the map's liveries (Mapa de posiciones, OccMap aircraft3d={{ liveries: true }}) every
+// aircraft wears its airline's livery, and other traffic on the ground near the field is drawn in 3D too.
+const KIND_3D_LIVERY_HINTS = Object.freeze({
+  aviamArrival: 'legend.traffic.aviam3dHint',
+  aviamDeparture: 'legend.traffic.aviam3dHint',
+  other: 'legend.traffic.aviam3dHint',
+  otherGround: 'legend.traffic.aviam3dHint',
+});
+
 const TRAIL_ENTRIES = Object.freeze({
   live: { key: 'trail', label: 'legend.traffic.trail' },
   estimated: { key: 'trailEstimated', label: 'legend.traffic.trailEstimated' },
@@ -45,14 +61,19 @@ function tagEntry(tag, t, language) {
  * «Recorrido observado», «Trayecto estimado», «Ruta prevista» and its marked points with a short hint. The swatch names
  * what ui/TrafficSwatch.jsx draws: the solid and hollow ELEVANT silhouettes, the small muted other traffic, the plate,
  * the ring, the dimmed aircraft, the two trails and the route's solid, faint and dashed lines and its ring.
+ * With `models3d` (the map in 3D), a kind its 3D aircraft draw says in a short hint whether they wear a livery; with
+ * `liveries3d` too (M9, the map dresses every 3D aircraft in its airline's livery) every kind says it wears one.
  * Nothing on screen, no entry.
  */
-export function trafficLegendEntries({ kinds = [], tags = [], trails = [], route = [] } = {}, { language = 'es' } = {}) {
+export function trafficLegendEntries({ kinds = [], tags = [], trails = [], route = [] } = {},
+  { language = 'es', models3d = false, liveries3d = false } = {}) {
   const t = createTranslator(mapMessages, language);
+  const hints3d = liveries3d ? KIND_3D_LIVERY_HINTS : KIND_3D_HINTS;
   const shownTrails = trails.filter(kind => Object.hasOwn(TRAIL_ENTRIES, kind));
   return [
     ...kinds.filter(kind => Object.hasOwn(KIND_LABELS, kind))
-      .map(kind => ({ key: kind, swatch: kind, label: t(KIND_LABELS[kind]), hint: null, span: 2 })),
+      .map(kind => ({ key: kind, swatch: kind, label: t(KIND_LABELS[kind]),
+        hint: models3d && Object.hasOwn(hints3d, kind) ? t(hints3d[kind]) : null, span: 2 })),
     ...tags.map(tag => {
       const entry = tagEntry(tag, t, language);
       return entry === null ? null : { key: tag, swatch: tag, ...entry, span: 2 };

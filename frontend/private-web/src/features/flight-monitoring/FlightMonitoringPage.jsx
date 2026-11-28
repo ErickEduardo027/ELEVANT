@@ -1,17 +1,19 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { useTranslation } from '../../i18n/LanguageScope';
 import { serverClock } from '../../services/serverClock';
 import { STATION_TIME_ZONE } from '../admin-occ/shell/status/OccClocks';
 import { inspectorMilestones } from '../dashboard/noc/milestoneModel';
 import { useConsoleClock } from '../dashboard/noc/useConsoleClock';
 import { useMapSelection } from '../maps/core/useMapSelection';
+import { useStageInsets } from '../maps/ui/useStageInsets';
 import OccButton from '../occ-ui/OccButton';
 import OccDrawer from '../occ-ui/OccDrawer';
 import OccSkeleton from '../occ-ui/OccSkeleton';
 import OccToastStack from '../occ-ui/OccToastStack';
-import FlightBoard from './components/FlightBoard';
+import FlightBoard, { FLIGHT_BOARD_PANEL_ID } from './components/FlightBoard';
 import FlightInspector from './components/FlightInspector';
 import FlightMap from './components/FlightMap';
 import { buildFlightBoard, filterBoard, findBoardFlight } from './flightBoardModel';
@@ -19,42 +21,67 @@ import { flightMonitoringMessages } from './flightMonitoringMessages';
 import { useFlightAlerts } from './useFlightAlerts';
 import { useIsTabletBreakpoint } from './useIsTabletBreakpoint';
 
-// Monitoreo de vuelos as a work map (design E.2, template B «Mapa de trabajo»; CN-32): the board of flight strips at the
-// left, the maps lane's map (components/FlightMap.jsx, Región to Rampa with everything it draws) in the rest, and the
-// inspector of the chosen flight in the screen's docked side panel, never over the map, so it covers no aircraft and the
-// map takes no inset. The map renders the flight's live data block inside that panel (its `liveSlot`), so nothing
-// floats over the map.
-// Below 1024 px the board opens in a drawer from «Ver vuelos». One selection, the URL's (contratos 2.1,
-// maps/core/useMapSelection.js): a strip writes `flightId=` with the leg id and keeps every other key, the map reads the
-// same flight and writes `hex=` for other traffic, and a link with a leg id (or its turnaround) selects that flight. The
-// station and the health of its sources live in the status bar; a failed refresh keeps the flights on the board under
-// its stale notice. The page's own toasts sit at the bottom right of the work area, apart from the frame's.
+// Monitoreo de vuelos as a full-screen map with floating panels (design E.2; M1, «pantalla completa con paneles
+// flotantes», which replaces the docked template B of CN-32): the maps lane's map (components/FlightMap.jsx, the globe
+// of M8 from Mundo to Rampa with everything it draws) fills the screen, the board of flight strips floats at its left
+// and the inspector of the chosen flight at its right, left of the map's control column. Both are measured into the
+// map's insets (maps/ui/useStageInsets.js, FLIGHT_MONITORING_PANEL_EDGES), so the views, the controls, the key of the
+// map and the camera keep to the area they leave in sight. The map renders the chosen flight's live data block inside
+// the inspector (its `liveSlot`); another aircraft's is docked at the top left of that area.
+// Below 1024 px the board opens in a drawer from «Ver vuelos», which floats at the top left of the map. One selection,
+// the URL's (contratos 2.1, maps/core/useMapSelection.js): a strip writes `flightId=` with the leg id and keeps every
+// other key, the map reads the same flight and writes `hex=` for other traffic, and a link with a leg id (or its
+// turnaround) selects that flight. The station and the health of its sources live in the status bar. The board's
+// filter (M8: «Llegadas», «Salidas», «En vuelo», «En tierra», «Todos», and the search), in the floating board, reaches
+// the map, which dims the AVIAM flights and routes it leaves out; a failed refresh keeps the flights on the board under
+// its stale notice. Without a map (the first load, another station) the screen is a plain grid that scrolls. The page's
+// own toasts sit at the bottom right of the work area, apart from the frame's.
 
 const NO_FLIGHTS = Object.freeze([]);
+// The ids the board's filter keeps as one text, so a list equal to the last one keeps its identity (M8); `null` for none.
+const keyOfStrips = strips => strips.map(strip => strip.id).join('|');
+const idsOfKey = key => (key === null ? null : (key === '' ? NO_FLIGHTS : key.split('|')));
+// From 1536 px the board and the inspector stay open side by side; below (a 1366 px laptop) the board folds to its
+// pill while the inspector is open, so the map keeps room between them.
+const WIDE_QUERY = '(min-width: 1536px)';
+const INSPECTOR_PANEL_ID = 'fm-inspector';
+const VIEW_FLIGHTS_ID = 'fm-view-flights';
 
 /**
- * How the screen is laid out, as pure classes so a test can read what jsdom does not lay out. The board is 24rem wide:
- * a strip's fixed columns take 20.9rem (occ-ui/OccFlightStrip.jsx) and its tags the rest. From 1024 px the board and the
- * map share the height. The map's controls run down its own right edge (maps/ui/MapDock.jsx, CN-32), so it needs no
- * width for them. The inspector of the chosen flight (CN-32):
- * - from 1536 px, a column of its own at the right of the map (22.5rem), the place of the flight panel of follow mode;
- * - from 1024 to 1536 px, in the board's column, which folds away while the inspector is open (as Mapa de posiciones
- *   folds its list), so the map keeps its width on a 1366 px laptop; «Cerrar detalle» brings the board back;
- * - below 1024 px, under the map (the board opens in a drawer from «Ver vuelos»).
+ * The edge of the map each floating panel of the screen takes room from (maps/ui/stageInsets.js): the board the left,
+ * the inspector the right, and «Ver vuelos» (below 1024 px) the top, so the data block of an aircraft opens under it.
+ */
+export const FLIGHT_MONITORING_PANEL_EDGES = Object.freeze({
+  [FLIGHT_BOARD_PANEL_ID]: 'left',
+  [INSPECTOR_PANEL_ID]: 'right',
+  [VIEW_FLIGHTS_ID]: 'top',
+});
+
+/**
+ * How the screen is laid out, as pure classes so a test can read what jsdom does not lay out.
+ * - Over the map (`stage`): the map fills the screen, and the panels float in it 12 px from its edges, under the cards
+ *   of the map (z-20) and its control column (z-30, occ-map.css). The board is 24rem wide at the left: a strip's fixed
+ *   columns take 20.9rem (occ-ui/OccFlightStrip.jsx) and its tags the rest; folded, it is a pill at the top left. The
+ *   inspector is 22.5rem wide at the right, left of the control column (--occ-map-rail-reserve). Neither is ever wider
+ *   than the map leaves beside the column.
+ * - Without a map (`scroll`): the first load and another station, whose card says it has no live source, scroll in a
+ *   grid: the board, the card and, from 1280 px, the inspector in a column of its own (below, under them).
  */
 export const FLIGHT_MONITORING_LAYOUT = Object.freeze({
-  root: 'flex h-full min-h-0 flex-col gap-3',
-  grid: 'grid min-h-0 flex-1 gap-3 grid-cols-1 grid-rows-[minmax(26rem,1fr)] lg:grid-cols-[24rem_minmax(0,1fr)] '
-    + 'lg:grid-rows-[minmax(0,1fr)]',
-  gridWithInspector: 'grid min-h-0 flex-1 gap-3 grid-cols-1 grid-rows-[minmax(26rem,1fr)_auto] '
-    + 'lg:grid-cols-[24rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)] '
-    + '2xl:grid-cols-[24rem_minmax(0,1fr)_22.5rem]',
-  board: 'flex min-h-0 min-w-0 flex-col lg:col-start-1 lg:row-start-1',
-  boardWithInspector: 'flex min-h-0 min-w-0 flex-col lg:col-start-1 lg:row-start-1 lg:max-2xl:hidden',
-  map: 'relative min-h-[26rem] min-w-0 row-start-1 lg:col-start-2 lg:row-start-1 lg:min-h-0',
-  mapWithInspector: 'relative min-h-[26rem] min-w-0 row-start-1 lg:col-start-2 lg:row-start-1 lg:min-h-0',
-  inspector: 'flex min-h-0 min-w-0 max-h-[45dvh] flex-col row-start-2 lg:col-start-1 lg:row-start-1 lg:max-h-none '
-    + '2xl:col-start-3',
+  stage: 'relative h-full min-h-0 overflow-hidden bg-occ-canvas',
+  board: 'pointer-events-auto absolute bottom-3 left-3 top-3 z-10 w-[24rem] '
+    + 'max-w-[calc(100%_-_var(--occ-map-rail-reserve)_-_12px)] data-[folded=true]:bottom-auto data-[folded=true]:w-auto',
+  inspector: 'pointer-events-auto absolute bottom-3 right-[var(--occ-map-rail-reserve)] top-3 z-10 w-[22.5rem] '
+    + 'max-w-[calc(100%_-_var(--occ-map-rail-reserve)_-_12px)]',
+  viewFlights: 'pointer-events-auto absolute left-3 top-3 z-10',
+  scroll: 'flex h-full min-h-0 flex-col gap-3 overflow-y-auto overscroll-contain p-3',
+  grid: 'grid min-h-[26rem] flex-1 gap-3 grid-cols-1 lg:grid-cols-[24rem_minmax(0,1fr)]',
+  gridWithInspector: 'grid min-h-[26rem] flex-1 gap-3 grid-cols-1 lg:grid-cols-[24rem_minmax(0,1fr)] '
+    + 'xl:grid-cols-[24rem_minmax(0,1fr)_22.5rem]',
+  gridBoard: 'flex min-h-[26rem] min-w-0 flex-col lg:min-h-0',
+  gridCard: 'flex min-h-[16rem] min-w-0 items-center justify-center rounded-md border border-occ-line bg-occ-panel p-8 '
+    + 'text-center text-sm text-occ-muted',
+  gridInspector: 'flex min-h-0 min-w-0 flex-col lg:col-span-2 xl:col-span-1',
 });
 
 /**
@@ -105,12 +132,15 @@ export default function FlightMonitoringPage({
   const hearMapChoice = useCallback(value => setMapChoice(value), []);
   const nowMs = useConsoleClock(clock);
   const isTablet = useIsTabletBreakpoint();
+  const wide = useMediaQuery(WIDE_QUERY);
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [listOpen, setListOpen] = useState(false);
   const [followed, setFollowed] = useState(null);
   // The element of the inspector the map renders the flight's live data block into (CN-32).
   const [liveSlot, setLiveSlot] = useState(null);
+  // The flight beside whose inspector the person unfolded the board below 1536 px.
+  const [boardOpenFor, setBoardOpenFor] = useState(null);
   const boardRef = useRef(null);
   const toggleRef = useRef(null);
   const focusAfterClose = useRef(null);
@@ -123,10 +153,22 @@ export default function FlightMonitoringPage({
   const flights = forceState === 'monitoringEmpty' ? NO_FLIGHTS : data?.flights ?? NO_FLIGHTS;
   const displayConnection = forceState === 'monitoringDisconnected' ? 'disconnected' : connection;
   const code = data?.station?.code ?? stationCode;
+  // The map draws only PUJ's live picture: another station has a card instead, and no panel floats.
+  const hasMap = code === 'PUJ';
+  const { insets, rootRef, measure } = useStageInsets({ edges: FLIGHT_MONITORING_PANEL_EDGES,
+    enabled: hasMap && !isLoading });
   const timeZone = data?.station?.ianaTimeZone ?? STATION_TIME_ZONE;
 
-  const board = useMemo(() => buildFlightBoard(flights, { nowMs, t, stationCode: code }), [flights, nowMs, t, code]);
+  // The map flights the map has read (M8): their phases tell the board «En vuelo» and «En tierra» (no read of its own).
+  const mapFlights = mapChoice?.flights ?? null;
+  const board = useMemo(() => buildFlightBoard(flights, { nowMs, t, stationCode: code, mapFlights }),
+    [flights, nowMs, t, code, mapFlights]);
   const shown = filterBoard(board, filter, search);
+  // The board's filter on the map (M8): the flights it keeps stand out and the rest is dimmed; nothing is dimmed while
+  // it keeps every flight. Kept by its ids, so the clock's re-renders hand the map the same list; the key is a template
+  // literal so the React Compiler knows it for a string and keeps compiling the page.
+  const emphasisKey = filter !== 'all' || search.trim() !== '' ? `${keyOfStrips(shown)}` : null;
+  const emphasisedFlightIds = useMemo(() => idsOfKey(emphasisKey), [emphasisKey]);
   const { toasts, dismissToast } = useFlightAlerts(flights, displayConnection);
 
   // The chosen flight: the URL's, when it names a flight of the page (its leg, its `l:` key or its turnaround).
@@ -155,6 +197,13 @@ export default function FlightMonitoringPage({
     (strip ?? toggleRef.current)?.focus?.();
   }, [selection]);
 
+  // The board and «Ver vuelos» are measured into the map's insets and kept for the focus too.
+  const measureBoard = measure(FLIGHT_BOARD_PANEL_ID);
+  const boardPanelRef = useCallback(element => {
+    boardRef.current = element;
+    measureBoard(element);
+  }, [measureBoard]);
+
   const selectStrip = strip => {
     selectFlight(strip.id);
     setListOpen(false);
@@ -180,53 +229,75 @@ export default function FlightMonitoringPage({
   const state = boardStateOf({ isError, error, empty: board.counts.all === 0, connection: displayConnection,
     lastUpdatedAt, onRetry });
 
-  const boardPanel = (
-    <FlightBoard board={board} state={state} labels={labels} filter={filter} onFilterChange={setFilter} search={search}
-      onSearchChange={setSearch} selectedId={selectedId} onSelect={selectStrip} nowMs={nowMs} timeZone={timeZone} />
-  );
-  const inspector = selectedStrip ? (
+  // Below 1536 px the open inspector folds the board to its pill, until the person unfolds it beside this flight.
+  const boardYields = selectedStrip !== null && !wide;
+  const boardFold = boardYields ? {
+    folded: boardOpenFor !== selectedId,
+    onFoldedChange: next => setBoardOpenFor(next ? null : selectedId),
+  } : {};
+  const boardProps = {
+    board, state, labels, filter, onFilterChange: setFilter, search, onSearchChange: setSearch, selectedId,
+    onSelect: selectStrip, nowMs, timeZone,
+  };
+  const inspecting = selectedStrip !== null;
+  const milestones = mapChoice?.flight ? inspectorMilestones(mapChoice.flight, mapChoice.flights, language) : null;
+  const inspector = place => (inspecting ? (
     <FlightInspector flight={selectedFlight} strip={selectedStrip} stationId={stationId} timeZone={timeZone}
-      onClose={closeInspector} liveSlotRef={setLiveSlot} className="lg:h-full"
-      milestones={mapChoice?.flight ? inspectorMilestones(mapChoice.flight, mapChoice.flights, language) : null} />
-  ) : null;
+      onClose={closeInspector} liveSlotRef={setLiveSlot} milestones={milestones} {...place} />
+  ) : null);
   const layout = FLIGHT_MONITORING_LAYOUT;
+  const viewFlights = isTablet && !isLoading ? (
+    <OccButton ref={toggleRef} onClick={() => setListOpen(true)} aria-haspopup="dialog" aria-expanded={drawerOpen}>
+      {t('page.viewFlights', { count: shown.length })}
+    </OccButton>
+  ) : null;
+
+  let body;
+  if (isLoading) {
+    body = <div className={layout.scroll}><MonitoringSkeleton label={t('page.loading')} /></div>;
+  } else if (hasMap) {
+    // The panels float inside the map, under its cards and its control column (FlightMap's `panels`).
+    const panels = (
+      <>
+        {isTablet ? null : (
+          <FlightBoard ref={boardPanelRef} floating {...boardProps} {...boardFold} className={layout.board} />
+        )}
+        {viewFlights ? (
+          <div ref={measure(VIEW_FLIGHTS_ID)} data-occ-view-flights="" className={layout.viewFlights}>{viewFlights}</div>
+        ) : null}
+        {inspector({ ref: measure(INSPECTOR_PANEL_ID), variant: 'floating', className: layout.inspector })}
+      </>
+    );
+    body = (
+      <div ref={rootRef} data-occ-flight-stage="" className={layout.stage}>
+        {/* The same props as before: every flight of the page, so a click on the map finds any of them; the inspector
+            replaces the page's card (`detail`). */}
+        <FlightMap flights={flights} selectedFlightId={mapSelectedId} onSelectFlight={selectFromMap} theme={theme}
+          detail={null} onSelectionFlights={hearMapChoice} dataBlockSlot={inspecting ? liveSlot : null}
+          emphasisedFlightIds={emphasisedFlightIds} follow3dButton insets={insets} panels={panels} />
+      </div>
+    );
+  } else {
+    body = (
+      <div className={layout.scroll}>
+        {viewFlights ? <div className="flex justify-end">{viewFlights}</div> : null}
+        <div className={inspecting ? layout.gridWithInspector : layout.grid}>
+          {isTablet ? null : <div ref={boardRef} className={layout.gridBoard}><FlightBoard {...boardProps} /></div>}
+          <div role="status" className={layout.gridCard}>{t('page.noLiveSource')}</div>
+          {inspecting ? <div className={layout.gridInspector}>{inspector({ className: 'h-full' })}</div> : null}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div data-occ-flight-monitoring="" className={layout.root}>
+    <div data-occ-flight-monitoring={hasMap && !isLoading ? 'map' : 'grid'} className="h-full min-h-0">
       <h1 className="sr-only">{t('page.title')}</h1>
-      {isTablet && !isLoading ? (
-        <div className="flex justify-end">
-          <OccButton ref={toggleRef} onClick={() => setListOpen(true)} aria-haspopup="dialog" aria-expanded={drawerOpen}>
-            {t('page.viewFlights', { count: shown.length })}
-          </OccButton>
-        </div>
-      ) : null}
-
-      {isLoading ? <MonitoringSkeleton label={t('page.loading')} /> : (
-        <div className={inspector ? layout.gridWithInspector : layout.grid}>
-          {isTablet ? null : (
-            <div ref={boardRef} className={inspector ? layout.boardWithInspector : layout.board}>{boardPanel}</div>
-          )}
-          <div className={inspector ? layout.mapWithInspector : layout.map}>
-            {code === 'PUJ' ? (
-              // The same props as before: every flight of the page, so a click on the map finds any of them; the
-              // inspector replaces the page's card (`detail`).
-              <FlightMap flights={flights} selectedFlightId={mapSelectedId} onSelectFlight={selectFromMap} theme={theme}
-                detail={null} onSelectionFlights={hearMapChoice} dataBlockSlot={inspector ? liveSlot : null} />
-            ) : (
-              <div role="status"
-                className="absolute inset-0 flex items-center justify-center rounded-md border border-occ-line bg-occ-panel p-8 text-center text-sm text-occ-muted">
-                {t('page.noLiveSource')}
-              </div>
-            )}
-          </div>
-          {inspector ? <div className={layout.inspector}>{inspector}</div> : null}
-        </div>
-      )}
+      {body}
 
       {isTablet ? (
         <OccDrawer open={drawerOpen} onClose={() => setListOpen(false)} title={t('list.drawer')} returnFocusRef={toggleRef}>
-          <div ref={boardRef} className="flex h-full min-h-0 flex-col">{boardPanel}</div>
+          <div ref={boardRef} className="flex h-full min-h-0 flex-col"><FlightBoard {...boardProps} /></div>
         </OccDrawer>
       ) : null}
 

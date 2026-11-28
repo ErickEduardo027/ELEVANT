@@ -1,4 +1,4 @@
-import { VIEW_NAMES } from './cameraPresets';
+import { MAP_VIEWS, VIEW_NAMES } from './cameraPresets';
 
 // The layers menu of the OCC maps (design E7, PR M5): the keys a person can show or hide, grouped as the menu lists
 // them, their defaults by view, and the choices kept in the browser. Only what the person changed from the defaults of
@@ -10,12 +10,17 @@ import { VIEW_NAMES } from './cameraPresets';
 // waits for an extract of its boundary) and «Meteorología» (the satellite clouds and rain, off by default, and the wind
 // at the airfield), and PR M6 the ramp keys: each adds its group here, its defaults in ON_IN and, when its keys depend
 // on another, a line in engineGroupsFor.
+//
+// Lane M7 adds to «Meteorología» the regional weather of the maps that opt in (traffic/weatherLayers.js: weatherOverlay
+// with `regional`): the satellite loop, the radar, the METAR stations and the SIGMETs, on by default in Región and
+// Aproximación. A map that does not opt in has none of their layers, so the menu never lists them there
+// (availableLayerKeys).
 
 /** The groups of the menu and their keys, in the order the menu lists them. */
 export const LAYER_GROUPS = Object.freeze([
   Object.freeze({
     id: 'traffic',
-    keys: Object.freeze(['traffic.aviam', 'traffic.other', 'traffic.labels', 'traffic.trails', 'route']),
+    keys: Object.freeze(['traffic.aviam', 'traffic.other', 'traffic.labels', 'traffic.trails', 'route', 'traffic.routes']),
   }),
   // The references (design E6, style/referenceLayers.js): the region's airports (owner request of 2026-11-15), the
   // routes from Punta Cana (AeroDataBox's daily routes, ADR-0043 note of 15 November 2026, style/routeLayers.js) and,
@@ -24,10 +29,12 @@ export const LAYER_GROUPS = Object.freeze([
     id: 'reference',
     keys: Object.freeze(['reference.airports', 'reference.routes', 'rings', 'centrelines', 'navaids', 'daynight']),
   }),
-  // The weather of PR M8 (design E6, traffic/weatherLayers.js): the satellite images and the wind at the airfield.
+  // The weather of PR M8 (design E6, traffic/weatherLayers.js): the satellite images and the wind at the airfield; and
+  // from lane M7 the regional weather: the satellite loop, the radar, the METAR stations and the SIGMETs.
   Object.freeze({
     id: 'weather',
-    keys: Object.freeze(['weather.goes', 'weather.imerg', 'weather.wind']),
+    keys: Object.freeze(['weather.loop', 'weather.radar', 'weather.stations', 'weather.sigmet', 'weather.goes',
+      'weather.imerg', 'weather.wind']),
   }),
 ]);
 
@@ -41,36 +48,45 @@ export const LOCKED_LAYERS = Object.freeze(['traffic.aviam']);
 export const LAYERS_STORAGE_KEY = 'elevant-occ-map-layers:v1';
 
 // The views in which each key is on until a person changes it («Default on in» of design E7).
+// The world view of M8 (Monitoreo's globe) shows the traffic, the chosen route, the airports, the routes from Punta Cana
+// and day and night; the rings, the centrelines and the navaids are too small to read from there.
 const ON_IN = Object.freeze({
-  'traffic.aviam': VIEW_NAMES,
-  'traffic.other': VIEW_NAMES,
+  'traffic.aviam': MAP_VIEWS,
+  'traffic.other': MAP_VIEWS,
   'traffic.labels': Object.freeze([]),
   'traffic.trails': Object.freeze([]),
-  route: VIEW_NAMES,
-  'reference.airports': Object.freeze(['region', 'approach']),
-  'reference.routes': Object.freeze(['region']),
+  route: MAP_VIEWS,
+  // The great circles of every AVIAM flight (M8, style/flightRouteLayers.js: only Monitoreo's globe has them), from afar.
+  'traffic.routes': Object.freeze(['world', 'region']),
+  'reference.airports': Object.freeze(['world', 'region', 'approach']),
+  'reference.routes': Object.freeze(['world', 'region']),
   rings: Object.freeze(['region', 'approach']),
   centrelines: Object.freeze(['approach']),
   navaids: Object.freeze(['approach', 'airfield']),
-  daynight: Object.freeze(['region', 'approach']),
+  daynight: Object.freeze(['world', 'region', 'approach']),
   // The satellite images are off until a person turns them on; the wind shows in Aproximación and Aeródromo.
   'weather.goes': Object.freeze([]),
   'weather.imerg': Object.freeze([]),
   'weather.wind': Object.freeze(['approach', 'airfield']),
+  // The regional weather (lane M7) shows in Región and Aproximación on the maps that draw it.
+  'weather.loop': Object.freeze(['region', 'approach']),
+  'weather.radar': Object.freeze(['region', 'approach']),
+  'weather.stations': Object.freeze(['region', 'approach']),
+  'weather.sigmet': Object.freeze(['region', 'approach']),
 });
 
 /**
- * Whether `key` is on by default while the map shows `preset` (a view of core/cameraPresets.js). Before the map knows
- * its view (no preset), a key is on only when every view has it on.
+ * Whether `key` is on by default while the map shows `preset` (a view of core/cameraPresets.js, the world of M8
+ * included). Before the map knows its view (no preset), a key is on only when each of the four views has it on.
  */
 export function layerDefault(preset, key) {
   if (LOCKED_LAYERS.includes(key)) return true;
   const views = ON_IN[key] ?? [];
-  return VIEW_NAMES.includes(preset) ? views.includes(preset) : VIEW_NAMES.every(view => views.includes(view));
+  return MAP_VIEWS.includes(preset) ? views.includes(preset) : VIEW_NAMES.every(view => views.includes(view));
 }
 
 /** The defaults of each view: `{ [view]: { [key]: boolean } }`. */
-export const LAYER_DEFAULTS = Object.freeze(Object.fromEntries(VIEW_NAMES.map(view => [view,
+export const LAYER_DEFAULTS = Object.freeze(Object.fromEntries(MAP_VIEWS.map(view => [view,
   Object.freeze(Object.fromEntries(LAYER_KEYS.map(key => [key, layerDefault(view, key)])))])));
 
 const isOverride = ([key, value]) => LAYER_KEYS.includes(key) && !LOCKED_LAYERS.includes(key) && typeof value === 'boolean';
@@ -138,6 +154,7 @@ export function engineGroupsFor(resolved) {
     'traffic.labels': on('traffic.labels') && on('traffic.other'),
     'traffic.trails': on('traffic.trails') && on('traffic.other'),
     route: on('route'),
+    'traffic.routes': on('traffic.routes'),
     // The references: each key is its own group.
     'reference.airports': on('reference.airports'),
     'reference.routes': on('reference.routes'),
@@ -150,6 +167,12 @@ export function engineGroupsFor(resolved) {
     'weather.goes': on('weather.goes'),
     'weather.imerg': on('weather.imerg'),
     'weather.wind': on('weather.wind'),
+    // The regional weather (lane M7): each key its own group. OccMap keeps a loop or the radar hidden until it has
+    // pinned its frames.
+    'weather.loop': on('weather.loop'),
+    'weather.radar': on('weather.radar'),
+    'weather.stations': on('weather.stations'),
+    'weather.sigmet': on('weather.sigmet'),
   });
 }
 

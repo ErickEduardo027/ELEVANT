@@ -1,9 +1,11 @@
 // The liveries of the detailed 3D aircraft (CN-30): per airline, the colours of its paint and the words it carries,
-// rendered by the detailed model (aircraft/aircraftDetail.js) as generated textures in our own typography. No logo
-// artwork and no image of an airline's livery is copied or downloaded: each entry holds brand colours and plain text
-// (the airline's name on the fuselage, its IATA code on the fin). `logoTexture` is an empty slot by default: a path
-// under the application's own origin (for example `/liveries/cmp-tail.png`, a file in `public/liveries/`) to a logo
-// the owner has the licence to use, drawn on the fin instead of the code, with no change of code. Pure.
+// rendered by the detailed model (aircraft/aircraftDetail.js) as generated textures in our own typography. No image
+// of an airline's livery is copied: each entry holds brand colours and plain text (the airline's name on the fuselage,
+// its IATA code on the fin). `logoTexture` is a path under the application's own origin to a logo drawn on the fin
+// instead of the code, in the fin's text colour; empty for none. PR M5: the airlines whose text logo is public domain
+// on Wikimedia Commons ({{PD-textlogo}} or {{PD-shape}}, and trademarked) carry it from public/models/liveries/logos/
+// (its README lists each file, its tags and the trademark notice); no symbol under copyright (no American "AA", no
+// United globe, no Frontier animal tails) and no logo of Copa or Arajet (Commons has no SVG of either). Pure.
 
 function deepFreeze(value) {
   if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -27,8 +29,16 @@ const livery = (id, icao, iata, name, colours) => ({
   ...colours,
 });
 
+/** Where the public-domain text logos are served (PR M5). */
+export const LOGO_BASE_URL = '/models/liveries/logos/';
+
+/** The airlines (IATA) with a text logo in LOGO_BASE_URL: public/models/liveries/logos/<IATA>.svg. */
+export const LOGO_IATA = Object.freeze(['AA', 'AC', 'AV', 'B6', 'DL', 'F9', 'NK', 'P5', 'UA', 'UX', 'WG', 'WS']);
+
+const withLogo = entry => (LOGO_IATA.includes(entry.iata) ? { ...entry, logoTexture: `${LOGO_BASE_URL}${entry.iata}.svg` } : entry);
+
 /** The liveries of the airlines seen at Punta Cana, by ICAO designator. */
-export const LIVERIES = deepFreeze({
+export const LIVERIES = deepFreeze(Object.fromEntries(Object.entries({
   CMP: livery('CMP', 'CMP', 'CM', 'COPA', {
     fuselage: '#ffffff', belly: '#ffffff', cheatline: '#0b2d6b', tail: '#0b2d6b', tailAccent: '#c8a24a',
     engine: '#0b2d6b', text: '#0b2d6b', tailText: '#c8a24a',
@@ -97,7 +107,7 @@ export const LIVERIES = deepFreeze({
     fuselage: '#ffffff', belly: '#00843d', tail: '#00843d', tailAccent: '#9bc23c', engine: '#00843d',
     text: '#00843d', tailText: '#ffffff',
   }),
-});
+}).map(([icao, entry]) => [icao, withLogo(entry)])));
 
 /** The livery of an aircraft whose airline is not in the table: a white body with a slate fin and no words. */
 export const DEFAULT_LIVERY = deepFreeze(livery('DEFAULT', null, null, '', {
@@ -134,4 +144,63 @@ export function resolveLivery(item = {}) {
 export function liveryName(item) {
   const name = typeof item?.name === 'string' ? item.name : '';
   return item?.nameStyle === 'lower' ? name : name.toUpperCase();
+}
+
+/**
+ * Every zone a livery colours, in the order of the palette's columns of the 3D models' livery material (PR M5,
+ * aircraft/liveryMaterial.js): the upper body, the belly, the two cheatlines, the fin and its accent, the engines and
+ * the wings. LIVERY_ZONES is the part of it an instanced procedural model paints.
+ */
+export const PAINT_ZONES = Object.freeze(['fuselage', 'belly', 'cheatline', 'cheatline2', 'tail', 'tailAccent',
+  'engine', 'wing']);
+
+const paintMemo = new WeakMap();
+const paintOf = item => (Object.hasOwn(item ?? {}, 'fuselage') && Object.hasOwn(item, 'tail') ? item : resolveLivery(item));
+
+/**
+ * The sRGB `#rrggbb` colour of every zone of PAINT_ZONES for `item` (a livery of LIVERIES, DEFAULT_LIVERY, or anything
+ * resolveLivery reads), frozen: a missing belly takes the upper body, a missing cheatline the upper body, a missing
+ * second cheatline the belly and a missing fin accent the fin. The one palette both the instanced procedural models
+ * (liveryZones, M9) and the 3D models from files (aircraft/liveryMaterial.js: liveryColours, PR M5) paint with.
+ */
+export function liveryPaint(item = {}) {
+  const paint = paintOf(item);
+  let colours = paintMemo.get(paint);
+  if (colours === undefined) {
+    const belly = paint.belly ?? paint.fuselage;
+    colours = Object.freeze({
+      fuselage: paint.fuselage, belly, cheatline: paint.cheatline ?? paint.fuselage, cheatline2: paint.cheatline2 ?? belly,
+      tail: paint.tail, tailAccent: paint.tailAccent ?? paint.tail, engine: paint.engine, wing: paint.wing,
+    });
+    paintMemo.set(paint, colours);
+  }
+  return colours;
+}
+
+/**
+ * The zones of a livery that an instanced procedural model paints (M9, aircraft on their stands and near the
+ * airfield), in the order of the models' `liveryZone` vertex attribute (aircraft/aircraftGeometry.js: withLiveryZones)
+ * and of the layer's instance attributes (aircraft/aircraft3dLayer.js): 0 the upper body, 1 the belly, 2 the fin, 3 the
+ * engines, 4 the wings, the tailplane and the gear. A subset of PAINT_ZONES: an L1 glTF model of PR M5 paints all of
+ * PAINT_ZONES through its livery material, from the same liveryPaint.
+ */
+export const LIVERY_ZONES = Object.freeze(['fuselage', 'belly', 'tail', 'engine', 'wing']);
+
+/**
+ * The zone of each part of the procedural models (aircraft/aircraftGeometry.js: userData.parts); a fuselage's
+ * underside is its belly (withLiveryZones). A part not listed is painted as the wings.
+ */
+export const PART_ZONES = Object.freeze({
+  fuselage: 'fuselage', cabin: 'fuselage', boom: 'fuselage', fin: 'tail', tailRotor: 'tail', nacelle: 'engine',
+  propeller: 'wing', wing: 'wing', tailplane: 'wing', pylon: 'wing', gear: 'wing', skid: 'wing', mast: 'wing',
+  rotor: 'wing',
+});
+
+/**
+ * The sRGB `#rrggbb` colour of each zone of LIVERY_ZONES for `item` (a livery of LIVERIES, DEFAULT_LIVERY, or anything
+ * resolveLivery reads), frozen: `{ fuselage, belly, tail, engine, wing }`, taken from liveryPaint.
+ */
+export function liveryZones(item = {}) {
+  const paint = liveryPaint(item);
+  return Object.freeze(Object.fromEntries(LIVERY_ZONES.map(zone => [zone, paint[zone]])));
 }

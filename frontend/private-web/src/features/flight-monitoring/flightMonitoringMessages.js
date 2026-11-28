@@ -22,10 +22,14 @@ export const flightMonitoringMessages = {
     },
     board: {
       title: 'Tablero de vuelos',
-      direction: 'Dirección',
+      // M8: the filter goes past the direction (where the aircraft is), so it is named for what it does.
+      direction: 'Filtro del tablero',
       filters: {
         arrivals: 'Llegadas',
         departures: 'Salidas',
+        // M8: where the aircraft is (flightBoardModel.js: legPlace).
+        inFlight: 'En vuelo',
+        onGround: 'En tierra',
         all: 'Todos',
       },
       legend: 'Leyenda del tablero',
@@ -85,6 +89,8 @@ export const flightMonitoringMessages = {
       },
       arrivals: 'No hay llegadas en el tablero.',
       departures: 'No hay salidas en el tablero.',
+      inFlight: 'No hay vuelos en el aire en el tablero.',
+      onGround: 'No hay aviones en tierra en el tablero.',
     },
     inspector: {
       label: 'Detalle del vuelo {flight}',
@@ -143,10 +149,12 @@ export const flightMonitoringMessages = {
     },
     board: {
       title: 'Flight board',
-      direction: 'Direction',
+      direction: 'Board filter',
       filters: {
         arrivals: 'Arrivals',
         departures: 'Departures',
+        inFlight: 'In flight',
+        onGround: 'On the ground',
         all: 'All',
       },
       legend: 'Board legend',
@@ -205,6 +213,8 @@ export const flightMonitoringMessages = {
       },
       arrivals: 'There are no arrivals on the board.',
       departures: 'There are no departures on the board.',
+      inFlight: 'There are no flights in the air on the board.',
+      onGround: 'There are no aircraft on the ground on the board.',
     },
     inspector: {
       label: 'Flight {flight} details',

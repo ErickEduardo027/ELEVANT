@@ -1,7 +1,7 @@
 import { Color, createPropertyExpression, featureFilter, latest, validateStyleMin } from '@maplibre/maplibre-gl-style-spec';
 import { describe, expect, it } from 'vitest';
 import { occColor } from '../../occ-ui/occPalette';
-import { ALTITUDE_STOPS_FT, MAP_COLORS, altitudeColourExpression } from '../style/mapColors';
+import { ALTITUDE_STOPS_FT, MAP_COLORS, altitudeColour, altitudeColourExpression } from '../style/mapColors';
 import { MAP_IMAGE_IDS, MAP_IMAGE_SHAPES } from '../style/mapImages';
 import { SLOT_ORDER, buildOccStyle } from '../style/occStyle';
 import { selectionOverlay } from '../style/selectionLayers';
@@ -10,16 +10,16 @@ import { ROUTE_PARTS } from './routeFeatures';
 import { buildSituation, toFlightsModel, toPictureModel } from './situationModel';
 import { ROUTE_SOURCE, TRAFFIC_SOURCE, TRAILS_SOURCE, trafficFeatures } from './trafficFeatures';
 import {
-  ROUTE_LAYER_IDS, ROUTE_STYLE, TAG_DECLUTTER_UNTIL_ZOOM, TRAFFIC_GROUPS, TRAFFIC_LAYER_IDS, trafficOverlay,
+  OUTSIDE_FILTER_OPACITY, ROUTE_LAYER_IDS, ROUTE_STYLE, TAG_DECLUTTER_UNTIL_ZOOM, TRAFFIC_GROUPS, TRAFFIC_LAYER_IDS, trafficOverlay,
 } from './trafficLayers';
 
 const NOON = Date.parse(TRAFFIC_NOON);
 
-function evaluate(layer, kind, name, properties, zoom = 10) {
+function evaluate(layer, kind, name, properties, zoom = 10, featureState = undefined) {
   const spec = latest[`${kind}_${layer.type}`][name];
   const parsed = createPropertyExpression(layer[kind][name], `layers.${layer.id}.${kind}.${name}`, spec);
   if (parsed.result !== 'success') throw new Error(`${layer.id} ${name}: ${JSON.stringify(parsed.value)}`);
-  return parsed.value.evaluate({ zoom }, { type: 1, properties });
+  return parsed.value.evaluate({ zoom }, { type: 1, properties }, featureState);
 }
 
 const accepts = (layer, properties) => featureFilter(layer.filter, `layers.${layer.id}.filter`)
@@ -88,7 +88,9 @@ describe('traffic layers (design E1 and E3)', () => {
       expect(order('occ-trails-live')).toBeLessThan(order('occ-traffic-other-ground'));
       for (const id of ['occ-traffic-other', 'occ-traffic-other-ground']) {
         const { layout } = style.layers.find(layer => layer.id === id);
-        expect(layout, id).toMatchObject({ 'icon-image': ['get', 'icon'], 'icon-allow-overlap': true, 'text-allow-overlap': true });
+        // PR M7: a model draws the aircraft; its forced tag stays in the symbol (PR M2: an animated one is the layer's).
+        expect(layout, id).toMatchObject({ 'icon-image': ['case', ['==', ['get', 'model3d'], true], '', ['get', 'icon']],
+          'icon-allow-overlap': true, 'text-allow-overlap': true });
         expect(layout['text-field'], id).toBeDefined();
       }
       // The ELEVANT icons alone (MapLibre does not draw icons beside text with images), their tags apart.
@@ -109,6 +111,16 @@ describe('traffic layers (design E1 and E3)', () => {
     expect(layerOf('occ-traffic-other').metadata).toMatchObject({ 'occ:pick': 'aircraft', 'occ:pickId': 'hex' });
     // Other traffic on the ground from the airfield threshold up (contracts 2.3: derived, not fixed).
     expect(layerOf('occ-traffic-other-ground').metadata['occ:minThreshold']).toBe('airfield');
+    // M4: close up (core/mapEngine.js: setCloseUp) every tag and the chosen aircraft's ring go; its trail, estimated ring
+    // and «Demo» plate too, the other aircraft keeping theirs: nothing of its own sits on the followed model's tail.
+    expect(overlay.layers.filter(layer => layer.metadata['occ:closeUp']).map(layer => [layer.id, layer.metadata['occ:closeUp']]))
+      .toEqual([['occ-traffic-tags-other', 'hide'], ['occ-traffic-tags', 'hide'], ['occ-traffic-selected-ring', 'hide']]);
+    const notSelected = ['!=', ['get', 'selected'], true];
+    expect(overlay.layers.filter(layer => layer.metadata['occ:closeUpFilter'])
+      .map(layer => [layer.id, layer.metadata['occ:closeUpFilter']])).toEqual([['occ-trails-live', notSelected],
+      ['occ-traffic-estimated-ring', notSelected], ['occ-traffic-demo-plate', notSelected]]);
+    // The chosen aircraft's own 2D symbol stays: without the 3D model it is all there is of it.
+    expect(layerOf('occ-traffic-selected').metadata['occ:closeUp']).toBeUndefined();
     // The trail fades toward its tail on the line's own metrics; the estimated one is dashed.
     expect(layerOf('occ-trails-live').paint['line-gradient'][2]).toEqual(['line-progress']);
     expect(layerOf('occ-trails-estimated').paint['line-dasharray']).toEqual([2, 2]);
@@ -241,6 +253,13 @@ describe('traffic layers (design E1 and E3)', () => {
     const { opacity, ...older } = features.find(item => item.kind === 'aviam' && item.quality === 'live');
     expect(opacity).toBe(1);
     expect(evaluate(layerOf('occ-traffic-aviam'), 'paint', 'icon-opacity', older)).toBe(1);
+    // M8: an AVIAM aircraft the board's filter of Monitoreo leaves out is dimmed by its feature state, not its data.
+    expect(OUTSIDE_FILTER_OPACITY).toBe(0.3);
+    expect(evaluate(layerOf('occ-traffic-aviam'), 'paint', 'icon-opacity', older, 10, { outside: true }))
+      .toBeCloseTo(OUTSIDE_FILTER_OPACITY, 9);
+    expect(evaluate(layerOf('occ-traffic-tags'), 'paint', 'text-opacity', { ...stale, opacity: 0.5, forceTag: true }, 10,
+      { outside: true })).toBeCloseTo(0.25 * OUTSIDE_FILTER_OPACITY, 9);
+    expect(evaluate(layerOf('occ-traffic-aviam'), 'paint', 'icon-opacity', older, 10, { outside: false })).toBe(1);
   });
 
   it('dims a stale position, rings an estimated one and plates a demo flight, from the feature flags', () => {
@@ -320,6 +339,44 @@ describe('traffic layers (design E1 and E3)', () => {
     }
     // Other traffic never is the stand's.
     expect(accepts(layerOf('occ-traffic-other'), { kind: 'other', ground: false, parkedOnStand: true })).toBe(true);
+  });
+
+  it('PR M2: altitudeColour paints what the altitude expression paints, for the animated silhouettes', () => {
+    for (const theme of ['dark', 'light']) {
+      const layer = { id: 'probe', type: 'symbol', paint: { 'icon-color': altitudeColourExpression(theme) } };
+      for (const properties of [{ ground: true, altFt: 0 }, { altFt: -1 }, { altFt: 0 }, { altFt: 750 }, { altFt: 3_900 },
+        { altFt: 25_000 }, { altFt: 45_000 }]) {
+        // The same colour, give or take the rounding of one channel.
+        const channels = colour => [colour.r, colour.g, colour.b].map(value => value * 255);
+        const ours = channels(Color.parse(altitudeColour(theme, properties)));
+        const theirs = channels(evaluate(layer, 'paint', 'icon-color', properties));
+        ours.forEach((channel, index) => expect(Math.abs(channel - theirs[index]), JSON.stringify(properties))
+          .toBeLessThanOrEqual(1));
+      }
+    }
+  });
+
+  it('PR M2: an aircraft the layer animates leaves it every symbol: icon, rings, plate and tags (the GeoJSON is the fallback)', () => {
+    const animated = { kind: 'aviam', dir: 'arr', estimated: true, demo: true, selected: true, model3d: true, animated: true };
+    for (const id of ['occ-traffic-aviam', 'occ-traffic-selected', 'occ-traffic-estimated-ring', 'occ-traffic-demo-plate',
+      'occ-traffic-tags', 'occ-traffic-selected-ring']) {
+      expect(accepts(layerOf(id), animated), id).toBe(false);
+    }
+    // Without the animation (a model of PR M7, or the layer not drawing) they all stay.
+    for (const id of ['occ-traffic-estimated-ring', 'occ-traffic-demo-plate', 'occ-traffic-tags', 'occ-traffic-selected-ring']) {
+      expect(accepts(layerOf(id), { ...animated, animated: false }), id).toBe(true);
+    }
+    // Other traffic: a model keeps its symbol for the tag it shows while chosen or under the pointer, without its icon;
+    // an animated one leaves the whole symbol and its optional tag to the layer, so the GeoJSON is never picked for it.
+    const other = { kind: 'other', ground: false, forceTag: true, model3d: true, animated: false, icon: 'ac-narrow-solid' };
+    expect(accepts(layerOf('occ-traffic-other'), other)).toBe(true);
+    const image = properties => evaluate(layerOf('occ-traffic-other'), 'layout', 'icon-image', properties)?.name ?? null;
+    expect(image(other) ?? '').toBe('');
+    expect(image({ ...other, model3d: false })).toBe('ac-narrow-solid');
+    expect(accepts(layerOf('occ-traffic-other'), { ...other, animated: true })).toBe(false);
+    expect(accepts(layerOf('occ-traffic-other-ground'), { ...other, ground: true, animated: true })).toBe(false);
+    expect(accepts(layerOf('occ-traffic-tags-other'), { ...other, forceTag: false, animated: true })).toBe(false);
+    expect(accepts(layerOf('occ-traffic-tags-other'), { ...other, forceTag: false })).toBe(true);
   });
 
   it('every aircraft is coloured by its altitude: the stops of mapColors, grey on the ground and without altitude', () => {

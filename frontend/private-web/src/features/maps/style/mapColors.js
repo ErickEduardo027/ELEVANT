@@ -60,6 +60,9 @@ export const MAP_COLORS = deepFreeze({
     routes: { line: '#ff7a8a', label: '#ffd3d9', halo: '#07111f' },
     // The night shade (PR M8, style/referenceLayers.js): a near-black a little over the land and the sea.
     night: { color: '#0a1014', opacity: 0.45 },
+    // The globe of Monitoreo (M8, style/occStyle.js: globeSky): a near-black space, a blue rim of atmosphere and a fog
+    // of the sea's own navy at the horizon.
+    sky: { space: '#03080f', horizon: '#2b5c8f', fog: '#081a36' },
     // The fill of each stand state (stands/standLayers.js), under the vocabulary's outline, dash and marks.
     stands: {
       available: { color: '#3fae6a', opacity: 0.22 },
@@ -97,6 +100,8 @@ export const MAP_COLORS = deepFreeze({
     routes: { line: '#c2334a', label: '#7a1426', halo: '#fdfefe' },
     // On the light map the night must still darken it: a deep blue-grey, lighter in weight.
     night: { color: '#1b2a3d', opacity: 0.22 },
+    // A pale sky round the light globe, a white rim and the light sea's blue as fog.
+    sky: { space: '#9cc4ea', horizon: '#e8f1fa', fog: '#b0d0ee' },
     stands: {
       available: { color: '#2f9a58', opacity: 0.2 },
       planned: { color: '#2f6fe0', opacity: 0.24 },
@@ -124,6 +129,32 @@ export function altitudeColourExpression(theme = 'dark') {
     ['==', ['get', 'ground'], true], ground,
     ['<', ['coalesce', ['get', 'altFt'], -1], 0], unknown,
     ['interpolate', ['linear'], ['get', 'altFt'], ...scale.flat()]];
+}
+
+const channelsOf = hex => [1, 3, 5].map(start => Number.parseInt(hex.slice(start, start + 2), 16));
+const hexOf = channels => `#${channels.map(value => Math.round(value).toString(16).padStart(2, '0')).join('')}`;
+
+/**
+ * The altitude colour of an aircraft as `#rrggbb`, what altitudeColourExpression paints for the same `ground` and
+ * `altFt` (traffic/trafficFeatures.js: altitudeFeet): the ground's grey, the neutral grey below 0 (unknown), else the
+ * scale interpolated linearly in RGB between its stops and held past its ends. The animated traffic layer (PR M2)
+ * tints its silhouettes with it.
+ */
+export function altitudeColour(theme = 'dark', { ground = false, altFt = -1 } = {}) {
+  const { stops: scale, ground: groundColour, unknown } = mapColorsFor(theme).altitude;
+  if (ground === true) return groundColour;
+  if (!(typeof altFt === 'number' && Number.isFinite(altFt)) || altFt < 0) return unknown;
+  if (altFt <= scale[0][0]) return scale[0][1];
+  for (let index = 1; index < scale.length; index += 1) {
+    const [feet, colour] = scale[index];
+    if (altFt > feet) continue;
+    const [lowFeet, lowColour] = scale[index - 1];
+    const share = (altFt - lowFeet) / (feet - lowFeet);
+    const low = channelsOf(lowColour);
+    const high = channelsOf(colour);
+    return hexOf(low.map((value, channel) => value + (high[channel] - value) * share));
+  }
+  return scale.at(-1)[1];
 }
 
 /** The CSS gradient of the altitude scale, left (ground) to right (40 000 ft), with each stop at its share. */

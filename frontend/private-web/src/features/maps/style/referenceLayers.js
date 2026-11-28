@@ -48,8 +48,18 @@ export const AIRPORTS_GROUP = 'reference.airports';
 /** The kinds of the region's airports, in the legend's order (traffic/referenceFeatures.js: airportKind). */
 export { AIRPORT_KINDS, airportKind, airportLabel };
 const AIRPORT_RADIUS = Object.freeze({ home: 7, international: 5, regional: 4.5, other: 3.5 });
+/**
+ * The globe of Monitoreo (M8) adds the world's airports and emphasises the Dominican ones (`rd`): their dot 2 px
+ * larger and, from this zoom (the Caribbean in sight), their code always written, on a label layer of their own that
+ * may overlap (RD_AIRPORT_LABELS_ID); below it the airports' labels take turns, the Dominican ones first. From afar the
+ * dots shrink to half their size by zoom 2, so the world's hubs do not cover the continents.
+ */
+export const RD_LABELS_MIN_ZOOM = 4;
+export const RD_AIRPORT_LABELS_ID = 'occ-rd-airport-labels';
+const RD_RADIUS_BONUS = 2;
+const WORLD_RADIUS_ZOOMS = Object.freeze([2, 5]);
 
-function airportLayers(theme) {
+function airportLayers(theme, { world = false } = {}) {
   const { airports: colours } = mapColorsFor(theme);
   const kind = ['get', 'airportKind'];
   const byKind = value => ['match', kind, ...AIRPORT_KINDS.slice(0, -1).flatMap(name => [name, value(name)]),
@@ -57,6 +67,17 @@ function airportLayers(theme) {
   const counterpart = ['==', ['get', 'counterpart'], true];
   const metadata = { 'occ:group': AIRPORTS_GROUP, 'occ:maxThreshold': 'airfield' };
   const isAirport = ['==', ['get', 'kind'], 'airport'];
+  const rd = ['==', ['get', 'rd'], true];
+  const radius = ['+', byKind(name => AIRPORT_RADIUS[name]), ['case', counterpart, 1.5, 0]];
+  const worldRadius = [...radius, ['case', rd, RD_RADIUS_BONUS, 0]];
+  const label = ['get', 'label'];
+  const labelLayout = {
+    'text-font': [...FONT_STACKS.bold],
+    'text-size': ['case', ['any', counterpart, ['==', kind, 'home']], 13, 12],
+    'text-anchor': 'top',
+    'text-offset': [0, 0.7],
+  };
+  const paint = { 'text-color': colours.label, 'text-halo-color': colours.halo, 'text-halo-width': 1.5 };
   return [
     {
       slot: ARP_SLOT,
@@ -65,7 +86,10 @@ function airportLayers(theme) {
       source: OURAIRPORTS_SOURCE,
       filter: isAirport,
       paint: {
-        'circle-radius': ['+', byKind(name => AIRPORT_RADIUS[name]), ['case', counterpart, 1.5, 0]],
+        'circle-radius': world
+          ? ['interpolate', ['linear'], ['zoom'], WORLD_RADIUS_ZOOMS[0], ['*', 0.5, worldRadius], WORLD_RADIUS_ZOOMS[1],
+            worldRadius]
+          : radius,
         'circle-color': byKind(name => colours[name]),
         'circle-stroke-color': ['case', counterpart, occColor('text'), colours.halo],
         'circle-stroke-width': ['case', counterpart, 2, 1.5],
@@ -79,17 +103,29 @@ function airportLayers(theme) {
       source: OURAIRPORTS_SOURCE,
       filter: isAirport,
       layout: {
-        'text-field': ['get', 'label'],
-        'text-font': [...FONT_STACKS.bold],
-        'text-size': ['case', ['any', counterpart, ['==', kind, 'home']], 13, 12],
-        'text-anchor': 'top',
-        'text-offset': [0, 0.7],
-        'symbol-sort-key': ['case', ['==', kind, 'home'], 0, counterpart, 1,
-          ['match', kind, 'international', 2, 'regional', 3, 4]],
+        // On the globe the Dominican airports' codes move to their own layer from RD_LABELS_MIN_ZOOM on.
+        'text-field': world ? ['step', ['zoom'], label, RD_LABELS_MIN_ZOOM, ['case', rd, '', label]] : label,
+        ...labelLayout,
+        'symbol-sort-key': world
+          ? ['case', ['==', kind, 'home'], 0, rd, 1, counterpart, 2, ['match', kind, 'international', 3, 'regional', 4, 5]]
+          : ['case', ['==', kind, 'home'], 0, counterpart, 1, ['match', kind, 'international', 2, 'regional', 3, 4]],
       },
-      paint: { 'text-color': colours.label, 'text-halo-color': colours.halo, 'text-halo-width': 1.5 },
+      paint,
       metadata,
     },
+    // The Dominican airports' codes, always written from RD_LABELS_MIN_ZOOM (the globe only): they may overlap, and the
+    // other labels keep clear of them.
+    ...(world ? [{
+      slot: ARP_SLOT,
+      id: RD_AIRPORT_LABELS_ID,
+      type: 'symbol',
+      source: OURAIRPORTS_SOURCE,
+      filter: ['all', isAirport, rd],
+      minzoom: RD_LABELS_MIN_ZOOM,
+      layout: { 'text-field': label, ...labelLayout, 'text-allow-overlap': true },
+      paint,
+      metadata,
+    }] : []),
   ];
 }
 /** The slot of the home airport's mark. */
@@ -119,7 +155,8 @@ function referenceLayer(id, type, group, { slot = REFERENCE_SLOT, source = REFER
     filter,
     ...(layout ? { layout } : {}),
     paint,
-    metadata: { 'occ:group': group, ...thresholds },
+    // M4: the words and marks are hidden close up (core/mapEngine.js: setCloseUp).
+    metadata: { 'occ:group': group, ...thresholds, ...(type === 'symbol' ? { 'occ:closeUp': 'hide' } : {}) },
   };
 }
 
@@ -152,8 +189,10 @@ function ringLayers(scope, thresholds) {
  * into polygons.
  * In the shade slot, the night, the line of its edge and its word, up to the airfield threshold. The centrelines, the
  * airports and the navaids read the OurAirports source; the mark of PUJ and the rings, the reference source.
+ * `world` (M8, the globe of Monitoreo): the airports' dots shrink from afar, the Dominican ones (`rd`) are larger and
+ * from RD_LABELS_MIN_ZOOM always labelled, on RD_AIRPORT_LABELS_ID.
  */
-export function referenceOverlay({ theme = 'dark', airports = true } = {}) {
+export function referenceOverlay({ theme = 'dark', airports = true, world = false } = {}) {
   // The night darkens the map in both themes (style/mapColors.js), so its colour is the theme's, never a token.
   const { night } = mapColorsFor(theme);
   return {
@@ -165,7 +204,7 @@ export function referenceOverlay({ theme = 'dark', airports = true } = {}) {
     layers: [
       // The region's airports (unless `airports: false`, a map without traffic), under the mark of PUJ in the airfield
       // slot, so the mark keeps its place first.
-      ...(airports ? airportLayers(theme) : []),
+      ...(airports ? airportLayers(theme, { world }) : []),
       {
         slot: ARP_SLOT,
         id: 'occ-reference-arp',
@@ -190,7 +229,7 @@ export function referenceOverlay({ theme = 'dark', airports = true } = {}) {
           'text-halo-color': occColor('nav'),
           'text-halo-width': 1.2,
         },
-        metadata: { 'occ:group': REFERENCE_GROUP, 'occ:maxThreshold': 'codes' },
+        metadata: { 'occ:group': REFERENCE_GROUP, 'occ:maxThreshold': 'codes', 'occ:closeUp': 'hide' },
       },
       ...ringLayers('region', { 'occ:maxThreshold': 'approach' }),
       ...ringLayers('approach', { 'occ:minThreshold': 'approach', 'occ:maxThreshold': 'airfield' }),

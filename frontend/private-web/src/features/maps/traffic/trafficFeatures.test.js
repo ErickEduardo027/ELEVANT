@@ -6,7 +6,7 @@ import { buildSituation, toFlightsModel, toPictureModel } from './situationModel
 import { TAGS } from '../../occ-ui/statusVocabulary';
 import {
   ROUTE_KINDS, ROUTE_SOURCE, TRAFFIC_SCALES, TRAFFIC_SOURCE, TRAILS_SOURCE, featuresById, flightLevelText, isEmptyDiff,
-  knotsText, onScreenKey, selectedAircraftId, trafficDiff, trafficFeatures, trafficOnScreen,
+  knotsText, onScreenKey, sameData, selectedAircraftId, trafficDiff, trafficFeatures, trafficOnScreen,
 } from './trafficFeatures';
 
 const NOON = Date.parse(TRAFFIC_NOON);
@@ -191,6 +191,27 @@ describe('traffic features (design E3, contracts 2.4)', () => {
     expect(trafficFeatures(parked).features.map(feature => feature.properties.id)).toContain(`f:${KEY.parkedArrival}`);
     // What is not drawn is not on screen either.
     expect(trafficOnScreen([hidden])).toEqual({ kinds: [], tags: [], trails: [], route: [] });
+  });
+
+  it('sameData says whether two collections say the same, as their JSON would, without writing it (PR M2)', () => {
+    const line = coords => ({ type: 'Feature', id: 'a', geometry: { type: 'LineString', coordinates: coords },
+      properties: { hex: 'abc123', age: 3, label: undefined } });
+    const a = [line([[1, 2], [3, 4]])];
+    expect(sameData(a, [line([[1, 2], [3, 4]])])).toBe(true);
+    expect(sameData(a, a)).toBe(true);
+    expect(sameData(a, [line([[1, 2], [3, 4.000001]])])).toBe(false);
+    expect(sameData(a, [line([[1, 2]])])).toBe(false);
+    expect(sameData(a, [])).toBe(false);
+    // A key left undefined is a key JSON leaves out.
+    expect(sameData({ a: 1, b: undefined }, { a: 1 })).toBe(true);
+    expect(sameData({ a: 1, b: 2 }, { a: 1, c: 2 })).toBe(false);
+    expect(sameData({ a: [1] }, { a: { 0: 1 } })).toBe(false);
+    expect(sameData(null, [])).toBe(false);
+    expect(sameData('x', 'x')).toBe(true);
+    // Same verdict as the JSON key it replaces.
+    const trail = Array.from({ length: 50 }, (_, index) => line([[index, index + 1], [index + 2, index + 3]]));
+    const copy = JSON.parse(JSON.stringify(trail));
+    expect(sameData(trail, copy)).toBe(JSON.stringify(trail) === JSON.stringify(copy));
   });
 
   it('the diff adds, updates and removes by id', () => {
