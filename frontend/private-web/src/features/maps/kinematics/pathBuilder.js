@@ -49,7 +49,7 @@ export const NO_ORIGIN_START_NM = 40;
 export const HOLD_LEG_S = 60;
 /** The last metres of the great circle that are rounded into the approach. */
 export const ARRIVAL_JOIN_M = 60_000;
-/** A departure is drawn this far at most. */
+/** A departure without a destination is drawn this far at most (M3: one with a destination flies on to it). */
 export const CLIMB_MAX_NM = 250;
 /** Arcs in the air are drawn every 0.5° of turn (16 m at 180 kt), so the heading never steps by more. */
 export const AIR_ARC_STEP_DEG = 0.5;
@@ -231,14 +231,16 @@ function cutAt(points, lengthM) {
 /**
  * The initial climb from `liftoff` (`[lng, lat]`): runway heading for `straightM` metres (the caller's distance to
  * 1 500 ft), then a turn at the 25° bank radius for `turnSpeedMs` onto the great circle to `destination`, the whole
- * drawn `maxDistanceM` at most. Without a destination it holds runway heading. `{ coords, turnStartM, lengthM }`,
- * frozen. A turn of more than 90° is flown in equal parts so each corner can be rounded.
+ * drawn `maxDistanceM` at most (none given: on to the destination, M3). Without a destination it holds runway heading
+ * for `maxDistanceM` (none given: CLIMB_MAX_NM). `{ coords, turnStartM, lengthM }`, frozen. A turn of more than 90° is
+ * flown in equal parts so each corner can be rounded.
  */
-export function climbPath({ runwayEnd, liftoff, destination = null, straightM, turnSpeedMs, maxDistanceM = CLIMB_MAX_NM * NM }) {
+export function climbPath({ runwayEnd, liftoff, destination = null, straightM, turnSpeedMs, maxDistanceM = null }) {
+  const limitM = Number.isFinite(maxDistanceM) && maxDistanceM > 0 ? maxDistanceM : (destination ? Infinity : CLIMB_MAX_NM * NM);
   const heading = runwayEnd.headingTrue;
   const turnStart = destinationPoint(liftoff, heading, straightM);
   if (!destination) {
-    const coords = cutAt(greatCirclePath(liftoff, destinationPoint(liftoff, heading, maxDistanceM)), maxDistanceM);
+    const coords = cutAt(greatCirclePath(liftoff, destinationPoint(liftoff, heading, limitM)), limitM);
     return Object.freeze({ coords, turnStartM: straightM, lengthM: measurePolyline(coords).lengthM });
   }
   const radius = turnRadiusM(turnSpeedMs);
@@ -267,7 +269,7 @@ export function climbPath({ runwayEnd, liftoff, destination = null, straightM, t
   const rounded = filletPath(corners, radius, { arcStepM: radius * AIR_ARC_STEP_RAD });
   const near = rounded.coords.map((point, at) => (at === 0 ? freezePoint(liftoff) : freezePoint(plane.inverse(point))));
   const far = greatCirclePath(tail, destination).slice(1);
-  const coords = cutAt([...near, ...far], maxDistanceM);
+  const coords = cutAt([...near, ...far], limitM);
   return Object.freeze({ coords, turnStartM: straightM, lengthM: measurePolyline(coords).lengthM });
 }
 

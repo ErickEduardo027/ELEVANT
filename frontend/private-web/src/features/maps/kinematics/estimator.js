@@ -463,7 +463,8 @@ export function buildArrivalTrajectory({
  * A departure's trajectory, or `null` without an off-block (departureAnchors: an imported flight has none before
  * PUSHBACK or a live fix), a layout or a route. From the stand (pushback, engine start) or from `apronHold`, the taxi
  * to `runwayEnd`'s holding point, the hold, the line-up, the take-off roll and the climb towards `destination`
- * (`[lng, lat]` or `null`), drawn 250 NM at most. With a known take-off after the off-block the ground part is fitted
+ * (`[lng, lat]` or `null`): M3, on along the great circle at the cruise and down near the destination (legPlans.js:
+ * climbLegs), so a far departure never vanishes 250 NM out; without a destination 250 NM at most. With a known take-off after the off-block the ground part is fitted
  * between them, never sped up beyond 25 kt (when it cannot make it the climb starts late); otherwise nominal speeds.
  * `anchor: { kind: 'fix', fix }`: from a live fix, on the ground (taxi to the holding point) or airborne (climb). A fix
  * stopped on the ground (under 2 kt) starts nothing (Decision F-1: a departure leaves only with a recorded off-block or

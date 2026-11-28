@@ -25,6 +25,14 @@ export const START_BLEND_M = 20;
 export const CRUISE_DECEL_M = 10 * NM;
 /** A demo flight starts at least this far out along its arrival path (contracts 2.3: 5 NM minimum). */
 export const MIN_START_M = 5 * NM;
+/**
+ * M3: a departure with a destination is estimated on to it and ends this far short of it, this high above sea level
+ * (the destination's own approach and elevation are not known to the map).
+ */
+export const DEPARTURE_END_M = GATE_NM * NM;
+export const DEPARTURE_END_FT = 3_000;
+// A fix sinking faster than this (m/s, 200 ft/min) is descending: one too close to descend from the cruise flies down.
+const SINKING_MS = -1;
 
 const shortArc = (from, to) => ((to - from + 540) % 360) - 180;
 
@@ -609,10 +617,35 @@ export function departureGroundLegs({
 }
 
 /**
- * The climb from the lift-off at its own speeds, drawn 250 NM at most: runway heading to 1 500 ft above the runway
- * while accelerating to the initial climb speed, then the turn onto the great circle to `destination` (none: runway
- * heading), on to FL100 accelerating to the climb speed and to the cruise level accelerating to the cruise speed, all
- * at the profile's climb rate; phase 'climb', then 'enroute' at the cruise level. Part 'climb'.
+ * The end of a departure that flies on to its destination (M3), after the climb has reached `cruiseAlt` at
+ * `cruiseFrom` metres along `line` (which ends at the destination): level at the cruise speed to 10 NM before the top
+ * of descent, slowing to the descent speed there, down at the profile's 3 NM per 1 000 ft through FL100 at the descent
+ * speeds to DEPARTURE_END_FT, DEPARTURE_END_M short of the destination, at the approach speed. `null` when the line is
+ * too short for that (a short sector keeps its climb, cut at the destination).
+ */
+function descentPoints(line, { cruiseFrom, cruiseAlt, perf }) {
+  const endAlong = line.lengthM - DEPARTURE_END_M;
+  const endAlt = ftToM(DEPARTURE_END_FT);
+  if (!(cruiseAlt > endAlt)) return null;
+  const transition = Math.max(endAlt, Math.min(cruiseAlt, perf.descent.transitionAltM));
+  const toTransitionM = (cruiseAlt - transition) * perf.descent.ratio;
+  const topAlong = endAlong - (transition - endAlt) * perf.descent.ratio - toTransitionM;
+  if (!(topAlong - CRUISE_DECEL_M >= cruiseFrom + 1)) return null;
+  return [
+    { along: topAlong - CRUISE_DECEL_M, speed: perf.cruise.speedMs, alt: cruiseAlt, phase: 'enroute' },
+    { along: topAlong, speed: perf.descent.highSpeedMs, alt: cruiseAlt, phase: 'enroute' },
+    { along: topAlong + toTransitionM, speed: perf.descent.lowSpeedMs, alt: transition, phase: 'descent' },
+    { along: endAlong, speed: perf.approach.speedMs, alt: endAlt, phase: 'descent' },
+  ];
+}
+
+/**
+ * The climb from the lift-off at its own speeds: runway heading to 1 500 ft above the runway while accelerating to the
+ * initial climb speed, then the turn onto the great circle to `destination`, on to FL100 accelerating to the climb
+ * speed and to the cruise level accelerating to the cruise speed, all at the profile's climb rate; phase 'climb', then
+ * 'enroute' at the cruise level. M3: with a destination it flies on along the great circle and descends near it
+ * (descentPoints; a sector too short for that ends at the destination); without one it holds runway heading and is
+ * drawn 250 NM at most (`perf.climb.maxDistanceM`). Part 'climb'.
  */
 export function climbLegs({ runwayEnd, liftoff, destination = null, perf }) {
   const climb = perf.climb;
@@ -621,7 +654,8 @@ export function climbLegs({ runwayEnd, liftoff, destination = null, perf }) {
   const turnAlt = elevation + climb.turnAltM;
   const straightM = (climb.turnAltM / climb.rateMs) * ((liftoffSpeed + climb.startSpeedMs) / 2);
   const path = climbPath({
-    runwayEnd, liftoff, destination, straightM, turnSpeedMs: climb.startSpeedMs, maxDistanceM: climb.maxDistanceM,
+    runwayEnd, liftoff, destination, straightM, turnSpeedMs: climb.startSpeedMs,
+    maxDistanceM: destination ? null : climb.maxDistanceM,
   });
   const line = measurePolyline(path.coords);
   const transition = Math.max(turnAlt, perf.descent.transitionAltM);
@@ -633,29 +667,45 @@ export function climbLegs({ runwayEnd, liftoff, destination = null, perf }) {
     { along: straightM, speed: climb.startSpeedMs, alt: turnAlt, phase: 'climb' },
     { along: toTransition, speed: climb.endSpeedMs, alt: transition, phase: 'climb' },
     { along: toCruise, speed: perf.cruise.speedMs, alt: cruiseAlt, phase: 'climb' },
-    { along: Math.max(toCruise + 1, line.lengthM), speed: perf.cruise.speedMs, alt: cruiseAlt, phase: 'enroute' },
+    ...((destination ? descentPoints(line, { cruiseFrom: toCruise, cruiseAlt, perf }) : null)
+      ?? [{ along: Math.max(toCruise + 1, line.lengthM), speed: perf.cruise.speedMs, alt: cruiseAlt, phase: 'enroute' }]),
   ];
   return Object.freeze(legsBetween(line, points, { part: 'climb' }));
 }
 
 /**
- * The climb of an airborne departure rebuilt from a live fix (`{ lon, lat, altM, gsMs, trackDeg }`): along the great
- * circle to `destination` (none: on its track), from the fix's height and speed up to the cruise level and speed at
- * the profile's climb rate, drawn 250 NM at most. Part 'climb'.
+ * The climb of an airborne departure rebuilt from a live fix (`{ lon, lat, altM, gsMs, trackDeg, vrateMs }`): along the
+ * great circle to `destination` (none: on its track, drawn 250 NM at most), from the fix's height and speed up to the
+ * cruise level and speed at the profile's climb rate. M3: with a destination it flies on to it and descends near it
+ * (descentPoints); a fix already descending too close for that flies straight down to the same end; a short sector
+ * otherwise ends at the destination. Part 'climb'.
  */
 export function climbLegsFrom({ fix, destination = null, perf }) {
   const start = [fix.lon, fix.lat];
-  const far = destination ?? destinationPoint(start, fix.trackDeg ?? 0, perf.climb.maxDistanceM);
-  const line = measurePolyline(slicePolyline(greatCirclePath(start, far), 0, perf.climb.maxDistanceM));
+  const maxM = perf.climb.maxDistanceM;
+  const line = destination
+    ? measurePolyline(greatCirclePath(start, destination))
+    : measurePolyline(slicePolyline(greatCirclePath(start, destinationPoint(start, fix.trackDeg ?? 0, maxM)), 0, maxM));
   const climb = perf.climb;
   const alt = Number.isFinite(fix.altM) ? fix.altM : climb.turnAltM;
   const speed = Number.isFinite(fix.gsMs) && fix.gsMs > 0 ? fix.gsMs : climb.startSpeedMs;
   const cruiseAlt = Math.max(alt, perf.cruise.altM);
   const toCruise = ((cruiseAlt - alt) / climb.rateMs) * ((speed + perf.cruise.speedMs) / 2);
+  const descent = destination ? descentPoints(line, { cruiseFrom: Math.max(1, toCruise), cruiseAlt, perf }) : null;
+  const endAlong = line.lengthM - DEPARTURE_END_M;
+  const endAlt = ftToM(DEPARTURE_END_FT);
+  if (descent === null && destination && Number.isFinite(fix.vrateMs) && fix.vrateMs <= SINKING_MS
+    && alt > endAlt && endAlong > 1) {
+    const down = [
+      { along: 0, speed, alt, phase: 'descent' },
+      { along: endAlong, speed: perf.approach.speedMs, alt: endAlt, phase: 'descent' },
+    ];
+    return Object.freeze(legsBetween(line, down, { part: 'climb' }));
+  }
   const points = [
     { along: 0, speed, alt, phase: 'climb' },
     { along: Math.max(1, toCruise), speed: perf.cruise.speedMs, alt: cruiseAlt, phase: 'climb' },
-    { along: Math.max(toCruise + 2, line.lengthM), speed: perf.cruise.speedMs, alt: cruiseAlt, phase: 'enroute' },
+    ...(descent ?? [{ along: Math.max(toCruise + 2, line.lengthM), speed: perf.cruise.speedMs, alt: cruiseAlt, phase: 'enroute' }]),
   ];
   return Object.freeze(legsBetween(line, points, { part: 'climb' }));
 }

@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { parseInstant } from '../../../services/serverClock';
 import { MDPC_LAYOUT } from '../airport/airportLayout';
 import { destinationPoint, haversineM, pointToPolylineM } from '../airport/geo';
-import { TRACK_CONFIG, createTrack, reduceTrack, renderTrack } from '../kinematics/handoff';
+import { GROUND_TURN_DEG, TRACK_CONFIG, createTrack, reduceTrack, renderTrack } from '../kinematics/handoff';
 import { ktToMs } from '../kinematics/units';
 import { createAirPicture, createMapFlights, TRAFFIC_FLIGHT_KEY as KEY, TRAFFIC_NOON } from '../testing/trafficFixtures';
 import { STAND_PARKING, createMotionStore } from './motionStore';
 import { buildSituation, toFlightsModel, toPictureModel } from './situationModel';
 
 // CN-31: real aircraft drawn where they really are. A live track follows its fixes closely (a short blend, a few seconds
-// of dead reckoning on the ground), never an estimated taxi route; a silent one holds where it was reported; an
+// of dead reckoning on the ground: 1.5 × the spacing of its fixes, from 3 s up to 6 s, M3), never an estimated taxi route; a silent one holds where it was reported; an
 // ELEVANT aircraft stopped in a stand stands on its parking point, on its assigned stand after the tablet's BLOCK_ON,
 // and a stand other than the assigned one is shown where it is, with the mismatch said.
 
@@ -69,8 +69,10 @@ describe('real aircraft where they really are (CN-31)', () => {
         const drawn = renderTrack(track, ms);
         worst = Math.max(worst, pointToPolylineM(point(drawn), line).distanceM);
       }
-      // Fixes every 2, 3 or 5 s: the drawn aircraft never leaves the line of its fixes by more than a few metres.
-      expect(worst, `fixes every ${everyS} s`).toBeLessThan(everyS <= 3 ? 6 : 12);
+      // Fixes every 2, 3 or 5 s: the drawn aircraft never leaves the line of its fixes by more than a few metres. M3
+      // (27-11-2026): fixes 5 s apart are carried on to the next one (6 s), so where the taxi turns between two fixes the
+      // aircraft rolls straight on until the next fix shows the turn: up to 15 m off the chord of that turn (12 m before).
+      expect(worst, `fixes every ${everyS} s`).toBeLessThan(everyS <= 3 ? 6 : 15);
     }
   });
 
@@ -84,6 +86,37 @@ describe('real aircraft where they really are (CN-31)', () => {
     // Held from then on, where three seconds of its own speed and track left it.
     expect(haversineM(after(10), after(3))).toBeLessThan(0.01);
     expect(haversineM(after(40), after(3))).toBeLessThan(0.01);
+  });
+
+  it('on the ground a fix is carried on 1.5 × the spacing of its fixes, from 3 s up to 6 s (M3)', () => {
+    expect(TRACK_CONFIG.groundReckonFactor).toBe(1.5);
+    expect(TRACK_CONFIG.groundReckonCapS).toBe(6);
+    // How many seconds of its own speed the last of two fixes `gapS` apart is carried on, read 30 s after it.
+    const carriedS = gapS => {
+      const fixes = taxiFixes(gapS, gapS);
+      let track = createTrack({ kind: 'other' });
+      for (const fix of fixes) track = reduceTrack(track, { type: 'fix', fix, atMs: fix.positionAt });
+      const last = fixes[fixes.length - 1];
+      return haversineM(point(renderTrack(track, last.positionAt + 30_000)), point(last)) / last.gsMs;
+    };
+    // Fixes 1 or 2 s apart keep the least (3 s), 3 s apart 4.5 s, 4 s apart and more 6 s.
+    for (const [gapS, reckonS] of [[1, 3], [2, 3], [3, 4.5], [4, 6], [5, 6], [10, 6]]) {
+      expect(carriedS(gapS), `fixes ${gapS} s apart`).toBeCloseTo(reckonS, 2);
+    }
+    // Read every 5 s (the airfield pace), a taxiing aircraft rolls on until its next fix: never still between two.
+    const fixes = taxiFixes(5, 20);
+    let track = createTrack({ kind: 'other' });
+    for (const fix of fixes.slice(0, 2)) track = reduceTrack(track, { type: 'fix', fix, atMs: fix.positionAt });
+    const stepM = ms => haversineM(point(renderTrack(track, ms)), point(renderTrack(track, ms + 500)));
+    for (let ms = fixes[1].positionAt; ms < fixes[2].positionAt; ms += 500) expect(stepM(ms)).toBeGreaterThan(1);
+    // In a turn (tracks more than 10° apart) it keeps the least: carried straight on it would leave the curve.
+    expect(GROUND_TURN_DEG).toBe(10);
+    const [before, turning] = [fixes[4], taxiFixes(5, 25)[5]];
+    expect(Math.abs(turning.trackDeg - before.trackDeg)).toBeGreaterThan(10);
+    let turn = createTrack({ kind: 'other' });
+    for (const fix of [before, turning]) turn = reduceTrack(turn, { type: 'fix', fix, atMs: fix.positionAt });
+    const heldM = haversineM(point(renderTrack(turn, turning.positionAt + 30_000)), point(turning));
+    expect(heldM / turning.gsMs).toBeCloseTo(3, 2);
   });
 
   it('never moves a real ELEVANT aircraft along its estimated taxi route, and holds it where it was last reported', () => {
@@ -101,8 +134,8 @@ describe('real aircraft where they really are (CN-31)', () => {
       const drawn = renderTrack(track, last.positionAt + seconds * 1_000);
       expect(drawn, `${seconds} s`).not.toBeNull();
       expect(haversineM(point(drawn), elsewhere)).toBeGreaterThan(350);
-      // At most the 3 s of dead reckoning ahead of its last fix, then still.
-      expect(haversineM(point(drawn), point(last))).toBeLessThanOrEqual(last.gsMs * 3 + 0.01);
+      // At most the 4.5 s of dead reckoning (1.5 × its fixes 3 s apart, M3) ahead of its last fix, then still.
+      expect(haversineM(point(drawn), point(last))).toBeLessThanOrEqual(last.gsMs * 4.5 + 0.01);
     }
     const silent = renderTrack(track, last.positionAt + 120_000);
     expect(silent).toMatchObject({ onGround: true, quality: 'coasted', statusKey: 'noSignal', opacity: 1 });
