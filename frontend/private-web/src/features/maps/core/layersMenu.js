@@ -10,6 +10,11 @@ import { VIEW_NAMES } from './cameraPresets';
 // waits for an extract of its boundary) and «Meteorología» (the satellite clouds and rain, off by default, and the wind
 // at the airfield), and PR M6 the ramp keys: each adds its group here, its defaults in ON_IN and, when its keys depend
 // on another, a line in engineGroupsFor.
+//
+// Lane M7 adds to «Meteorología» the regional weather of the maps that opt in (traffic/weatherLayers.js: weatherOverlay
+// with `regional`): the satellite loop, the radar, the METAR stations and the SIGMETs, on by default in Región and
+// Aproximación. A map that does not opt in has none of their layers, so the menu never lists them there
+// (availableLayerKeys).
 
 /** The groups of the menu and their keys, in the order the menu lists them. */
 export const LAYER_GROUPS = Object.freeze([
@@ -24,10 +29,12 @@ export const LAYER_GROUPS = Object.freeze([
     id: 'reference',
     keys: Object.freeze(['reference.airports', 'reference.routes', 'rings', 'centrelines', 'navaids', 'daynight']),
   }),
-  // The weather of PR M8 (design E6, traffic/weatherLayers.js): the satellite images and the wind at the airfield.
+  // The weather of PR M8 (design E6, traffic/weatherLayers.js): the satellite images and the wind at the airfield; and
+  // from lane M7 the regional weather: the satellite loop, the radar, the METAR stations and the SIGMETs.
   Object.freeze({
     id: 'weather',
-    keys: Object.freeze(['weather.goes', 'weather.imerg', 'weather.wind']),
+    keys: Object.freeze(['weather.loop', 'weather.radar', 'weather.stations', 'weather.sigmet', 'weather.goes',
+      'weather.imerg', 'weather.wind']),
   }),
 ]);
 
@@ -57,6 +64,11 @@ const ON_IN = Object.freeze({
   'weather.goes': Object.freeze([]),
   'weather.imerg': Object.freeze([]),
   'weather.wind': Object.freeze(['approach', 'airfield']),
+  // The regional weather (lane M7) shows in Región and Aproximación on the maps that draw it.
+  'weather.loop': Object.freeze(['region', 'approach']),
+  'weather.radar': Object.freeze(['region', 'approach']),
+  'weather.stations': Object.freeze(['region', 'approach']),
+  'weather.sigmet': Object.freeze(['region', 'approach']),
 });
 
 /**
@@ -150,6 +162,12 @@ export function engineGroupsFor(resolved) {
     'weather.goes': on('weather.goes'),
     'weather.imerg': on('weather.imerg'),
     'weather.wind': on('weather.wind'),
+    // The regional weather (lane M7): each key its own group. OccMap keeps a loop or the radar hidden until it has
+    // pinned its frames.
+    'weather.loop': on('weather.loop'),
+    'weather.radar': on('weather.radar'),
+    'weather.stations': on('weather.stations'),
+    'weather.sigmet': on('weather.sigmet'),
   });
 }
 

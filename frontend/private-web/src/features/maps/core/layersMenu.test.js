@@ -22,14 +22,18 @@ const REFERENCE_DEFAULTS = Object.freeze({
   ramp: { 'reference.airports': false, 'reference.routes': false, rings: false, centrelines: false, navaids: false, daynight: false },
 });
 const NO_REFERENCES = Object.freeze(Object.fromEntries(REFERENCE_KEYS.map(key => [key, false])));
-const WEATHER_KEYS = ['weather.goes', 'weather.imerg', 'weather.wind'];
+// The regional weather of lane M7 (on the maps that opt in), then the satellite images and the wind of PR M8.
+const REGIONAL_KEYS = ['weather.loop', 'weather.radar', 'weather.stations', 'weather.sigmet'];
+const PR_M8_WEATHER_KEYS = ['weather.goes', 'weather.imerg', 'weather.wind'];
+const WEATHER_KEYS = [...REGIONAL_KEYS, ...PR_M8_WEATHER_KEYS];
+const regionalOn = on => Object.fromEntries(REGIONAL_KEYS.map(key => [key, on]));
 // The weather of each view (design E7): the satellite images off everywhere until a person turns them on, the wind at
-// the airfield in Aproximación and Aeródromo.
+// the airfield in Aproximación and Aeródromo; the regional weather (lane M7) on in Región and Aproximación.
 const WEATHER_DEFAULTS = Object.freeze({
-  region: { 'weather.goes': false, 'weather.imerg': false, 'weather.wind': false },
-  approach: { 'weather.goes': false, 'weather.imerg': false, 'weather.wind': true },
-  airfield: { 'weather.goes': false, 'weather.imerg': false, 'weather.wind': true },
-  ramp: { 'weather.goes': false, 'weather.imerg': false, 'weather.wind': false },
+  region: { ...regionalOn(true), 'weather.goes': false, 'weather.imerg': false, 'weather.wind': false },
+  approach: { ...regionalOn(true), 'weather.goes': false, 'weather.imerg': false, 'weather.wind': true },
+  airfield: { ...regionalOn(false), 'weather.goes': false, 'weather.imerg': false, 'weather.wind': true },
+  ramp: { ...regionalOn(false), 'weather.goes': false, 'weather.imerg': false, 'weather.wind': false },
 });
 const NO_WEATHER = Object.freeze(Object.fromEntries(WEATHER_KEYS.map(key => [key, false])));
 
@@ -110,6 +114,14 @@ describe('layers menu', () => {
     expect(engineGroupsFor(resolveLayers('region', { 'weather.goes': true }))).toMatchObject({
       'weather.goes': true, 'weather.imerg': false, 'weather.wind': false,
     });
+    // The regional weather (lane M7): on in Región and Aproximación, each key a group of its own, and a person's choice
+    // kept as a difference from the view.
+    expect(engineGroupsFor(resolveLayers('approach', { 'weather.radar': false }))).toMatchObject({
+      ...regionalOn(true), 'weather.radar': false,
+    });
+    expect(setLayerOverride({}, 'region', 'weather.sigmet', false)).toEqual({ 'weather.sigmet': false });
+    expect(setLayerOverride({}, 'airfield', 'weather.stations', true)).toEqual({ 'weather.stations': true });
+    expect(setLayerOverride({}, 'region', 'weather.loop', true)).toEqual({});
     expect(engineGroupsFor(resolveLayers('airfield', {}))).toMatchObject(WEATHER_DEFAULTS.airfield);
     expect(engineGroupsFor({})).toMatchObject(NO_WEATHER);
   });
@@ -165,7 +177,7 @@ describe('layers menu', () => {
     }
     expect(readLayerOverrides(memoryStorage({ [LAYERS_STORAGE_KEY]: '{"fir":true,"route":"no","traffic.trails":true}' })))
       .toEqual({ 'traffic.trails': true });
-    expect(setLayerOverride({}, 'region', 'weather.radar', true)).toEqual({});
+    expect(setLayerOverride({}, 'region', 'weather.lightning', true)).toEqual({});
     // A storage that refuses every call, or none at all, reads nothing and writes nothing, without throwing.
     const refusing = memoryStorage({}, { refuse: true });
     expect(readLayerOverrides(refusing)).toEqual({});
@@ -183,9 +195,11 @@ describe('layers menu', () => {
       .toEqual(DRAWN_REFERENCES.filter(key => key !== 'reference.airports'));
     expect(availableLayerKeys(buildOccStyle({ overlays: [trafficOverlay(), referenceOverlay(), routesOverlay()] })))
       .toEqual([...TRAFFIC_KEYS, ...REFERENCE_KEYS]);
-    expect(availableLayerKeys(buildOccStyle({ overlays: [weatherOverlay()] }))).toEqual(WEATHER_KEYS);
+    // A map that does not opt in to the regional weather (lane M7) never lists its keys.
+    expect(availableLayerKeys(buildOccStyle({ overlays: [weatherOverlay()] }))).toEqual(PR_M8_WEATHER_KEYS);
+    expect(availableLayerKeys(buildOccStyle({ overlays: [weatherOverlay({ regional: true })] }))).toEqual(WEATHER_KEYS);
     expect(availableLayerKeys(buildOccStyle({
-      overlays: [trafficOverlay(), referenceOverlay(), routesOverlay(), weatherOverlay()],
+      overlays: [trafficOverlay(), referenceOverlay(), routesOverlay(), weatherOverlay({ regional: true })],
     }))).toEqual(LAYER_KEYS);
     expect(availableLayerKeys(buildOccStyle({ overlays: [] }))).toEqual([]);
     expect(availableLayerKeys(null)).toEqual([]);

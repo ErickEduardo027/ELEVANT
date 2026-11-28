@@ -537,6 +537,17 @@ export function createMapEngine({
       });
     },
 
+    /**
+     * Sets one paint property of a layer of the style (lane M7: the raster-opacity of a frame of a weather loop, the
+     * saturation of the loop's band). MapLibre takes the same value again as no change. Not remembered: the loop's
+     * clock sets it again on its next frame, also after a context loss. A layer the style lacks is left alone.
+     */
+    setPaint(layerId, property, value) {
+      whenStyleReady(() => {
+        if (map.getLayer(layerId)) map.setPaintProperty(layerId, property, value);
+      });
+    },
+
     /** Sets the zoom range of the layers whose metadata names a threshold: `{ polygons, codes, threeLine }`. */
     applyThresholds(thresholds) {
       const ranges = [];
