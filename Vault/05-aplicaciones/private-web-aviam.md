@@ -2831,6 +2831,9 @@ lee la pantalla ni su cadencia. Planificación, la consola y Monitoreo no cambia
   - La pantalla abre en 3D sobre «Aeródromo», centrada en el punto de referencia
     de MDPC.
   - La cámara no sale del plano del aeropuerto más 3 km, con zoom mínimo 13.
+    Desde el 28 de noviembre, mientras sigue un avión la cámara se suelta y
+    llega al zoom 22, para que un despegue no salga de la pantalla. Al dejar de
+    seguir, se vuelve a fijar.
   - El riel ofrece solo Aeródromo y Rampa: Región y Aproximación no están en
     esta pantalla, sus teclas no hacen nada y la URL no las abre.
   - D cambia 2D/3D y L abre «Capas». «Centrar PUJ» vuelve a la vista centrada.
@@ -2852,7 +2855,7 @@ lee la pantalla ni su cadencia. Planificación, la consola y Monitoreo no cambia
 
 Las capturas se revisaron en local con la API simulada de la suite visual
 (`positions-map.airport3d.spec.mjs`, Chrome con SwiftShader), a 1366×768 y
-1920×1080, en oscuro y en claro. Falta el zoom 22 al seguir un avión, el aviso
+1920×1080, en oscuro y en claro. Falta el aviso
 de marcas de las libreas y una medición con GPU real. Nada de esto acredita un
 despliegue ni una revisión visual en el VPS.
 

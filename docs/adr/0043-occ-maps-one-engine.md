@@ -1144,6 +1144,7 @@ Plan aprobado del 27 de noviembre (carril M9). Esta nota cambia solo el Mapa de 
 - `PositionMap` acepta `fixedOnAirport`, y solo `PositionsMapPage` lo pasa.
 - La pantalla abre en 3D sobre «Aeródromo», centrada en el ARP de MDPC (`presetTargets({ airfieldCentre })`).
 - La cámara no sale del recuadro del plano de MDPC más 3 km (`airportLockOptions`: `maxBounds` y zoom mínimo 13; `AIRPORT_LOCK_MARGIN_M`, `AIRPORT_LOCK_MIN_ZOOM` en `core/cameraPresets.js`).
+- Revisión del 28 de noviembre: mientras sigue un avión («Seguir» o «Seguir en 3D»), la cámara se suelta. No tiene límites, vuelve al zoom mínimo del motor y llega hasta el zoom 22 (`OccMap followLimits`, `airportFollowLimits`, `mapEngine.setCameraLimits`). Antes, MapLibre recortaba cada cuadro del seguimiento contra el recuadro: un despegue salía de la pantalla y el mapa seguía diciendo que lo seguía. Al dejar de seguir, la cámara se vuelve a fijar cuando termina el movimiento en curso (el vuelo de regreso de «Seguir en 3D» o un arrastre). La órbita de «Seguir en 3D» sigue limitada a 19,5 por `kinematics/orbitCamera.js`; el zoom 22 vale para la rueda con «Seguir». `PositionMap.test.jsx` y `mapEngine.test.js` lo fijan.
 - El riel ofrece solo Aeródromo y Rampa: `OccMap` acepta `views`, y su contexto las reparte.
   - Región y Aproximación no aparecen.
   - Sus teclas (1 y 2) no hacen nada.
@@ -1176,7 +1177,6 @@ La leyenda añade «Calle de rodaje (pavimento, ancho est.)», «Terminal (altur
 - Pruebas unitarias: `cameraPresets.test.js`, `MapPresetSwitcher.test.jsx`, `PositionMap.test.jsx`, `structures.test.js`, `airfieldLayers.test.js`, `legendEntries.test.js`, `MapLegend.test.jsx`, `standLayers.test.js`, `occStyle.test.js`, `instancePlan.test.js`, `liveries.test.js`, `aircraftGeometry.test.js`, `aircraft3dLayer.test.js` (contra el shader Lambert real de three) y `core/aircraft3d.test.js`.
 - Suite visual: `positions-map.airport3d.spec.mjs` (Chrome con SwiftShader y `next dev`) fotografía el aeródromo en 3D, la Terminal B en Rampa y sus fingers de cerca, a 1366 × 768 y 1920 × 1080, en oscuro y en claro. `positions-map.spec.mjs` y `positions-map.screens.spec.mjs` abren Rampa por la URL y empiezan en 3D.
 - Pendiente:
-  - zoom máximo 22 al seguir un avión en esta pantalla (el motor sigue en 19,5);
   - huellas de FBO y hangar;
   - el aviso de marcas de las libreas en «Créditos y licencias»;
   - una medición con GPU real.
