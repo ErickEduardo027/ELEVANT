@@ -215,7 +215,8 @@ function sameSun(a, b) {
  * of the aircraft under the pointer, or `null` when the ray meets no aircraft (a shadow is no aircraft), before the
  * first frame, while the context is lost and while the layer has failed: the map then picks in 2D.
  * `setQuality({ shadows, dropLines })` lets the frame loop's governor lighten the scene without switching it off.
- * `stats()` → `{ meshes, instances, triangles, drawCalls, lost, failed }`: the meshes held, the instances and triangles
+ * `stats()` → `{ meshes, instances, triangles, drawCalls, lost, failed }` (and `sprites`, `spritesFailed` once the
+ * animated traffic asked for sprites, PR M2): the meshes held, the instances and triangles
  * drawn, the draw calls of the scene, whether the context is lost and whether the layer has failed. It has failed while
  * it is on a map whose context works and three could not build its renderer on that context, so it draws nothing; it
  * has not failed before onAdd, after onRemove or while the context is lost, when nothing draws, 2D included.

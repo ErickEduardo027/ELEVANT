@@ -269,6 +269,10 @@ export function createGovernor({ limits = GOVERNOR, following = false } = {}) {
  *   follow }` (status `off` · `idle` · `loading` · `ready` · `failed` · `paused`; notice `null` · `failed` · `paused`;
  *   follow, the followed aircraft's 3D: `off` without one, `loading`, `ready`, or `failed` when the browser cannot draw
  *   3D, so the map says it shows it in 2D), `stats()` (the layer's, or null) and `dispose()`.
+ * - PR M2: `animate` (with `frameTime()`, the frame loop's instant, and `frameZone()`, the area in sight and its margin)
+ *   lets `plan({ …, animation: { keyframes }, parkedIds })` hand the layer the keyframes of a write of moving traffic: the
+ *   layer then draws every aircraft each frame, in 2D too, and `plan` answers all their ids; `animating()` says whether
+ *   it does and `animationMoving(tMs)` whether a frame at that instant moves one (the map repaints those frames).
  */
 export function createAircraft3dController({
   engine, originLngLat, fieldElevationM = 0, theme = 'dark', getNow = () => Date.now(), onChange,
@@ -518,16 +522,17 @@ export function createAircraft3dController({
 
   // One frame of the animated traffic (PR M2): the keyframes at the frame loop's instant, for the aircraft in or around
   // the area in sight, planned as models (3D) and sprites. A frame where nothing moves, after one that already rested
-  // at the same bearing and write, answers that one, so the layer copies nothing.
+  // at the same write, bearing and area in sight, answers that one, so the layer copies nothing.
   function frameAnswer() {
     const t = typeof frameTime === 'function' ? frameTime() : now();
     const bearing = engine?.getCamera?.()?.bearing ?? 0;
     const moving = keyframesMoving(animation.keyframes, t);
+    const zone = typeof frameZone === 'function' ? frameZone() : null;
+    const zoneKey = Array.isArray(zone) ? zone.flat().join(',') : '';
     if (!moving && frameCache !== null && frameCache.rest && frameCache.animation === animation
-      && frameCache.bearing === bearing && frameCache.detail === current.detail) {
+      && frameCache.bearing === bearing && frameCache.zoneKey === zoneKey && frameCache.detail === current.detail) {
       return frameCache.answer;
     }
-    const zone = typeof frameZone === 'function' ? frameZone() : null;
     const states = interpolate(animation.keyframes, t, { include: zone ? point => isInBounds(point, zone) : null });
     const items = [];
     const frameEased = new Map();
@@ -564,7 +569,7 @@ export function createAircraft3dController({
       modelIds, parkedIds: animation.parkedIds });
     revision += 1;
     const answer = { revision, plan: models, detail, sprites };
-    frameCache = { animation, bearing, detail: current.detail, answer, rest: !moving };
+    frameCache = { animation, bearing, zoneKey, detail: current.detail, answer, rest: !moving };
     return answer;
   }
 
