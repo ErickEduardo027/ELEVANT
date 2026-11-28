@@ -87,7 +87,8 @@ test.describe('the OCC console on the map engine', () => {
       await page.setViewportSize(size);
       const { root, map } = await openConsole(page, isolation);
       await expect(root).toHaveAttribute('data-occ-console', 'map');
-      await expect(map).toHaveAttribute('data-occ-view', 'ramp');
+      // M7 (ADR-0044, note of 2026-11-28): Panorama opens on Región, no longer on Rampa.
+      await expect(map).toHaveAttribute('data-occ-view', 'region');
       await settled(page, map);
       // M1: below 1440 px only «Tablero» opens, the figures and the alerts open folded; the band always opens folded.
       const compact = size.width < 1440;
@@ -257,6 +258,9 @@ test.describe('the OCC console on the map engine', () => {
         const { map } = await openConsole(page, isolation);
         await settled(page, map, { pause: true });
         await setOpen(page, 'Alertas', false);
+        // «Meteorología PUJ» (M7) floats at the foot of the right column and opens unfolded from 1440 px: folded, the
+        // right edge is free for this check (integration note of 2026-11-28).
+        await setOpen(page, 'Meteorología PUJ', false);
         await expect.poll(() => map.evaluate(node => node.style.getPropertyValue('--occ-map-inset-right'))).toBe('0px');
         await panel(page, 'Tablero').getByRole('button', { name: /ZZ161/ }).click();
         await expect.poll(() => new URL(page.url()).searchParams.get('flightId')).toBe(ARRIVAL_ON_FINAL_KEY);

@@ -237,8 +237,9 @@
 
 /* A menu of the rail («Capas», «Leyenda»): it flies out to the left of the column, over a panel floating there, from
    the top of the zoom group, or from under the panels floating along the top of the map (M1: Mapa de posiciones' bar,
-   Panorama's figures), so a legend open at the start never covers the screen's own bar, down to the bottom of the
-   column at most, and scrolls when what it lists is longer. */
+   Panorama's figures), so a legend open at the start never covers the screen's own bar, down to the panels floating
+   along the bottom (the stand band, Panorama's band and status bar) at most, so it never covers their controls either
+   (INT, 2026-11-28), and scrolls when what it lists is longer. */
 .occ-map .occ-map-flyout {
   position: absolute;
   z-index: 1;
@@ -246,7 +247,7 @@
     - 8px);
   right: calc(100% + 8px);
   max-height: calc(100% + var(--occ-map-zoom-height) + 8px + var(--occ-map-gap)
-    - max(var(--occ-map-gap), var(--occ-map-inset-top, 0px)));
+    - max(var(--occ-map-gap), var(--occ-map-inset-top, 0px)) - var(--occ-map-inset-bottom, 0px));
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-color: var(--occ-line-strong) transparent;
@@ -255,7 +256,8 @@
 
 /* The key of the map at the bottom left of the area in sight: the credit of the aircraft data on the bottom line and,
    over it, the altitude scale of the traffic (ui/AltitudeLegend.jsx); both short of the control column and of the
-   nautical scale of the bottom right corner. */
+   nautical scale of the bottom right corner. The scale clears the credit by the height the credit writes on the map
+   (ui/MapSourceStatus.jsx: --occ-map-credit-height), one line when it does not say. */
 .occ-map .occ-map-credit {
   position: absolute;
   z-index: 10;
@@ -267,7 +269,7 @@
 .occ-map .occ-map-altitude {
   position: absolute;
   z-index: 9;
-  bottom: calc(var(--occ-map-inset-bottom, 0px) + var(--occ-map-gap) + 32px);
+  bottom: calc(var(--occ-map-inset-bottom, 0px) + var(--occ-map-gap) + var(--occ-map-credit-height, 24px) + 8px);
   left: calc(var(--occ-map-inset-left, 0px) + var(--occ-map-gap));
   width: min(30rem, calc(100% - var(--occ-map-inset-left, 0px) - var(--occ-map-clear-right) - 2 * var(--occ-map-gap)
     - 7rem));
@@ -278,7 +280,8 @@
 }
 
 /* A narrow area in sight writes fewer ticks, so their numbers never run into each other: the minor ones go first, then
-   all but 0, 10 000 and 40 000+. The gradient keeps every stop. */
+   all but 0, 10 000 and 40 000+, and last 10 000 (INT, 2026-11-28: Panorama at 1366 px with «Meteorología PUJ» open
+   leaves the scale a few centimetres). The gradient keeps every stop. */
 .occ-map .occ-map-altitude {
   container-type: inline-size;
 }
@@ -291,6 +294,12 @@
 
 @container (max-width: 18rem) {
   .occ-map .occ-map-altitude [data-altitude-level="middle"] {
+    visibility: hidden;
+  }
+}
+
+@container (max-width: 12rem) {
+  .occ-map .occ-map-altitude [data-altitude-tick="10000"] {
     visibility: hidden;
   }
 }
@@ -403,6 +412,15 @@
 
 .occ-map .occ-map-follow-panel[data-open="false"] {
   bottom: auto;
+}
+
+/* While it is open in the right slot, the scale and the credits of the bottom right corner move left of it, so «i»
+   stays in reach and nothing shows through the panel (INT, 2026-11-28: «Muy cerca» at 1920 px). */
+@container occ-map (min-width: 36.0625rem) {
+  .occ-map:has(.occ-map-follow-panel[data-open="true"]) > .occ-map-host .maplibregl-ctrl-bottom-right {
+    right: max(var(--occ-map-clear-right),
+      calc(var(--occ-map-rail-reserve) + min(20rem, 100% - var(--occ-map-rail-reserve) - var(--occ-map-gap))));
+  }
 }
 
 /* A narrow map (beside a list and an inspector on a 1366 px laptop, or on a phone): the credit of the aircraft data
