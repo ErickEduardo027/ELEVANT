@@ -44,26 +44,37 @@ public sealed record AirTrafficSettings(bool Enabled, string StationCode, double
     /// <summary>The radius of the airfield read by default, in nautical miles (CN-31).</summary>
     public const int DefaultAirfieldRadiusNm = 5;
 
-    /// <summary>The widest airfield read: beyond it the read is no longer the airfield's.</summary>
+    /// <summary>
+    /// The widest airfield read: the approach. Beyond it the read is no longer the airfield's. Development reads it
+    /// (M3, <c>appsettings.Development.json</c>).
+    /// </summary>
     public const int MaxAirfieldRadiusNm = 25;
 
     /// <summary>How often the airfield is read by default (CN-31).</summary>
     public static TimeSpan DefaultAirfieldInterval => TimeSpan.FromSeconds(3);
 
-    /// <summary>The airfield is never read more often than this, whatever the configuration says.</summary>
+    /// <summary>
+    /// The airfield is never read more often than this, whatever the configuration says. Development reads it this often
+    /// (M3, <c>appsettings.Development.json</c>).
+    /// </summary>
     public static TimeSpan MinimumAirfieldInterval => TimeSpan.FromSeconds(2);
 
     /// <summary>
-    /// CN-31: whether, between two reads of the whole circle, a small circle around the airfield is read more often, so
-    /// the aircraft landing, taxiing and parking carry fresher positions. On by default; it only runs while a screen
-    /// watches the map and only against a network without a daily limit (adsb.fi), never adsb.lol's 450 a day.
+    /// CN-31: whether, between two reads of the whole circle, a smaller circle around the airfield is read more often, so
+    /// the aircraft approaching, landing, taxiing and parking carry fresher positions. On by default; it only runs while a
+    /// screen watches the map and only against a network without a daily limit (adsb.fi), never adsb.lol's 450 a day. M3:
+    /// Development reads the airfield and the approach, 25 NM every 2 s, and every request of every read takes the token
+    /// of one bucket (<see cref="AirTrafficRequestBucket"/>), at most 0.8 a second.
     /// </summary>
     public bool AirfieldReadsEnabled { get; init; } = true;
 
     /// <summary>The radius of the airfield read, in nautical miles (1 to <see cref="MaxAirfieldRadiusNm"/>).</summary>
     public int AirfieldRadiusNm { get; init; } = DefaultAirfieldRadiusNm;
 
-    /// <summary>The time between two airfield reads; never below <see cref="MinimumAirfieldInterval"/>.</summary>
+    /// <summary>
+    /// The time between two airfield reads, counted from when each request goes out; never below
+    /// <see cref="MinimumAirfieldInterval"/>.
+    /// </summary>
     public TimeSpan AirfieldInterval { get; init; } = DefaultAirfieldInterval;
 
     /// <summary>The small circle the airfield read asks for: the same centre, <see cref="AirfieldRadiusNm"/>.</summary>

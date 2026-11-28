@@ -12,6 +12,9 @@ namespace Elevant.Application.Operations.AirPicture;
 /// <see cref="AirPictureStatus.Warming"/>.</item>
 /// <item>One network read per interval for every screen, and after a refusal or a failure the wait of
 /// <see cref="AirTrafficBackOff"/>: never a loop.</item>
+/// <item>M3 (the map refinement of 27 November 2026): one scheduler and one bucket for every request
+/// (<see cref="AirTrafficRequestBucket"/>): the reads of the whole circle and of the airfield and approach take the same
+/// token, so the network is asked at most 0.8 times a second.</item>
 /// <item>The trails live in memory (<see cref="AirTrailBuffer"/>): only an aircraft's last segment is ever served.</item>
 /// <item>The picture's state is swapped whole after each read, so a screen's read never waits for the network or the
 /// worker.</item>
@@ -47,15 +50,16 @@ public sealed class AirPictureService
     private readonly Lock _gate = new();
     private readonly AirTrailBuffer _trails;
     private readonly ConcurrentDictionary<Guid, StationMatchKeys> _matchKeys = new();
+    // M3: the one bucket every request to the network takes its token from, under the gate.
+    private readonly AirTrafficRequestBucket _requests = new();
     private PictureState _state;
     private DateTimeOffset? _lastDemandAt;
     private TaskCompletionSource _demand = NewSignal();
     private bool _reading;
     private int _failures;
-    // CN-31: the airfield read's own pace, its failures in a row, and the last request of either read.
+    // CN-31: the airfield read's own pace and its failures in a row.
     private DateTimeOffset? _nextAirfieldAt;
     private int _airfieldFailures;
-    private DateTimeOffset? _lastRequestAt;
 
     public AirPictureService(IAirTrafficProvider provider, AirTrafficSettings settings, TimeProvider time)
     {
@@ -131,42 +135,33 @@ public sealed class AirPictureService
     /// <see cref="AirTrafficBackOff"/> after a refusal or a failure, and the interval again when another network of the
     /// list took over. Before the next read is due, or while another read is on its way, it calls nothing and answers the
     /// time left. Disabled, it never calls anything. Only the cancellation is thrown.
-    /// <para>CN-31: between two reads of the whole circle, while a screen watches the map, the network allows it
+    /// <para>CN-31 and M3: between two reads of the whole circle, while a screen watches the map, the network allows it
     /// (<see cref="IAirTrafficProvider.AllowsFrequentReads"/>: adsb.fi, not adsb.lol), the last read of the whole circle
-    /// succeeded and no back-off runs, it reads the airfield circle (<see cref="AirTrafficSettings.AirfieldArea"/>) every
-    /// <see cref="AirTrafficSettings.AirfieldInterval"/>. Two requests are never closer than
-    /// <see cref="MinimumRequestSpacing"/>, and an airfield read is skipped when the whole circle is due within it, so the
-    /// network is asked at most once a second (10 s and 3 s give 0.43 a second).</para>
+    /// succeeded and no back-off runs, it also reads the airfield and approach circle
+    /// (<see cref="AirTrafficSettings.AirfieldArea"/>) every <see cref="AirTrafficSettings.AirfieldInterval"/>: 25 NM every
+    /// 2 s in Development. One scheduler (<see cref="NextRead"/>) picks every request and one bucket
+    /// (<see cref="AirTrafficRequestBucket"/>) lets it out, so the network is asked at most 0.8 times a second and never
+    /// twice within 1.25 s (10 s and 2 s give 0.5 a second).</para>
     /// </summary>
     public async Task<TimeSpan> PollOnceAsync(CancellationToken cancellationToken)
     {
         if (!IsEnabled) return _settings.Interval;
-        bool airfield;
+        UpstreamRead read;
+        DateTimeOffset startedAt;
         lock (_gate)
         {
             var state = _state;
             if (_reading) return state.CurrentWait;
-            var now = _time.GetUtcNow();
-            var spacing = SpacingLeft(now);
-            // A clock set back never stretches the wait beyond the one the last read set.
-            if (state.NextReadAt is { } due && now < due)
-            {
-                var left = due - now < state.CurrentWait ? due - now : state.CurrentWait;
-                if (!AirfieldDue(state, now, spacing)) return Min(left, AirfieldWait(state, now, spacing) ?? left);
-                airfield = true;
-            }
-            else if (spacing > TimeSpan.Zero)
-            {
-                return spacing;
-            }
-            else
-            {
-                airfield = false;
-            }
+            startedAt = _time.GetUtcNow();
+            var (next, wait) = NextRead(state, startedAt);
+            if (next is not { } chosen) return wait;
+            // The scheduler names a read only while the token is back.
+            if (!_requests.TryTake(startedAt)) return _requests.WaitAt(startedAt);
+            read = chosen;
             _reading = true;
-            _lastRequestAt = now;
         }
 
+        var airfield = read == UpstreamRead.Airfield;
         AirTrafficReadResult result;
         try
         {
@@ -187,22 +182,19 @@ public sealed class AirPictureService
         {
             _reading = false;
             var now = _time.GetUtcNow();
-            if (!airfield)
+            if (airfield)
             {
-                var wait = Integrate(result, now);
+                IntegrateAirfield(result, startedAt, now);
+            }
+            else
+            {
+                Integrate(result, now);
                 // The airfield's own pace starts again after a read of the whole circle, which covered it too.
                 _nextAirfieldAt = now + _settings.AirfieldInterval;
-                return Min(wait, AirfieldWait(_state, now, SpacingLeft(now)) ?? wait);
             }
-            IntegrateAirfield(result, now);
-            var state = _state;
-            var wideLeft = state.NextReadAt is { } next && next > now ? next - now : TimeSpan.Zero;
-            return Min(wideLeft, AirfieldWait(state, now, SpacingLeft(now)) ?? wideLeft);
+            return NextRead(_state, now).Wait;
         }
     }
-
-    /// <summary>CN-31: two requests to the network are never closer than this (adsb.fi asks for one a second at most).</summary>
-    public static TimeSpan MinimumRequestSpacing { get; } = TimeSpan.FromSeconds(1);
 
     /// <summary>
     /// The picture now, from memory; it never calls the network. With <paramref name="shortTrails"/> every aircraft carries
@@ -329,11 +321,6 @@ public sealed class AirPictureService
 
     private bool HasDemandAt(DateTimeOffset now) => _lastDemandAt is { } last && now - last < _settings.IdleAfter;
 
-    /// <summary>The time left before another request may go out (<see cref="MinimumRequestSpacing"/>). Under the gate.</summary>
-    private TimeSpan SpacingLeft(DateTimeOffset now) =>
-        _lastRequestAt is { } last && now >= last && now - last < MinimumRequestSpacing
-            ? MinimumRequestSpacing - (now - last) : TimeSpan.Zero;
-
     /// <summary>
     /// Whether the airfield is read at all now (CN-31): switched on, a network that allows it, a screen watching, a good
     /// last read of the whole circle to merge into and no back-off of the whole circle running. Under the gate.
@@ -342,40 +329,44 @@ public sealed class AirPictureService
         _settings.AirfieldReadsEnabled && _provider.AllowsFrequentReads && HasDemandAt(now) && state.LastSuccess is not null &&
         !state.LastReadFailed;
 
-    /// <summary>The wait until the next airfield read, or null while the airfield is not read. Under the gate.</summary>
-    private TimeSpan? AirfieldWait(PictureState state, DateTimeOffset now, TimeSpan spacing)
+    /// <summary>
+    /// M3: the one scheduler of the requests to the network, under the gate. It answers the read that goes out at
+    /// <paramref name="now"/>, or none and the wait until one may. Nothing goes out before the bucket's token is back. The
+    /// whole circle goes first once it is due. The airfield goes when it is active and due, unless the whole circle would
+    /// fall due before the token is back after it: that airfield read is skipped, because the whole circle covers the
+    /// airfield too and is never held back by it. Without a read the wait is never zero, so a pass that reads nothing
+    /// always waits.
+    /// </summary>
+    private (UpstreamRead? Read, TimeSpan Wait) NextRead(PictureState state, DateTimeOffset now)
     {
-        if (!AirfieldActive(state, now)) return null;
-        var left = _nextAirfieldAt is { } due && due > now ? due - now : TimeSpan.Zero;
-        return left > spacing ? left : spacing;
+        var token = _requests.WaitAt(now);
+        // A clock set back never stretches the wait beyond the one the last read set.
+        var wide = state.NextReadAt is { } due && now < due ? Min(due - now, state.CurrentWait) : TimeSpan.Zero;
+        if (wide == TimeSpan.Zero && token == TimeSpan.Zero) return (UpstreamRead.WholeCircle, TimeSpan.Zero);
+        var wideAt = Max(wide, token);
+        if (!AirfieldActive(state, now)) return (null, wideAt);
+        var airfieldAt = Max(_nextAirfieldAt is { } next && next > now ? next - now : TimeSpan.Zero, token);
+        if (wide - airfieldAt < AirTrafficRequestBucket.TokenInterval) return (null, wideAt);
+        return airfieldAt > TimeSpan.Zero ? (null, airfieldAt) : (UpstreamRead.Airfield, TimeSpan.Zero);
     }
 
     /// <summary>
-    /// Whether an airfield read goes out now: it is active and due, the spacing allows it and the whole circle is not due
-    /// within the spacing (it covers the airfield too). Under the gate.
+    /// What an airfield read that went out at <paramref name="startedAt"/> brought (CN-31), under the gate. A success
+    /// merges its aircraft into the last good read: an address takes the airfield's position only when it is newer, a new
+    /// one is added, and the others stay as the whole circle left them; the trails record it as any read. The instant of
+    /// the picture stays the whole circle's, so its state (Live, Stale) still says how fresh the whole picture is. M3: after
+    /// a success the next airfield read is due <see cref="AirTrafficSettings.AirfieldInterval"/> after this one went out,
+    /// so a slow answer does not stretch the pace. A failure waits as <see cref="AirTrafficBackOff"/> says from the
+    /// airfield interval; a request to slow down (429) or a refusal also holds the read of the whole circle back for the
+    /// same wait, so one refusal slows both.
     /// </summary>
-    private bool AirfieldDue(PictureState state, DateTimeOffset now, TimeSpan spacing)
-    {
-        if (!AirfieldActive(state, now) || spacing > TimeSpan.Zero) return false;
-        if (_nextAirfieldAt is { } due && now < due) return false;
-        return !(state.NextReadAt is { } wide && wide - now < MinimumRequestSpacing);
-    }
-
-    /// <summary>
-    /// What an airfield read brought (CN-31), under the gate. A success merges its aircraft into the last good read: an
-    /// address takes the airfield's position only when it is newer, a new one is added, and the others stay as the whole
-    /// circle left them; the trails record it as any read. The instant of the picture stays the whole circle's, so its
-    /// state (Live, Stale) still says how fresh the whole picture is. A failure waits as <see cref="AirTrafficBackOff"/>
-    /// says from the airfield interval; a request to slow down (429) or a refusal also holds the read of the whole circle
-    /// back for the same wait, so one refusal slows both.
-    /// </summary>
-    private void IntegrateAirfield(AirTrafficReadResult result, DateTimeOffset now)
+    private void IntegrateAirfield(AirTrafficReadResult result, DateTimeOffset startedAt, DateTimeOffset now)
     {
         var state = _state;
         if (result.Outcome == AirTrafficOutcome.Succeeded)
         {
             _airfieldFailures = 0;
-            _nextAirfieldAt = now + _settings.AirfieldInterval;
+            _nextAirfieldAt = startedAt + _settings.AirfieldInterval;
             if (state.LastSuccess is not { } seen) return;
             var fresh = Freshest(result.Aircraft);
             _trails.Record(fresh, now);
@@ -420,14 +411,16 @@ public sealed class AirPictureService
 
     private static TimeSpan Min(TimeSpan left, TimeSpan right) => left < right ? left : right;
 
+    private static TimeSpan Max(TimeSpan left, TimeSpan right) => left > right ? left : right;
+
     private bool IsFresh(DateTimeOffset loadedAt)
     {
         var now = _time.GetUtcNow();
         return now >= loadedAt && now - loadedAt < MatchKeysLifetime;
     }
 
-    /// <summary>Stores what one read brought and answers the wait until the next. Called under the gate.</summary>
-    private TimeSpan Integrate(AirTrafficReadResult result, DateTimeOffset now)
+    /// <summary>Stores what one read of the whole circle brought and when the next is due. Called under the gate.</summary>
+    private void Integrate(AirTrafficReadResult result, DateTimeOffset now)
     {
         var state = _state;
         TimeSpan wait;
@@ -462,7 +455,6 @@ public sealed class AirPictureService
             state = state with { LastReadFailed = true, LastFailureReason = AirPictureReasons.Of(result.Outcome) };
         }
         Volatile.Write(ref _state, state with { LastReadAt = now, NextReadAt = now + wait, CurrentWait = wait });
-        return wait;
     }
 
     private static bool IsWarming(PictureState state, DateTimeOffset now)
@@ -498,6 +490,13 @@ public sealed class AirPictureService
     }
 
     private static TaskCompletionSource NewSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>The reads the scheduler sends to the network (M3): the whole circle, and the airfield and approach.</summary>
+    private enum UpstreamRead
+    {
+        WholeCircle,
+        Airfield,
+    }
 
     /// <summary>
     /// What the reads left, swapped whole: when the current watch started, when the last read ended and whether it failed
