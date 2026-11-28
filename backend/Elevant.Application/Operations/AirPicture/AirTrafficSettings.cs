@@ -77,6 +77,22 @@ public sealed record AirTrafficSettings(bool Enabled, string StationCode, double
     /// </summary>
     public TimeSpan AirfieldInterval { get; init; } = DefaultAirfieldInterval;
 
+    /// <summary>
+    /// M3: whether, while the airfield reads run, the AVIAM flights that should be in the air and were not in the last read
+    /// of the whole circle are looked up by their callsign (adsb.fi's <c>/api/v2/callsign</c>), in turn, at most one every
+    /// <see cref="CallsignLookupInterval"/>. On by default; it runs only where the airfield reads run.
+    /// </summary>
+    public bool CallsignLookupsEnabled { get; init; } = true;
+
+    /// <summary>M3: the shortest time between two callsign lookups, counted from when each request goes out.</summary>
+    public static TimeSpan CallsignLookupInterval => TimeSpan.FromSeconds(4);
+
+    /// <summary>
+    /// M3: how long an aircraft a lookup found stays in the picture after the last lookup that saw it. It is kept in memory
+    /// only (adsb.fi's licence: nothing is persisted).
+    /// </summary>
+    public static TimeSpan CallsignLookupRetention => TimeSpan.FromMinutes(15);
+
     /// <summary>The small circle the airfield read asks for: the same centre, <see cref="AirfieldRadiusNm"/>.</summary>
     public AirTrafficArea AirfieldArea => new(CenterLatitude, CenterLongitude, AirfieldRadiusNm);
 }

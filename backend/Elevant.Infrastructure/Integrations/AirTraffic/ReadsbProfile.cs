@@ -11,14 +11,16 @@ namespace Elevant.Infrastructure.Integrations.AirTraffic;
 public sealed class ReadsbProfile
 {
     private readonly string _pointQuery;
+    private readonly string? _callsignQuery;
     private readonly int? _dailyLimitWithoutKey;
     private readonly int? _dailyLimitWithKey;
 
-    private ReadsbProfile(string name, string pointQuery, AirTrafficAttribution attribution, bool takesKey,
-        int? dailyLimitWithoutKey, int? dailyLimitWithKey)
+    private ReadsbProfile(string name, string pointQuery, string? callsignQuery, AirTrafficAttribution attribution,
+        bool takesKey, int? dailyLimitWithoutKey, int? dailyLimitWithKey)
     {
         Name = name;
         _pointQuery = pointQuery;
+        _callsignQuery = callsignQuery;
         Attribution = attribution;
         TakesKey = takesKey;
         _dailyLimitWithoutKey = dailyLimitWithoutKey;
@@ -27,19 +29,23 @@ public sealed class ReadsbProfile
 
     /// <summary>
     /// adsb.fi open data, the network of the demonstration (owner decision 6): personal and non-commercial use, «cite
-    /// adsb.fi and link to its home page», at most one request a second, no key and no daily limit.
+    /// adsb.fi and link to its home page», at most one request a second, no key and no daily limit. M3: it also
+    /// answers the aircraft of one callsign (<c>/api/v2/callsign</c>), in the same readsb v2 JSON.
     /// </summary>
     public static ReadsbProfile AdsbFi { get; } = new("AdsbFi",
         "https://opendata.adsb.fi/api/v3/lat/{0}/lon/{1}/dist/{2}",
+        "https://opendata.adsb.fi/api/v2/callsign/{0}",
         new AirTrafficAttribution("adsb.fi", "https://adsb.fi", "Uso personal y no comercial", null),
         takesKey: false, dailyLimitWithoutKey: null, dailyLimitWithKey: null);
 
     /// <summary>
     /// adsb.lol, the alternative ready by configuration: ODbL 1.0; 500 requests a day for an address without a key and
     /// 1 000 with a key (<c>x-api-key</c>). The plain daily counter stops ten per cent before either limit.
+    /// M3: it is never asked for a callsign; its daily limit would not bear the lookups.
     /// </summary>
     public static ReadsbProfile AdsbLol { get; } = new("AdsbLol",
         "https://api.adsb.lol/v2/point/{0}/{1}/{2}",
+        null,
         new AirTrafficAttribution("adsb.lol", "https://adsb.lol", "ODbL 1.0", "https://opendatacommons.org/licenses/odbl/1-0/"),
         takesKey: true, dailyLimitWithoutKey: 450, dailyLimitWithKey: 900);
 
@@ -67,6 +73,27 @@ public sealed class ReadsbProfile
         return new Uri(string.Format(CultureInfo.InvariantCulture, _pointQuery, Coordinate(area.Latitude),
             Coordinate(area.Longitude), area.RadiusNm));
     }
+
+    /// <summary>M3: whether the network answers the aircraft of one callsign (adsb.fi only).</summary>
+    public bool AnswersCallsigns => _callsignQuery is not null;
+
+    /// <summary>
+    /// M3: the callsign query of <paramref name="callsign"/>, which must already be upper case, two to eight ASCII letters
+    /// or digits; null for a network that does not answer callsigns.
+    /// </summary>
+    public Uri? CallsignQuery(string callsign)
+    {
+        if (!IsCallsign(callsign))
+            throw new ArgumentException("The callsign must be two to eight upper-case letters or digits.", nameof(callsign));
+        return _callsignQuery is null
+            ? null
+            : new Uri(string.Format(CultureInfo.InvariantCulture, _callsignQuery, callsign));
+    }
+
+    /// <summary>A callsign the query takes as it is: two to eight upper-case ASCII letters or digits.</summary>
+    public static bool IsCallsign(string? callsign) =>
+        callsign is { Length: >= 2 and <= 8 } && callsign.All(character => char.IsAsciiDigit(character) ||
+            char.IsAsciiLetterUpper(character));
 
     /// <summary>
     /// The profile of a configured name: only the exact names, without regard to case or surrounding spaces; null for

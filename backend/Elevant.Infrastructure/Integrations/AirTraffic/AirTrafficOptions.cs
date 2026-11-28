@@ -51,6 +51,12 @@ public sealed class AirTrafficOptions
     /// </summary>
     public int AirfieldIntervalSeconds { get; set; } = (int)AirTrafficSettings.DefaultAirfieldInterval.TotalSeconds;
 
+    /// <summary>
+    /// M3: whether the AVIAM flights that should be in the air and are not in the whole circle are looked up by their
+    /// callsign while the map is watched, at most one lookup every 4 s (adsb.fi only, with the airfield reads on).
+    /// </summary>
+    public bool CallsignLookupsEnabled { get; set; } = true;
+
     /// <summary>Minutes an aircraft's trail is kept, from 1 to 180.</summary>
     public int TrailMinutes { get; set; } = AirTrafficSettings.MaxTrailMinutes;
 

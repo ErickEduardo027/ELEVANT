@@ -15,6 +15,8 @@ namespace Elevant.Application.Operations.AirPicture;
 /// <item>M3 (the map refinement of 27 November 2026): one scheduler and one bucket for every request
 /// (<see cref="AirTrafficRequestBucket"/>): the reads of the whole circle and of the airfield and approach take the same
 /// token, so the network is asked at most 0.8 times a second.</item>
+/// <item>M3: the AVIAM flights that should be in the air and were not in the whole circle are looked up by their callsign,
+/// in turn, and what the lookups find joins the same picture with its flight, in memory only.</item>
 /// <item>The trails live in memory (<see cref="AirTrailBuffer"/>): only an aircraft's last segment is ever served.</item>
 /// <item>The picture's state is swapped whole after each read, so a screen's read never waits for the network or the
 /// worker.</item>
@@ -43,6 +45,24 @@ public sealed class AirPictureService
     /// <summary>The slowest pace a screen asks again at otherwise.</summary>
     public const int MaximumRefreshSeconds = 60;
 
+    /// <summary>
+    /// M3: the most a callsign lookup may delay the airfield and approach read that is due after it: a lookup goes out
+    /// only when the approach read is due at least the bucket's 1.25 s less this after it.
+    /// </summary>
+    public static TimeSpan MaxApproachSlip { get; } = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>M3: an arrival is looked up from this long after its best time on, until it happened (it is late).</summary>
+    public static TimeSpan LookupArrivalsBack { get; } = TimeSpan.FromHours(1);
+
+    /// <summary>M3: a departure is looked up until this long after its best time (the flight keys reach that far back).</summary>
+    public static TimeSpan LookupDeparturesBack { get; } = TimeSpan.FromHours(2);
+
+    /// <summary>M3: a departure is looked up from this long before its best time (it may leave a little early).</summary>
+    public static TimeSpan LookupDeparturesAhead { get; } = TimeSpan.FromMinutes(15);
+
+    private static readonly IReadOnlyDictionary<string, string> NoFoundFlights =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
     private readonly IAirTrafficProvider _provider;
     private readonly AirTrafficSettings _settings;
     private readonly TimeProvider _time;
@@ -60,6 +80,13 @@ public sealed class AirPictureService
     // CN-31: the airfield read's own pace and its failures in a row.
     private DateTimeOffset? _nextAirfieldAt;
     private int _airfieldFailures;
+    // M3: the callsign lookups' own pace, their failures in a row, the last flight looked up (the turn goes on after it),
+    // the aircraft they found by address and what the last good read of the whole circle saw.
+    private DateTimeOffset? _nextLookupAt;
+    private int _lookupFailures;
+    private string? _lastLookedUp;
+    private readonly Dictionary<string, FoundAircraft> _found = new(StringComparer.Ordinal);
+    private AirTrafficAircraft[] _circle = [];
 
     public AirPictureService(IAirTrafficProvider provider, AirTrafficSettings settings, TimeProvider time)
     {
@@ -148,6 +175,7 @@ public sealed class AirPictureService
         if (!IsEnabled) return _settings.Interval;
         UpstreamRead read;
         DateTimeOffset startedAt;
+        LookupCandidate? lookup = null;
         lock (_gate)
         {
             var state = _state;
@@ -155,17 +183,29 @@ public sealed class AirPictureService
             startedAt = _time.GetUtcNow();
             var (next, wait) = NextRead(state, startedAt);
             if (next is not { } chosen) return wait;
+            if (chosen == UpstreamRead.Callsign && (lookup = NextLookup(startedAt)) is null)
+            {
+                // No flight to look up now: the next turn comes a lookup interval later, and the other reads go on.
+                _nextLookupAt = startedAt + AirTrafficSettings.CallsignLookupInterval;
+                (next, wait) = NextRead(state, startedAt);
+                if (next is not { } other) return wait;
+                chosen = other;
+            }
             // The scheduler names a read only while the token is back.
             if (!_requests.TryTake(startedAt)) return _requests.WaitAt(startedAt);
             read = chosen;
             _reading = true;
         }
 
-        var airfield = read == UpstreamRead.Airfield;
         AirTrafficReadResult result;
         try
         {
-            result = await _provider.ReadAsync(airfield ? _settings.AirfieldArea : _settings.Area, cancellationToken);
+            result = read switch
+            {
+                UpstreamRead.Callsign => await _provider.ReadCallsignAsync(lookup!.Callsign, cancellationToken),
+                UpstreamRead.Airfield => await _provider.ReadAsync(_settings.AirfieldArea, cancellationToken),
+                _ => await _provider.ReadAsync(_settings.Area, cancellationToken),
+            };
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -182,9 +222,13 @@ public sealed class AirPictureService
         {
             _reading = false;
             var now = _time.GetUtcNow();
-            if (airfield)
+            if (read == UpstreamRead.Airfield)
             {
                 IntegrateAirfield(result, startedAt, now);
+            }
+            else if (read == UpstreamRead.Callsign)
+            {
+                IntegrateLookup(result, lookup!, startedAt, now);
             }
             else
             {
@@ -230,10 +274,10 @@ public sealed class AirPictureService
         var aircraft = shortTrails ? seen.WithTrails : seen.WithoutTrails;
         if (age <= _liveAge)
             return new AirPictureSnapshot(AirPictureStatus.Live, null, now, seen.ObservedAt, ageSeconds, refresh, seen.Source,
-                aircraft);
+                aircraft) { FoundFlightKeys = seen.FoundFlights };
         if (age <= StaleLimit)
             return new AirPictureSnapshot(AirPictureStatus.Stale, state.LastReadFailed ? state.LastFailureReason : null, now,
-                seen.ObservedAt, ageSeconds, refresh, seen.Source, aircraft);
+                seen.ObservedAt, ageSeconds, refresh, seen.Source, aircraft) { FoundFlightKeys = seen.FoundFlights };
         // A last read that succeeded with data this old is unusable too.
         return new AirPictureSnapshot(AirPictureStatus.Unavailable,
             state.LastReadFailed ? state.LastFailureReason : AirPictureReasons.ProviderError, now, seen.ObservedAt, ageSeconds,
@@ -334,8 +378,11 @@ public sealed class AirPictureService
     /// <paramref name="now"/>, or none and the wait until one may. Nothing goes out before the bucket's token is back. The
     /// whole circle goes first once it is due. The airfield goes when it is active and due, unless the whole circle would
     /// fall due before the token is back after it: that airfield read is skipped, because the whole circle covers the
-    /// airfield too and is never held back by it. Without a read the wait is never zero, so a pass that reads nothing
-    /// always waits.
+    /// airfield too and is never held back by it. Then a callsign lookup, where the airfield reads run and the network
+    /// answers callsigns, at most one every <see cref="AirTrafficSettings.CallsignLookupInterval"/>: it takes a slot
+    /// between two approach reads only when it holds the whole circle back not at all and the approach read due after it
+    /// at most <see cref="MaxApproachSlip"/>. Without a read the wait is never zero, so a pass that reads nothing always
+    /// waits.
     /// </summary>
     private (UpstreamRead? Read, TimeSpan Wait) NextRead(PictureState state, DateTimeOffset now)
     {
@@ -345,9 +392,199 @@ public sealed class AirPictureService
         if (wide == TimeSpan.Zero && token == TimeSpan.Zero) return (UpstreamRead.WholeCircle, TimeSpan.Zero);
         var wideAt = Max(wide, token);
         if (!AirfieldActive(state, now)) return (null, wideAt);
-        var airfieldAt = Max(_nextAirfieldAt is { } next && next > now ? next - now : TimeSpan.Zero, token);
-        if (wide - airfieldAt < AirTrafficRequestBucket.TokenInterval) return (null, wideAt);
-        return airfieldAt > TimeSpan.Zero ? (null, airfieldAt) : (UpstreamRead.Airfield, TimeSpan.Zero);
+        var airfieldDue = _nextAirfieldAt is { } next && next > now ? next - now : TimeSpan.Zero;
+        var airfieldAt = Max(airfieldDue, token);
+        var airfieldFits = wide - airfieldAt >= AirTrafficRequestBucket.TokenInterval;
+        if (airfieldFits && airfieldAt == TimeSpan.Zero) return (UpstreamRead.Airfield, TimeSpan.Zero);
+        var soonest = airfieldFits ? airfieldAt : wideAt;
+        if (!LookupsActive()) return (null, soonest);
+        var lookupAt = Max(_nextLookupAt is { } turn && turn > now ? turn - now : TimeSpan.Zero, token);
+        var lookupFits = wide - lookupAt >= AirTrafficRequestBucket.TokenInterval &&
+            (!airfieldFits || airfieldDue - lookupAt >= AirTrafficRequestBucket.TokenInterval - MaxApproachSlip);
+        if (!lookupFits) return (null, soonest);
+        return lookupAt == TimeSpan.Zero ? (UpstreamRead.Callsign, TimeSpan.Zero) : (null, Min(soonest, lookupAt));
+    }
+
+    /// <summary>
+    /// M3: whether the callsign lookups run at all, given that the airfield reads run (<see cref="AirfieldActive"/>):
+    /// switched on and a network that answers them (adsb.fi). Under the gate.
+    /// </summary>
+    private bool LookupsActive() => _settings.CallsignLookupsEnabled && _provider.SupportsCallsignLookups;
+
+    /// <summary>
+    /// M3: the next flight to look up by its callsign, in turn after the last one, or none. The flights are the station's
+    /// match keys the screens last read (never a demo flight): an arrival that has not happened, from
+    /// <see cref="LookupArrivalsBack"/> after its best time back to <see cref="FlightAircraftMatcher.ArrivalsAhead"/> before
+    /// it, and a departure from <see cref="LookupDeparturesBack"/> after its best time back to
+    /// <see cref="LookupDeparturesAhead"/> before it; each with its ICAO callsign, and none whose callsign or registration
+    /// the last good read of the whole circle saw. Under the gate.
+    /// </summary>
+    private LookupCandidate? NextLookup(DateTimeOffset now)
+    {
+        var seenCallsigns = new HashSet<string>(StringComparer.Ordinal);
+        var seenRegistrations = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var plane in _circle)
+        {
+            if (FlightAircraftMatcher.NormalizeCallsign(plane.Callsign) is { } callsign) seenCallsigns.Add(callsign);
+            if (FlightAircraftMatcher.NormalizeRegistration(plane.Registration) is { } registration)
+                seenRegistrations.Add(registration);
+        }
+
+        var candidates = new SortedDictionary<string, LookupCandidate>(StringComparer.Ordinal);
+        foreach (var station in _matchKeys.Values)
+        {
+            IReadOnlyList<MapFlightMatchKey> keys;
+            lock (station.Gate) keys = station.Keys?.Keys ?? [];
+            foreach (var key in keys)
+            {
+                if (key is null || key.IsDemo || string.IsNullOrWhiteSpace(key.FlightKey) || !ShouldBeFlying(key, now) ||
+                    candidates.ContainsKey(key.FlightKey))
+                    continue;
+                var callsign = FlightAircraftMatcher.IcaoCallsign(key.AirlineIcaoCode, key.FlightNumber);
+                if (callsign is null || callsign.Length > 8 || seenCallsigns.Contains(callsign)) continue;
+                if (FlightAircraftMatcher.NormalizeRegistration(key.Registration) is { } registration &&
+                    seenRegistrations.Contains(registration))
+                    continue;
+                candidates[key.FlightKey] = new LookupCandidate(key.FlightKey, callsign);
+            }
+        }
+        if (candidates.Count == 0) return null;
+        var after = _lastLookedUp is { } last
+            ? candidates.Values.FirstOrDefault(candidate => string.CompareOrdinal(candidate.FlightKey, last) > 0)
+            : null;
+        return after ?? candidates.Values.First();
+    }
+
+    /// <summary>M3: whether a flight should be in the air now, or is near its time (see <see cref="NextLookup"/>).</summary>
+    private static bool ShouldBeFlying(MapFlightMatchKey key, DateTimeOffset now)
+    {
+        if (string.Equals(key.Direction, "Arrival", StringComparison.OrdinalIgnoreCase))
+            return !key.Happened && key.BestTime >= now - LookupArrivalsBack &&
+                key.BestTime <= now + FlightAircraftMatcher.ArrivalsAhead;
+        if (string.Equals(key.Direction, "Departure", StringComparison.OrdinalIgnoreCase))
+            return key.BestTime >= now - LookupDeparturesBack && key.BestTime <= now + LookupDeparturesAhead;
+        return false;
+    }
+
+    /// <summary>
+    /// M3: what a callsign lookup that went out at <paramref name="startedAt"/> brought, under the gate. A success takes
+    /// the freshest aircraft that broadcasts exactly that callsign: it joins the picture with its flight (one aircraft per
+    /// flight), and the trails record it; the next lookup is due a lookup interval after this one went out. An answer
+    /// without it changes nothing: what an earlier lookup found stays until
+    /// <see cref="AirTrafficSettings.CallsignLookupRetention"/> after it was last seen. A failure waits as
+    /// <see cref="AirTrafficBackOff"/> says from the lookup interval, and a request to slow down (429) or a refusal holds
+    /// every read back for the same wait, as an airfield refusal does.
+    /// </summary>
+    private void IntegrateLookup(AirTrafficReadResult result, LookupCandidate lookup, DateTimeOffset startedAt,
+        DateTimeOffset now)
+    {
+        _lastLookedUp = lookup.FlightKey;
+        if (result.Outcome == AirTrafficOutcome.Succeeded)
+        {
+            _lookupFailures = 0;
+            _nextLookupAt = startedAt + AirTrafficSettings.CallsignLookupInterval;
+            var plane = result.Aircraft
+                .Where(item => item is not null && !string.IsNullOrWhiteSpace(item.Hex) &&
+                    FlightAircraftMatcher.NormalizeCallsign(item.Callsign) == lookup.Callsign)
+                .MaxBy(item => item.PositionAt);
+            var changed = ForgetFound(now);
+            if (plane is not null)
+            {
+                foreach (var other in _found.Where(entry => entry.Value.FlightKey == lookup.FlightKey && entry.Key != plane.Hex)
+                             .Select(entry => entry.Key).ToArray())
+                    _found.Remove(other);
+                if (_found.TryGetValue(plane.Hex, out var known) && known.Aircraft.PositionAt > plane.PositionAt)
+                    plane = known.Aircraft;
+                else
+                    _trails.Record([plane], now);
+                _found[plane.Hex] = new FoundAircraft(plane, lookup.FlightKey, now);
+                changed = true;
+            }
+            if (changed) PublishFound();
+            return;
+        }
+        var wait = AirTrafficBackOff.Next(result.Outcome, ++_lookupFailures, result.RetryAfter,
+            AirTrafficSettings.CallsignLookupInterval);
+        _nextLookupAt = now + wait;
+        if (result.Outcome is AirTrafficOutcome.RateLimited or AirTrafficOutcome.Unauthorized or AirTrafficOutcome.QuotaExceeded)
+            HoldEveryRead(now + wait, wait);
+    }
+
+    /// <summary>M3: forgets the aircraft no lookup saw for the retention; true when one went. Under the gate.</summary>
+    private bool ForgetFound(DateTimeOffset now)
+    {
+        var gone = _found.Where(entry => now - entry.Value.SeenAt > AirTrafficSettings.CallsignLookupRetention)
+            .Select(entry => entry.Key).ToArray();
+        foreach (var hex in gone) _found.Remove(hex);
+        return gone.Length > 0;
+    }
+
+    /// <summary>
+    /// M3: puts what the lookups found into the last good read: an aircraft forgotten since leaves it, a found one takes
+    /// its place when its position is newer or is added. Under the gate.
+    /// </summary>
+    private void PublishFound()
+    {
+        var state = _state;
+        if (state.LastSuccess is not { } seen) return;
+        var found = FoundFlights();
+        var kept = seen.WithoutTrails.Select(item => item.Aircraft)
+            .Where(item => !seen.FoundFlights.ContainsKey(item.Hex) || found.ContainsKey(item.Hex));
+        var merged = Merge(kept, _found.Values.Select(item => item.Aircraft), out _);
+        Volatile.Write(ref _state, state with { LastSuccess = WithAircraft(seen, merged, found) });
+    }
+
+    private IReadOnlyDictionary<string, string> FoundFlights() => _found.Count == 0
+        ? NoFoundFlights
+        : _found.ToDictionary(entry => entry.Key, entry => entry.Value.FlightKey, StringComparer.Ordinal);
+
+    /// <summary>
+    /// The aircraft of <paramref name="current"/> with <paramref name="fresh"/> merged in: an address takes the fresh
+    /// position only when it is newer, a new one is added at the end, the others stay as they were.
+    /// </summary>
+    private static List<AirTrafficAircraft> Merge(IEnumerable<AirTrafficAircraft> current,
+        IEnumerable<AirTrafficAircraft> fresh, out bool changed)
+    {
+        var merged = current.ToList();
+        var indexOf = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (var index = 0; index < merged.Count; index++) indexOf[merged[index].Hex] = index;
+        changed = false;
+        foreach (var item in fresh)
+        {
+            if (!indexOf.TryGetValue(item.Hex, out var index))
+            {
+                indexOf[item.Hex] = merged.Count;
+                merged.Add(item);
+                changed = true;
+            }
+            else if (item.PositionAt > merged[index].PositionAt)
+            {
+                merged[index] = item;
+                changed = true;
+            }
+        }
+        return merged;
+    }
+
+    private Sighting WithAircraft(Sighting seen, IReadOnlyList<AirTrafficAircraft> aircraft,
+        IReadOnlyDictionary<string, string> foundFlights) => seen with
+    {
+        WithTrails = [.. aircraft.Select(item => new AirPictureAircraft(item, _trails.Short(item.Hex)))],
+        WithoutTrails = [.. aircraft.Select(item => new AirPictureAircraft(item, []))],
+        FoundFlights = foundFlights,
+    };
+
+    /// <summary>
+    /// A request to slow down (429) or a refusal of any read holds every read back until <paramref name="holdUntil"/>:
+    /// the whole circle, the airfield and the lookups. A hold already longer stays. Under the gate.
+    /// </summary>
+    private void HoldEveryRead(DateTimeOffset holdUntil, TimeSpan wait)
+    {
+        var state = _state;
+        if (state.NextReadAt is not { } next || next < holdUntil)
+            Volatile.Write(ref _state, state with { NextReadAt = holdUntil, CurrentWait = wait });
+        if (_nextAirfieldAt is not { } airfield || airfield < holdUntil) _nextAirfieldAt = holdUntil;
+        if (_nextLookupAt is not { } lookup || lookup < holdUntil) _nextLookupAt = holdUntil;
     }
 
     /// <summary>
@@ -358,7 +595,7 @@ public sealed class AirPictureService
     /// a success the next airfield read is due <see cref="AirTrafficSettings.AirfieldInterval"/> after this one went out,
     /// so a slow answer does not stretch the pace. A failure waits as <see cref="AirTrafficBackOff"/> says from the
     /// airfield interval; a request to slow down (429) or a refusal also holds the read of the whole circle back for the
-    /// same wait, so one refusal slows both.
+    /// same wait, so one refusal slows every read (M3: the callsign lookups too).
     /// </summary>
     private void IntegrateAirfield(AirTrafficReadResult result, DateTimeOffset startedAt, DateTimeOffset now)
     {
@@ -370,43 +607,15 @@ public sealed class AirPictureService
             if (state.LastSuccess is not { } seen) return;
             var fresh = Freshest(result.Aircraft);
             _trails.Record(fresh, now);
-            var merged = seen.WithoutTrails.Select(item => item.Aircraft).ToList();
-            var indexOf = new Dictionary<string, int>(StringComparer.Ordinal);
-            for (var index = 0; index < merged.Count; index++) indexOf[merged[index].Hex] = index;
-            var changed = false;
-            foreach (var item in fresh)
-            {
-                if (!indexOf.TryGetValue(item.Hex, out var index))
-                {
-                    indexOf[item.Hex] = merged.Count;
-                    merged.Add(item);
-                    changed = true;
-                }
-                else if (item.PositionAt > merged[index].PositionAt)
-                {
-                    merged[index] = item;
-                    changed = true;
-                }
-            }
+            var merged = Merge(seen.WithoutTrails.Select(item => item.Aircraft), fresh, out var changed);
             if (!changed) return;
-            Volatile.Write(ref _state, state with
-            {
-                LastSuccess = seen with
-                {
-                    WithTrails = [.. merged.Select(item => new AirPictureAircraft(item, _trails.Short(item.Hex)))],
-                    WithoutTrails = [.. merged.Select(item => new AirPictureAircraft(item, []))],
-                },
-            });
+            Volatile.Write(ref _state, state with { LastSuccess = WithAircraft(seen, merged, seen.FoundFlights) });
             return;
         }
         var wait = AirTrafficBackOff.Next(result.Outcome, ++_airfieldFailures, result.RetryAfter, _settings.AirfieldInterval);
         _nextAirfieldAt = now + wait;
         if (result.Outcome is AirTrafficOutcome.RateLimited or AirTrafficOutcome.Unauthorized or AirTrafficOutcome.QuotaExceeded)
-        {
-            var holdUntil = now + wait;
-            if (state.NextReadAt is not { } next || next < holdUntil)
-                Volatile.Write(ref _state, state with { NextReadAt = holdUntil, CurrentWait = wait });
-        }
+            HoldEveryRead(now + wait, wait);
     }
 
     private static TimeSpan Min(TimeSpan left, TimeSpan right) => left < right ? left : right;
@@ -431,13 +640,21 @@ public sealed class AirPictureService
             _trails.Record(aircraft, now);
             _trails.Prune(now);
             wait = AirTrafficBackOff.Next(AirTrafficOutcome.Succeeded, 0, null, _settings.Interval);
+            // M3: an aircraft a lookup found that the whole circle sees now is the circle's; the others stay with their
+            // flight until they are forgotten.
+            _circle = aircraft;
+            foreach (var plane in aircraft) _found.Remove(plane.Hex);
+            ForgetFound(now);
+            AirTrafficAircraft[] everyOne = _found.Count == 0
+                ? aircraft
+                : [.. aircraft, .. _found.Values.Select(item => item.Aircraft)];
             state = state with
             {
                 LastReadFailed = false,
                 LastFailureReason = null,
                 LastSuccess = new Sighting(result.ObservedAt ?? now, result.Source ?? _provider.Attribution,
-                    [.. aircraft.Select(item => new AirPictureAircraft(item, _trails.Short(item.Hex)))],
-                    [.. aircraft.Select(item => new AirPictureAircraft(item, []))]),
+                    [.. everyOne.Select(item => new AirPictureAircraft(item, _trails.Short(item.Hex)))],
+                    [.. everyOne.Select(item => new AirPictureAircraft(item, []))], FoundFlights()),
             };
         }
         else
@@ -491,12 +708,22 @@ public sealed class AirPictureService
 
     private static TaskCompletionSource NewSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    /// <summary>The reads the scheduler sends to the network (M3): the whole circle, and the airfield and approach.</summary>
+    /// <summary>
+    /// The reads the scheduler sends to the network (M3): the whole circle, the airfield and approach, and the lookup of
+    /// one flight by its callsign.
+    /// </summary>
     private enum UpstreamRead
     {
         WholeCircle,
         Airfield,
+        Callsign,
     }
+
+    /// <summary>M3: a flight to look up: its key on the map and the ICAO callsign it is flown with.</summary>
+    private sealed record LookupCandidate(string FlightKey, string Callsign);
+
+    /// <summary>M3: an aircraft a lookup found, the flight it is and when a lookup last saw it.</summary>
+    private sealed record FoundAircraft(AirTrafficAircraft Aircraft, string FlightKey, DateTimeOffset SeenAt);
 
     /// <summary>
     /// What the reads left, swapped whole: when the current watch started, when the last read ended and whether it failed
@@ -505,9 +732,13 @@ public sealed class AirPictureService
     private sealed record PictureState(DateTimeOffset? WatchStartedAt, DateTimeOffset? LastReadAt, bool LastReadFailed,
         string? LastFailureReason, DateTimeOffset? NextReadAt, TimeSpan CurrentWait, Sighting? LastSuccess);
 
-    /// <summary>A good read: the instant the network described, its credit and its aircraft with and without trails.</summary>
+    /// <summary>
+    /// A good read: the instant the network described, its credit, its aircraft with and without trails and (M3) the
+    /// flight of each aircraft a lookup found, by address.
+    /// </summary>
     private sealed record Sighting(DateTimeOffset ObservedAt, AirTrafficAttribution? Source,
-        IReadOnlyList<AirPictureAircraft> WithTrails, IReadOnlyList<AirPictureAircraft> WithoutTrails);
+        IReadOnlyList<AirPictureAircraft> WithTrails, IReadOnlyList<AirPictureAircraft> WithoutTrails,
+        IReadOnlyDictionary<string, string> FoundFlights);
 
     private sealed record MatchKeys(IReadOnlyList<MapFlightMatchKey> Keys, DateTimeOffset LoadedAt);
 
