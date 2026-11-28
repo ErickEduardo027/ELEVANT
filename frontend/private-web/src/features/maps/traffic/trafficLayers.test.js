@@ -1,7 +1,7 @@
 import { Color, createPropertyExpression, featureFilter, latest, validateStyleMin } from '@maplibre/maplibre-gl-style-spec';
 import { describe, expect, it } from 'vitest';
 import { occColor } from '../../occ-ui/occPalette';
-import { ALTITUDE_STOPS_FT, MAP_COLORS, altitudeColourExpression } from '../style/mapColors';
+import { ALTITUDE_STOPS_FT, MAP_COLORS, altitudeColour, altitudeColourExpression } from '../style/mapColors';
 import { MAP_IMAGE_IDS, MAP_IMAGE_SHAPES } from '../style/mapImages';
 import { SLOT_ORDER, buildOccStyle } from '../style/occStyle';
 import { selectionOverlay } from '../style/selectionLayers';
@@ -88,7 +88,9 @@ describe('traffic layers (design E1 and E3)', () => {
       expect(order('occ-trails-live')).toBeLessThan(order('occ-traffic-other-ground'));
       for (const id of ['occ-traffic-other', 'occ-traffic-other-ground']) {
         const { layout } = style.layers.find(layer => layer.id === id);
-        expect(layout, id).toMatchObject({ 'icon-image': ['get', 'icon'], 'icon-allow-overlap': true, 'text-allow-overlap': true });
+        // PR M2: a model or an animated sprite draws the aircraft; its forced tag stays in the symbol.
+        expect(layout, id).toMatchObject({ 'icon-image': ['case', ['==', ['get', 'model3d'], true], '', ['get', 'icon']],
+          'icon-allow-overlap': true, 'text-allow-overlap': true });
         expect(layout['text-field'], id).toBeDefined();
       }
       // The ELEVANT icons alone (MapLibre does not draw icons beside text with images), their tags apart.
@@ -320,6 +322,38 @@ describe('traffic layers (design E1 and E3)', () => {
     }
     // Other traffic never is the stand's.
     expect(accepts(layerOf('occ-traffic-other'), { kind: 'other', ground: false, parkedOnStand: true })).toBe(true);
+  });
+
+  it('PR M2: altitudeColour paints what the altitude expression paints, for the animated silhouettes', () => {
+    for (const theme of ['dark', 'light']) {
+      const layer = { id: 'probe', type: 'symbol', paint: { 'icon-color': altitudeColourExpression(theme) } };
+      for (const properties of [{ ground: true, altFt: 0 }, { altFt: -1 }, { altFt: 0 }, { altFt: 750 }, { altFt: 3_900 },
+        { altFt: 25_000 }, { altFt: 45_000 }]) {
+        // The same colour, give or take the rounding of one channel.
+        const channels = colour => [colour.r, colour.g, colour.b].map(value => value * 255);
+        const ours = channels(Color.parse(altitudeColour(theme, properties)));
+        const theirs = channels(evaluate(layer, 'paint', 'icon-color', properties));
+        ours.forEach((channel, index) => expect(Math.abs(channel - theirs[index]), JSON.stringify(properties))
+          .toBeLessThanOrEqual(1));
+      }
+    }
+  });
+
+  it('PR M2: an aircraft the layer animates leaves it its icon, ring and plate; its tags and the chosen ring stay', () => {
+    const animated = { kind: 'aviam', dir: 'arr', estimated: true, demo: true, selected: true, model3d: true, animated: true };
+    for (const id of ['occ-traffic-aviam', 'occ-traffic-selected', 'occ-traffic-estimated-ring', 'occ-traffic-demo-plate']) {
+      expect(accepts(layerOf(id), animated), id).toBe(false);
+    }
+    for (const id of ['occ-traffic-tags', 'occ-traffic-selected-ring']) expect(accepts(layerOf(id), animated), id).toBe(true);
+    // A model drawn without the animation (PR M7) keeps its ring and plate here.
+    expect(accepts(layerOf('occ-traffic-estimated-ring'), { ...animated, animated: false })).toBe(true);
+    expect(accepts(layerOf('occ-traffic-demo-plate'), { ...animated, animated: false })).toBe(true);
+    // Other traffic keeps its symbol for the tag it shows while chosen or under the pointer, without its icon.
+    const other = { kind: 'other', ground: false, forceTag: true, model3d: true, animated: true, icon: 'ac-narrow-solid' };
+    expect(accepts(layerOf('occ-traffic-other'), other)).toBe(true);
+    const image = properties => evaluate(layerOf('occ-traffic-other'), 'layout', 'icon-image', properties)?.name ?? null;
+    expect(image(other) ?? '').toBe('');
+    expect(image({ ...other, model3d: false })).toBe('ac-narrow-solid');
   });
 
   it('every aircraft is coloured by its altitude: the stops of mapColors, grey on the ground and without altitude', () => {

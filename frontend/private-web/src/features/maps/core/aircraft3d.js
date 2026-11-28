@@ -517,14 +517,14 @@ export function createAircraft3dController({
   }
 
   // One frame of the animated traffic (PR M2): the keyframes at the frame loop's instant, for the aircraft in or around
-  // the area in sight, planned as models (3D) and sprites. A frame where nothing moves, at the same bearing and write,
-  // answers the last one, so the layer copies nothing.
+  // the area in sight, planned as models (3D) and sprites. A frame where nothing moves, after one that already rested
+  // at the same bearing and write, answers that one, so the layer copies nothing.
   function frameAnswer() {
     const t = typeof frameTime === 'function' ? frameTime() : now();
     const bearing = engine?.getCamera?.()?.bearing ?? 0;
     const moving = keyframesMoving(animation.keyframes, t);
-    if (!moving && frameCache !== null && frameCache.animation === animation && frameCache.bearing === bearing
-      && frameCache.detail === current.detail) {
+    if (!moving && frameCache !== null && frameCache.rest && frameCache.animation === animation
+      && frameCache.bearing === bearing && frameCache.detail === current.detail) {
       return frameCache.answer;
     }
     const zone = typeof frameZone === 'function' ? frameZone() : null;
@@ -564,7 +564,7 @@ export function createAircraft3dController({
       modelIds, parkedIds: animation.parkedIds });
     revision += 1;
     const answer = { revision, plan: models, detail, sprites };
-    frameCache = { animation, bearing, detail: current.detail, answer };
+    frameCache = { animation, bearing, detail: current.detail, answer, rest: !moving };
     return answer;
   }
 
