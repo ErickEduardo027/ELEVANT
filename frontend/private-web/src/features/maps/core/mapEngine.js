@@ -103,10 +103,14 @@ const stateKey = (source, id) => `${source}\u0000${typeof id}:${String(id)}`;
  * @param {(gesture: { kind: 'pan'|'zoom'|'rotate'|'pitch' }) => void} [options.onUserGesture] when a person starts to
  *   move the map: a drag or an arrow key pans, the wheel, a pinch or a zoom button zooms, and the map rotates or tilts.
  *   Moves made by code never call it. From then until the move ends `isInteracting()` is true.
+ * @param {(event: { sourceId: string, tile: object|null, error: unknown }) => boolean} [options.onSourceError] when a
+ *   source other than the base map reports an error MapLibre fires (hotfix of 2026-11-28: a frame of the satellite
+ *   loop); `true` means it was handled and is not logged. An error of a raster source given new tiles and not yet
+ *   reloaded belongs to its tiles before and is not reported. MapLibre 6.16 fires none for a 404 tile (failedTiles).
  */
 export function createMapEngine({
   maplibre, host, style, camera, interactive = true, attribution, imageResolver, mapOptions,
-  onStatus, onCamera, onIdle, onRender, onResize, onClick, onDoubleClick, onPointerMove, onUserGesture,
+  onStatus, onCamera, onIdle, onRender, onResize, onClick, onDoubleClick, onPointerMove, onUserGesture, onSourceError,
 } = {}) {
   if (!maplibre) throw new TypeError('createMapEngine needs the maplibre-gl module');
   if (!host?.ownerDocument) throw new TypeError('createMapEngine needs a host element');
@@ -150,6 +154,9 @@ export function createMapEngine({
   const featureStates = new Map();
   // The tiles a raster source was given at run time (PR M8: the satellite images pinned to their time), by source.
   const rasterTiles = new Map();
+  // The raster sources given new tiles that MapLibre has not reloaded yet (hotfix of 2026-11-28): until their next
+  // `content` source data, the tiles MapLibre holds of them, failed or not, are of their tiles before.
+  const reloadingRaster = new Set();
   const idleWaiters = new Set();
 
   // Every status change goes through here, and `unavailable` is terminal: once a map could not start or lost WebGL for
@@ -392,6 +399,7 @@ export function createMapEngine({
     const current = typeof source.serialize === 'function' ? source.serialize()?.tiles : source.tiles;
     if (JSON.stringify(current ?? null) === JSON.stringify(tiles)) return;
     source.setTiles([...tiles]);
+    reloadingRaster.add(sourceId);
   }
 
   // What MapLibre does not keep through a context loss or a worker restart. MapLibre 6.16 rebuilds a raster source with
@@ -590,10 +598,14 @@ export function createMapEngine({
       } else if (isGpuError(maplibre, event?.error)) {
         becomeUnavailable('webgl');
       } else {
+        const sourceId = typeof event?.sourceId === 'string' ? event.sourceId : null;
+        if (sourceId !== null && reloadingRaster.has(sourceId)) return;
+        if (sourceId !== null && onSourceError?.({ sourceId, tile: event.tile ?? null, error: event.error }) === true) return;
         console.error(event?.error ?? event);
       }
     });
     listen('sourcedata', event => {
+      if (event?.sourceDataType === 'content') reloadingRaster.delete(event.sourceId);
       keepAttributionClosed();
       if (event?.sourceId === BASEMAP_SOURCE_ID && event.tile) basemapTile();
     });
@@ -749,6 +761,22 @@ export function createMapEngine({
       const list = Object.freeze([...tiles]);
       rasterTiles.set(sourceId, list);
       whenStyleReady(() => applyRasterTiles(sourceId, list));
+    },
+
+    /**
+     * How many tiles MapLibre holds of the source `sourceId` that failed to load (hotfix of 2026-11-28: a frame of the
+     * satellite loop GIBS answers with 404, which MapLibre 6.16 keeps quiet, tile_manager.ts `_loadTile`), read from its
+     * tile manager; 0 without a map or a style, for a source it does not have, and for a raster source given new tiles
+     * that it has not reloaded yet. It reads what MapLibre holds: no request.
+     */
+    failedTiles(sourceId) {
+      if (!live() || reloadingRaster.has(sourceId)) return 0;
+      const managers = map.style?.tileManagers ?? map.style?.sourceCaches ?? null;
+      const manager = managers?.[sourceId];
+      if (typeof manager?.getIds !== 'function' || typeof manager.getTileByID !== 'function') return 0;
+      let failed = 0;
+      for (const id of manager.getIds()) if (manager.getTileByID(id)?.state === 'errored') failed += 1;
+      return failed;
     },
 
     /** Applies a GeoJSONSourceDiff; the promise settles when MapLibre has taken it (or at once without a map). */

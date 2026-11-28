@@ -994,8 +994,10 @@ function regionalLayerNotes({ layers, view, regional, nowMs, t, language }) {
     }
     if (key === 'loop') {
       const loop = regional?.loop;
-      if (loop?.status === 'ready' && Array.isArray(loop.frames) && loop.frames.length > 0) {
-        notes[group] = loopSpanWords({ from: loop.frames[0].time, time: loop.frames.at(-1).time }, language);
+      // The span of the frames the loop shows: a frame whose tiles failed (hotfix of 2026-11-28) is not shown.
+      const shown = Array.isArray(loop?.frames) ? loop.frames.filter(frame => frame?.missing !== true) : [];
+      if (loop?.status === 'ready' && shown.length > 0) {
+        notes[group] = loopSpanWords({ from: shown[0].time, time: shown.at(-1).time }, language);
       } else notes[group] = t(loop?.status === 'unavailable' ? 'layers.note.noImage' : 'layers.note.loadingImage');
       continue;
     }

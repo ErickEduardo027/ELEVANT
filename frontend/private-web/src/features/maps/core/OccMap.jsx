@@ -76,7 +76,8 @@ import {
 } from './aircraft3d';
 import { buildAttribution, creditsLinkOf } from './attribution';
 import {
-  applyRegionalDrawing, createRegionalApplied, radarCredit, regionalDrawing, startRegionalLoop, withPinnedRegional,
+  applyRegionalDrawing, createRegionalApplied, isLoopFrameSource, markLoopFrameMissing, radarCredit, regionalDrawing,
+  startRegionalLoop, withPinnedRegional,
 } from './regionalWeather';
 import {
   MAP_VIEWS, PUJ_ARP, VIEW_NAMES, WORLD_VIEW, boundsCenter, cameraAngles, fitZooms, isInBounds, isRetired, lngLatOf,
@@ -122,6 +123,7 @@ const EMPTY = Object.freeze([]);
 const NO_FLAGS = Object.freeze({ hover: null, selected: null, related: null, sameAgent: Object.freeze(new Set()) });
 const NO_CODES = Object.freeze(new Set());
 const NO_GROUPS = Object.freeze({});
+const NO_LOOP_MARKS = Object.freeze({});
 const INSET_SIDES = Object.freeze(['top', 'right', 'bottom', 'left']);
 const SELECTABLE_KINDS = new Set(['stand', 'flight', 'aircraft']);
 // What takes the pointer cursor: what can be selected, a terminal chip to open, and a runway, a taxiway or the wind (PR
@@ -814,6 +816,9 @@ const OccMapView = forwardRef(function OccMapView({
   const weatherNow = weather ?? null;
   // The regional weather (lane M7): drawn by a map given it at start, with the weather.
   const [drawsRegional] = useState(() => weather !== undefined && regionWeather !== undefined);
+  // The frames of the satellite loop whose tiles failed at the time they are pinned to (hotfix of 2026-11-28, step 2):
+  // `{ [sourceId]: tileTemplate }`, skipped by the loop until the frame is pinned to a new time.
+  const [loopMissing, setLoopMissing] = useState(NO_LOOP_MARKS);
   const runway = useMemo(() => mapRunwayInUse({ layout, arrivals, weather: weatherNow, nowMs: referenceMinute }),
     [layout, arrivals, weatherNow, referenceMinute]);
   const { arrival: runwayArrival, departure: runwayDeparture, source: runwaySource } = runway;
@@ -877,8 +882,9 @@ const OccMapView = forwardRef(function OccMapView({
   const wantedWide = wantedRegional({ groups: menuGroups, view: layerView, drawsRegional });
   const imagery = useSatelliteImagery({ goes: wanted.goes, imerg: wanted.imerg,
     loop: wantedWide.loop ? loopBandAt(referenceMinute) : null, service: satelliteService });
-  const regional = useMemo(() => (drawsRegional ? regionalDrawing({ regionWeather, loopImages: imagery.loop,
-    nowMs: referenceMinute, language }) : null), [drawsRegional, regionWeather, imagery.loop, referenceMinute, language]);
+  const regional = useMemo(() => (drawsRegional ? regionalDrawing({ regionWeather, loopImages: imagery.loop, loopMissing,
+    nowMs: referenceMinute, language }) : null),
+  [drawsRegional, regionWeather, imagery.loop, loopMissing, referenceMinute, language]);
   const menuGroupsKey = JSON.stringify(withPinnedRegional(withPinnedImagery(menuGroups, imagery), regional));
   const shownGroups = useMemo(() => ({ ...JSON.parse(menuGroupsKey), ...JSON.parse(groupsKey) }),
     [menuGroupsKey, groupsKey]);
@@ -2041,6 +2047,14 @@ const OccMapView = forwardRef(function OccMapView({
     ];
     // The keys of the layers menu this style has layers for (PR M5).
     store.set({ layerKeys: availableLayerKeys({ layers: overlays.flatMap(overlay => overlay.layers ?? []) }) });
+    // A loop frame whose tiles failed (hotfix of 2026-11-28, step 2): marked at the tiles this engine pinned it to, so
+    // the loop skips it; an error of any other source is the engine's to log.
+    const markLoopFrame = sourceId => {
+      const pinned = appliedRef.current.regional?.tiles;
+      if (!isLoopFrameSource(sourceId) || typeof pinned?.[sourceId] !== 'string') return false;
+      setLoopMissing(marks => markLoopFrameMissing(marks, pinned, sourceId));
+      return true;
+    };
     const engine = createMapEngine({
       maplibre,
       host: hostRef.current,
@@ -2068,6 +2082,7 @@ const OccMapView = forwardRef(function OccMapView({
       onDoubleClick: event => handleDoubleClick(with3dHit(event)),
       onPointerMove: event => handlePointer(with3dHit(event)),
       onUserGesture: handleGesture,
+      onSourceError: ({ sourceId }) => markLoopFrame(sourceId),
     });
     engineRef.current = engine;
     // The 3D aircraft of this engine (PR M7): fed by the writes of its traffic on its one frame loop, lit by the sun at
@@ -2108,6 +2123,7 @@ const OccMapView = forwardRef(function OccMapView({
     const regionalLoop = props.drawsRegional ? startRegionalLoop(engine, {
       getDrawing: () => latest.current?.regional ?? null,
       isStill: () => Number.isFinite(latest.current?.regionalFrozenAt) || reducedMotionQuery()?.matches === true,
+      onFrameFailed: markLoopFrame,
     }) : null;
     appliedRef.current.regionalLoop = regionalLoop;
 
