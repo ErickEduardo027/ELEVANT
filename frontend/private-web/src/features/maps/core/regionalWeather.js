@@ -69,6 +69,19 @@ export function markLoopFrameMissing(marks, pinned, sourceId) {
   return Object.freeze(next);
 }
 
+/**
+ * The marks of the loop frames that failed once the frame `sourceId` loads again (HOTFIX-GOES-2: a mark is revocable,
+ * so a short outage does not leave the loop empty until GIBS publishes a new instant): `marks` without that source.
+ * The same `marks` when it was not marked.
+ */
+export function unmarkLoopFrameMissing(marks, sourceId) {
+  const current = marks ?? NO_MARKS;
+  if (typeof sourceId !== 'string' || !Object.hasOwn(current, sourceId)) return current;
+  const next = { ...current };
+  delete next[sourceId];
+  return Object.freeze(next);
+}
+
 /** The radar frames of the regional read (`{ status, data }`), with the provider that serves them. */
 export function regionalRadar(read, demo = false) {
   const frames = radarFrames(read?.data);
@@ -180,18 +193,37 @@ export function regionalOpacities(drawing, elapsedMs, { still = false } = {}) {
 
 /**
  * The share of the tiles a loop frame holds that must have failed for the loop to skip it (hotfix of 2026-11-28,
- * HOTFIX-GOES-2): most of them fail when GIBS has no image at that instant; a tile lost to a flaky network leaves only
- * a gap in that frame.
+ * HOTFIX-GOES-2): more than this share, and at least LOOP_FRAME_MIN_FAILED tiles. They fail when GIBS has no image at
+ * that instant (a 404 also makes MapLibre ask for the parent tiles, which fail too); a tile lost to a flaky network
+ * leaves only a gap in that frame, also when the view holds only one or two tiles of it (Aproximación at maxzoom 6).
  */
 export const LOOP_FRAME_FAILED_SHARE = 0.5;
 
-// Whether the loop frame `sourceId` failed: some of its tiles failed and they are at least LOOP_FRAME_FAILED_SHARE of
-// the tiles it holds. An engine without `heldTiles` keeps the rule of step 2 (any failed tile).
+/** The fewest failed tiles that skip a loop frame (HOTFIX-GOES-2): one lost tile never does. */
+export const LOOP_FRAME_MIN_FAILED = 2;
+
+/**
+ * How long a loop frame stays skipped before the loop asks the engine once again for its failed tiles
+ * (HOTFIX-GOES-2, `engine.reloadFailedTiles`): MapLibre never asks again for an `errored` tile by itself. GIBS tiles,
+ * outside the API budget of CN-19.
+ */
+export const LOOP_FRAME_RETRY_MS = 60_000;
+
+// Whether the loop frame `sourceId` failed: more than LOOP_FRAME_FAILED_SHARE of the tiles it holds failed, and at least
+// LOOP_FRAME_MIN_FAILED of them. An engine without `heldTiles` keeps the rule of step 2 (any failed tile).
 function loopFrameFailed(engine, sourceId) {
   const failed = engine.failedTiles(sourceId);
   if (!(failed > 0)) return false;
   if (typeof engine.heldTiles !== 'function') return true;
-  return failed >= engine.heldTiles(sourceId) * LOOP_FRAME_FAILED_SHARE;
+  return failed >= LOOP_FRAME_MIN_FAILED && failed > engine.heldTiles(sourceId) * LOOP_FRAME_FAILED_SHARE;
+}
+
+// Whether the skipped loop frame `sourceId` loads again: most of the tiles it holds are `loaded` (`engine.loadedTiles`;
+// tiles still loading do not count, so a frame asked for again is not shown blank while it loads).
+function loopFrameRecovered(engine, sourceId) {
+  if (typeof engine.loadedTiles !== 'function' || typeof engine.heldTiles !== 'function') return false;
+  const loaded = engine.loadedTiles(sourceId);
+  return loaded > 0 && loaded > engine.heldTiles(sourceId) * LOOP_FRAME_FAILED_SHARE;
 }
 
 /**
@@ -202,23 +234,41 @@ function loopFrameFailed(engine, sourceId) {
  *
  * Each tick it also asks the engine whether a loop frame not yet `missing` holds tiles that failed
  * (`engine.failedTiles`; MapLibre 6.16 keeps a 404 quiet, without an `error` event, and puts a tile lost to the network
- * in `errored` too) and, when they are at least LOOP_FRAME_FAILED_SHARE of the tiles it holds (`engine.heldTiles`),
- * calls `onFrameFailed(sourceId)` (hotfix of 2026-11-28, step 2 and HOTFIX-GOES-2). It reads what MapLibre already holds: no request, no write.
+ * in `errored` too) and, when they are more than LOOP_FRAME_FAILED_SHARE of the tiles it holds (`engine.heldTiles`) and
+ * at least LOOP_FRAME_MIN_FAILED, calls `onFrameFailed(sourceId)` (hotfix of 2026-11-28, step 2 and HOTFIX-GOES-2).
+ * A frame already `missing` whose tiles are mostly loaded again (a pan, a context restore, a tile asked for again)
+ * calls `onFrameRecovered(sourceId)`; one still failing has its failed tiles asked for once again every
+ * LOOP_FRAME_RETRY_MS (`engine.reloadFailedTiles`). Apart from that retry it reads what MapLibre already holds: no
+ * request, no write.
  */
 export function startRegionalLoop(engine, { getDrawing, isStill = () => false, now = () => Date.now(),
-  onFrameFailed = null, setTimer = (callback, ms) => setInterval(callback, ms),
+  onFrameFailed = null, onFrameRecovered = null, setTimer = (callback, ms) => setInterval(callback, ms),
   clearTimer = timer => clearInterval(timer) } = {}) {
   const started = now();
   let written = {};
+  // When each skipped frame asks again for its failed tiles: { [sourceId]: ms }.
+  const retryAt = new Map();
+  const checkFrames = frames => {
+    for (const frame of frames) {
+      if (frame.missing !== true) {
+        retryAt.delete(frame.source);
+        if (loopFrameFailed(engine, frame.source)) onFrameFailed(frame.source);
+      } else if (typeof onFrameRecovered === 'function' && loopFrameRecovered(engine, frame.source)) {
+        retryAt.delete(frame.source);
+        onFrameRecovered(frame.source);
+      } else if (typeof engine.reloadFailedTiles === 'function') {
+        const at = now();
+        const due = retryAt.get(frame.source);
+        if (due !== undefined && at >= due) engine.reloadFailedTiles(frame.source);
+        if (due === undefined || at >= due) retryAt.set(frame.source, at + LOOP_FRAME_RETRY_MS);
+      }
+    }
+  };
   const tick = () => {
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
     const drawing = getDrawing();
     if (!drawing) return;
-    if (typeof onFrameFailed === 'function' && typeof engine.failedTiles === 'function') {
-      for (const frame of drawing.loop.frames) {
-        if (frame.missing !== true && loopFrameFailed(engine, frame.source)) onFrameFailed(frame.source);
-      }
-    }
+    if (typeof onFrameFailed === 'function' && typeof engine.failedTiles === 'function') checkFrames(drawing.loop.frames);
     const next = regionalOpacities(drawing, now() - started, { still: isStill() });
     for (const [layer, opacity] of Object.entries(next)) {
       if (written[layer] === opacity) continue;

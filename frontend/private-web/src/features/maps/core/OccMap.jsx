@@ -77,7 +77,7 @@ import {
 import { buildAttribution, creditsLinkOf } from './attribution';
 import {
   applyRegionalDrawing, createRegionalApplied, isLoopFrameSource, markLoopFrameMissing, radarCredit, regionalDrawing,
-  startRegionalLoop, withPinnedRegional,
+  startRegionalLoop, unmarkLoopFrameMissing, withPinnedRegional,
 } from './regionalWeather';
 import {
   MAP_VIEWS, PUJ_ARP, VIEW_NAMES, WORLD_VIEW, boundsCenter, cameraAngles, fitZooms, isInBounds, isRetired, lngLatOf,
@@ -2059,6 +2059,9 @@ const OccMapView = forwardRef(function OccMapView({
       setLoopMissing(marks => markLoopFrameMissing(marks, pinned, sourceId));
       return true;
     };
+    // A skipped loop frame whose tiles load again (HOTFIX-GOES-2: a pan, a context restore, the loop's retry) is shown
+    // again, without a new read of GIBS's domain.
+    const unmarkLoopFrame = sourceId => setLoopMissing(marks => unmarkLoopFrameMissing(marks, sourceId));
     // An error event of a loop frame's tile (HOTFIX-GOES-2) is handled, not logged, and marks nothing by itself: MapLibre
     // leaves that tile `errored`, so the loop's tick counts it and skips the frame only when most of its tiles failed.
     const loopFrameError = sourceId => pinnedLoopFrame(sourceId) !== null;
@@ -2131,6 +2134,7 @@ const OccMapView = forwardRef(function OccMapView({
       getDrawing: () => latest.current?.regional ?? null,
       isStill: () => Number.isFinite(latest.current?.regionalFrozenAt) || reducedMotionQuery()?.matches === true,
       onFrameFailed: markLoopFrame,
+      onFrameRecovered: unmarkLoopFrame,
     }) : null;
     appliedRef.current.regionalLoop = regionalLoop;
 

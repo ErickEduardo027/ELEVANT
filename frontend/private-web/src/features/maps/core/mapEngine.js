@@ -392,16 +392,19 @@ export function createMapEngine({
     if (map.getSource(source)) map.setFeatureState({ source, id }, state);
   }
 
-  // The tiles MapLibre holds of a source that `matches` (failedTiles, heldTiles): 0 without a map or a style, for a
-  // source it does not have, and for a raster source given new tiles that it has not reloaded yet. No request.
-  function countTiles(sourceId, matches) {
-    if (!live() || reloadingRaster.has(sourceId)) return 0;
+  // The tiles MapLibre holds of a source (failedTiles, heldTiles, loadedTiles, reloadFailedTiles): none without a map or
+  // a style, for a source it does not have, and for a raster source given new tiles that it has not reloaded yet.
+  // No request.
+  function heldTilesOf(sourceId) {
+    if (!live() || reloadingRaster.has(sourceId)) return [];
     const managers = map.style?.tileManagers ?? map.style?.sourceCaches ?? null;
     const manager = managers?.[sourceId];
-    if (typeof manager?.getIds !== 'function' || typeof manager.getTileByID !== 'function') return 0;
-    let count = 0;
-    for (const id of manager.getIds()) if (matches(manager.getTileByID(id))) count += 1;
-    return count;
+    if (typeof manager?.getIds !== 'function' || typeof manager.getTileByID !== 'function') return [];
+    return manager.getIds().map(id => manager.getTileByID(id));
+  }
+
+  function countTiles(sourceId, matches) {
+    return heldTilesOf(sourceId).filter(matches).length;
   }
 
   // A raster source takes `tiles` only when it does not have them already: MapLibre reloads a source on every setTiles.
@@ -791,6 +794,38 @@ export function createMapEngine({
      */
     heldTiles(sourceId) {
       return countTiles(sourceId, () => true);
+    },
+
+    /**
+     * How many tiles MapLibre holds of the source `sourceId` that loaded (HOTFIX-GOES-2: a skipped satellite frame
+     * shows again once most of its tiles load), read the same guarded way as `failedTiles`.
+     */
+    loadedTiles(sourceId) {
+      return countTiles(sourceId, tile => tile?.state === 'loaded');
+    },
+
+    /**
+     * Asks MapLibre once again for the tiles of the source `sourceId` that failed, and only those (HOTFIX-GOES-2:
+     * MapLibre never asks again for an `errored` tile until the source reloads; map.refreshTiles, as the base map does).
+     * Returns how many it asked for: 0 without a map or a style, while a raster source given new tiles reloads, or with
+     * no failed tile.
+     */
+    reloadFailedTiles(sourceId) {
+      if (!styleReady) return 0;
+      const ids = [];
+      for (const tile of heldTilesOf(sourceId)) {
+        const canonical = tile?.tileID?.canonical;
+        if (tile?.state !== 'errored' || !['x', 'y', 'z'].every(key => Number.isInteger(canonical?.[key]))) continue;
+        ids.push({ x: canonical.x, y: canonical.y, z: canonical.z });
+      }
+      if (ids.length === 0) return 0;
+      try {
+        map.refreshTiles(sourceId, ids);
+      } catch (error) {
+        console.error(`The OCC map could not ask again for the tiles of ${sourceId}.`, error);
+        return 0;
+      }
+      return ids.length;
     },
 
     /** Applies a GeoJSONSourceDiff; the promise settles when MapLibre has taken it (or at once without a map). */

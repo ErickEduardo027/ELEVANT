@@ -697,7 +697,18 @@ describe('map engine', () => {
     // HOTFIX-GOES-2: heldTiles counts every tile it holds, whatever its state, the same guarded way.
     expect(engine.heldTiles('occ-weather-loop-0')).toBe(4);
     expect(engine.heldTiles('nowhere')).toBe(0);
+    expect(engine.loadedTiles('occ-weather-loop-0')).toBe(1);
+    expect(engine.loadedTiles('nowhere')).toBe(0);
     expect(map.calls).toHaveLength(calls);
+    // HOTFIX-GOES-2 review: MapLibre never asks again for an errored tile; reloadFailedTiles asks for those only.
+    expect(engine.reloadFailedTiles('occ-weather-loop-0')).toBe(2);
+    expect(map.calls.slice(calls)).toEqual([{ method: 'refreshTiles',
+      args: ['occ-weather-loop-0', [{ x: 1, y: 0, z: 6 }, { x: 2, y: 0, z: 6 }]] }]);
+    expect(engine.reloadFailedTiles('nowhere')).toBe(0);
+    state.setTileStates(map, 'occ-weather-loop-0', ['loaded', 'loading']);
+    expect(engine.reloadFailedTiles('occ-weather-loop-0')).toBe(0);
+    expect(map.calls).toHaveLength(calls + 1);
+    state.setTileStates(map, 'occ-weather-loop-0', ['loaded', 'errored', 'errored', 'loading']);
 
     // Another failure fires `error` with the source: handled, it is not logged; a source nobody handles is.
     const tile = { tileID: { canonical: { x: 1, y: 2, z: 5 } } };
@@ -715,6 +726,7 @@ describe('map engine', () => {
     state.setTileStates(map, 'occ-weather-loop-0', ['errored', 'loaded']);
     expect(engine.failedTiles('occ-weather-loop-0')).toBe(0);
     expect(engine.heldTiles('occ-weather-loop-0')).toBe(0);
+    expect(engine.reloadFailedTiles('occ-weather-loop-0')).toBe(0);
     state.emit(map, 'error', { sourceId: 'occ-weather-loop-0', tile, error: failure });
     expect(onSourceError).toHaveBeenCalledTimes(2);
     expect(error).toHaveBeenCalledTimes(1);
@@ -728,9 +740,12 @@ describe('map engine', () => {
     state.loseContext(map);
     expect(engine.failedTiles('occ-weather-loop-0')).toBe(0);
     expect(engine.heldTiles('occ-weather-loop-0')).toBe(0);
+    expect(engine.reloadFailedTiles('occ-weather-loop-0')).toBe(0);
     engine.destroy();
     expect(engine.failedTiles('occ-weather-loop-0')).toBe(0);
     expect(engine.heldTiles('occ-weather-loop-0')).toBe(0);
+    expect(engine.loadedTiles('occ-weather-loop-0')).toBe(0);
+    expect(engine.reloadFailedTiles('occ-weather-loop-0')).toBe(0);
   });
 
   it('setPaint sets a paint property of a layer once the style has loaded, and leaves a missing layer alone', () => {

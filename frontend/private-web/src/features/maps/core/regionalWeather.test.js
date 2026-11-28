@@ -7,8 +7,9 @@ import {
   WEATHER_GROUPS, loopLayerId, loopSourceId, radarLayerId, radarSourceId, weatherLayerNotes,
 } from '../traffic/weatherLayers';
 import {
-  LOOP_FRAME_FAILED_SHARE, applyRegionalDrawing, createRegionalApplied, isLoopFrameSource, markLoopFrameMissing,
-  radarCredit, regionalDrawing, regionalLoop, regionalOpacities, startRegionalLoop, withPinnedRegional,
+  LOOP_FRAME_FAILED_SHARE, LOOP_FRAME_MIN_FAILED, LOOP_FRAME_RETRY_MS, applyRegionalDrawing, createRegionalApplied,
+  isLoopFrameSource, markLoopFrameMissing, radarCredit, regionalDrawing, regionalLoop, regionalOpacities,
+  startRegionalLoop, unmarkLoopFrameMissing, withPinnedRegional,
 } from './regionalWeather';
 
 const NOON = Date.parse(WEATHER_NOON);
@@ -253,16 +254,19 @@ describe('the regional weather of an OCC map (lane M7)', () => {
     // HOTFIX-GOES-2: a flaky network loses a tile here and there; only most of a frame's tiles failing skips it.
     it('skips a frame only when most of the tiles it holds failed; an engine without heldTiles keeps any failure', () => {
       expect(LOOP_FRAME_FAILED_SHARE).toBe(0.5);
+      expect(LOOP_FRAME_MIN_FAILED).toBe(2);
       const { drawing } = pinnedDrawing();
-      const failedOf = { [loopSourceId(1)]: 1, [loopSourceId(2)]: 6, [loopSourceId(3)]: 12, [loopSourceId(4)]: 5 };
+      const failedOf = { [loopSourceId(1)]: 1, [loopSourceId(2)]: 7, [loopSourceId(3)]: 12, [loopSourceId(4)]: 6 };
       const engine = { ...fakeEngine(), failedTiles: vi.fn(source => failedOf[source] ?? 0),
         heldTiles: vi.fn(source => (source in failedOf ? 12 : 0)) };
       const onFrameFailed = vi.fn();
       const loop = startRegionalLoop(engine, { getDrawing: () => drawing, onFrameFailed,
         setTimer: () => 1, clearTimer: vi.fn() });
-      // 1 of 12 and 5 of 12 leave a gap only; 6 of 12 and all 12 skip the frame. A frame with no failure is not counted.
+      // 1 of 12 and 6 of 12 (half, not most) leave a gap only; 7 of 12 and all 12 skip the frame. A frame with no
+      // failure is not counted.
       expect(onFrameFailed.mock.calls.map(([source]) => source)).toEqual([loopSourceId(2), loopSourceId(3)]);
-      expect(engine.heldTiles).toHaveBeenCalledTimes(4);
+      // A single failed tile never skips a frame, so its held tiles are not counted.
+      expect(engine.heldTiles).toHaveBeenCalledTimes(3);
       expect(engine.setRasterTiles).not.toHaveBeenCalled();
       expect(engine.setData).not.toHaveBeenCalled();
       loop.stop();
@@ -272,6 +276,70 @@ describe('the regional weather of an OCC map (lane M7)', () => {
       startRegionalLoop(older, { getDrawing: () => drawing, onFrameFailed, setTimer: () => 1, clearTimer: vi.fn() });
       expect(onFrameFailed.mock.calls.map(([source]) => source))
         .toEqual([loopSourceId(1), loopSourceId(2), loopSourceId(3), loopSourceId(4)]);
+    });
+    // HOTFIX-GOES-2 review: at Aproximación the view holds only one or two z6 tiles of each frame; one lost tile there
+    // is a gap, never a skipped frame.
+    it('keeps a frame that holds one or two tiles when one of them fails, and skips it when both fail', () => {
+      const { drawing } = pinnedDrawing();
+      const counts = { [loopSourceId(0)]: [1, 1], [loopSourceId(1)]: [1, 2], [loopSourceId(2)]: [2, 2] };
+      const engine = { ...fakeEngine(), failedTiles: vi.fn(source => counts[source]?.[0] ?? 0),
+        heldTiles: vi.fn(source => counts[source]?.[1] ?? 0) };
+      const onFrameFailed = vi.fn();
+      startRegionalLoop(engine, { getDrawing: () => drawing, onFrameFailed, setTimer: () => 1, clearTimer: vi.fn() });
+      expect(onFrameFailed.mock.calls.map(([source]) => source)).toEqual([loopSourceId(2)]);
+    });
+
+    it('is revocable: unmarking a frame keeps the other marks, and the same marks when it was not marked', () => {
+      const { applied } = pinnedDrawing();
+      const marks = markLoopFrameMissing(markLoopFrameMissing({}, applied.tiles, loopSourceId(1)), applied.tiles,
+        loopSourceId(2));
+      const next = unmarkLoopFrameMissing(marks, loopSourceId(1));
+      expect(next).toEqual({ [loopSourceId(2)]: applied.tiles[loopSourceId(2)] });
+      expect(Object.isFrozen(next)).toBe(true);
+      expect(unmarkLoopFrameMissing(next, loopSourceId(1))).toBe(next);
+      expect(unmarkLoopFrameMissing(next, undefined)).toBe(next);
+    });
+
+    // HOTFIX-GOES-2 review: a short outage errors every tile; MapLibre never asks for an errored tile again, so the
+    // loop shows a frame again when its tiles load and asks for its failed tiles once a minute meanwhile.
+    it('shows a skipped frame again once most of its tiles load, and asks again for its failed tiles once a minute', () => {
+      const { applied } = pinnedDrawing();
+      const source = loopSourceId(3);
+      const marked = regionalDrawing({ regionWeather: weather(), loopImages: LOOP, nowMs: NOON,
+        loopMissing: markLoopFrameMissing({}, applied.tiles, source) });
+      const states = { failed: 4, loaded: 0, held: 4 };
+      const engine = { ...fakeEngine(), failedTiles: vi.fn(id => (id === source ? states.failed : 0)),
+        heldTiles: vi.fn(id => (id === source ? states.held : 0)),
+        loadedTiles: vi.fn(id => (id === source ? states.loaded : 0)), reloadFailedTiles: vi.fn(() => 4) };
+      let clock = 0;
+      let tick = () => {};
+      const onFrameFailed = vi.fn();
+      const onFrameRecovered = vi.fn();
+      startRegionalLoop(engine, { getDrawing: () => marked, onFrameFailed, onFrameRecovered, now: () => clock,
+        setTimer: callback => { tick = callback; return 1; }, clearTimer: vi.fn() });
+      // Still failing: nothing is asked for until a minute has gone by, then once, and again a minute later.
+      clock = LOOP_FRAME_RETRY_MS - 1;
+      tick();
+      expect(engine.reloadFailedTiles).not.toHaveBeenCalled();
+      clock = LOOP_FRAME_RETRY_MS;
+      tick();
+      tick();
+      expect(engine.reloadFailedTiles).toHaveBeenCalledExactlyOnceWith(source);
+      clock = 2 * LOOP_FRAME_RETRY_MS;
+      tick();
+      expect(engine.reloadFailedTiles).toHaveBeenCalledTimes(2);
+      // Asked for again, the tiles load: half of them is not enough (still loading tiles never show a blank frame),
+      // most of them shows the frame again. No write and no domain read.
+      Object.assign(states, { failed: 0, loaded: 2 });
+      tick();
+      expect(onFrameRecovered).not.toHaveBeenCalled();
+      states.loaded = 3;
+      tick();
+      expect(onFrameRecovered).toHaveBeenCalledExactlyOnceWith(source);
+      expect(onFrameFailed).not.toHaveBeenCalled();
+      expect(engine.reloadFailedTiles).toHaveBeenCalledTimes(2);
+      expect(engine.setRasterTiles).not.toHaveBeenCalled();
+      expect(engine.setData).not.toHaveBeenCalled();
     });
   });
 

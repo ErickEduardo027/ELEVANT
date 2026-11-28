@@ -615,7 +615,10 @@ function createModule(state) {
           getIds: () => tiles.map((_, index) => `tile-${index}`),
           getTileByID: key => {
             const index = Number(String(key).replace('tile-', ''));
-            return Number.isInteger(index) && index < tiles.length ? { state: tiles[index] } : undefined;
+            // Each tile at its own canonical ID, z6 x = its index (map.refreshTiles takes those).
+            return Number.isInteger(index) && index < tiles.length
+              ? { state: tiles[index], tileID: { canonical: { x: index, y: 0, z: 6 } } }
+              : undefined;
           },
         };
       }

@@ -3213,8 +3213,8 @@ describe('OccMap weather (PR M8)', () => {
   });
 
   // Hotfix of 2026-11-28, step 2: an instant GIBS lists whose tiles still fail (a 404 seen that day) is skipped, so the
-  // loop never shows a blank frame; with every frame failing it holds nothing.
-  it('skips a frame of the satellite loop whose tiles fail, and holds nothing when every frame fails', async () => {
+  // loop never shows a blank frame; with every frame failing it holds nothing, until the tiles load again.
+  it('skips a frame of the satellite loop whose tiles fail, holds nothing when every frame fails, and shows them again', async () => {
     const afternoon = Date.parse('2026-11-28T17:20:00Z');
     const geocolor = ['2026-11-28T15:10:00Z', '2026-11-28T15:20:00Z', '2026-11-28T15:30:00Z', '2026-11-28T15:40:00Z',
       '2026-11-28T15:50:00Z', '2026-11-28T16:10:00Z', '2026-11-28T16:20:00Z'];
@@ -3268,8 +3268,14 @@ describe('OccMap weather (PR M8)', () => {
     expect(opacities().filter(value => value > 0)).toHaveLength(1);
     expect(legendLoop()).toMatchObject({ from: '2026-11-28T15:20:00Z', time: '2026-11-28T16:10:00Z' });
 
-    // Every frame failing: the loop holds nothing.
-    for (const index of [0, 1, 2, 3, 4]) fake.state.setTileStates(map, `occ-weather-loop-${index}`, ['errored']);
+    // A frame of two tiles that loses one keeps showing with a gap (Aproximación holds one or two z6 tiles of a frame).
+    fake.state.setTileStates(map, 'occ-weather-loop-4', tiles(1, 2));
+    await act(() => new Promise(resolve => { setTimeout(resolve, 350); }));
+    await settle();
+    expect(shown()).toBe(4);
+
+    // Every frame failing (a short outage while the loop loads): the loop holds nothing.
+    for (const index of [0, 1, 2, 3, 4]) fake.state.setTileStates(map, `occ-weather-loop-${index}`, tiles(2, 2));
     await act(() => new Promise(resolve => { setTimeout(resolve, 350); }));
     await settle();
     expect(opacities()).toEqual([0, 0, 0, 0, 0, 0]);
@@ -3281,6 +3287,19 @@ describe('OccMap weather (PR M8)', () => {
     expect(map.calls.filter(call => call.method === 'setTiles')).toHaveLength(tilesCalls);
     expect(service.calls).toHaveLength(reads);
     expect(map.styleCalls).toEqual([]);
+
+    // The network comes back and the tiles load (a pan, the loop asking again for them): the marks are revoked and the
+    // loop shows its frames again, without a new read of GIBS's domain or new tiles (HOTFIX-GOES-2 review).
+    for (let index = 0; index < 6; index += 1) fake.state.setTileStates(map, `occ-weather-loop-${index}`, tiles(0, 2));
+    await act(() => new Promise(resolve => { setTimeout(resolve, 350); }));
+    await settle();
+    expect(shown()).toBe(5);
+    expect(opacities().filter(value => value > 0)).toHaveLength(1);
+    expect(layerNotesProbe()?.['weather.loop']).not.toBe('No hay imagen en este momento.');
+    expect(legendLoop()).toMatchObject({ from: '2026-11-28T15:20:00Z', time: '2026-11-28T16:20:00Z' });
+    expect(map.calls.filter(call => call.method === 'setTiles')).toHaveLength(tilesCalls);
+    expect(service.calls).toHaveLength(reads);
+    expect(error).not.toHaveBeenCalled();
   });
 
   it('credits NOAA while the wind is on screen', () => {
