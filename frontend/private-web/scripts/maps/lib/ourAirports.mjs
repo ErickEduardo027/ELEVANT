@@ -136,3 +136,64 @@ export function selectMdpcRows({ airports = [], runways = [], frequencies = [], 
 
   return { airport, runways: mdpcRunways, frequencies: mdpcFrequencies, navaids: mdpcNavaids, regionalAirports };
 }
+
+// --- The world's airports (M8) ---------------------------------------------------------------------------------------
+// The large airports of the world, for the globe of Monitoreo: their dots and codes from the Mundo and Región views and
+// the position of a flight's counterpart when the API row has none. Kept small: the large airports with scheduled
+// service and an IATA code, plus every Dominican airport (the emphasis of Monitoreo on the Dominican Republic): the large
+// and medium ones and the small ones with an IATA code. Each row is a tuple, WORLD_AIRPORT_FIELDS, with the position in
+// 4 decimals (about 11 m), sorted by ICAO.
+
+/** The country whose airports Monitoreo emphasises. */
+export const EMPHASIS_COUNTRY = 'DO';
+/** The fields of a row of world.airports.json, in order. */
+export const WORLD_AIRPORT_FIELDS = Object.freeze(['icao', 'iata', 'name', 'lon', 'lat', 'country']);
+const WORLD_DECIMALS = 4;
+const ICAO_CODE = /^[A-Z0-9]{4}$/;
+const round = (value, decimals) => Math.round(value * 10 ** decimals) / 10 ** decimals;
+
+function worldCandidate(row) {
+  if (row.iso_country === EMPHASIS_COUNTRY) {
+    return row.type === 'large_airport' || row.type === 'medium_airport'
+      || (row.type === 'small_airport' && text(row.iata_code) !== null);
+  }
+  return row.type === 'large_airport' && row.scheduled_service === 'yes' && text(row.iata_code) !== null;
+}
+
+/**
+ * The rows of world.airports.json from the parsed OurAirports airports table: tuples `[icao, iata, name, lon, lat,
+ * country]` (WORLD_AIRPORT_FIELDS; `iata` null when it has none), sorted by ICAO, one per ICAO code. A row without a
+ * four-character code (ICAO, GPS or ident) or without a position is left out.
+ */
+export function selectWorldAirports(airports = []) {
+  const byIcao = new Map();
+  for (const row of airports) {
+    if (!worldCandidate(row)) continue;
+    const icao = [row.icao_code, row.gps_code, row.ident].map(text).find(code => code !== null && ICAO_CODE.test(code));
+    const lat = number(row.latitude_deg);
+    const lon = number(row.longitude_deg);
+    if (!icao || lat === null || lon === null || byIcao.has(icao)) continue;
+    byIcao.set(icao, [icao, text(row.iata_code), String(row.name ?? '').trim(), round(lon, WORLD_DECIMALS),
+      round(lat, WORLD_DECIMALS), text(row.iso_country)]);
+  }
+  return [...byIcao.values()].sort((a, b) => a[0].localeCompare(b[0]));
+}
+
+/**
+ * The text of world.airports.json (schema 1) for `rows` (selectWorldAirports) and `meta` (`{ url, fetchedAt }`): two
+ * spaces of indent, one airport a line, LF and a final newline, so a new extract diffs by airport.
+ */
+export function worldAirportsJson(rows, { url = null, fetchedAt = null } = {}) {
+  const meta = {
+    source: 'OurAirports',
+    url,
+    license: 'public domain',
+    fetchedAt,
+    selection: 'large airports with scheduled service and an IATA code; every Dominican airport that is large, medium, '
+      + 'or small with an IATA code',
+    fields: WORLD_AIRPORT_FIELDS,
+  };
+  const metaLines = JSON.stringify(meta, null, 2).split('\n').map(line => `  ${line}`).join('\n').trimStart();
+  const lines = rows.map(row => `    ${JSON.stringify(row)}`);
+  return `{\n  "schema": 1,\n  "meta": ${metaLines},\n  "airports": [\n${lines.join(',\n')}\n  ]\n}\n`;
+}
