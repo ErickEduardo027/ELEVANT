@@ -2535,6 +2535,47 @@ actualización del 24 de noviembre de 2026 «CN-29 a CN-31» de
   la torre es aproximada. Nada de esto acredita un despliegue ni una medición
   en el VPS.
 
+## «Seguir en 3D» ultra cerca (M4, 27 de noviembre de 2026)
+
+Posterior al commit verificado de esta nota: esta sección describe el carril
+M4 del plan de mapas del 27 de noviembre de 2026, en revisión y sin desplegar.
+Las decisiones están en la actualización del 27 de noviembre de 2026 «M4» de
+[ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md).
+
+- **Doble clic.** Un doble clic sobre un avión (su símbolo 2D, su modelo 3D o
+  la posición donde está estacionado) entra en «Seguir en 3D» en la vista
+  «Muy cerca», sin que el mapa se acerque por el doble clic
+  ([`OccMap.jsx`](../../frontend/private-web/src/features/maps/core/OccMap.jsx),
+  [`mapEngine.js`](../../frontend/private-web/src/features/maps/core/mapEngine.js)).
+  Sobre el mapa vacío acerca como siempre. No hay tecla nueva.
+- **Botón en las tres pantallas.** «Seguir en 3D» está en la columna del mapa,
+  debajo de «Seguir», en Panorama, Monitoreo y Mapa de posiciones (no en
+  Planificación)
+  ([`MapFollow3dButton.jsx`](../../frontend/private-web/src/features/maps/ui/MapFollow3dButton.jsx)).
+  El inspector de Panorama ofrece «Seguir» y «Seguir en 3D» en el bloque del
+  vuelo, y «Seguir en 3D» en una posición con su avión estacionado.
+- **Ultra zoom y «Muy cerca».** Siguiendo en 3D el zoom llega a 22 (19,5 fuera
+  de la órbita), sin que la cámara entre en el modelo. La vista «Muy cerca»
+  pone la cámara de 25 a 40 m detrás de la cola, según el tipo.
+- **Etiquetas de cerca.** Pasado el zoom 19,5 se ocultan los rótulos del otro
+  tráfico, los designadores de las posiciones y las referencias; queda solo el
+  rótulo del avión seguido. Las señales de las posiciones siguen a la vista.
+  Vuelven al alejar o con Esc.
+- **Cielo, sol y sombra.** En 3D y siguiendo en 3D el mapa tiene cielo con los
+  colores OCC de cada tema
+  ([`mapSky.js`](../../frontend/private-web/src/features/maps/core/mapSky.js)).
+  La luz de los modelos sigue el sol de Punta Cana (día, crepúsculo y noche).
+  Cada avión 3D lleva una sombra de contacto en el suelo que se desvanece con
+  la altura
+  ([`contactShadow.js`](../../frontend/private-web/src/features/maps/aircraft/contactShadow.js));
+  el interruptor de sombras del regulador la oculta.
+- **Pruebas.** Pruebas unitarias del motor, la órbita, el mapa y las tres
+  pantallas, y la suite visual
+  [`map-lab.follow3d.spec.mjs`](../../frontend/private-web/tests/visual/lab/map-lab.follow3d.spec.mjs)
+  (doble clic y «Muy cerca» en la aproximación, el rodaje y la posición, en
+  Chrome con WebGL por software y datos inventados). No se probó con una GPU
+  real ni en el VPS; nada de esto acredita un despliegue.
+
 ## AeroDataBox en la consola, Contratos y Superadministración (15 de noviembre de 2026)
 
 *Posterior al commit verificado.* Los datos llegan siempre por la API (`occ/aviation/*` y

@@ -175,6 +175,7 @@ Las leyendas leen las palabras y los dibujos de `statusVocabulary.js`: un estado
   - No hace nada con un diálogo modal abierto (`[role=dialog][aria-modal=true]`), ni cuando `isBlocked()` avisa de un cajón abierto.
   - Va en el `keydown` del contenedor del mapa, en fase de burbuja, nunca en `document`.
   - `Esc` cierra primero el cajón o el diálogo abierto, que llama a `preventDefault()`, y solo después limpia la selección.
+  - Ratón (27 de noviembre de 2026, M4): un doble clic sobre un avión (2D, 3D o estacionado en su posición) entra en «Seguir en 3D» en la vista «Muy cerca» y no acerca el mapa; sobre el mapa vacío acerca como siempre. No es una tecla: la tabla sigue con ocho, y el doble clic lo dice el título del botón «Seguir en 3D».
   - Nada más: la leyenda y la pausa son botones. Pasar de posición en posición, las teclas por panel, `Ctrl K`, las secuencias `g` y el diálogo de atajos quedan aplazados. En U1 ninguna pantalla escucha todavía estas teclas: las conectarán el mapa y la consola.
 - `occPalette.js`: ver la sección 3.
 
