@@ -400,7 +400,8 @@ describe('poseMatrix and attitudes (CN-30)', () => {
     const parked = { id: 's:B2', lon: ARP[0] + 0.003, lat: ARP[1], headingDeg: 45, typeIcao: 'A320', kind: 'aviam' };
     const low = aircraft('f:low', { bearing: 90, metres: 900, onGround: false, altM: FIELD_M + 10, trackDeg: 90 });
     const high = aircraft('f:high', { bearing: 270, metres: 900, onGround: false, altM: FIELD_M + 400, trackDeg: 270 });
-    const plan = planInstances([aircraft('f:ground', { bearing: 180, metres: 500 }), low, high], [parked], OPTIONS);
+    const plan = planInstances([aircraft('f:ground', { bearing: 180, metres: 500 }), low, high], [parked],
+      { ...OPTIONS, fieldElevationM: FIELD_M });
     const entry = plan.get('A320');
     expect(entry.ids.slice(0, entry.aircraftCount)).toEqual(['f:ground', 'f:high', 'f:low', 's:B2']);
     expect(entry.contacts).toHaveLength(16 * entry.aircraftCount);
