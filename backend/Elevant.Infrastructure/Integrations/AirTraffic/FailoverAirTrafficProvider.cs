@@ -63,6 +63,15 @@ public sealed class FailoverAirTrafficProvider : IAirTrafficProvider, IDisposabl
         }
     }
 
+    /// <summary>M3: whether the active network may be asked for the aircraft of one callsign (adsb.fi).</summary>
+    public bool SupportsCallsignLookups
+    {
+        get
+        {
+            lock (_gate) return _chain[_active].SupportsCallsignLookups;
+        }
+    }
+
     /// <summary>The networks in the order they are tried.</summary>
     internal IReadOnlyList<IAirTrafficProvider> Chain => _chain;
 
@@ -121,6 +130,23 @@ public sealed class FailoverAirTrafficProvider : IAirTrafficProvider, IDisposabl
                 }
             }
         }
+        return result;
+    }
+
+    /// <summary>
+    /// M3: the callsign lookup goes to the active network only, when it answers them; otherwise Failed without a call. Its
+    /// outcome never counts toward the three failures of a hand-over, nor does it retry the first network: those follow
+    /// the reads of an area only. A 429 is remembered as any 429 is, so no hand-over asks that network before it ends.
+    /// </summary>
+    public async Task<AirTrafficReadResult> ReadCallsignAsync(string callsign, CancellationToken cancellationToken = default)
+    {
+        int active;
+        lock (_gate) active = _active;
+        var network = _chain[active];
+        if (!network.SupportsCallsignLookups)
+            return AirTrafficReadResult.Failure(AirTrafficOutcome.Failed, network.Attribution);
+        var result = await network.ReadCallsignAsync(callsign, cancellationToken);
+        lock (_gate) NoteRateLimit(active, result);
         return result;
     }
 

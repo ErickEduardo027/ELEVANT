@@ -266,6 +266,7 @@ public static class DependencyInjection
             AirfieldReadsEnabled = options.AirfieldReadsEnabled,
             AirfieldRadiusNm = options.AirfieldRadiusNm,
             AirfieldInterval = TimeSpan.FromSeconds(options.AirfieldIntervalSeconds),
+            CallsignLookupsEnabled = options.CallsignLookupsEnabled,
         };
     }
 

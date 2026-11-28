@@ -35,6 +35,14 @@ async function guarded(request) {
 }
 
 /**
+ * The window of the map flights (hours before and after now; the contract allows 0 to 24 and 1 to 36). M3
+ * (27-11-2026): 6 hours back instead of the server's 2, so a long-haul departure estimated on to its destination
+ * (kinematics/legPlans.js: climbLegs) stays on the map for its first six hours; 12 ahead, the server's own. The board
+ * of the console keeps the server's 2 hours back (dashboard/noc/boardModel.js: boardFlightsOf).
+ */
+export const MAP_FLIGHTS_WINDOW = Object.freeze({ hoursBack: 6, hoursAhead: 12 });
+
+/**
  * The map reads over the API. Each read takes the instants it was sent and answered and feeds `clock` with the
  * answer's `serverTime`; `ping` only answers, and syncServerClock feeds the clock with it. The answer's instant is the
  * one its response arrived at (CN-18), before its body is read and validated, so a busy main thread does not lengthen
@@ -62,9 +70,9 @@ export function createRemoteOccMapAdapter({ client = defaultClient, clock = serv
     /** The air picture of the station, with up to eight trail points per aircraft (`short`) or none (`none`). */
     getAirPicture: ({ stationId, trails = 'short', signal } = {}) =>
       timed((api, options) => api.getOccAirPicture({ stationId, trails }, options), signal),
-    /** The map flights of the station in the server's default window (2 hours back, 12 ahead). */
+    /** The map flights of the station in MAP_FLIGHTS_WINDOW (M3: 6 hours back, 12 ahead, for the long-haul legs). */
     getMapFlights: ({ stationId, signal } = {}) =>
-      timed((api, options) => api.getOccMapFlights({ stationId }, options), signal),
+      timed((api, options) => api.getOccMapFlights({ stationId, ...MAP_FLIGHTS_WINDOW }, options), signal),
     /** One aircraft's trail from the server's memory (its last segment, at most 600 points). */
     getAircraftTrack: ({ stationId, hex, signal } = {}) =>
       timed((api, options) => api.getOccAircraftTrack({ stationId, hex }, options), signal),

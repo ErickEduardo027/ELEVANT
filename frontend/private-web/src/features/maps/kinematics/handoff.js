@@ -10,7 +10,9 @@ import { normalizeDeg } from './units.js';
 // - LIVE, a fix up to 15 s old: dead reckoning from the fix (its speed along its track, its height at its vertical
 //   rate);
 // - CN-31: on the ground a fix is carried on 3 s at most and then held: a real aircraft is never moved along an
-//   estimated taxi route; once its fix ages it stays where it was reported (dimmed by its age) until it is dropped;
+//   estimated taxi route; once its fix ages it stays where it was reported (dimmed by its age) until it is dropped.
+//   M3 (27-11-2026): those 3 s are the least; a fix is carried on 1.5 × the spacing of that aircraft's last two fixes,
+//   6 s at most (3 s in a turn), so a taxiing aircraft read every few seconds rolls on without a stop until its next fix;
 // - COAST, up to 60 s in the air: an ELEVANT flight advances along its planned path,
 //   re-anchored where the fix projects on it, at the fix's speed; other traffic goes straight («Sin señal desde hace
 //   N s»);
@@ -31,6 +33,8 @@ import { normalizeDeg } from './units.js';
  * The age limits (s), the blends, the snap distances (m) and the fade after a snap (s) of the hand-off. CN-31: a new fix
  * blends in over `fixBlendS` (the mode changes and the plans keep `blendS`), and on the ground a fix is carried on at
  * most `groundReckonMaxS`: a real aircraft is drawn where it was reported, never along an estimated taxi route.
+ * M3 (27-11-2026): `groundReckonMaxS` is the least; a ground fix is carried on `groundReckonFactor` × the spacing of
+ * that aircraft's last two fixes, `groundReckonCapS` at most (groundReckonOf).
  */
 export const TRACK_CONFIG = Object.freeze({
   liveMaxAgeS: 15,
@@ -39,6 +43,8 @@ export const TRACK_CONFIG = Object.freeze({
   blendS: 6,
   fixBlendS: 1.5,
   groundReckonMaxS: 3,
+  groundReckonFactor: 1.5,
+  groundReckonCapS: 6,
   snapAirM: 3704,
   snapGroundM: 150,
   dropOtherAfterS: 120,
@@ -51,6 +57,9 @@ export const TRACK_CONFIG = Object.freeze({
  * for `horizonS` seconds at most after the fix, from fixes up to `maxGapS` apart. On the ground no turn is carried on.
  */
 export const TURN = Object.freeze({ minDegS: 0.2, maxDegS: 3, horizonS: 15, maxGapS: 30 });
+
+/** Two ground fixes whose tracks differ by more than this (°) are in a turn: the fix is carried on the least (M3). */
+export const GROUND_TURN_DEG = 10;
 
 /** The long blend of a plan-only change (CN-18): `minS` to `maxS`, for a gap up to `maxFactor` times the snap distance. */
 export const PLAN_BLEND = Object.freeze({ minS: 10, maxS: 20, maxFactor: 10 });
@@ -116,8 +125,24 @@ function turnRateOf(previous, fix) {
   return Math.sign(rate) * Math.min(TURN.maxDegS, Math.abs(rate));
 }
 
+/**
+ * How long a ground fix is carried on (s, M3 amending CN-31): `groundReckonFactor` × the spacing of the aircraft's last
+ * two fixes, from `groundReckonMaxS` up to `groundReckonCapS`; `groundReckonMaxS` without a fix before it, and in a turn
+ * (tracks more than GROUND_TURN_DEG apart): carried straight on (no turn is carried on the ground) it would leave the
+ * taxiway's curve.
+ */
+function groundReckonOf(previous, fix) {
+  const least = TRACK_CONFIG.groundReckonMaxS;
+  const gapS = previous ? (fix.positionAt - previous.positionAt) / 1000 : Number.NaN;
+  if (!(gapS > 0)) return least;
+  if (finite(previous.trackDeg) && finite(fix.trackDeg) && Math.abs(angleDiff(previous.trackDeg, fix.trackDeg)) > GROUND_TURN_DEG) {
+    return least;
+  }
+  return Math.min(TRACK_CONFIG.groundReckonCapS, Math.max(least, TRACK_CONFIG.groundReckonFactor * gapS));
+}
+
 /** A fix in the map's units (traffic/situationModel.js) without what the hand-off does not read, frozen; `null` when unusable. */
-function toFix(fix, turnDegS = 0) {
+function toFix(fix, turnDegS = 0, reckonS = TRACK_CONFIG.groundReckonMaxS) {
   if (!fix || !finite(fix.lon) || !finite(fix.lat) || !finite(fix.positionAt)) return null;
   return Object.freeze({
     lon: fix.lon,
@@ -129,6 +154,7 @@ function toFix(fix, turnDegS = 0) {
     onGround: fix.onGround === true,
     positionAt: fix.positionAt,
     turnDegS: finite(turnDegS) ? turnDegS : 0,
+    reckonS: finite(reckonS) ? reckonS : TRACK_CONFIG.groundReckonMaxS,
   });
 }
 
@@ -159,8 +185,9 @@ function alongArc(state, dt, turnDegS) {
  * one), its height at its vertical rate.
  */
 function deadReckon(state, dtS) {
-  // CN-31: on the ground a fix is carried on a few seconds at most, then held where that leaves it.
-  const dt = state.onGround === true ? Math.min(Math.max(0, dtS), TRACK_CONFIG.groundReckonMaxS) : Math.max(0, dtS);
+  // CN-31: on the ground a fix is carried on a few seconds at most (its own `reckonS`, M3), then held where that leaves it.
+  const reckonS = finite(state.reckonS) ? state.reckonS : TRACK_CONFIG.groundReckonMaxS;
+  const dt = state.onGround === true ? Math.min(Math.max(0, dtS), reckonS) : Math.max(0, dtS);
   const turning = dt > 0 && isMoving(state) && finite(state.turnDegS) && state.turnDegS !== 0;
   let trackDeg = orNull(state.trackDeg);
   let lon = state.lon;
@@ -584,7 +611,7 @@ function onFix(prev, event, config) {
   if (plain === null) return prev;
   // An older fix, or the same one again, never moves the track back.
   if (prev.lastFix !== null && plain.positionAt <= prev.lastFix.positionAt) return prev;
-  const fix = toFix(event.fix, turnRateOf(prev.lastFix, plain));
+  const fix = toFix(event.fix, turnRateOf(prev.lastFix, plain), groundReckonOf(prev.lastFix, plain));
   const atMs = finite(event.atMs) ? event.atMs : fix.positionAt;
   const drawn = drawnOf(prev, atMs, config);
   const next = { ...prev, lastFix: fix, dropped: false };

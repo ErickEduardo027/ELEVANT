@@ -19,7 +19,8 @@ public static class OccAirPictureTrails
 /// is read for a while after it, and the first read after a quiet spell answers <c>Warming</c>. The picture's own state
 /// (disabled, warming, stale, unavailable) travels in the success; the flights to match are read from the database only
 /// when there are aircraft, at most three times a minute per station, and when that read fails the aircraft come without
-/// a flight.
+/// a flight. M3: an aircraft a callsign lookup found takes the flight it was looked up for, by its callsign, when the
+/// matcher gave it none and no other aircraft has that flight.
 /// </summary>
 public sealed class GetOccAirPictureHandler(IActorContextResolver actorResolver, AirPictureService picture,
     IOccMapFlightMatchKeyStore flights, AirTrafficSettings settings, TimeProvider timeProvider)
@@ -52,7 +53,28 @@ public sealed class GetOccAirPictureHandler(IActorContextResolver actorResolver,
             var keys = await picture.MatchKeysAsync(stationId,
                 token => flights.ListMatchKeysAsync(stationId, now, token), cancellationToken);
             matches = FlightAircraftMatcher.Match([.. snapshot.Aircraft.Select(item => item.Aircraft)], keys, now);
+            if (snapshot.FoundFlightKeys.Count > 0) matches = WithFoundFlights(matches, snapshot.FoundFlightKeys, keys);
         }
         return OccMapResult.Success(new OccAirPictureData(stationId, snapshot, settings.Area, matches));
+    }
+
+    /// <summary>
+    /// M3: the matches with the aircraft the lookups found: each takes its flight by its callsign when it has no match yet,
+    /// the flight is still one of the station's (never a demo flight) and no other aircraft has it. One flight per aircraft
+    /// and one aircraft per flight, as the matcher does.
+    /// </summary>
+    private static IReadOnlyDictionary<string, FlightMatch> WithFoundFlights(IReadOnlyDictionary<string, FlightMatch> matches,
+        IReadOnlyDictionary<string, string> found, IReadOnlyList<MapFlightMatchKey> keys)
+    {
+        var flights = keys.Where(key => key is { IsDemo: false }).Select(key => key.FlightKey)
+            .ToHashSet(StringComparer.Ordinal);
+        var taken = matches.Values.Select(match => match.FlightKey).ToHashSet(StringComparer.Ordinal);
+        var all = new Dictionary<string, FlightMatch>(matches, StringComparer.Ordinal);
+        foreach (var (hex, flightKey) in found.OrderBy(entry => entry.Key, StringComparer.Ordinal))
+        {
+            if (all.ContainsKey(hex) || !flights.Contains(flightKey) || !taken.Add(flightKey)) continue;
+            all[hex] = new FlightMatch(flightKey, FlightMatch.ByCallsign);
+        }
+        return all;
     }
 }

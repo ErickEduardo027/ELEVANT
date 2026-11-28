@@ -51,6 +51,9 @@ public sealed class ReadsbAirTrafficProvider : IAirTrafficProvider, IDisposable
     /// <summary>CN-31: only a network without a daily limit is read every few seconds for the airfield.</summary>
     public bool AllowsFrequentReads => DailyLimit is null;
 
+    /// <summary>M3: only a network that answers callsigns and has no daily limit is asked for them (adsb.fi).</summary>
+    public bool SupportsCallsignLookups => Profile.AnswersCallsigns && DailyLimit is null;
+
     internal ReadsbProfile Profile { get; }
 
     /// <summary>Whether reads carry a key: only with one configured, and only for a network that takes it.</summary>
@@ -77,12 +80,30 @@ public sealed class ReadsbAirTrafficProvider : IAirTrafficProvider, IDisposable
             area.RadiusNm is < 1 or > AirTrafficSettings.MaxRadiusNm)
             throw new ArgumentOutOfRangeException(nameof(area), "The area must be a position on Earth and a radius from 1 to 250 NM.");
 
+        return await SendAsync(Profile.PointQuery(area), cancellationToken);
+    }
+
+    /// <summary>
+    /// M3: one GET of the callsign query, read as a point query is. A network that does not answer callsigns, or has a
+    /// daily limit, answers Failed and calls nothing.
+    /// </summary>
+    public async Task<AirTrafficReadResult> ReadCallsignAsync(string callsign, CancellationToken cancellationToken = default)
+    {
+        if (!ReadsbProfile.IsCallsign(callsign))
+            throw new ArgumentException("The callsign must be two to eight upper-case letters or digits.", nameof(callsign));
+        if (!SupportsCallsignLookups || Profile.CallsignQuery(callsign) is not { } query)
+            return AirTrafficReadResult.Failure(AirTrafficOutcome.Failed, Attribution);
+        return await SendAsync(query, cancellationToken);
+    }
+
+    private async Task<AirTrafficReadResult> SendAsync(Uri query, CancellationToken cancellationToken)
+    {
         // No Retry-After: the network asked for nothing, and a long wait here would keep the next network of the list
         // from taking over. A refused read costs no request, however often it is tried.
         if (!TryCountRequest())
             return AirTrafficReadResult.Failure(AirTrafficOutcome.QuotaExceeded, Attribution);
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, Profile.PointQuery(area));
+        using var request = new HttpRequestMessage(HttpMethod.Get, query);
         request.Headers.Accept.ParseAdd("application/json");
         request.Headers.UserAgent.ParseAdd(UserAgent);
         if (_key is not null) request.Headers.TryAddWithoutValidation(KeyHeader, _key);

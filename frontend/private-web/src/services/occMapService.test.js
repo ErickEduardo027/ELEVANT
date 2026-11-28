@@ -1,4 +1,4 @@
-import { isOccAircraftTrack, isOccAirPicture, isOccMapFlights } from '@elevant/api-client';
+import { isOccAircraftTrack, isOccAirPicture, isOccMapFlights, OCC_MAP_FLIGHT_WINDOW } from '@elevant/api-client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createAirPicture, createMapFlights, createTrack, createTrafficScenario, TRAFFIC_HEX, TRAFFIC_NOON, TRAFFIC_STATION_ID,
@@ -11,8 +11,8 @@ const auth = vi.hoisted(() => ({ handleUnauthorizedResponse: vi.fn(), readSessio
 vi.mock('../features/auth/authService', () => auth);
 vi.mock('../config/elevantApiClient', () => ({ createPrivateWebApiClient: () => api }));
 
-const { createRemoteOccMapAdapter, createSimulatedOccMapAdapter, occMapMessage, occMapService, OCC_MAP_MESSAGES } =
-  await import('./occMapService');
+const { createRemoteOccMapAdapter, createSimulatedOccMapAdapter, MAP_FLIGHTS_WINDOW, occMapMessage, occMapService,
+  OCC_MAP_MESSAGES } = await import('./occMapService');
 
 const NOON = Date.parse(TRAFFIC_NOON);
 const SERVER_TITLE = 'One or more validation errors occurred.';
@@ -50,7 +50,12 @@ describe('OCC map service (ADR-0042)', () => {
     ]);
 
     await expect(adapter.getMapFlights({ stationId: TRAFFIC_STATION_ID })).resolves.toMatchObject({ stationCode: 'PUJ' });
-    expect(api.getOccMapFlights).toHaveBeenCalledWith({ stationId: TRAFFIC_STATION_ID },
+    // M3: the window is widened for the long-haul legs, inside what the contract allows.
+    expect(MAP_FLIGHTS_WINDOW).toEqual({ hoursBack: 6, hoursAhead: 12 });
+    expect(MAP_FLIGHTS_WINDOW.hoursBack).toBeLessThanOrEqual(OCC_MAP_FLIGHT_WINDOW.maxHoursBack);
+    expect(MAP_FLIGHTS_WINDOW.hoursAhead).toBeGreaterThanOrEqual(OCC_MAP_FLIGHT_WINDOW.minHoursAhead);
+    expect(MAP_FLIGHTS_WINDOW.hoursAhead).toBeLessThanOrEqual(OCC_MAP_FLIGHT_WINDOW.maxHoursAhead);
+    expect(api.getOccMapFlights).toHaveBeenCalledWith({ stationId: TRAFFIC_STATION_ID, hoursBack: 6, hoursAhead: 12 },
       { signal: undefined, cache: 'no-store' });
     await adapter.getAircraftTrack({ stationId: TRAFFIC_STATION_ID, hex: TRAFFIC_HEX.arrival });
     expect(api.getOccAircraftTrack).toHaveBeenCalledWith({ stationId: TRAFFIC_STATION_ID, hex: TRAFFIC_HEX.arrival },
