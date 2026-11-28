@@ -45,6 +45,7 @@ import {
 } from '../style/referenceLayers';
 import { SELECTION_SOURCE, selectionFeatures, selectionOverlay } from '../style/selectionLayers';
 import { FLIGHT_SOURCE, flightOverlay, flightsInView, toFlightFeatures } from '../traffic/flightLayers';
+import { createKeyframes, writeKeyframes } from '../traffic/keyframes';
 import { nightShadeFeatures } from '../traffic/nightShade';
 import { counterpartCodes, mapRunwayInUse, referencesOnScreen as referencesOnScreenOf } from '../traffic/referenceFeatures';
 import { trailsBesideRoute } from '../traffic/routeFeatures';
@@ -1000,6 +1001,19 @@ const OccMapView = forwardRef(function OccMapView({
     return result;
   }, []);
 
+  const writeTrafficKeyframes = useCallback((motion, drawn, t, engine, inset) => {
+    const applied = appliedRef.current;
+    if (!applied.keyframes) applied.keyframes = createKeyframes();
+    const t1 = t + applied.trafficIntervalMs;
+    let ahead = null;
+    if (applied.trafficIntervalMs > 0 && typeof motion.sampleAhead === 'function') {
+      const zone = widenBounds(engine.getVisibleBounds(inset), TRAFFIC_MARGIN);
+      const due = zone === null ? drawn : drawn.filter(item => isInBounds([item.lon, item.lat], zone));
+      ahead = new Map(motion.sampleAhead(due, t1).filter(Boolean).map(item => [item.id, item]));
+    }
+    writeKeyframes(applied.keyframes, { t0Ms: t, t1Ms: t1, from: drawn, ahead });
+  }, []);
+
   // The traffic's features from the newest props: one updateData with what changed since the last write. With motion
   // (PR M6) the aircraft are those of the situation where they are drawn at `tMs` (the frame's instant, else the render
   // clock's now), and the write says how long until the next one is due.
@@ -1020,6 +1034,9 @@ const OccMapView = forwardRef(function OccMapView({
       // «Seguir en 3D» (CN-30): the followed aircraft and its camera move every frame, so the traffic is written every
       // frame (at that zoom only a few aircraft are in or around the area in sight).
       applied.trafficIntervalMs = applied.follow3d?.on ? 0 : writeIntervalFor(engine, drawn, inset);
+      // The keyframes of this write (PR M2, traffic/keyframes.js): each aircraft in or around the area in sight where it
+      // is drawn now and where it will be at the next write, for the frames in between; the others hold.
+      writeTrafficKeyframes(motion, drawn, t, engine, inset);
       // Only what moves in or around the area in sight keeps the frames going (CN-18).
       applied.trafficMoving = motion.isAnimating?.(t) === true;
     }
@@ -1040,7 +1057,7 @@ const OccMapView = forwardRef(function OccMapView({
     if (isEmptyDiff(diff)) return;
     applied.trafficById = featuresById(data);
     engine.updateData(TRAFFIC_SOURCE, diff).catch(error => console.error('The OCC map could not update its traffic.', error));
-  }, [store, plan3d, sampleTraffic]);
+  }, [store, plan3d, sampleTraffic, writeTrafficKeyframes]);
 
   // A camera or a fit that takes the zoom across the polygons threshold shows or hides the stands and the aircraft on
   // them (PR M6): the parked aircraft's symbols go or come back with them, in one write.
@@ -1668,7 +1685,7 @@ const OccMapView = forwardRef(function OccMapView({
     const loop = motionClock ? createFrameLoop({ clock: motionClock, reducedMotion: reduced?.matches === true }) : null;
     Object.assign(appliedRef.current, { loop, sampledAircraft: null, trafficWrittenAt: null, trafficIntervalMs: 0,
       trafficOnScreenAt: null, trafficMoving: false, sampledById: null, sampledFrom: null, trafficViewKey: '',
-      fullSampleAt: null });
+      fullSampleAt: null, keyframes: createKeyframes() });
     // The chosen aircraft as the last write drew it, its route as the frames last wrote it, and follow mode (PR M6).
     Object.assign(appliedRef.current, { chosen: null, routeFrame: null, follow: { ...FOLLOW_OFF }, followMoving: false,
       followFrameAt: null, followOnScreenAt: null, follow3d: { ...FOLLOW_3D_OFF } });
