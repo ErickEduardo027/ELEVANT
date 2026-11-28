@@ -2805,7 +2805,13 @@ API, lo que leen las pantallas ni su cadencia.
   encuadrando la República Dominicana y Puerto Rico y ofrece la vista
   «0 Mundo» antes de las cuatro; Panorama y Mapa de posiciones siguen en
   Mercator con sus cuatro vistas
-  ([ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)).
+  ([ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md)). Desde lejos, en
+  Mundo y Región, el globo lleva debajo una imagen de NASA GIBS (Black Marble en
+  el tema oscuro, Blue Marble en el claro, en grises y con su crédito) y los
+  aeropuertos grandes del mundo de OurAirports; los dominicanos van más grandes
+  y, desde que se ve el Caribe, siempre rotulados. Esos aeropuertos también dan
+  la posición del origen o destino de un vuelo cuando la API no la trae
+  ([datos](../../frontend/private-web/src/features/maps/airport/data/README.md)).
 - **Mapa de posiciones.** 2D/3D, «Centrar PUJ» y pantalla completa pasan al riel
   del mapa. El detalle de la posición usa el mismo panel acoplado, y sus rótulos
   ya no van en mayúsculas.
