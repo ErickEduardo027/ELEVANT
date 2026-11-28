@@ -48,7 +48,7 @@ vi.mock('../../../services/satelliteService', () => ({
   satelliteTileAt: () => null,
 }));
 // What the console loads with next/dynamic: its view (ConsolePage.jsx, its own chunk in the app), here at once, and the
-// satellite map of the weather detail, a stand-in that says what it would draw.
+// stand-in the weather detail drew for its satellite map until M7 retired it (the tests check it stays away).
 const views = vi.hoisted(() => ({ ConsolePage: null }));
 vi.mock('next/dynamic', () => ({
   default: () => function DynamicStub(props) {
@@ -101,7 +101,7 @@ const observation = (ageMinutes = 20) => ({
   station: 'MDPC', observedAt: new Date(Date.now() - ageMinutes * 60_000).toISOString(),
   metar: parseMetar('MDPC 111900Z 10013G25KT 9999 FEW022 30/23 Q1015'),
   derived: { relativeHumidity: 66, feelsLikeC: 34, precipitationLastHourIn: 0 },
-  source: { name: 'Iowa Environmental Mesonet', url: 'https://mesonet.agron.iastate.edu', official: false },
+  source: { name: 'NOAA Aviation Weather Center', url: 'https://aviationweather.gov', official: false },
 });
 const weatherOf = (status, data = null, extra = {}) => ({ status, data, fetchedAt: null, refreshFailed: false,
   refreshing: false, refresh: vi.fn(), ...extra });
@@ -957,14 +957,16 @@ describe('the weather pill', () => {
     expect(within(detail).getByText('1015 hPa')).toBeInTheDocument();
     expect(within(detail).getByText('Escasas 2,200 ft')).toBeInTheDocument();
     expect(within(detail).getByText(/Observado .* UTC/)).toBeInTheDocument();
-    expect(within(detail).getByText('34 °C')).toBeInTheDocument();
+    expect(within(detail).getByText('30 °C')).toBeInTheDocument();
     expect(within(detail).getByText('MDPC 111900Z 10013G25KT 9999 FEW022 30/23 Q1015')).toBeInTheDocument();
     expect(within(detail).queryByText(/LIVE|En vivo/i)).not.toBeInTheDocument();
-    // The imagery of NASA GIBS, on the maps lane's satellite map, only while the detail is open.
-    expect(within(detail).getByRole('button', { name: 'GOES-East' })).toHaveAttribute('aria-pressed', 'true');
-    expect(within(detail).getByTestId('goes-cloud-map')).toBeInTheDocument();
+    // M7 (2026-11-27): the detail has no satellite map of its own any more (the satellite is a layer of the one map),
+    // and it credits NOAA AWC.
+    expect(within(detail).queryByTestId('goes-cloud-map')).not.toBeInTheDocument();
+    expect(within(detail).queryByRole('button', { name: 'GOES-East' })).not.toBeInTheDocument();
+    expect(within(detail).getByRole('link', { name: /NOAA Aviation Weather Center/ })).toBeInTheDocument();
     await userEvent.keyboard('{Escape}');
-    expect(screen.queryByTestId('goes-cloud-map')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Meteorología · Punta Cana (MDPC)' })).not.toBeInTheDocument();
   });
 
   it('marks an old observation as outdated and a failed source as unavailable', async () => {
@@ -984,33 +986,6 @@ describe('the weather pill', () => {
     expect(refresh).toHaveBeenCalled();
   });
 
-  it('shows the GOES-East and IMERG image times with their source, a date-only product and a missing image', async () => {
-    vi.mocked(loadSatelliteImageInfo).mockImplementation(layer => Promise.resolve(layer === 'goes'
-      ? { time: '2026-09-28T13:00:00Z', precision: 'instant' } : { time: '2026-09-28T09:30:00Z', precision: 'instant' }));
-    weatherView.current = weatherOf('success', observation(20));
-    renderConsole();
-    await userEvent.click(pill());
-    const detail = screen.getByRole('dialog', { name: 'Meteorología · Punta Cana (MDPC)' });
-    expect(await within(detail).findByText(/Imagen 13:00 UTC/)).toBeInTheDocument();
-    expect(within(detail).getByText(/NASA GIBS/)).toBeInTheDocument();
-    await userEvent.click(within(detail).getByRole('button', { name: 'IMERG' }));
-    expect(await within(detail).findByText(/Imagen 09:30 UTC/)).toBeInTheDocument();
-    expect(within(detail).getByText(/antigüedad 25 min/)).toBeInTheDocument();
-    expect(within(detail).getByText(/estimada IMERG/)).toBeInTheDocument();
-    expect(within(detail).getByText(/no radar/)).toBeInTheDocument();
-    await userEvent.keyboard('{Escape}');
-
-    vi.mocked(loadSatelliteImageInfo).mockImplementation(layer => (layer === 'imerg'
-      ? Promise.resolve({ time: '2026-09-28', precision: 'day' }) : Promise.reject(new Error('unavailable'))));
-    await userEvent.click(pill());
-    const again = screen.getByRole('dialog', { name: 'Meteorología · Punta Cana (MDPC)' });
-    // The choice of layer is kept between two openings.
-    expect(within(again).getByRole('button', { name: 'IMERG' })).toHaveAttribute('aria-pressed', 'true');
-    expect(await within(again).findByText(/Producto del día 2026-09-28 UTC/)).toBeInTheDocument();
-    expect(within(again).queryByText(/Imagen \d\d:\d\d UTC/)).not.toBeInTheDocument();
-    await userEvent.click(within(again).getByRole('button', { name: 'GOES-East' }));
-    expect(await within(again).findByText('La imagen satelital no está disponible.')).toBeInTheDocument();
-  });
 });
 
 describe('the console in English', () => {
