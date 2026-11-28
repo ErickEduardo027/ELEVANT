@@ -57,6 +57,21 @@ describe('the wind on the runways (PR M8)', () => {
     expect(runwayWinds({ runways: [] }, { directionDeg: 100, speedKt: 13, variable: false })).toEqual([]);
   });
 
+  it('runwayWinds adds the gust components of a gust above the mean wind (M7)', () => {
+    const winds = runwayWinds(MDPC_LAYOUT, parseMetar('MDPC 131450Z 10013G25KT 9999 SCT020 29/22 Q1015').wind);
+    expect(winds[0]).toEqual({
+      ident: '08', label: 'R08', headwindKt: 12, crosswindKt: 6, side: 'right',
+      gust: { headwindKt: 22, crosswindKt: 11, side: 'right' },
+    });
+    expect(winds[1].gust).toEqual({ headwindKt: -22, crosswindKt: 11, side: 'left' });
+    expect(winds.every(item => Object.isFrozen(item.gust))).toBe(true);
+    // No gust, or a gust that is not above the mean speed, adds no key.
+    for (const gustKt of [null, undefined, 13, 10, Number.NaN]) {
+      const plain = runwayWinds(MDPC_LAYOUT, { directionDeg: 100, speedKt: 13, gustKt, variable: false });
+      expect(plain.every(item => !Object.hasOwn(item, 'gust')), String(gustKt)).toBe(true);
+    }
+  });
+
   it('metarWindForRunway converts knots to m/s and gives null for calm or VRB', () => {
     const wind = metarWindForRunway(parseMetar('MDPC 131450Z 10013KT 9999 SCT020 29/22 Q1015').wind);
     expect(wind.directionDeg).toBe(100);
