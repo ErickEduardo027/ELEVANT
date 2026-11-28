@@ -15,6 +15,10 @@
 # - the aerodrome weather of the OCC off (AviationWeather__Enabled, ADR-0043): the image turns it on for Development,
 #   and the harness never reads aviationweather.gov unless ELEVANT_E2E_AVIATION_WEATHER_ENABLED=true asks for a
 #   deliberate manual read.
+# - the region's wind grid and radar frames of the OCC off (OpenMeteo__Enabled, WeatherRadar__Enabled, plan M6): the
+#   image turns them on for Development, and the harness never reads Open-Meteo or the Iowa Environmental Mesonet
+#   unless ELEVANT_E2E_OPEN_METEO_ENABLED=true or ELEVANT_E2E_WEATHER_RADAR_ENABLED=true asks for a deliberate manual
+#   read. The region's SIGMETs follow AviationWeather__Enabled.
 #
 # docker compose --env-file database/DevelopmentDB/.env \
 #   -f database/DevelopmentDB/compose.local.yml -f database/DevelopmentDB/compose.local.e2e.yml up --build
@@ -82,6 +86,8 @@ services:
       CardPayments__Mode: "Simulated"
       AirTraffic__Enabled: "${ELEVANT_E2E_AIR_TRAFFIC_ENABLED:-false}"
       AviationWeather__Enabled: "${ELEVANT_E2E_AVIATION_WEATHER_ENABLED:-false}"
+      OpenMeteo__Enabled: "${ELEVANT_E2E_OPEN_METEO_ENABLED:-false}"
+      WeatherRadar__Enabled: "${ELEVANT_E2E_WEATHER_RADAR_ENABLED:-false}"
     depends_on:
       media:
         condition: service_started
