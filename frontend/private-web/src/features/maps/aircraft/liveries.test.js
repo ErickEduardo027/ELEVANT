@@ -66,7 +66,7 @@ describe('livery zones (M9)', () => {
     expect(PART_ZONES).toMatchObject({ fuselage: 'fuselage', fin: 'tail', nacelle: 'engine', wing: 'wing' });
   });
 
-  it('liveryZones gives each zone's colour of a livery, or of the livery an aircraft resolves to', () => {
+  it("liveryZones gives each zone's colour of a livery, or of the livery an aircraft resolves to", () => {
     expect(liveryZones(LIVERIES.SWA)).toEqual({ fuselage: '#304cb2', belly: '#304cb2', tail: '#304cb2',
       engine: '#304cb2', wing: LIVERIES.SWA.wing });
     expect(liveryZones({ callsign: 'DAL455' })).toEqual({ fuselage: '#ffffff', belly: '#0a2c5c', tail: '#0a2c5c',

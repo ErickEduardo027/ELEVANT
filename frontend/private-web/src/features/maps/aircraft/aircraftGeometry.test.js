@@ -259,7 +259,7 @@ describe('procedural aircraft geometry (design G2)', () => {
 
 // M9: the zones of a livery on the instanced models.
 describe('withLiveryZones (M9)', () => {
-  it('paints each part in its zone, the fuselage's underside as the belly, every model of the map', () => {
+  it("paints each part in its zone, the fuselage's underside as the belly, every model of the map", () => {
     for (const [name, spec] of AIRFRAMES) {
       const geometry = withLiveryZones(THREE_PARTS, buildAircraftGeometry(THREE_PARTS, spec));
       const zones = geometry.getAttribute('liveryZone');
@@ -279,7 +279,7 @@ describe('withLiveryZones (M9)', () => {
     }
   });
 
-  it('an airliner shows every zone; the belly is under the fuselage's axis; a second call changes nothing', () => {
+  it("an airliner shows every zone; the belly is under the fuselage's axis; a second call changes nothing", () => {
     const geometry = withLiveryZones(THREE_PARTS, buildAircraftGeometry(THREE_PARTS, AIRCRAFT_TYPES.A320));
     const zones = geometry.getAttribute('liveryZone');
     const used = new Set(Array.from(zones.array, value => LIVERY_ZONES[value]));

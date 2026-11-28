@@ -406,7 +406,7 @@ describe('the 3D instance plan with liveries (M9)', () => {
     for (const zone of LIVERY_ZONES) expect(zoneOf(entry, zone, index), zone).toEqual(float32(colours[zone]));
   };
 
-  it('liveryInstanceColours gives each zone of the airline's livery in linear colour, the default livery otherwise', () => {
+  it("liveryInstanceColours gives each zone of the airline's livery in linear colour, the default livery otherwise", () => {
     const copa = liveryInstanceColours({ callsign: 'CMP893' });
     expect(Object.keys(copa)).toEqual(LIVERY_ZONES);
     expect(copa).toEqual({ fuselage: linearRgb(LIVERIES.CMP.fuselage), belly: linearRgb(LIVERIES.CMP.belly),
@@ -425,7 +425,7 @@ describe('the 3D instance plan with liveries (M9)', () => {
     expectZones(entry, 1, Object.fromEntries(LIVERY_ZONES.map(zone => [zone, AIRCRAFT_3D_COLORS.shadow])));
   });
 
-  it('with livery parked and nearby aircraft wear their airline's colours; the chosen one and the shadows do not', () => {
+  it("with livery parked and nearby aircraft wear their airline's colours; the chosen one and the shadows do not", () => {
     const parked = { id: 's:B20', lon: ARP[0] + 0.001, lat: ARP[1], headingDeg: 200, typeIcao: 'A320', model: 'A320',
       kind: 'aviam', flightNumber: 'CM 893' };
     const taxiing = aircraft('f:p:taxi', { bearing: 45, metres: 600, callsign: 'JBU1234' });

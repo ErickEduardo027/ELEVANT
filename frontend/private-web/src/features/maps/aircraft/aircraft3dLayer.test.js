@@ -723,8 +723,8 @@ describe('the 3D aircraft layer (design G1, G3 and G4)', () => {
 });
 
 // M9: the instanced models wear their airlines' liveries, per zone, in the same draw call.
-describe('the 3D aircraft layer's liveries (M9)', () => {
-  it('patches three's Lambert vertex shader to pick the instance colour of each vertex's zone', () => {
+describe("the 3D aircraft layer's liveries (M9)", () => {
+  it("patches three's Lambert vertex shader to pick the instance colour of each vertex's zone", () => {
     expect(LIVERY_ZONE_ATTRIBUTES).toEqual(['instanceBelly', 'instanceTail', 'instanceEngine', 'instanceWing']);
     const shader = patchLiveryShader({ vertexShader: ShaderLib.lambert.vertexShader, uniforms: {} });
     const source = shader.vertexShader;
@@ -737,7 +737,7 @@ describe('the 3D aircraft layer's liveries (M9)', () => {
     expect(() => patchLiveryShader({ vertexShader: 'void main() {}' })).toThrow(/colour chunks/);
   });
 
-  it('gives each model its zones and copies the plan's zone colours into the instance attributes', () => {
+  it("gives each model its zones and copies the plan's zone colours into the instance attributes", () => {
     const { createRenderer, made } = fakeRenderers();
     const traffic = [aircraft('f:p:jbu', { bearing: 100, metres: 600, callsign: 'JBU1234' }),
       aircraft('f:p:cmp', { bearing: 160, metres: 700, callsign: 'CMP893' })];
