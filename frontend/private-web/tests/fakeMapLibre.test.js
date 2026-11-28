@@ -298,6 +298,21 @@ describe('fake MapLibre', () => {
     expect(() => source.setTiles(tiles[0])).toThrow(TypeError);
   });
 
+  it('refreshTiles records the tiles it asks for again, and throws for a missing source, like MapLibre 6.16', () => {
+    const fake = createFakeMapLibre();
+    fake.module.setWorkerUrl(SERVED_WORKER_URL);
+    const style = { ...STYLE, sources: { ...STYLE.sources, base: { type: 'vector', url: 'https://tiles.example/planet' } } };
+    const map = new fake.module.Map({ container: document.createElement('div'), style });
+    fake.state.emit(map, 'style.load');
+    const ids = [{ x: 1, y: 2, z: 3 }];
+    map.refreshTiles('base', ids);
+    expect(map.calls.filter(call => call.method === 'refreshTiles').map(call => call.args)).toEqual([['base', ids]]);
+    expect(map.getSource('base').setUrlCalls).toEqual([]);
+    expect(() => map.refreshTiles('missing', ids)).toThrow('There is no tile manager with ID "missing"');
+    // Stricter than MapLibre: an ID that is not { x, y, z } integers throws.
+    expect(() => map.refreshTiles('base', [{ x: 1, y: 2 }])).toThrow(TypeError);
+  });
+
   it('a restore without WebGL2 rebuilds the style and fires error, never webglcontextrestored, like MapLibre 6.16', () => {
     const { fake, map } = newMap();
     fake.state.emit(map, 'style.load');

@@ -15,6 +15,9 @@
 //   rebuilds it with the tiles it was last given, as MapLibre 6.16 does;
 // - a vector source has `setUrl` (a string, anything else throws), `setTiles` and `serialize`, as MapLibre 6.16's
 //   VectorTileSource: each call is recorded and kept in the options it serializes;
+// - `refreshTiles(sourceId, tileIds)` asks again for the given tiles of a source, as MapLibre 6.16's map.refreshTiles:
+//   it throws for a missing source and, stricter than MapLibre, for an ID that is not `{ x, y, z }` integers; each call
+//   is recorded;
 // - `setFilter` replaces a layer's filter (a missing layer throws), and a context loss keeps it, as MapLibre 6.16 does.
 // Camera moves are applied at once and fire their events synchronously: movestart, zoomstart, rotatestart and
 // pitchstart for what changes, moveend. A person's gesture is `emit(map, 'dragstart', { originalEvent })` and the like,
@@ -594,6 +597,20 @@ function createModule(state) {
 
     getSource(id) {
       return this._readStyle() ? this.sources.get(id) : undefined;
+    }
+
+    // As MapLibre 6.16: the given tiles of a source are asked for again (all of them without a list); nothing else moves.
+    refreshTiles(sourceId, tileIds) {
+      if (this.removed) throw new Error('The map was removed.');
+      if (this.contextLost) throw new TypeError("Cannot read properties of null (reading 'tileManagers')");
+      if (!this.sources.has(sourceId)) {
+        throw new Error(`There is no tile manager with ID "${sourceId}", cannot refresh tile`);
+      }
+      const isId = id => ['x', 'y', 'z'].every(key => Number.isInteger(id?.[key]));
+      if (tileIds !== undefined && !(Array.isArray(tileIds) && tileIds.every(isId))) {
+        throw new TypeError(`refreshTiles of ${sourceId} takes { x, y, z } tile IDs, not ${JSON.stringify(tileIds)}`);
+      }
+      this._record('refreshTiles', [sourceId, tileIds === undefined ? undefined : clone(tileIds)]);
     }
 
     removeSource(id) {

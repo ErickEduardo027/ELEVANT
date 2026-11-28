@@ -26,7 +26,10 @@ export const BASEMAP_TIMEOUT_MS = 8000;
  * page is visible, until a tile arrives.
  */
 export const BASEMAP_RETRY_DELAYS_MS = Object.freeze([2000, 5000, 10000, 30000]);
-/** A base map that is up reloads its source at most this often when single tiles fail, so the holes fill in. */
+/**
+ * A base map that is up asks again for the tiles that failed, and only those (map.refreshTiles), at most this often,
+ * so the holes fill in without reloading its TileJSON or the tiles it already drew (2026-11-28).
+ */
 export const BASEMAP_TILE_RELOAD_MS = 10000;
 /** The zoom range every OCC map starts with; `setCameraLimits` goes back to it for a limit given as `null`. */
 export const ENGINE_MIN_ZOOM = 4.5;
@@ -127,12 +130,14 @@ export function createMapEngine({
   let pending = [];
   let basemapTimer = null;
   // The recovery of the base map (2026-11-28): the next attempt while it is missing, how many came before it, and the
-  // light reload of a base map that is up when its tiles fail. A hidden page makes no attempt; it resumes when shown.
+  // tiles that failed on a base map that is up, asked again together. A hidden page makes no attempt; it resumes when
+  // shown.
   let basemapRetryTimer = null;
   let basemapAttempts = 0;
   let basemapRetryPaused = false;
   let tileReloadTimer = null;
   let tileReloadPaused = false;
+  const failedTiles = new Map();
   let lastTileReloadAt = -Infinity;
   let attributionControl = null;
   let scaleControl = null;
@@ -237,9 +242,33 @@ export function createMapEngine({
     }, delay);
   }
 
-  // A base map that is up and loses single tiles: one reload of its source, at most once every BASEMAP_TILE_RELOAD_MS.
+  // The tiles of a base map that is up which failed since the last refresh, by canonical tile ID.
+  function rememberFailedTile(tile) {
+    const canonical = tile?.tileID?.canonical;
+    if (!Number.isInteger(canonical?.z) || !Number.isInteger(canonical?.x) || !Number.isInteger(canonical?.y)) {
+      return false;
+    }
+    const { x, y, z } = canonical;
+    failedTiles.set(`${z}/${x}/${y}`, { x, y, z });
+    return true;
+  }
+
+  // Asks MapLibre again for the failed tiles only: map.refreshTiles reloads those (errored ones included) and leaves the
+  // TileJSON, the other tiles and the tiles out of view as they are.
+  function refreshFailedTiles() {
+    const ids = [...failedTiles.values()];
+    failedTiles.clear();
+    if (!live() || !styleReady || ids.length === 0) return;
+    try {
+      map.refreshTiles(BASEMAP_SOURCE_ID, ids);
+    } catch (error) {
+      console.error('The OCC map could not ask again for its base-map tiles.', error);
+    }
+  }
+
+  // A base map that is up and loses single tiles: one refresh of those tiles, at most once every BASEMAP_TILE_RELOAD_MS.
   function scheduleTileReload() {
-    if (!live() || tileReloadTimer !== null) return;
+    if (!live() || tileReloadTimer !== null || failedTiles.size === 0) return;
     if (pageHidden()) {
       tileReloadPaused = true;
       return;
@@ -253,7 +282,7 @@ export function createMapEngine({
         return;
       }
       lastTileReloadAt = Date.now();
-      reloadBasemap();
+      refreshFailedTiles();
     }, delay);
   }
 
@@ -262,6 +291,7 @@ export function createMapEngine({
     if (tileReloadTimer !== null) clearTimeout(tileReloadTimer);
     tileReloadTimer = null;
     tileReloadPaused = false;
+    failedTiles.clear();
     report({ basemap: 'degraded' });
     scheduleBasemapRetry();
   }
@@ -300,6 +330,7 @@ export function createMapEngine({
     clearBasemapRetry();
     basemapRetryPaused = false;
     tileReloadPaused = false;
+    failedTiles.clear();
     ownerDocument.removeEventListener('visibilitychange', onVisibilityChange);
   }
 
@@ -552,9 +583,10 @@ export function createMapEngine({
     });
     listen('error', event => {
       if (event?.sourceId === BASEMAP_SOURCE_ID) {
-        // A base map that is up keeps it and fills its holes; one that is missing says so and tries again.
-        if (status.basemap === 'ok') scheduleTileReload();
-        else basemapMissing();
+        // A base map that is up keeps it and asks again for the tiles that failed (an error without a tile, such as a
+        // TileJSON read again, changes nothing: it keeps the one it has); one that is missing says so and tries again.
+        if (status.basemap !== 'ok') basemapMissing();
+        else if (rememberFailedTile(event.tile)) scheduleTileReload();
       } else if (isGpuError(maplibre, event?.error)) {
         becomeUnavailable('webgl');
       } else {

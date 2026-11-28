@@ -1514,8 +1514,8 @@ Desde el PR M7 los aviones se ven en 3D en Aeródromo y Rampa (ver
   vuelos y el punto de referencia de PUJ) sigue en el mapa. Desde el 28 de
   noviembre de 2026 el mapa base se reintenta solo (a los 2 s, 5 s y 10 s, y
   luego cada 30 s, sin intentos con la pestaña oculta) y el aviso se quita con
-  su primera tesela; con el mapa base ya cargado, una tesela que falla recarga
-  la fuente como mucho cada 10 s (ADR-0043).
+  su primera tesela; con el mapa base ya cargado, se vuelven a pedir solo las
+  teselas que fallaron (`refreshTiles`), como mucho cada 10 s (ADR-0043).
   [`workerUrl.js`](../../frontend/private-web/src/features/maps/core/workerUrl.js)
   prepara una sola vez los workers de MapLibre (`prewarm`), que ya no se crean
   ni se terminan con cada mapa.

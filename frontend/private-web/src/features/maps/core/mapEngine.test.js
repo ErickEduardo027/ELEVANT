@@ -267,24 +267,62 @@ describe('map engine', () => {
       expect(engine.status().basemap).toBe('degraded');
     });
 
-    it('reloads a base map that is up when single tiles fail, at most once every 10 s', () => {
+    it('asks again only for the tiles that failed on a base map that is up, at most once every 10 s', () => {
       vi.useFakeTimers();
       const { engine, map, state } = ready(setup());
+      const tile = (x, y, z) => ({ tileID: { canonical: { x, y, z } } });
+      const refreshes = () => map.calls.filter(call => call.method === 'refreshTiles').map(call => call.args);
       state.emit(map, 'sourcedata', { sourceId: 'openmaptiles', tile: {} });
-      fail(state, map, { tile: {} });
-      fail(state, map, { tile: {} });
+      fail(state, map, { tile: tile(10, 20, 6) });
+      fail(state, map, { tile: tile(11, 20, 6) });
+      fail(state, map, { tile: tile(10, 20, 6) });
       vi.advanceTimersByTime(0);
-      expect(basemapSource(map).setUrlCalls).toHaveLength(1);
-      // The base map is up: a hole is no notice.
+      expect(refreshes()).toEqual([['openmaptiles', [{ x: 10, y: 20, z: 6 }, { x: 11, y: 20, z: 6 }]]]);
+      // The base map is up: a hole is no notice, and neither its TileJSON nor the tiles it drew are asked for again.
       expect(engine.status().basemap).toBe('ok');
-      fail(state, map, { tile: {} });
+      expect(reloads(map)).toEqual([]);
+
+      fail(state, map, { tile: tile(12, 21, 6) });
       vi.advanceTimersByTime(BASEMAP_TILE_RELOAD_MS - 1);
-      expect(basemapSource(map).setUrlCalls).toHaveLength(1);
-      fail(state, map, { tile: {} });
+      expect(refreshes()).toHaveLength(1);
+      fail(state, map, { tile: tile(13, 21, 6) });
       vi.advanceTimersByTime(1);
-      expect(basemapSource(map).setUrlCalls).toHaveLength(2);
+      expect(refreshes()).toEqual([
+        ['openmaptiles', [{ x: 10, y: 20, z: 6 }, { x: 11, y: 20, z: 6 }]],
+        ['openmaptiles', [{ x: 12, y: 21, z: 6 }, { x: 13, y: 21, z: 6 }]],
+      ]);
       vi.advanceTimersByTime(BASEMAP_TILE_RELOAD_MS * 3);
-      expect(basemapSource(map).setUrlCalls).toHaveLength(2);
+      expect(refreshes()).toHaveLength(2);
+
+      // An error without a tile (a TileJSON read again) changes nothing: the source keeps the one it has.
+      fail(state, map);
+      fail(state, map, { tile: {} });
+      vi.advanceTimersByTime(BASEMAP_TILE_RELOAD_MS * 3);
+      expect(refreshes()).toHaveLength(2);
+      expect(reloads(map)).toEqual([]);
+      expect(engine.status().basemap).toBe('ok');
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('waits for a hidden page before asking again for failed tiles, and asks for none after destroy', () => {
+      vi.useFakeTimers();
+      const { engine, map, state } = ready(setup());
+      const refreshes = () => map.calls.filter(call => call.method === 'refreshTiles').map(call => call.args);
+      state.emit(map, 'sourcedata', { sourceId: 'openmaptiles', tile: {} });
+      setVisibility('hidden');
+      fail(state, map, { tile: { tileID: { canonical: { x: 1, y: 2, z: 3 } } } });
+      vi.advanceTimersByTime(120000);
+      expect(refreshes()).toEqual([]);
+      setVisibility('visible');
+      vi.advanceTimersByTime(0);
+      expect(refreshes()).toEqual([['openmaptiles', [{ x: 1, y: 2, z: 3 }]]]);
+
+      // A tile that failed before destroy is never asked for.
+      fail(state, map, { tile: { tileID: { canonical: { x: 4, y: 5, z: 6 } } } });
+      engine.destroy();
+      vi.advanceTimersByTime(120000);
+      expect(refreshes()).toHaveLength(1);
+      expect(vi.getTimerCount()).toBe(0);
     });
 
     it('makes no attempt while the page is hidden and resumes when it is shown', () => {
