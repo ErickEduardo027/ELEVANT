@@ -5,7 +5,7 @@ import { sharedFakeMapLibre } from '../../../../tests/fakeMapLibre';
 import { OCC_PALETTES } from '../../occ-ui/occPalette';
 import { ThemeProvider, useTheme } from '../../shell/useTheme';
 import { linearRgb } from '../aircraft/instancePlan';
-import { destinationPoint } from '../airport/geo';
+import { destinationPoint, haversineM } from '../airport/geo';
 import {
   createAirPicture, createDemoBlock, createDemoFlights, createEstimates, createMapFlights, TRAFFIC_FLIGHT_KEY, TRAFFIC_NOON,
   TRAFFIC_SOURCE,
@@ -23,6 +23,13 @@ import { useOccMap } from './OccMapContext';
 // The 3D aircraft wired into OccMap (PR M7), on the fake MapLibre and the real 3D layer with an injected renderer:
 // three's scene and raycaster need no WebGL, its renderer does. The chunk is the real one, handed over by a mocked
 // loader, so no test reaches the network or a GPU.
+// The follow camera as it is, watched (PR M2): what it frames each frame.
+const followCameraSpy = vi.hoisted(() => ({ fn: null }));
+vi.mock('../kinematics/followCamera', async original => {
+  const actual = await original();
+  followCameraSpy.fn = vi.fn(actual.followCamera);
+  return { ...actual, followCamera: (...args) => followCameraSpy.fn(...args) };
+});
 vi.mock('maplibre-gl', async () => (await import('../../../../tests/fakeMapLibre.js')).sharedFakeMapLibre().module);
 
 const hoisted = vi.hoisted(() => ({ layers: [], renderers: [], failRenderer: false, failLoad: false, createCanvas: null }));
@@ -573,6 +580,72 @@ describe('OccMap animated traffic (PR M2)', () => {
     const moves = centers.slice(1).map((center, index) => Math.hypot(center[0] - centers[index][0],
       center[1] - centers[index][1]));
     expect(moves.every(move => move > 0)).toBe(true);
+  });
+
+  it('follows in 2D and draws the chosen route from where each frame draws the aircraft, between the writes too', async () => {
+    hoisted.createCanvas = fakeCanvas;
+    vi.stubGlobal('Path2D', class Path2D {});
+    window.localStorage.setItem(MODE_3D_STORAGE_KEY, '2d');
+    const frames = controlledFrames();
+    const { server, traffic } = demoTraffic();
+    const routeAt = vi.fn((tMs, point) => ({ type: 'FeatureCollection', features: [{ type: 'Feature',
+      properties: { id: 'route:remaining:0', part: 'remaining', hex: '' },
+      geometry: { type: 'LineString', coordinates: [point, PUJ_ARP] } }] }));
+    function Follow() {
+      const { follow } = useOccMap();
+      return <button type="button" onClick={() => follow.toggle()}>follow</button>;
+    }
+    const ref = createRef();
+    render(<OccMap ref={ref} defaultView="approach" traffic={{ ...traffic, routeAt }}
+      selection={{ kind: 'flight', id: TRAFFIC_FLIGHT_KEY.demoArrival }} mapOptions={{ fadeDuration: 0 }}><Follow /></OccMap>);
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    await settle();
+    server.at += 500;
+    frames.run();
+    act(() => { screen.getByRole('button', { name: 'follow' }).click(); });
+    // The engage move, then a second of frames to settle on the aircraft.
+    for (let frame = 0; frame < 62; frame += 1) {
+      server.at += 16;
+      frames.run();
+    }
+    const { getInstances } = hoisted.layers.at(-1).options;
+    const source = map.getSource('occ-traffic');
+    const routeHead = () => map.getSource('occ-route').data.features[0]?.geometry.coordinates[0] ?? null;
+    const framings = [];
+    const heads = [];
+    const writes = source.updateDataCalls.length;
+    const routes = routeAt.mock.calls.length;
+    for (let frame = 0; frame < 125; frame += 1) {
+      server.at += 16;
+      const followed = followCameraSpy.fn.mock.calls.length;
+      frames.run();
+      getInstances();
+      const framed = ref.current.framePosition(DEMO_ID);
+      expect(framed).not.toBeNull();
+      // The follow camera frames the aircraft where this frame draws it, not where the last write did.
+      const call = followCameraSpy.fn.mock.calls.slice(followed).at(-1);
+      if (call) framings.push({ aircraft: [call[0].aircraft.lon, call[0].aircraft.lat], framed,
+        drawn: ref.current.drawnPosition(DEMO_ID) });
+      heads.push({ head: routeHead(), framed });
+    }
+    // Two seconds: the GeoJSON at most twice a second, the route far more often, one small line each time.
+    expect(source.updateDataCalls.length - writes).toBeLessThanOrEqual(5);
+    const routeWrites = routeAt.mock.calls.length - routes;
+    expect(routeWrites).toBeGreaterThan(source.updateDataCalls.length - writes);
+    expect(routeWrites).toBeLessThanOrEqual(21);
+    expect(framings.length).toBeGreaterThan(100);
+    for (const { aircraft, framed } of framings) {
+      expect(aircraft[0]).toBeCloseTo(framed[0], 9);
+      expect(aircraft[1]).toBeCloseTo(framed[1], 9);
+    }
+    expect(framings.filter(({ aircraft, drawn }) => aircraft[0] !== drawn[0] || aircraft[1] !== drawn[1]).length)
+      .toBeGreaterThan(framings.length / 2);
+    // The route starts where a frame of the last 100 ms drew the aircraft: never more than 100 ms behind it.
+    for (const { head, framed } of heads.slice(10)) {
+      expect(head).not.toBeNull();
+      expect(haversineM(head, framed)).toBeLessThan(10);
+    }
   });
 
   it('keeps the GeoJSON icons when the layer cannot build its sprites, and without motion', async () => {

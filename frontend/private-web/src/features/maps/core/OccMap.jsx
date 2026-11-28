@@ -209,6 +209,10 @@ const FULL_SAMPLE_MS = 1_000;
 // for the fallback, the accessible selection, the legend) is written at most twice a second; the keyframes carry every
 // frame in between (traffic/keyframes.js). CN-18 stands: never every frame.
 const ANIMATED_TRAFFIC_WRITE_MS = 500;
+// PR M2 (2026-11-28, review): while the layer animates the traffic, the chosen flight's route starts where the frame
+// draws its aircraft (followedItemAt) and is rewritten between the writes too, at most every ANIMATED_ROUTE_MS (with
+// ROUTE_FRAME_MS and ROUTE_MOVE_PX as before), in 2D and in «Seguir en 3D»: one small line, never every frame (CN-18).
+const ANIMATED_ROUTE_MS = 100;
 
 // Follow mode (PR M6, design A6, contracts 2.1 `follow=1`). A framing of two points keeps this much room inside the
 // insets; the notice «Dejaste de seguir…» shows this long; while the camera moves every frame what is on screen is read
@@ -223,13 +227,11 @@ const FOLLOW_OFF = Object.freeze({
 });
 // «Seguir en 3D» (CN-30, kinematics/orbitCamera.js): the camera flies in to the orbit over FOLLOW_3D_ENTRY_MS and back
 // to where it was over FOLLOW_3D_RESTORE_MS; the follow panel reads the followed aircraft at most every
-// FOLLOW_3D_SUBJECT_MS; in 3D the route of the followed aircraft is rewritten at most every FOLLOW_3D_ROUTE_MS (PR M2,
-// 2026-11-28: twice a second, with the traffic's own writes; it was every 100 ms while the traffic was written each
-// frame).
+// FOLLOW_3D_SUBJECT_MS; its route goes as every animated route does (ANIMATED_ROUTE_MS: PR M2, 2026-11-28, review; it
+// was twice a second with the traffic's writes, and its start lagged the model).
 const FOLLOW_3D_ENTRY_MS = 1_400;
 const FOLLOW_3D_RESTORE_MS = 1_000;
 const FOLLOW_3D_SUBJECT_MS = 500;
-const FOLLOW_3D_ROUTE_MS = 500;
 const NO_HOLD = Object.freeze({ rotate: 0, tilt: 0, zoom: 0 });
 const FOLLOW_3D_OFF = Object.freeze({ on: false, orbit: null, hold: NO_HOLD, camera: null, saved: null, entry: null });
 
@@ -1124,12 +1126,14 @@ const OccMapView = forwardRef(function OccMapView({
 
   // The chosen flight's route where the last write drew its aircraft (PR M6, design E5): `traffic.routeAt` rebuilds it
   // so the split follows the aircraft, at most once a second below the airfield threshold and from it every frame the
-  // aircraft moved half a pixel on screen. One setData; the route the props bring is written by its own effect.
+  // aircraft moved half a pixel on screen. One setData; the route the props bring is written by its own effect. While
+  // the layer animates the traffic (PR M2), where this frame draws the aircraft (followedItemAt), between the writes
+  // too, at most every ANIMATED_ROUTE_MS.
   const writeFrameRoute = useCallback(tMs => {
     const engine = engineRef.current;
     const applied = appliedRef.current;
     const { traffic: current, groups: shown } = latest.current ?? {};
-    const item = applied.chosen;
+    const item = followedItemAt(applied, tMs);
     if (!engine?.map || !applied.drawsTraffic || typeof current?.routeAt !== 'function' || !item || shown?.route === false) return;
     const zoom = engine.getCamera()?.zoom;
     if (!Number.isFinite(zoom)) return;
@@ -1141,7 +1145,7 @@ const OccMapView = forwardRef(function OccMapView({
       const airfield = store.get().thresholds?.airfield;
       const everyFrame = Number.isFinite(airfield) && zoom >= airfield;
       if (!everyFrame && tMs - last.at < ROUTE_FRAME_MS) return;
-      if (applied.follow3d?.on && tMs - last.at < FOLLOW_3D_ROUTE_MS) return;
+      if (applied.aircraft3d?.animating?.() === true && tMs - last.at < ANIMATED_ROUTE_MS) return;
     }
     applied.routeFrame = { id: item.id, at: tMs, point };
     // What the source holds is no longer what the props brought: their next route is written again.
@@ -1593,7 +1597,7 @@ const OccMapView = forwardRef(function OccMapView({
     }
   }, [followSubject]);
 
-  // Follow mode, one frame (PR M6, design A6): the camera framing the chosen aircraft where this frame's write drew it
+  // Follow mode, one frame (PR M6, design A6): the camera framing the chosen aircraft where this frame draws it
   // and its next objective (kinematics/followCamera.js, the targets of the motion store), the zoom or tilt a person set
   // kept. Engaging is one move of the map's own (instant under reduced motion), whose end gives the camera to the frames;
   // then each frame eases it there by the time since the last one (a frame without time jumps: the clock is paused or
@@ -1603,7 +1607,8 @@ const OccMapView = forwardRef(function OccMapView({
     const engine = engineRef.current;
     const applied = appliedRef.current;
     const state = applied.follow;
-    const item = applied.follow3d?.on ? followedItemAt(applied, tMs) : applied.chosen;
+    // Where this frame draws the aircraft (PR M2): from its keyframes while the layer animates the traffic, in 2D too.
+    const item = followedItemAt(applied, tMs);
     if (!engine?.map || !state?.on || !item || engine.isInteracting()) return;
     const current = engine.getCamera();
     if (!current) return;
@@ -1743,8 +1748,10 @@ const OccMapView = forwardRef(function OccMapView({
     const onFrame = tMs => {
       const applied = appliedRef.current;
       if (Number.isFinite(applied.trafficWrittenAt) && tMs - applied.trafficWrittenAt < applied.trafficIntervalMs) {
-        // A newly chosen aircraft gets its route at once, where the last write drew it.
-        if (applied.chosen && applied.routeFrame?.id !== applied.chosen.id) writeFrameRoute(tMs);
+        // A newly chosen aircraft gets its route at once, where the last write drew it; while the layer animates the
+        // traffic (PR M2) its route follows it between the writes too (writeFrameRoute keeps its own pace).
+        if (applied.chosen && (applied.routeFrame?.id !== applied.chosen.id
+          || applied.aircraft3d?.animating?.() === true)) writeFrameRoute(tMs);
         return;
       }
       writeTraffic(tMs);
