@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ElevantApiError } from '@elevant/api-client';
-import PositionsMapPage from './PositionsMapPage';
+import PositionsMapPage, { POSITIONS_MAP_LAYOUT, POSITIONS_MAP_PANEL_EDGES } from './PositionsMapPage';
 import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
 import { destinationPoint } from '../maps/airport/geo';
@@ -18,7 +18,7 @@ import { mapOccupancyToRampPositions } from './positionsMapMappers';
 
 // The map is a stub that shows what the page gives it and clicks where a test says (`map.next`); the API client is a
 // stub too, so the real positions service translates its errors.
-const map = vi.hoisted(() => ({ next: null }));
+const map = vi.hoisted(() => ({ next: null, props: null }));
 const api = vi.hoisted(() => ({ locateOccStand: null }));
 vi.mock('../../config/elevantApiClient', async importOriginal => ({
   ...(await importOriginal()), createPrivateWebApiClient: () => api,
@@ -55,6 +55,7 @@ vi.mock('./components/PositionMap', () => ({
       flyToPuj: vi.fn(),
       resetNorth: vi.fn(),
     }));
+    map.props = props;
     const pending = props.pendingLocation;
     // What the page gives its map: the stands as they read now (`data-state`) and, inside the OCC frame, the traffic it
     // draws, the chosen flight or aircraft and the overlays it holds.
@@ -190,6 +191,122 @@ describe('PositionsMapPage', () => {
     expect(screen.getByRole('heading', { name: 'Mapa de posiciones' })).toBeInTheDocument();
     expect(screen.getByText('PUJ · Aeropuerto Internacional de Punta Cana')).toBeInTheDocument();
     expect(screen.getByTestId('position-map-stub')).toBeInTheDocument();
+  });
+
+  it('fills the screen with the map, with the bar, the list, the inspector and the band floating over it (M1)', async () => {
+    const user = userEvent.setup();
+    render(<PositionsMapPage status="success" data={SNAPSHOT} error={null} connection="connected" onRetry={() => {}} />);
+    // The map fills the stage, the whole work area, with square corners: nothing sits beside it any more (CN-32's
+    // docked template B is gone).
+    const stub = screen.getByTestId('position-map-stub');
+    const stage = stub.parentElement;
+    expect(stage).toHaveAttribute('data-occ-positions-map', 'map');
+    expect(stage.className).toBe(POSITIONS_MAP_LAYOUT.stage);
+    expect(POSITIONS_MAP_LAYOUT.stage).toContain('h-full');
+    expect(map.props.className).toBe('');
+    // The bar floats inside the map at the top left, on the floating slab, on one compact row from 1280 px.
+    const bar = stub.querySelector('[data-occ-positions-toolbar]');
+    expect(bar.className).toBe(POSITIONS_MAP_LAYOUT.toolbar);
+    expect(POSITIONS_MAP_LAYOUT.toolbar).toMatch(/absolute left-3 top-3 z-10/);
+    expect(POSITIONS_MAP_LAYOUT.toolbar).toContain('bg-occ-panel-float');
+    expect(within(bar).getByRole('heading', { level: 1, name: 'Mapa de posiciones' })).toBeInTheDocument();
+    expect(within(bar).getByRole('button', { name: 'Lista de posiciones' })).toBeInTheDocument();
+    expect(bar.querySelector('[data-occ-toolbar]')).toHaveClass('xl:flex-row');
+    // The band floats along the bottom and ends before the control column; it starts folded.
+    const band = stub.querySelector('[data-occ-positions-band-slot]');
+    expect(band.className).toBe(POSITIONS_MAP_LAYOUT.band);
+    expect(POSITIONS_MAP_LAYOUT.band).toContain('bottom-3 left-3 right-[var(--occ-map-rail-reserve)]');
+    expect(band.querySelector('[data-occ-positions-band]')).toHaveAttribute('data-occ-positions-band', 'folded');
+    // «Lista de posiciones» floats at the left, between the bar and the band.
+    await user.click(screen.getByRole('button', { name: 'Lista de posiciones' }));
+    const list = stub.querySelector('[data-occ-positions-list]');
+    expect(list.className).toBe(POSITIONS_MAP_LAYOUT.list);
+    expect(list).toContainElement(screen.getByTestId('positions-side-panel'));
+    expect(screen.getByTestId('positions-side-panel')).toHaveClass('bg-occ-panel-float');
+    expect(POSITIONS_MAP_LAYOUT.list).toContain('top-[max(12px,var(--occ-map-inset-top,0px))]');
+    expect(POSITIONS_MAP_LAYOUT.list).toContain('bottom-[max(12px,var(--occ-map-inset-bottom,0px))]');
+    // The inspector floats at the right, left of the map's control column (its reserve); below 1536 px the list folds
+    // away while it is open.
+    await user.click(within(screen.getByTestId('positions-side-panel')).getByText('A5'));
+    const inspector = screen.getByTestId('position-detail-drawer');
+    expect(stub).toContainElement(inspector);
+    expect(inspector).toHaveAttribute('data-map-side-panel', 'floating');
+    expect(inspector.className).toContain(POSITIONS_MAP_LAYOUT.inspector);
+    expect(POSITIONS_MAP_LAYOUT.inspector).toContain('right-[var(--occ-map-rail-reserve)]');
+    expect(POSITIONS_MAP_LAYOUT.inspector).toContain('w-[24rem]');
+    expect(list.className).toBe(POSITIONS_MAP_LAYOUT.listWithInspector);
+    expect(POSITIONS_MAP_LAYOUT.listWithInspector).toMatch(/(^| )hidden( |$)/);
+    expect(POSITIONS_MAP_LAYOUT.listWithInspector).toContain('2xl:flex');
+  });
+
+  it('measures the bar, the list, the inspector and the band into the map\'s insets, each from its own edge (M1)', async () => {
+    const user = userEvent.setup();
+    expect(POSITIONS_MAP_PANEL_EDGES).toEqual({ 'pm-toolbar': 'top', 'pm-list': 'left', 'pm-inspector': 'right', 'pm-band': 'bottom' });
+    // A new element each time, so the page renders again and measures.
+    const element = () => <PositionsMapPage status="success" data={SNAPSHOT} error={null} connection="connected" onRetry={() => {}} />;
+    const view = render(element());
+    expect(map.props.insets).toEqual({ top: 0, right: 0, bottom: 0, left: 0 });
+    const rect = (left, top, width, height) => ({ left, top, right: left + width, bottom: top + height, width, height });
+    // A map of 1400 × 800: the bar 56 px high at the top left and the folded band 48 px high along the bottom.
+    const stub = screen.getByTestId('position-map-stub');
+    stub.parentElement.getBoundingClientRect = () => rect(0, 0, 1400, 800);
+    stub.querySelector('[data-occ-positions-toolbar]').getBoundingClientRect = () => rect(12, 12, 800, 56);
+    stub.querySelector('[data-occ-positions-band-slot]').getBoundingClientRect = () => rect(12, 740, 1276, 48);
+    view.rerender(element());
+    expect(map.props.insets).toEqual({ top: 76, right: 0, bottom: 68, left: 0 });
+    // The list (24rem) under the bar and the inspector (24rem) 112 px from the right edge, the column's reserve.
+    await user.click(screen.getByRole('button', { name: 'Lista de posiciones' }));
+    stub.querySelector('[data-occ-positions-list]').getBoundingClientRect = () => rect(12, 76, 384, 656);
+    view.rerender(element());
+    expect(map.props.insets).toEqual({ top: 76, right: 0, bottom: 68, left: 404 });
+    await user.click(within(screen.getByTestId('positions-side-panel')).getByText('A5'));
+    screen.getByTestId('position-detail-drawer').getBoundingClientRect = () => rect(904, 76, 384, 656);
+    view.rerender(element());
+    expect(map.props.insets).toEqual({ top: 76, right: 504, bottom: 68, left: 404 });
+    // «Cerrar detalle» gives the right edge back.
+    await user.click(within(screen.getByTestId('position-detail-drawer')).getByRole('button', { name: 'Cerrar detalle' }));
+    view.rerender(element());
+    expect(map.props.insets).toEqual({ top: 76, right: 0, bottom: 68, left: 404 });
+  });
+
+  it('shows its notices as chips at the top centre of the map, under the bar (M1)', () => {
+    render(<PositionsMapPage status="success" data={{ ...SNAPSHOT, source: 'planning' }} error={null}
+      connection="connected" lastUpdatedAt="2026-08-06T10:00:00-04:00" onRetry={() => {}}
+      forceState="positionsMapDisconnected" />);
+    const chips = screen.getByTestId('position-map-stub').querySelector('[data-occ-positions-chips]');
+    expect(chips.className).toBe(POSITIONS_MAP_LAYOUT.chips);
+    expect(POSITIONS_MAP_LAYOUT.chips).toContain('occ-map-page-chips');
+    expect(within(chips).getByText(/Esta vista muestra asignaciones planificadas/)).toHaveClass('bg-occ-panel-float');
+    expect(within(chips).getByText(/Datos desactualizados/)).toHaveClass('border-l-occ-warn');
+    expect(within(chips).getByText('Última sincronización disponible.')).toBeInTheDocument();
+  });
+
+  it('full screen takes the whole stage, its panels with the map (M1)', async () => {
+    const user = userEvent.setup();
+    render(<PositionsMapPage status="success" data={SNAPSHOT} error={null} connection="connected" onRetry={() => {}} />);
+    const stage = screen.getByTestId('position-map-stub').parentElement;
+    stage.requestFullscreen = vi.fn();
+    await user.click(within(screen.getByTestId('position-map-rail')).getByRole('button', { name: 'Pantalla completa' }));
+    expect(stage.requestFullscreen).toHaveBeenCalledTimes(1);
+    expect(stage).toContainElement(screen.getByRole('heading', { level: 1, name: 'Mapa de posiciones' }));
+  });
+
+  it('without a map the loading, the failure and the planned stands scroll inside the frame (M1)', () => {
+    const loading = render(<PositionsMapPage status="loading" data={null} error={null} connection="syncing" onRetry={() => {}} />);
+    const skeleton = screen.getByTestId('positions-map-skeleton').closest('[data-occ-positions-map]');
+    expect(skeleton).toHaveAttribute('data-occ-positions-map', 'loading');
+    expect(skeleton.className).toBe(POSITIONS_MAP_LAYOUT.scroll);
+    expect(POSITIONS_MAP_LAYOUT.scroll).toContain('overflow-y-auto');
+    loading.unmount();
+    const failed = render(<PositionsMapPage status="error" data={null} error={new Error('network down')}
+      connection="disconnected" onRetry={() => {}} />);
+    expect(screen.getByRole('alert').parentElement.className).toBe(POSITIONS_MAP_LAYOUT.scroll);
+    failed.unmount();
+    render(<PositionsMapPage status="success" data={{
+      station: { code: 'SDQ', name: 'Santo Domingo' }, source: 'planning-no-map',
+      positions: [{ id: 'G1', terminal: 'T1', status: 'planned', latitude: null, longitude: null, plannedFlights: ['EV311'] }],
+    }} error={null} connection="connected" onRetry={() => {}} />);
+    expect(screen.getByText('G1').closest('section').className).toBe(POSITIONS_MAP_LAYOUT.scroll);
   });
 
   it('shows a real planned-stand list for another station without drawing PUJ', () => {
@@ -567,7 +684,7 @@ describe('PositionsMapPage inside the OCC frame (PR M6)', () => {
       .toHaveTextContent('Ocupada');
   });
 
-  it('a flight of the URL is the map\'s selection, with its data block docked beside the map controls', async () => {
+  it('a flight of the URL is the map\'s selection, with its data block docked in the area the panels leave', async () => {
     window.history.replaceState({}, '', `${PAGE}&flightId=${TRAFFIC_FLIGHT_KEY.arrival}`);
     render(framed(liveData()));
     await flush();
@@ -576,8 +693,9 @@ describe('PositionsMapPage inside the OCC frame (PR M6)', () => {
     expect(stub).toHaveAttribute('data-traffic-selection', `flight:${TRAFFIC_FLIGHT_KEY.arrival}`);
     expect(stub).toHaveAttribute('data-selected', '');
     const block = within(stub).getByRole('dialog', { name: 'Vuelo ZZ161' });
-    // At the top left corner of the map, 12 px from its edges: the page's map tools are in the map's rail (CN-32).
-    expect(block).toHaveStyle({ top: '12px', left: '12px' });
+    // At the top left of the area the floating panels leave in sight, 12 px in (M1): under the bar, beside the list.
+    expect(block.style.top).toBe('calc(var(--occ-map-inset-top, 0px) + 12px)');
+    expect(block.style.left).toBe('calc(var(--occ-map-inset-left, 0px) + 12px)');
     // «Cerrar» lets it go, keeping the other keys of the URL.
     act(() => within(block).getByRole('button', { name: 'Cerrar' }).click());
     expect(query().has('flightId')).toBe(false);

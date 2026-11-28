@@ -1687,6 +1687,14 @@ describe('OccMap', () => {
     // Folded, its header stays at the top of the slot, or at the bottom of a narrow map.
     expect(all('.occ-map .occ-map-follow-panel[data-open="false"]')).toEqual([{ bottom: 'auto' },
       { bottom: 'calc(var(--occ-map-inset-bottom, 0px) + var(--occ-map-gap))' }]);
+    // A screen's own notices (Mapa de posiciones, M1) sit at the top centre of the area in sight, short of the column,
+    // and push the traffic's chips under them.
+    const [pageChips] = all('.occ-map .occ-map-page-chips');
+    expect(pageChips).toMatchObject({ top: 'calc(var(--occ-map-inset-top, 0px) + var(--occ-map-gap))',
+      left: 'calc(var(--occ-map-inset-left, 0px) + (100% - var(--occ-map-inset-left, 0px) - var(--occ-map-clear-right)) / 2)',
+      transform: 'translateX(-50%)' });
+    expect(all('.occ-map .occ-map-page-chips ~ .occ-map-source-status .occ-map-source-chips')).toEqual([
+      { top: 'calc(var(--occ-map-inset-top, 0px) + var(--occ-map-gap) + 3.25rem)' }]);
   });
 });
 // The traffic of PR M5 at the lab's noon: the synthetic air picture and map flights, the demo arrival estimated on

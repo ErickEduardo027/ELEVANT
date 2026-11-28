@@ -401,4 +401,21 @@ describe('PositionMap with the live traffic (PR M6)', () => {
     expect(screen.queryByRole('button', { name: 'Pausar movimiento' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Leyenda' })).toBeInTheDocument();
   });
+
+  it('frames with no insets and rounded corners by default, as Planificación has it, and takes the insets of a stage (M1)', () => {
+    const view = renderPositions();
+    const root = screen.getByTestId('occ-map');
+    expect(root).toHaveClass('rounded-md');
+    for (const side of ['top', 'right', 'bottom', 'left']) {
+      expect(root.style.getPropertyValue(`--occ-map-inset-${side}`)).toBe('0px');
+    }
+    // Mapa de posiciones fills its stage: square corners and what its floating panels cover.
+    view.rerender({ insets: { top: 76, right: 492, bottom: 68, left: 404 }, className: '' });
+    expect(root).not.toHaveClass('rounded-md');
+    expect(root.style.getPropertyValue('--occ-map-inset-top')).toBe('76px');
+    expect(root.style.getPropertyValue('--occ-map-inset-right')).toBe('492px');
+    expect(root.style.getPropertyValue('--occ-map-inset-bottom')).toBe('68px');
+    expect(root.style.getPropertyValue('--occ-map-inset-left')).toBe('404px');
+    expect(fake.state.liveMaps()).toHaveLength(1);
+  });
 });

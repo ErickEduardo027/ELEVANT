@@ -89,6 +89,20 @@ describe('PositionsMapPage with its map', () => {
     expect(screen.queryByText('Configuración combinada')).not.toBeInTheDocument();
   });
 
+  it('floats the bar and the band inside the map, so the legend of its control column opens over them (M1)', () => {
+    renderPage(SNAPSHOT);
+    const occMap = screen.getByTestId('occ-map');
+    // OccMap is a stacking context of its own: a panel beside it, not inside it, would cover its menus.
+    expect(occMap).toContainElement(screen.getByRole('heading', { level: 1, name: 'Mapa de posiciones' }));
+    expect(occMap.querySelector('[data-occ-positions-band]')).not.toBeNull();
+    expect(occMap).not.toHaveClass('rounded-md');
+    // The legend's button is in the control column (.occ-map-dock), after the panels.
+    const legend = screen.getByRole('button', { name: 'Leyenda' });
+    expect(legend.closest('.occ-map-dock')).not.toBeNull();
+    const bar = occMap.querySelector('[data-occ-positions-toolbar]');
+    expect(bar.compareDocumentPosition(legend) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('lists the planned and unverified stands of the planning layout, as the page legend did before', () => {
     renderPage({
       station: { code: 'PUJ' },
