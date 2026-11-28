@@ -2612,6 +2612,17 @@ usan modelos de terceros» para los modelos 3D.
   (B788/B789, A33x, CRJ9), la holgura al suelo es estimada; los pozos del tren
   principal del 737 MAX (REXO) se ven abiertos de lado con el tren recogido.
   Nada de esto acredita un despliegue ni una revisión visual en el VPS.
+- **Integración con M2, M4, M8 y M9 (28 de noviembre de 2026).** Una sola
+  paleta de librea
+  ([`liveries.js`](../../frontend/private-web/src/features/maps/aircraft/liveries.js):
+  `liveryPaint`) pinta el modelo procedural por zonas y el modelo glTF L1. En
+  el Mapa de posiciones todos los aviones 3D menos el elegido llevan librea,
+  el otro tráfico en tierra cercano incluido, y la leyenda lo dice; en las
+  demás pantallas solo los de AVIAM. Las instancias L1 se mueven con la capa
+  animada, llevan la sombra de contacto y no se dibujan en el globo por
+  debajo del zoom de Mercator. Ver la nota del 28 de noviembre «Integración
+  de los modelos 3D (M5)» de
+  [ADR-0043](../../docs/adr/0043-occ-maps-one-engine.md).
 
 ## «Seguir en 3D» ultra cerca (M4, 27 de noviembre de 2026)
 
