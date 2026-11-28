@@ -3,12 +3,12 @@ import {
   createRegionWeather, createRadarFrames, createSigmets, WEATHER_NOON,
 } from '../testing/weatherFixtures';
 import {
-  LOOP_BANDS, LOOP_FRAME_COUNT, RADAR_FRAME_COUNT, RADAR_OPACITY, SIGMET_SOURCE, STATIONS_SOURCE, loopLayerId,
-  radarLayerId,
+  LOOP_BANDS, LOOP_FRAME_COUNT, LOOP_FRAME_MS, RADAR_FRAME_COUNT, RADAR_OPACITY, SIGMET_SOURCE, STATIONS_SOURCE,
+  WEATHER_GROUPS, loopLayerId, loopSourceId, radarLayerId, radarSourceId, weatherLayerNotes,
 } from '../traffic/weatherLayers';
 import {
-  applyRegionalDrawing, createRegionalApplied, radarCredit, regionalDrawing, regionalLoop, regionalOpacities,
-  startRegionalLoop, withPinnedRegional,
+  applyRegionalDrawing, createRegionalApplied, isLoopFrameSource, markLoopFrameMissing, radarCredit, regionalDrawing,
+  regionalLoop, regionalOpacities, startRegionalLoop, withPinnedRegional,
 } from './regionalWeather';
 
 const NOON = Date.parse(WEATHER_NOON);
@@ -139,6 +139,116 @@ describe('the regional weather of an OCC map (lane M7)', () => {
     loop.rewrite();
     expect(engine.setPaint.mock.calls.length).toBe(written + 4 + LOOP_FRAME_COUNT + RADAR_FRAME_COUNT);
     loop.stop();
+  });
+
+  // Hotfix of 2026-11-28, step 2: a frame GIBS lists whose tiles still fail is skipped, never shown blank.
+  describe('a loop frame whose tiles fail', () => {
+    const LOOP_KEY = WEATHER_GROUPS.loop;
+    const loopNote = regional => weatherLayerNotes({ layers: { [LOOP_KEY]: true }, view: 'region', regional,
+      nowMs: NOON, language: 'es' })[LOOP_KEY];
+    const pinnedDrawing = (marks = {}) => {
+      const engine = fakeEngine();
+      const applied = createRegionalApplied();
+      const drawing = regionalDrawing({ regionWeather: weather(), loopImages: LOOP, loopMissing: marks, nowMs: NOON });
+      applyRegionalDrawing(engine, applied, drawing);
+      return { applied, drawing };
+    };
+
+    it('is marked at the tiles it is pinned to, only for a loop source', () => {
+      const { applied } = pinnedDrawing();
+      const marks = markLoopFrameMissing({}, applied.tiles, loopSourceId(2));
+      expect(marks).toEqual({ [loopSourceId(2)]: applied.tiles[loopSourceId(2)] });
+      // Marked again, a radar frame, a source nothing is pinned to: the same marks.
+      expect(markLoopFrameMissing(marks, applied.tiles, loopSourceId(2))).toBe(marks);
+      expect(markLoopFrameMissing(marks, applied.tiles, radarSourceId(0))).toBe(marks);
+      expect(markLoopFrameMissing(marks, {}, loopSourceId(3))).toBe(marks);
+      expect(isLoopFrameSource(loopSourceId(0))).toBe(true);
+      expect(isLoopFrameSource(radarSourceId(0))).toBe(false);
+      expect(isLoopFrameSource(null)).toBe(false);
+    });
+
+    it('is skipped by the loop: the frame before it stays on screen, the radar unchanged', () => {
+      const { applied } = pinnedDrawing();
+      const marks = markLoopFrameMissing({}, applied.tiles, loopSourceId(2));
+      const drawing = regionalDrawing({ regionWeather: weather(), loopImages: LOOP, loopMissing: marks, nowMs: NOON });
+      expect(drawing.loop.status).toBe('ready');
+      expect(drawing.loop.frames.map(frame => frame.missing)).toEqual([false, false, true, false, false, false]);
+      const band = LOOP_BANDS[drawing.loop.band].opacity;
+      // Frame 1 shows its turn; frame 2's turn goes to frame 3, never to a blank frame.
+      expect(regionalOpacities(drawing, LOOP_FRAME_MS)[loopLayerId(1)]).toBe(band);
+      const third = regionalOpacities(drawing, 2 * LOOP_FRAME_MS);
+      expect(third[loopLayerId(2)]).toBe(0);
+      expect(third[loopLayerId(3)]).toBe(band);
+      expect(third[radarLayerId(2)]).toBe(RADAR_OPACITY);
+      for (let elapsed = 0; elapsed < 10 * LOOP_FRAME_MS; elapsed += 100) {
+        const opacities = regionalOpacities(drawing, elapsed);
+        expect(Array.from({ length: LOOP_FRAME_COUNT }, (_, index) => opacities[loopLayerId(index)]))
+          .toSatisfy(values => values[2] === 0 && values.filter(value => value > 0).length === 1);
+      }
+      // A missing latest frame: held still, the loop shows the latest frame it has, and the span ends there.
+      const latest = markLoopFrameMissing({}, applied.tiles, loopSourceId(LOOP_FRAME_COUNT - 1));
+      const held = regionalDrawing({ regionWeather: weather(), loopImages: LOOP, loopMissing: latest, nowMs: NOON });
+      const still = regionalOpacities(held, 0, { still: true });
+      expect(still[loopLayerId(LOOP_FRAME_COUNT - 1)]).toBe(0);
+      expect(still[loopLayerId(LOOP_FRAME_COUNT - 2)]).toBe(band);
+      const shorter = regionalDrawing({ regionWeather: weather(), nowMs: NOON,
+        loopImages: { ...LOOP, times: [LOOP.times[0], ...LOOP.times.slice(0, -1)] } });
+      expect(loopNote(held.notes)).toBe(loopNote(shorter.notes));
+      expect(loopNote(held.notes)).not.toBe(loopNote(regionalDrawing({ regionWeather: weather(), loopImages: LOOP,
+        nowMs: NOON }).notes));
+    });
+
+    it('loses its mark when the frame is pinned to a new time', () => {
+      const { applied } = pinnedDrawing();
+      const marks = markLoopFrameMissing({}, applied.tiles, loopSourceId(5));
+      // Ten minutes later every frame moves one image on: frame 5 is pinned to 15:00 and is no longer missing.
+      const later = Object.freeze({ ...LOOP, times: Object.freeze([...LOOP.times.slice(1), '2026-11-13T15:00:00Z']) });
+      const drawing = regionalDrawing({ regionWeather: weather(), loopImages: later, loopMissing: marks, nowMs: NOON });
+      expect(drawing.loop.frames.every(frame => frame.missing === false)).toBe(true);
+      applyRegionalDrawing(fakeEngine(), applied, drawing);
+      // The next mark drops the marks that no longer match what is pinned.
+      expect(markLoopFrameMissing(marks, applied.tiles, loopSourceId(1))).toEqual({
+        [loopSourceId(1)]: applied.tiles[loopSourceId(1)] });
+    });
+
+    it('with every frame missing, holds nothing and the loop says it has no image', () => {
+      const { applied } = pinnedDrawing();
+      let marks = {};
+      for (let index = 0; index < LOOP_FRAME_COUNT; index += 1) {
+        marks = markLoopFrameMissing(marks, applied.tiles, loopSourceId(index));
+      }
+      const drawing = regionalDrawing({ regionWeather: weather(), loopImages: LOOP, loopMissing: marks, nowMs: NOON });
+      expect(drawing.loop.status).toBe('unavailable');
+      // Its frames stay pinned, so the marks keep matching and nothing is written again.
+      expect(drawing.loop.frames).toHaveLength(LOOP_FRAME_COUNT);
+      const engine = fakeEngine();
+      applyRegionalDrawing(engine, applied, drawing);
+      expect(engine.setRasterTiles).not.toHaveBeenCalled();
+      for (const still of [false, true]) {
+        const opacities = regionalOpacities(drawing, LOOP_FRAME_MS, { still });
+        for (let index = 0; index < LOOP_FRAME_COUNT; index += 1) expect(opacities[loopLayerId(index)]).toBe(0);
+      }
+      expect(loopNote(drawing.notes)).toBe(loopNote({ loop: regionalLoop({ status: 'unavailable' }, NOON) }));
+    });
+
+    it('is found by the loop through the engine, without a request or a write, once per frame', () => {
+      const { applied, drawing } = pinnedDrawing();
+      const engine = { ...fakeEngine(), failedTiles: vi.fn(source => (source === loopSourceId(4) ? 74 : 0)) };
+      const onFrameFailed = vi.fn();
+      const loop = startRegionalLoop(engine, { getDrawing: () => drawing, onFrameFailed,
+        setTimer: () => 1, clearTimer: vi.fn() });
+      expect(onFrameFailed).toHaveBeenCalledExactlyOnceWith(loopSourceId(4));
+      expect(engine.failedTiles).toHaveBeenCalledTimes(LOOP_FRAME_COUNT);
+      expect(engine.setRasterTiles).not.toHaveBeenCalled();
+      expect(engine.setData).not.toHaveBeenCalled();
+      loop.stop();
+      // A frame already missing is not asked about again.
+      const marked = regionalDrawing({ regionWeather: weather(), loopImages: LOOP, nowMs: NOON,
+        loopMissing: markLoopFrameMissing({}, applied.tiles, loopSourceId(4)) });
+      onFrameFailed.mockClear();
+      startRegionalLoop(engine, { getDrawing: () => marked, onFrameFailed, setTimer: () => 1, clearTimer: vi.fn() });
+      expect(onFrameFailed).not.toHaveBeenCalled();
+    });
   });
 
   it("credits the radar provider it knows: only IEM's TJUA, the one the API names (lane M6)", () => {

@@ -675,6 +675,57 @@ describe('map engine', () => {
     expect(map.calls.filter(call => call.method === 'setTiles')).toHaveLength(2);
   });
 
+  // Hotfix of 2026-11-28, step 2: a frame of the satellite loop whose tiles fail, by an `error` or by a quiet 404.
+  it('reports the tiles a raster source failed to load, through onSourceError and failedTiles', () => {
+    const latest = 'https://gibs.example/wmts/epsg3857/best/GeoColor/default/default/GoogleMapsCompatible_Level7/{z}/{y}/{x}.png';
+    const at = time => latest.replace('/default/default/', `/default/${time}/`);
+    const style = buildOccStyle({ overlays: [OVERLAY, {
+      sources: { 'occ-weather-loop-0': { type: 'raster', tiles: [latest], tileSize: 256, maxzoom: 7 } },
+      layers: [{ slot: 'weather', id: 'occ-weather-loop-0-image', type: 'raster', source: 'occ-weather-loop-0',
+        layout: { visibility: 'none' }, metadata: { 'occ:group': 'weather.loop' } }],
+    }] });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const onSourceError = vi.fn(({ sourceId }) => sourceId === 'occ-weather-loop-0');
+    const { engine, map, state } = ready(setup({ style, onSourceError }));
+    expect(engine.failedTiles('occ-weather-loop-0')).toBe(0);
+
+    // A 404: MapLibre 6.16 fires nothing and keeps the tile `errored`; failedTiles counts it, without a request.
+    state.setTileStates(map, 'occ-weather-loop-0', ['loaded', 'errored', 'errored', 'loading']);
+    const calls = map.calls.length;
+    expect(engine.failedTiles('occ-weather-loop-0')).toBe(2);
+    expect(engine.failedTiles('nowhere')).toBe(0);
+    expect(map.calls).toHaveLength(calls);
+
+    // Another failure fires `error` with the source: handled, it is not logged; a source nobody handles is.
+    const tile = { tileID: { canonical: { x: 1, y: 2, z: 5 } } };
+    const failure = new Error('Internal Server Error');
+    state.emit(map, 'error', { sourceId: 'occ-weather-loop-0', tile, error: failure });
+    expect(onSourceError).toHaveBeenCalledExactlyOnceWith({ sourceId: 'occ-weather-loop-0', tile, error: failure });
+    expect(error).not.toHaveBeenCalled();
+    state.emit(map, 'error', { sourceId: 'occ-stands', error: new Error('Bad GeoJSON') });
+    expect(onSourceError).toHaveBeenCalledTimes(2);
+    expect(error).toHaveBeenCalledTimes(1);
+
+    // New tiles: until MapLibre reloads the source (its `content` source data), what it holds and what fails are of
+    // the tiles before, so nothing is reported.
+    engine.setRasterTiles('occ-weather-loop-0', [at('2026-11-28T16:20:00Z')]);
+    state.setTileStates(map, 'occ-weather-loop-0', ['errored']);
+    expect(engine.failedTiles('occ-weather-loop-0')).toBe(0);
+    state.emit(map, 'error', { sourceId: 'occ-weather-loop-0', tile, error: failure });
+    expect(onSourceError).toHaveBeenCalledTimes(2);
+    expect(error).toHaveBeenCalledTimes(1);
+    state.emit(map, 'sourcedata', { sourceId: 'occ-weather-loop-0', sourceDataType: 'content' });
+    expect(engine.failedTiles('occ-weather-loop-0')).toBe(1);
+    state.emit(map, 'error', { sourceId: 'occ-weather-loop-0', tile, error: failure });
+    expect(onSourceError).toHaveBeenCalledTimes(3);
+
+    // Without a style (a context loss) or a map, there is nothing to read.
+    state.loseContext(map);
+    expect(engine.failedTiles('occ-weather-loop-0')).toBe(0);
+    engine.destroy();
+    expect(engine.failedTiles('occ-weather-loop-0')).toBe(0);
+  });
+
   it('setPaint sets a paint property of a layer once the style has loaded, and leaves a missing layer alone', () => {
     // Lane M7: the frames of a weather loop switch their raster-opacity.
     const { engine, map, state } = setup();
